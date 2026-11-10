@@ -104,7 +104,8 @@ async function startServer({ runtime = process.env.ZP_RUNTIME || 'node', config 
       exited = true;
     });
     const base = `http://127.0.0.1:${port}`;
-    // Backstop: a child still running when this process exits (a crash, a test timeout) is killed, never left behind.
+    // Backstop: a child still running when this process exits normally or through process.exit() or an uncaught error
+    // is killed. It does not run when this process is killed by a signal (a test runner's timeout kill, SIGKILL).
     const reap = () => {
       if (!exited) child.kill('SIGKILL');
     };

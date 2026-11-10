@@ -46,7 +46,7 @@ shown on the Compliance page as evidence.
 | Idle RSS, demo | 142 MB | `ps` |
 | Startup to first HTTP answer (demo) | 0.37 s | curl loop |
 | Gateway overhead p50/p95/p99, non-streaming, mock provider (20 ms) | 3.72 / 5.67 / 9.16 ms | `bench/results/2026-11-10-node-MBA-ZAAF.json` (node v24.16.0, Apple M4) |
-| Concurrent SSE streams, 10 s per level | 50: 954 done, 0 errors, overhead p95 22.6 ms; 200: 4000 done, 0 errors, overhead p95 3.15 ms; 500: 9315 done, 0 errors, overhead p95 53.3 ms | `bench/results/2026-11-10-node-MBA-ZAAF.json` (node v24.16.0, Apple M4) |
+| Concurrent SSE streams, 10 s per level | 50: 954 done, 0 errors, overhead p95 22.6 ms; 200: 4000 done, 0 errors, overhead p95 3.15 ms; 500: 9315 done, 0 errors, overhead p95 53.3 ms (noisy: recorded on battery with Zoom running; see bench/results/2026-11-10-MBA-ZAAF-notes.md; re-record before P2) | `bench/results/2026-11-10-node-MBA-ZAAF.json` (node v24.16.0, Apple M4) |
 | Server RSS idle / peak at 500 streams | 108.9 / 408.3 MB | `bench/results/2026-11-10-node-MBA-ZAAF.json` (node v24.16.0, Apple M4) |
 | Startup to the first 200 on /login.html (p50 of 5) | 195.3 ms | `bench/results/2026-11-10-node-MBA-ZAAF.json` (node v24.16.0, Apple M4) |
 
@@ -95,7 +95,7 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 | M1 | Test parity | 2,560/2,562 on Node | 100% of the same tests green on Deno, or ported 1:1 |
 | M2 | Gateway contract suite (black-box HTTP) | built in P0 | 100% green against both engines (JS and Go) before each slice switches |
 | M3 | Gateway overhead p95, non-streaming, mock provider | p95 5.67 ms (p50 3.72 ms, p99 9.16 ms) | ≤ 50% of the JS baseline **and** ≤ 5 ms |
-| M4 | Concurrent SSE streams on the owner's laptop | 500 streams: 9315 done, 0 errors, overhead p95 53.3 ms, peak RSS 408.3 MB | ≥ 500 streams, overhead p95 ≤ 10 ms, gateway RSS ≤ 80 MB |
+| M4 | Concurrent SSE streams on the owner's laptop | 500 streams: 9315 done, 0 errors, overhead p95 53.3 ms, peak RSS 408.3 MB (noisy: recorded on battery with Zoom running; see bench/results/2026-11-10-MBA-ZAAF-notes.md; re-record before P2) | ≥ 500 streams, overhead p95 ≤ 10 ms, gateway RSS ≤ 80 MB |
 | M5 | Idle RSS, both processes | 200 MB (live); bench idle 108.9 MB | ≤ 200 MB |
 | M6 | Download size per platform, both binaries | 80–122 MB | ≤ current size per platform |
 | M7 | Startup to both processes healthy | 0.37 s (Node, demo); bench startup p50 195.3 ms | ≤ 1.0 s |

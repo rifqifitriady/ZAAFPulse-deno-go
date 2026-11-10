@@ -83,28 +83,45 @@ function startMockProcess() {
   });
   return new Promise((resolve, reject) => {
     let out = '';
+    // A mock that never announces itself is killed, not waited for forever.
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('the mock provider did not announce its address within 30 s'));
+    }, 30000);
     child.stdout.on('data', (c) => {
       out += c;
       const m = out.match(/mock provider at (\S+)/);
-      if (m) resolve({ url: m[1], stop: () => child.kill() });
+      if (m) {
+        clearTimeout(timer);
+        resolve({ url: m[1], stop: () => child.kill() });
+      }
     });
-    child.once('exit', (code) => reject(new Error(`the mock provider exited (${code})`)));
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`the mock provider exited (${code})`));
+    });
   });
 }
 
-// One whole request; resolves with its time in ms, or throws on a non-200.
+// One whole request; resolves with its time in ms, or throws on a non-200 or after 30 s.
 async function timed(url, headers, body) {
   const t0 = performance.now();
-  const r = await fetch(url, { method: 'POST', headers, body });
+  const r = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(30000) });
   await r.arrayBuffer();
   if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
   return performance.now() - t0;
 }
 
-// One stream read to its end: { ttfb, dur } in ms; throws on a non-200 or a cut stream.
+// One stream read to its end: { ttfb, dur } in ms; throws on a non-200, a cut stream or when the step duration plus
+// 30 s has passed (a hung stream is an error of the step, not a hang of the run).
 async function streamOnce(url, headers, body) {
   const t0 = performance.now();
-  const r = await fetch(url, { method: 'POST', headers, body });
+  const r = await fetch(url, {
+    method: 'POST',
+    headers,
+    body,
+    signal: AbortSignal.timeout(CFG.seconds * 1000 + 30000),
+  });
   if (r.status !== 200) {
     await r.arrayBuffer();
     throw new Error(`HTTP ${r.status}`);
@@ -146,15 +163,18 @@ async function streamStep(level, target) {
 
 async function main() {
   const t0 = Date.now();
-  const startup = [];
-  for (let i = 0; i < CFG.starts; i++) {
-    const s = await startServer({ runtime: CFG.runtime });
-    startup.push(Math.round(s.startupMs * 10) / 10);
-    await s.stop();
-  }
-  const mock = await startMockProcess();
-  const server = await startServer({ runtime: CFG.runtime });
+  // Every child is stopped in the finally below, whatever step failed (a failed start of the second server included).
+  let mock = null;
+  let server = null;
   try {
+    const startup = [];
+    for (let i = 0; i < CFG.starts; i++) {
+      const s = await startServer({ runtime: CFG.runtime });
+      startup.push(Math.round(s.startupMs * 10) / 10);
+      await s.stop();
+    }
+    mock = await startMockProcess();
+    server = await startServer({ runtime: CFG.runtime });
     const c = clientFor(server.base);
     await c.admin('providers', {
       action: 'save',
@@ -278,8 +298,8 @@ async function main() {
           `ttfb p95 ${s.gateway.ttfbP95} ms, overhead p95 ${s.overheadP95} ms`,
       );
   } finally {
-    await server.stop();
-    mock.stop();
+    if (server) await server.stop().catch(() => {});
+    if (mock) mock.stop();
   }
 }
 
