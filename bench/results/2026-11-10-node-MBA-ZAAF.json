@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "date": "2026-11-10",
+  "runtime": "node",
+  "runtimeVersion": "v24.16.0",
+  "git": {
+    "sha": "64369e61a02156904811c0288c7eb8b302ba5120",
+    "dirty": false
+  },
+  "host": {
+    "name": "MBA-ZAAF",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "cores": 10,
+    "memGB": 16,
+    "osRelease": "25.6.0"
+  },
+  "config": {
+    "runtime": "node",
+    "requests": 2000,
+    "levels": [
+      50,
+      200,
+      500
+    ],
+    "seconds": 10,
+    "delayMs": 20,
+    "chunks": 20,
+    "intervalMs": 25,
+    "starts": 5
+  },
+  "startup": {
+    "ms": [
+      197.3,
+      196.5,
+      195.3,
+      192.4,
+      194.9
+    ],
+    "p50": 195.3
+  },
+  "idleRssMB": 108.9,
+  "nonStream": {
+    "gateway": {
+      "n": 2000,
+      "p50": 26.54,
+      "p95": 28.88,
+      "p99": 31.47
+    },
+    "direct": {
+      "n": 2000,
+      "p50": 22.73,
+      "p95": 24.18,
+      "p99": 24.94
+    },
+    "overhead": {
+      "n": 2000,
+      "p50": 3.72,
+      "p95": 5.67,
+      "p99": 9.16
+    }
+  },
+  "streams": [
+    {
+      "level": 50,
+      "seconds": 10,
+      "gateway": {
+        "completed": 954,
+        "errors": 0,
+        "ttfbP95": 48.87,
+        "durP50": 529.77,
+        "durP95": 546.95
+      },
+      "direct": {
+        "completed": 1000,
+        "errors": 0,
+        "ttfbP95": 27.44,
+        "durP50": 516.17,
+        "durP95": 524.35
+      },
+      "overheadP95": 22.6,
+      "ttfbOverheadP95": 21.43
+    },
+    {
+      "level": 200,
+      "seconds": 10,
+      "gateway": {
+        "completed": 4000,
+        "errors": 0,
+        "ttfbP95": 45.28,
+        "durP50": 511.66,
+        "durP95": 533.6
+      },
+      "direct": {
+        "completed": 4000,
+        "errors": 0,
+        "ttfbP95": 28.08,
+        "durP50": 514.6,
+        "durP95": 530.45
+      },
+      "overheadP95": 3.15,
+      "ttfbOverheadP95": 17.2
+    },
+    {
+      "level": 500,
+      "seconds": 10,
+      "gateway": {
+        "completed": 9315,
+        "errors": 0,
+        "ttfbP95": 121.72,
+        "durP50": 537.62,
+        "durP95": 612.01
+      },
+      "direct": {
+        "completed": 10000,
+        "errors": 0,
+        "ttfbP95": 38.35,
+        "durP50": 513.18,
+        "durP95": 558.71
+      },
+      "overheadP95": 53.3,
+      "ttfbOverheadP95": 83.37
+    }
+  ],
+  "peakRssMB": 408.3,
+  "durationS": 169
+}
