@@ -140,7 +140,7 @@ of AI meets a law or a standard.
 | OpenTelemetry export | spans are exported | the exporter reports failed exports since start | not set up |
 | Trace retention | traces are kept at least 183 days (6 months) | they are kept less | tracing is off |
 | AI inventory reviewed | every item is reviewed, every high or unacceptable one has a decision and every unacceptable one is blocked, every inventory source was read and every AI client file could be read | some are reviewed, or a source or an AI client file could not be read ("N AI client files could not be read") | none is |
-| Runtime permissions (MEASURE 2.7, A.6) | ZAAFPulse runs on Deno and every permission (read, write, net, env, run, sys) is an allow-list | it runs on Deno and a permission is unrestricted or all but denied hosts, or (Linux) agent control is lost because `/proc` is unreadable and `ps` or `lsof` is missing | it runs on Node.js: no runtime permission sandbox |
+| Runtime permissions (MEASURE 2.7, A.6) | ZAAFPulse runs on Deno, every permission (read, write, net, env, run, sys) is an allow-list and run holds no interpreter or launcher (never the case today) | it runs on Deno and a permission is unrestricted or all but denied hosts, run includes an interpreter or launcher (node, osascript, powershell, cmd, open, brew, claude, codex …), or (Linux) agent control is lost because `/proc` is unreadable and `ps` or `lsof` is missing | it runs on Node.js: no runtime permission sandbox |
 
 **Runtime permissions.** Under Deno ZAAFPulse runs with the permission set of its entry point in `deno.json`
 (`server`, `cli`, `mcp-stdio`): read all files, write only the data folder, the temp folder, the skill folders and the
@@ -154,6 +154,23 @@ the evidence says so. Without `ps` or `lsof` (procps and lsof packages), agent c
 process are unavailable: this control and **Pause and stop an agent** turn `partial`, and the server log says why
 once. Signals (pause, resume, stop) go through the `kill` program, since Deno allows its own only with every program
 allowed.
+
+**Run is not a sandbox boundary.** The run list holds interpreters and launchers that ZAAFPulse needs: `node` (a
+Claude Code installed as `cli.js`), `osascript`, `powershell`, `cmd`, `open`, `xdg-open`, `brew`, `claude`, `codex`,
+`launchctl`, and for the CLI `wscript.exe`, `explorer.exe`, `schtasks`, `systemctl`. Each runs any code it is given, outside Deno's
+permissions, so code that can spawn one can also write anywhere. The run and write scopes guard against accidents and
+against code paths that were never meant to spawn or write, not against a determined attacker inside the process. The
+evidence names the launchers the running process holds ("run includes interpreters and launchers (…): not a sandbox
+boundary; the write scope guards against accidents, not a determined attacker") and the control stays `partial` while
+it holds any. The reason for each is in `lib/permissions.js` `WHY.launchers`.
+
+**Launch lines are checked.** A `deno run` launch (the service, an MCP client's entry) carries `--allow-write` and
+`--allow-run` lists built from the environment (`ZAAFPULSE_DATA`, `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`,
+`ZAAFPULSE_CLAUDE_BIN`, …) and from `config.json`. Only owner model servers approved in Settings, as their command is
+now, are added to `--allow-run`. An entry holding a comma (it would split into a second grant: a data folder named
+`x,/` would grant `/`), a quote, `%`, `$`, a backtick, `&`, `|`, `<`, `>`, `^` or a control character is refused
+before anything is written, with an error naming the value. The Windows launcher refuses an argument with a quote or
+`%` (cmd.exe cannot take them safely inside quotes) and the systemd unit writes `%` as `%%` and `$` as `$$`.
 
 Guardrails are the strictest of these: the default configuration (secrets `redact`, personal data `off`, injection
 `log`) shows `partial`, and `in place` needs personal data on and injection set to `block`.
