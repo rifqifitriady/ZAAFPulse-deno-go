@@ -136,9 +136,13 @@ test('kill: process.kill on Node, with all run access or on Windows; else the ki
   const calls = [];
   const answer = (r) => (cmd, args) => (calls.push([cmd, ...args]), r);
   const scoped = deno('granted', true);
-  assert.equal(permissions.kill(4242, 'SIGSTOP', { deno: scoped, spawn: answer({ status: 0, stderr: '' }) }), true);
-  permissions.kill(-4242, 'SIGTERM', { deno: scoped, spawn: answer({ status: 0 }) });
-  permissions.kill(4242, 0, { deno: scoped, spawn: answer({ status: 0 }) });
+  const posix = { platform: 'linux' }; // the kill program is for POSIX; a Windows host would take process.kill
+  assert.equal(
+    permissions.kill(4242, 'SIGSTOP', { ...posix, deno: scoped, spawn: answer({ status: 0, stderr: '' }) }),
+    true,
+  );
+  permissions.kill(-4242, 'SIGTERM', { ...posix, deno: scoped, spawn: answer({ status: 0 }) });
+  permissions.kill(4242, 0, { ...posix, deno: scoped, spawn: answer({ status: 0 }) });
   assert.deepEqual(calls, [
     ['kill', '-STOP', '--', '4242'],
     ['kill', '-TERM', '--', '-4242'],
@@ -146,7 +150,7 @@ test('kill: process.kill on Node, with all run access or on Windows; else the ki
   ]);
   const thrown = (r) => {
     try {
-      permissions.kill(4242, 0, { deno: scoped, spawn: answer(r) });
+      permissions.kill(4242, 0, { ...posix, deno: scoped, spawn: answer(r) });
     } catch (err) {
       return err;
     }
@@ -304,8 +308,9 @@ test(
     const r = probe('server', 'run', 'curl', t);
     assert.equal(r.ok, false);
     assert.match(r.error, /Requires run access to "curl/);
-    // mcp.js runs no notification, model server or CLI.
-    assert.match(probe('mcp-stdio', 'run', 'osascript', t).error, /Requires run access to "osascript/);
+    // mcp.js runs no notification, model server or CLI. `sh` is on every POSIX CI image, which matters: Deno resolves
+    // the name before it checks the grant, so a program that is not installed answers "not found" instead.
+    assert.match(probe('mcp-stdio', 'run', 'sh', t).error, /Requires run access to "sh/);
   },
 );
 
@@ -439,8 +444,8 @@ test('selfCommand refuses an approved owner runtime whose program would inject i
   assert.deepEqual(listing(data), before);
 });
 
-test('scope entries: every character that splits a grant or a shell line is refused, with the value and why', () => {
-  for (const ch of [',', '"', "'", '%', '$', '`', '&', '|', '<', '>', '^', '\n', '\r', '\t', '\0', '\x7f']) {
+test('scope entries: a comma, a double quote and a control character are refused, with the value and why', () => {
+  for (const ch of [',', '"', '\n', '\r', '\t', '\0', '\x7f']) {
     const v = `/opt/a${ch}b/server`;
     assert.throws(
       () => permissions.checkScope('run', [v]),
@@ -448,6 +453,32 @@ test('scope entries: every character that splits a grant or a shell line is refu
       JSON.stringify(ch),
     );
   }
+  // Names a user can really have (O'Brien, AT&T) must not block a launch: the launch is an argument list, and every
+  // file that carries it escapes for its own syntax (test/scope-characters.test.js).
+  for (const ch of [
+    "'",
+    '%',
+    '$',
+    '`',
+    '&',
+    '|',
+    '<',
+    '>',
+    '^',
+    ';',
+    '(',
+    ')',
+    '!',
+    '#',
+    '*',
+    '?',
+    '~',
+    '{',
+    '}',
+    '[',
+    ']',
+  ])
+    assert.deepEqual(permissions.checkScope('write', [`/Users/a${ch}b/data`]), [`/Users/a${ch}b/data`], ch);
   assert.deepEqual(permissions.checkScope('run', ['C:\\Program Files\\My Server\\srv.exe', 'ps']), [
     'C:\\Program Files\\My Server\\srv.exe',
     'ps',
@@ -507,14 +538,18 @@ test('kill: pid and signal are checked before anything is sent', () => {
   const seen = [];
   const ok = (cmd, args, opts) => (seen.push(args), { status: 0 });
   for (const sig of [0, 'SIGSTOP', 'SIGCONT', 'SIGTERM', 'SIGINT', 'SIGKILL'])
-    assert.equal(permissions.kill(-4242, sig, { deno: scoped, spawn: ok }), true, `${sig} to a process group`);
+    assert.equal(
+      permissions.kill(-4242, sig, { platform: 'linux', deno: scoped, spawn: ok }),
+      true,
+      `${sig} to a process group`,
+    );
   assert.equal(seen.length, 6);
 });
 
 test('kill: the kill program runs with the C locale, so its error text maps the same on every machine', () => {
   const scoped = { permissions: { querySync: () => ({ state: 'granted', partial: true }) } };
   let opts;
-  permissions.kill(4242, 0, { deno: scoped, spawn: (c, a, o) => ((opts = o), { status: 0 }) });
+  permissions.kill(4242, 0, { platform: 'linux', deno: scoped, spawn: (c, a, o) => ((opts = o), { status: 0 }) });
   assert.equal(opts.env.LC_ALL, 'C');
   assert.equal(opts.env.LANG, 'C');
   assert.equal(opts.env.PATH, process.env.PATH, 'the rest of the environment is kept');

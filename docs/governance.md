@@ -168,9 +168,11 @@ it holds any. The reason for each is in `lib/permissions.js` `WHY.launchers`.
 `--allow-run` lists built from the environment (`ZAAFPULSE_DATA`, `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`,
 `ZAAFPULSE_CLAUDE_BIN`, …) and from `config.json`. Only owner model servers approved in Settings, as their command is
 now, are added to `--allow-run`. An entry holding a comma (it would split into a second grant: a data folder named
-`x,/` would grant `/`), a quote, `%`, `$`, a backtick, `&`, `|`, `<`, `>`, `^` or a control character is refused
-before anything is written, with an error naming the value. The Windows launcher refuses an argument with a quote or
-`%` (cmd.exe cannot take them safely inside quotes) and the systemd unit writes `%` as `%%` and `$` as `$$`.
+`x,/` would grant `/`), a double quote or a control character is refused before anything is written, with an error
+naming the value. Other characters a name can hold (`O'Brien`, `AT&T`, `$`, `^`, `%`) are passed as they are: the launch
+is an argument list, and the plist, the systemd unit, the MCP client JSON and the Codex TOML each escape them. The
+Windows launcher refuses an argument with a quote or `%` (cmd.exe cannot take them safely inside quotes), and the
+systemd unit writes `%` as `%%` and `$` as `$$`.
 
 Guardrails are the strictest of these: the default configuration (secrets `redact`, personal data `off`, injection
 `log`) shows `partial`, and `in place` needs personal data on and injection set to `block`.
