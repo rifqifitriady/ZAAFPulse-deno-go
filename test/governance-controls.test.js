@@ -352,6 +352,19 @@ test('runtime permissions: off on Node, partial while a permission is unrestrict
   assert.equal(noPs.status, 'partial');
 });
 
+test('runtime permissions: a run grant that holds interpreters is no sandbox boundary, and the evidence says so', () => {
+  const rp = { ...good().runtimePermissions, launchers: ['node', 'osascript', 'claude'] };
+  const c = one({ ...good(), runtimePermissions: rp }, 'runtime_permissions');
+  assert.equal(c.status, 'partial');
+  assert.ok(
+    c.evidence.includes(
+      'run includes interpreters and launchers (node, osascript, claude): not a sandbox boundary; the write scope guards against accidents, not a determined attacker',
+    ),
+    c.evidence.join('\n'),
+  );
+  assert.equal(c.evidence.at(-1), 'matrix: deno.json; tests: test/permissions.test.js');
+});
+
 test('agent control: partial when it is on but cannot link a session to its process', () => {
   const s = good();
   s.agentControl = { off: null, limited: 'lsof is not installed: agent control and session linking are unavailable' };
