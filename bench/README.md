@@ -32,8 +32,14 @@ ZP_RUNTIME=deno node bench/run.js   # the same harness against server.js under D
 Under Deno instead of Node:
 
 ```bash
-deno run --allow-read --allow-write --allow-net=127.0.0.1,localhost --allow-env --allow-run --allow-sys bench/run.js
+deno run --allow-read --allow-write --allow-net=127.0.0.1,localhost --allow-env --allow-run=node,deno,ps,git --allow-sys bench/run.js
 ```
+
+Reading the stream numbers: each worker opens its next stream only when the last one ends, so "completed" is quantized
+per worker (workers x steps of about 0.5 s) and moves by tens between runs; only "0 errors" and "at least 500 streams
+held" are meaningful. The stream overhead p95 is the difference of two p95s from two unpaired steps run one after the
+other (gateway, then direct), so machine noise between the steps lands in it; it can come out negative. Re-record on
+power with other apps closed before drawing conclusions from it.
 
 A run takes about 3 minutes (at most 5). Knobs, all optional: `ZP_BENCH_REQUESTS` (2000), `ZP_BENCH_LEVELS`
 (`50,200,500`), `ZP_BENCH_SECONDS` (10), `ZP_BENCH_DELAY_MS` (20), `ZP_BENCH_CHUNKS` (20), `ZP_BENCH_INTERVAL_MS` (25),
