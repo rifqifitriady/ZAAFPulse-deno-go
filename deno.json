@@ -1,4 +1,8 @@
 {
+  // Deno permission sets, one per entry point (P2 spec D3). The reason for every entry is in lib/permissions.js WHY;
+  // test/permissions.test.js keeps the two in step and proves each permission by denial. "write": true is narrowed at
+  // every `deno run` launch by a computed --allow-write (lib/permissions.js writeScope), which replaces the set's entry.
+  // env is every name (owner decision O1: v1 secret references may name any variable).
   "permissions": {
     "test": {
       "read": true,
@@ -9,6 +13,45 @@
       // os.userInfo() needs uid, gid and userInfo together (lib/platform.js fullName(), lib/service.js).
       "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "osRelease", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "networkInterfaces"],
       "run": true
+    },
+    // The dashboard server (server.js, `zaafpulse start`).
+    "server": {
+      "read": true,
+      "write": true,
+      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal"] },
+      "env": true,
+      "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
+      "run": [
+        "ps", "lsof", "vm_stat", "scutil", "id", "hostnamectl", "getent", "which", "where",
+        "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill",
+        "launchctl", "open", "xdg-open", "cmd", "claude", "codex", "node", "kill",
+        "ollama", "lms", "llama-server", "local-ai", "brew"
+      ]
+    },
+    // The command line (bin/zaafpulse.js): everything the server holds (`zaafpulse start` runs it in this process),
+    // plus the service install, `doctor` and opening a local file.
+    "cli": {
+      "read": true,
+      "write": true,
+      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal"] },
+      "env": true,
+      "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "osRelease"],
+      "run": [
+        "ps", "lsof", "vm_stat", "scutil", "id", "hostnamectl", "getent", "which", "where",
+        "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill",
+        "launchctl", "open", "xdg-open", "cmd", "claude", "codex", "node", "kill",
+        "ollama", "lms", "llama-server", "local-ai", "brew",
+        "systemctl", "loginctl", "useradd", "chown", "schtasks", "wscript.exe", "explorer.exe"
+      ]
+    },
+    // The stdio MCP server an AI client starts (mcp.js, `zaafpulse mcp`): no CLI, no runtime, no notification.
+    "mcp-stdio": {
+      "read": true,
+      "write": true,
+      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal"] },
+      "env": true,
+      "sys": ["homedir", "uid", "gid", "userInfo", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
+      "run": ["ps", "lsof", "vm_stat", "powershell.exe", "which", "where", "security", "secret-tool"]
     }
   }
 }

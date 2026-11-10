@@ -1269,7 +1269,7 @@ async function controlState() {
       })),
     workflows: () =>
       gateway.workflows.list().map((w) => ({ tier: w.tier, gated: list(w.steps).some((x) => x && x.approve) })),
-    agentControl: () => ({ off: agentControl.off() }),
+    agentControl: () => ({ off: agentControl.off(), limited: agentControl.limited() }),
     monitors: () =>
       MONITOR_RULES.filter((r) => !RETIRED_RULES.includes(r.id)).map((r) => ({
         id: r.id,
@@ -1331,6 +1331,8 @@ async function controlState() {
       retentionDays: TRACE_RETENTION.days,
       maxBytes: TRACE_RETENTION.maxBytes,
     }),
+    // P2: what the Deno permission sandbox holds (lib/permissions.js); { runtime: 'node' } under Node.
+    runtimePermissions: () => require('./lib/permissions').describe(),
   };
   const names = Object.keys(parts);
   const values = await Promise.all(names.map((k) => invSource(parts[k])));

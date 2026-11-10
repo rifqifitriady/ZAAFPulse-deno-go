@@ -48,6 +48,12 @@ const good = () => ({
   content: { otelCapture: false, traceContentOff: false },
   otel: { enabled: true, error: false, failed: 0, origin: 'https://otel.example.com', protocol: 'http/protobuf' },
   traces: { store: true, enabled: true, retentionDays: 190, maxBytes: 500 * 1048576 },
+  runtimePermissions: {
+    runtime: 'deno',
+    version: '2.9.8',
+    singleFile: true,
+    grants: { read: 'scoped', write: 'scoped', net: 'scoped', env: 'scoped', run: 'scoped', sys: 'scoped' },
+  },
   inventory: {
     total: 4,
     reviewed: 4,
@@ -62,7 +68,7 @@ const good = () => ({
 const statusOf = (state) => Object.fromEntries(controls(state).map((c) => [c.id, c.status]));
 const one = (state, id) => controls(state).find((c) => c.id === id);
 
-test('the catalogue: eighteen controls in a fixed order, each with a link and at least one clause', () => {
+test('the catalogue: nineteen controls in a fixed order, each with a link and at least one clause', () => {
   assert.deepEqual(
     CATALOGUE.map((c) => c.id),
     [
@@ -84,6 +90,7 @@ test('the catalogue: eighteen controls in a fixed order, each with a link and at
       'otel_export',
       'trace_retention',
       'inventory_coverage',
+      'runtime_permissions',
     ],
   );
   const ids = new Set(CLAUSES.map((c) => c.id));
@@ -302,6 +309,58 @@ test('inventory coverage: AI client files that could not be read cap it at parti
   assert.equal(one(s, 'inventory_coverage').status, 'off', 'a cap never raises a status');
 });
 
+test('runtime permissions: off on Node, partial while a permission is unrestricted, in place when all are scoped', () => {
+  const rp = (v) => ({ ...good(), runtimePermissions: v });
+  assert.equal(one(rp({ runtime: 'node' }), 'runtime_permissions').status, 'off');
+  assert.deepEqual(one(rp({ runtime: 'node' }), 'runtime_permissions').evidence, [
+    'runs on Node.js: no runtime permission sandbox',
+  ]);
+  assert.equal(one(good(), 'runtime_permissions').status, 'in place');
+  const live = one(
+    rp({
+      runtime: 'deno',
+      version: '2.9.8',
+      singleFile: true,
+      grants: { read: 'all', write: 'all', net: 'all but denied', env: 'all', run: 'scoped', sys: 'scoped' },
+    }),
+    'runtime_permissions',
+  );
+  assert.equal(live.status, 'partial');
+  assert.deepEqual(live.evidence, [
+    'Deno 2.9.8, single-file build',
+    'unrestricted: read, write, env',
+    'all but denied hosts: net',
+    'allow-listed: run, sys',
+    'matrix: deno.json; tests: test/permissions.test.js',
+  ]);
+  // On Linux Deno has no scoped route to /proc: what that costs is shown, and a lost agent control lowers the status.
+  const linux = one(
+    rp({ ...good().runtimePermissions, notes: ['this runtime cannot read /proc on Linux and lsof is not installed'] }),
+    'runtime_permissions',
+  );
+  assert.equal(linux.status, 'partial');
+  assert.equal(linux.evidence.at(-2), 'this runtime cannot read /proc on Linux and lsof is not installed');
+  const withLsof = one(
+    rp({ ...good().runtimePermissions, notes: ['this runtime cannot read /proc on Linux (Deno has no scoped grant)'] }),
+    'runtime_permissions',
+  );
+  assert.equal(withLsof.status, 'in place', 'ps and lsof stand in for /proc');
+  const noPs = one(
+    rp({ ...good().runtimePermissions, notes: ['this runtime cannot read /proc on Linux and ps is not installed'] }),
+    'runtime_permissions',
+  );
+  assert.equal(noPs.status, 'partial');
+});
+
+test('agent control: partial when it is on but cannot link a session to its process', () => {
+  const s = good();
+  s.agentControl = { off: null, limited: 'lsof is not installed: agent control and session linking are unavailable' };
+  assert.deepEqual(
+    [one(s, 'agent_control').status, one(s, 'agent_control').evidence],
+    ['partial', ['lsof is not installed: agent control and session linking are unavailable']],
+  );
+});
+
 test('budgets: pause budgets count for nothing when agent control cannot be read', () => {
   const s = good();
   s.budgets = [{ enforce: 'pause' }];
@@ -374,6 +433,7 @@ test('off: everything switched off, degraded or broken; unknown: a part that can
   s.otel = { enabled: false };
   s.traces = { store: true, enabled: false, retentionDays: 14, maxBytes: 1 };
   s.inventory = { total: 3, reviewed: 0 };
+  s.runtimePermissions = { runtime: 'node' };
   s.usage = null;
   const st = statusOf(s);
   assert.equal(st.usage_log, 'unknown');
@@ -417,7 +477,7 @@ test('GET /api/governance/controls: the controls with the audit state and the in
   });
   assert.equal(r.status, 200);
   assert.deepEqual(Object.keys(r.body), ['generatedAt', 'notice', 'frameworks', 'clauses', 'controls']);
-  assert.equal(r.body.controls.length, 18);
+  assert.equal(r.body.controls.length, 19);
   const by = Object.fromEntries(r.body.controls.map((c) => [c.id, c]));
   assert.equal(by.audit_log.evidence[0], 'kept 24 months (at least 6)');
   assert.deepEqual(
