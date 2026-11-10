@@ -3,7 +3,16 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { parseVmStat, procRows, isOwn, groupApps, parsePsComm, argvFrom } = require('../lib/processes');
+const {
+  parseVmStat,
+  procRows,
+  isOwn,
+  groupApps,
+  parsePsComm,
+  argvFrom,
+  linuxRows,
+  linuxUsedMemory,
+} = require('../lib/processes');
 
 test('parseVmStat counts app memory, wired and compressed pages', () => {
   const out = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
@@ -175,3 +184,74 @@ test(
     );
   },
 );
+
+// Deno refuses /proc on Linux without all permissions (NotCapable, whatever --allow-read says); Node never does.
+const refusal = (name = 'NotCapable') => Object.assign(new Error('Requires all access to "/proc/uptime"'), { name });
+
+test('linuxRows: /proc refused by the runtime falls back to ps, said once', async () => {
+  const said = [];
+  const opts = {
+    read: () => {
+      throw refusal();
+    },
+    ps: async () => [{ pid: 1, args: 'init' }],
+    warn: (m) => said.push(m),
+    seen: new Set(),
+  };
+  assert.deepEqual(await linuxRows(opts), [{ pid: 1, args: 'init' }]);
+  assert.deepEqual(
+    await linuxRows({
+      ...opts,
+      read: () => {
+        throw refusal('PermissionDenied');
+      },
+    }),
+    [{ pid: 1, args: 'init' }],
+  );
+  assert.equal(said.length, 1, 'once per process');
+  assert.match(said[0], /\/proc is not readable.*Requires all access.*ps instead/);
+});
+
+test('linuxRows: /proc readable is used as it is; any other error is not hidden behind ps', async () => {
+  let psCalls = 0;
+  const ps = async () => {
+    psCalls++;
+    return [];
+  };
+  const said = [];
+  const base = { ps, warn: (m) => said.push(m), seen: new Set() };
+  assert.deepEqual(await linuxRows({ ...base, read: () => [{ pid: 7 }] }), [{ pid: 7 }]);
+  const gone = Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' });
+  await assert.rejects(
+    linuxRows({
+      ...base,
+      read: () => {
+        throw gone;
+      },
+    }),
+    gone,
+  );
+  assert.equal(psCalls, 0);
+  assert.deepEqual(said, []);
+});
+
+test('linuxUsedMemory: MemTotal - MemAvailable; refused /proc uses the OS totals, said once; no /proc is null', () => {
+  const meminfo = 'MemTotal:        4194304 kB\nMemFree:          100000 kB\nMemAvailable:    1048576 kB\n';
+  const said = [];
+  const seen = new Set();
+  const warn = (m) => said.push(m);
+  assert.equal(linuxUsedMemory({ read: () => meminfo, warn, seen }), 3072);
+  const refusedRead = () => {
+    throw refusal();
+  };
+  const totals = { total: () => 4 * 1073741824, free: () => 1073741824 };
+  assert.equal(linuxUsedMemory({ read: refusedRead, ...totals, warn, seen }), 3072);
+  assert.equal(linuxUsedMemory({ read: refusedRead, ...totals, warn, seen }), 3072);
+  assert.equal(said.length, 1, 'once per process');
+  assert.match(said[0], /\/proc\/meminfo is not readable.*Requires all access/);
+  const missing = () => {
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  };
+  assert.equal(linuxUsedMemory({ read: missing, ...totals, warn, seen: new Set() }), null);
+  assert.equal(said.length, 1, 'a missing /proc is not a refusal');
+});

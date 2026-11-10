@@ -785,7 +785,7 @@ Deviation from the spec, on purpose: the spec puts `deno.json` in T5. The CI job
     "test": {
       "read": true,
       "write": true,
-      "net": ["127.0.0.1", "localhost", "0.0.0.0"],
+      "net": ["127.0.0.1", "localhost"],
       "env": {
         "allow": [
           "ZAAFPULSE_*", "ZP_*", "ACC_*", "OTEL_*", "XDG_*", "NODE_TEST_*", "DEMO", "HOST", "PORT",
@@ -798,7 +798,7 @@ Deviation from the spec, on purpose: the spec puts `deno.json` in T5. The CI job
         ],
         "ignore": true
       },
-      "sys": ["homedir", "uid", "hostname", "osRelease", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "networkInterfaces"],
+      "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "osRelease", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "networkInterfaces"],
       "run": true
     }
   }
@@ -939,7 +939,7 @@ The candidate sets were run on the real server, `mcp.js` and the CLI with `--no-
         ],
         "ignore": true
       },
-      "sys": ["homedir", "uid", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
+      "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
       "run": [
         "ps", "lsof", "vm_stat", "scutil", "id", "hostnamectl", "getent", "which", "where",
         "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill",
@@ -965,7 +965,7 @@ The candidate sets were run on the real server, `mcp.js` and the CLI with `--no-
         ],
         "ignore": true
       },
-      "sys": ["homedir", "uid", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "osRelease"],
+      "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "osRelease"],
       "run": [
         "ps", "lsof", "vm_stat", "scutil", "id", "hostnamectl", "getent", "which", "where",
         "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill",
@@ -992,12 +992,12 @@ The candidate sets were run on the real server, `mcp.js` and the CLI with `--no-
         ],
         "ignore": true
       },
-      "sys": ["homedir", "uid", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
+      "sys": ["homedir", "uid", "gid", "userInfo", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
       "run": ["ps", "lsof", "vm_stat", "powershell.exe", "which", "where", "security", "secret-tool"]
     }
 ```
 
-JSON has no references, so the env list is written three times and the `server` run list twice; `test/permissions.test.js` (Step 2) fails if they drift. The final `deno.json` is `{ "permissions": { "test": …, "server": …, "cli": …, "mcp-stdio": … } }`, the `test` set unchanged from Task 4.
+`os.userInfo()` needs `uid`, `gid` and `userInfo` together (measured on macOS and Linux, Deno 2.9.8; `lib/platform.js` `fullName()`, `lib/service.js`), so every set lists all three (Task 4 fix round 1). JSON has no references, so the env list is written three times and the `server` run list twice; `test/permissions.test.js` (Step 2) fails if they drift. The final `deno.json` is `{ "permissions": { "test": …, "server": …, "cli": …, "mcp-stdio": … } }`, the `test` set unchanged from Task 4.
 
 Why the broad entries are broad (also in `WHY` and on the Compliance control): **read: true** — the indexer reads agent logs under the home folder and owner-chosen folders (Obsidian vaults, `ZAAFPULSE_CLAUDE_DIRS`), runtime detection reads `/opt/homebrew`, `/usr/local`, `/Applications`, `/proc`; **write: true** in the file, narrowed at every `deno run` launch to `writeScope()` (CLI flags replace the set's entry, F11), unscoped only in the compiled binary (spec finding 1); **net: all but cloud metadata** — providers, connectors and price sync go out until P5 moves egress to Go; the two metadata names are denied outright. The write scope grants each MCP client's config folder; for Codex and Gemini CLI that is `~/.codex` and `~/.gemini`, which also hold their logs (`clients()` in `lib/mcp-clients.js` names them; measured list: `.kiro/settings`, `.gemini/config`, `.cursor`, `Library/Application Support/Code/User`, `Library/Application Support/Claude`, `.codex`, `.gemini`, `.config/devin`, `.codeium/windsurf`, `.config/zed`; `~/.claude.json` is skipped because its folder is the home). `osRelease` is in `cli` only (`doctor`); `hostname` is not in `mcp-stdio` (measured unused); `mcp.js` runs no CLI, no runtime and no notification.
 

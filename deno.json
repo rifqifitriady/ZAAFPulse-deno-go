@@ -3,9 +3,11 @@
     "test": {
       "read": true,
       "write": true,
-      "net": ["127.0.0.1", "localhost", "0.0.0.0"],
+      // Loopback only. No test binds every interface (0.0.0.0): the suite passes without it on macOS and Linux.
+      "net": ["127.0.0.1", "localhost"],
       "env": true,
-      "sys": ["homedir", "uid", "hostname", "osRelease", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "networkInterfaces"],
+      // os.userInfo() needs uid, gid and userInfo together (lib/platform.js fullName(), lib/service.js).
+      "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "osRelease", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "networkInterfaces"],
       "run": true
     }
   }
