@@ -12,7 +12,9 @@ function safeJson(s) {
   }
 }
 
-// routes: { 'GET /path': { status?, body?, headers? } | (req) => same | Promise<same> }
+// routes: { 'GET /path': { status?, body?, headers?, sse?, delayMs?, destroy? } | (req) => same | Promise<same> }
+// sse: a list of raw chunks written one by one as text/event-stream (delayMs apart); destroy: the socket is closed
+// with no answer (a connection reset). Without either, body is sent as JSON (a string as it is).
 async function fakeServer(routes) {
   const requests = [];
   const server = http.createServer((req, res) => {
@@ -36,6 +38,15 @@ async function fakeServer(routes) {
         return res.end('{"error":"no route"}');
       }
       const out = (await (typeof handler === 'function' ? handler(r) : handler)) || {};
+      if (out.destroy) return req.socket.destroy();
+      if (Array.isArray(out.sse)) {
+        res.writeHead(out.status || 200, { 'content-type': 'text/event-stream', ...(out.headers || {}) });
+        for (const chunk of out.sse) {
+          res.write(chunk);
+          if (out.delayMs) await new Promise((resolve) => setTimeout(resolve, out.delayMs));
+        }
+        return res.end();
+      }
       res.writeHead(out.status || 200, { 'content-type': 'application/json', ...(out.headers || {}) });
       res.end(typeof out.body === 'string' ? out.body : JSON.stringify(out.body ?? {}));
     });

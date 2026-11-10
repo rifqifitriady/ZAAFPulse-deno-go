@@ -147,3 +147,34 @@ test('rows({ cwds: false }) reads argv but never runs lsof; rows() does', async 
     assert.equal(full.cwd, '/home/u/work');
   });
 });
+
+// The Windows read must load no cmdlet module: on a fresh Windows on Arm machine loading one (CimCmdlets for
+// Get-CimInstance, or any command discovery) took 22-35 s per PowerShell start, past the read's 15 s limit.
+test('the Windows process query turns module auto-loading off first and calls no cmdlet', () => {
+  const { WIN_PS } = require('../lib/processes');
+  assert.match(WIN_PS, /^\$PSModuleAutoLoadingPreference='None'; /);
+  assert.doesNotMatch(WIN_PS, /\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/, 'a Verb-Noun cmdlet would load its module');
+  assert.match(WIN_PS, /\[wmisearcher\]'SELECT [^']+ FROM Win32_Process'/);
+});
+
+test(
+  'the real Windows process query answers well within the read limit and prints one line per process',
+  { skip: process.platform !== 'win32' },
+  async () => {
+    const { WIN_PS } = require('../lib/processes');
+    const t = Date.now();
+    const out = await new Promise((resolve, reject) =>
+      require('child_process').execFile(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', WIN_PS],
+        { maxBuffer: 32 * 1024 * 1024, windowsHide: true, timeout: 15000 },
+        (err, stdout) => (err ? reject(err) : resolve(stdout)),
+      ),
+    );
+    assert.ok(Date.now() - t < 15000, `took ${Date.now() - t} ms`);
+    assert.ok(
+      out.split(/\r?\n/).some((l) => /^\d+\D/.test(l)),
+      'a line per process, led by its pid',
+    );
+  },
+);
