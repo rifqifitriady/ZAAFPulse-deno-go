@@ -117,13 +117,17 @@ Effort is for one developer working with the SDD workflow, as weeks of focused w
 - **Gateway contract suite** in `test/contract/`: a black-box HTTP suite for `/v1/*`, the gateway parts of `/mcp`,
   admin `/api/gateway/*`, the guardrail outcomes, budget refusal and usage records. It must be runnable against any
   base URL.
-- **Types first:** `// @ts-check` + JSDoc in `lib/gateway`, `lib/cost` and `lib/governance`, with `tsc --noEmit` in
-  CI (`typescript` as a dev tool only). These types become the IPC schemas.
+- **Types first:** `// @ts-check` + JSDoc in `lib/gateway`, `lib/cost` and `lib/governance`, checked with
+  **`deno check`** in CI.
+  - Compiler options (`checkJs`, `strict`) go in **`tsconfig.json`**, not in `deno.json`, so that editors see the same
+    settings as Deno.
+  - No `typescript` devDependency is needed, so zero dependencies still holds.
+  - These types become the IPC schemas.
 - **Money as integers:** micro-USD integers in the cost ledger, budgets and pricing, with a migration of stored
   values.
 - **CI:** add a `windows-11-arm` job to the matrix (still Node).
 - **Exit:** baselines recorded for M3, M4, M5 and M7. Contract suite ≥ 150 cases, green on the JS gateway.
-  `tsc --noEmit` clean for the three areas. All current tests green on 4 CI targets.
+  `deno check` clean for the three areas. All current tests green on 4 CI targets.
 
 ### P1 — Deno spike and compatibility gate (3–5 days)
 
@@ -142,14 +146,46 @@ Effort is for one developer working with the SDD workflow, as weeks of focused w
 
 ### P2 — Control plane on Deno (2–3 weeks)
 
-- `deno.json` (tasks, compile config, permission sets). CommonJS stays as is: Deno 2 runs CJS through the
-  `package.json` `"type": "commonjs"` and `.cjs` rules. Moving to ES modules is optional and done per file later.
+P2 follows the migration rungs of the `migrate-to-deno` skill. Each rung is useful on its own and can be reversed:
+
+1. **Rung 1, Deno as the package manager.**
+   - Run `deno install`. `deno.lock` is seeded from `package-lock.json` and committed.
+   - CI uses **`deno ci`**, not `deno install`.
+   - `package.json` keeps all dependencies and scripts. It also gets `"type": "commonjs"`, which P1 proved is
+     required.
+2. **Rung 2, run with Deno.**
+   - Everything runs under `deno` with `-A`: server, MCP, CLI, tests through `deno test` on the unchanged
+     `node:test` suite.
+   - Fix the P1 failure groups A–F first.
+   - Rung 2 confirms the program works. It is not where the permission policy is designed.
+3. **Rung 3, tighten permissions.**
+   - Derive the narrowest set from **`DENO_AUDIT_PERMISSIONS`** runs: JSONL of every access across the full test
+     suite and a scripted dashboard walk.
+   - Store it as named permission sets in `deno.json`, used with `-P`/`--permission-set`.
+   - Add `--deny-*` where a broad allow remains (deny always wins).
+   - `-A` stays out of committed tasks, apart from rung 2 migration aids.
+4. **Rung 4, toolchain: not adopted.**
+   - Keep `node:test` (run by `deno test`) and prettier.
+   - `deno check` replaces `tsc`, because it adds no dependency.
+   - `deno fmt` and `deno lint` are not part of this program, because parity is incomplete and the toolchain is not
+     the goal.
+
+Config placement, following the `deno` skill:
+- dependencies and scripts go in `package.json`;
+- compiler options go in `tsconfig.json`;
+- `deno.json` holds only Deno-specific config: permission sets, compile `include`/`exclude`, and `exclude`.
+
+- **Writable state out of the app folder** (found in the P1 permission audit). The app writes into its own install
+  tree, in `lib/data/prices-snapshot.json` and `skills/*`. A compiled binary embeds those folders, so all writes
+  must move to the data dir.
 - Replace the Node SEA pipeline:
   - `scripts/build-single.js` and `scripts/sea-main.js` become `deno compile` with embedded assets;
   - keep the start-time SHA-256 manifest check;
   - replace `node:sea`'s `isSea()` in `lib/platform.js` with a Deno check.
-- The **permission matrix** lives in one file, `deno.json`. It has a test per permission: the feature works, and the
-  denied neighbour fails loudly. The matrix is shown on the Compliance page as a control.
+- The **permission matrix** lives in one place, the `deno.json` permission sets. It has a test per permission: the
+  feature works, and the denied neighbour fails loudly.
+  - The matrix is shown on the Compliance page as a control.
+  - A `DENO_AUDIT_PERMISSIONS` trail (JSONL, or the `otel` exporter) is offered as audit evidence.
 - Dual-runtime CI: the suite runs on Node **and** Deno until cut-over.
 - Point service install (launchd, systemd user unit, Windows) at the Deno binary.
 - **Exit (gate G2):**
@@ -162,6 +198,7 @@ Effort is for one developer working with the SDD workflow, as weeks of focused w
 
 - Transport: HTTP/1.1 over a unix domain socket (named pipe on Windows), with a per-start random token. The fallback
   is 127.0.0.1 TCP with the same token.
+  - Deno grants the socket exactly, with `--allow-net=unix:<data dir>/gw.sock`.
 - Messages, as versioned JSON schemas generated from the P0 JSDoc types:
   - `config.push`
   - `secrets.handoff`
@@ -284,7 +321,10 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
 - **Deno:** no npm or jsr runtime imports. Std-like needs are met by `node:` built-ins already in use.
 - **Go:** stdlib only. Any exception (for example an SSE helper or a SQLite driver) needs an owner decision recorded
   here with its licence and `govulncheck` result. None is expected for P4–P5.
-- **Dev only:** `typescript` (type checking) and the pinned Deno and Go toolchains in CI.
+- **Dev only:** the pinned Deno and Go toolchains in CI. Type checking uses `deno check`, so there is no `typescript`
+  package. `postject` goes away with the SEA pipeline in P2.
+- **Skills:** all Deno work in this program follows the `deno` and `migrate-to-deno` skills (owner instruction,
+  2026-11-10).
 
 ## 10. Ways of working
 
