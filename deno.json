@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "test": {
+      "read": true,
+      "write": true,
+      "net": ["127.0.0.1", "localhost", "0.0.0.0"],
+      "env": true,
+      "sys": ["homedir", "uid", "hostname", "osRelease", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "networkInterfaces"],
+      "run": true
+    }
+  }
+}
