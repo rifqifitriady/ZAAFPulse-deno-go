@@ -84,3 +84,18 @@ jobs:
             ${{ runner.temp }}/deno-summary.md
             ${{ runner.temp }}/deno-test.log
           if-no-files-found: warn
+
+  typecheck:
+    name: typecheck (deno check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      - run: deno ci
+      # lib/gateway, lib/cost and lib/governance with // @ts-check and tsconfig.json; @types/node is dev-only.
+      - run: deno task typecheck

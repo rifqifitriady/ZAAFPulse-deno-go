@@ -23,5 +23,6 @@ if [ "$failed" != "0" ]; then
   echo
   echo "Failed tests:"
   echo
-  sed -n '/^ FAILURES $/,$p' "$log" | grep ' => ' | sed 's/^/- /'
+  lines=$(sed -n '/^ FAILURES $/,$p' "$log" | grep ' => ' | sed 's/^/- /' || true)
+  if [ -n "$lines" ]; then echo "$lines"; else echo "(no per-test lines; see the log)"; fi
 fi
