@@ -128,7 +128,7 @@ of AI meets a law or a standard.
 | External providers need approval (A.2) | every enabled external provider is approved or waits for approval | one is served without a recorded approval (set up before approvals existed) | |
 | API keys with scopes, budgets and expiry | every active key has a budget or an expiry (or there is no active key) | some do | none does |
 | Human approval in workflows | every workflow that sends, changes or decides (tier R2 or R3) has an approval step (or there is none) | some do | none does |
-| Pause and stop an agent | agent control is on | | it is off: server mode, password or no sign-in, Docker |
+| Pause and stop an agent | agent control is on | it is on, but no session can be linked to its process: on Linux under Deno, which cannot read `/proc`, with no `ps` or `lsof` installed | it is off: server mode, password or no sign-in, Docker |
 | Monitors rules | `guardrail_block`, `audit_chain_broken` and `inventory_unreviewed` are on | one or two of them are off | all three are off |
 | Evals running | a judge model is ready, judge evaluators are on and the judge is not paused | the judge is off, waiting for a model or paused by its daily or cost cap (the code evaluators always run) | |
 | Dataset experiments | an experiment finished in the last 90 days | datasets, but no experiment finished in the last 90 days | no dataset |
@@ -140,6 +140,20 @@ of AI meets a law or a standard.
 | OpenTelemetry export | spans are exported | the exporter reports failed exports since start | not set up |
 | Trace retention | traces are kept at least 183 days (6 months) | they are kept less | tracing is off |
 | AI inventory reviewed | every item is reviewed, every high or unacceptable one has a decision and every unacceptable one is blocked, every inventory source was read and every AI client file could be read | some are reviewed, or a source or an AI client file could not be read ("N AI client files could not be read") | none is |
+| Runtime permissions (MEASURE 2.7, A.6) | ZAAFPulse runs on Deno and every permission (read, write, net, env, run, sys) is an allow-list | it runs on Deno and a permission is unrestricted or all but denied hosts, or (Linux) agent control is lost because `/proc` is unreadable and `ps` or `lsof` is missing | it runs on Node.js: no runtime permission sandbox |
+
+**Runtime permissions.** Under Deno ZAAFPulse runs with the permission set of its entry point in `deno.json`
+(`server`, `cli`, `mcp-stdio`): read all files, write only the data folder, the temp folder, the skill folders and the
+AI clients' config folders (computed at each `deno run` launch; the single-file build writes anywhere for now), every
+host except the cloud metadata addresses `169.254.169.254` and `metadata.google.internal`, every environment
+variable (so a secret reference to any variable keeps working), a fixed list of programs and of system values. The
+evidence names what is unrestricted, what is all but denied and what is allow-listed; the reason for each entry is in
+`lib/permissions.js`. On Linux, Deno refuses every read under `/proc` unless the process holds all permissions (no
+scoped grant reaches it), so ZAAFPulse lists processes with `ps` and finds an agent's working folder with `lsof`, and
+the evidence says so. Without `ps` or `lsof` (procps and lsof packages), agent control and linking a session to its
+process are unavailable: this control and **Pause and stop an agent** turn `partial`, and the server log says why
+once. Signals (pause, resume, stop) go through the `kill` program, since Deno allows its own only with every program
+allowed.
 
 Guardrails are the strictest of these: the default configuration (secrets `redact`, personal data `off`, injection
 `log`) shows `partial`, and `in place` needs personal data on and injection set to `block`.
