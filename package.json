@@ -7,6 +7,7 @@
     "zaafpulse": "bin/zaafpulse.js"
   },
   "private": true,
+  "type": "commonjs",
   "license": "MIT",
   "scripts": {
     "start": "node server.js",
