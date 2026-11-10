@@ -34,3 +34,8 @@ test('isSingleFile() reads Deno.build.standalone under Deno and node:sea under N
 test('isSea() is gone: every caller asks isSingleFile()', () => {
   assert.equal(platform.isSea, undefined);
 });
+
+// Deno asks sys access for uid, gid and userInfo on os.userInfo(), which fullName() and the service setup call.
+test('os.userInfo() answers under the permission set the tests run with', () => {
+  assert.equal(typeof require('os').userInfo().username, 'string');
+});

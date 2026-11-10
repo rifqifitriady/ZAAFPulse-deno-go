@@ -64,6 +64,12 @@ jobs:
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: 2.9.8
+      # Under Deno a script (the judge's fake Claude Code, an npm cli.js) runs through a real node found on PATH, and
+      # discovery passes over a node others can write. The image's own node on ubuntu-latest is /usr/local/bin/node,
+      # mode 0777 in a 0777 folder (measured), so the pinned node is put first on PATH, as in the Node job.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
       # Installs exactly what deno.lock pins; fails when the lockfile is stale.
       - run: deno ci
       - name: Test suite under Deno

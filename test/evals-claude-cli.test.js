@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { createClaude, childEnv, destinationOf, removeOpts } = require('../lib/evals/claude-cli');
 const { fakeClaude, winEnv, NODE } = require('./helpers');
+const { trusted } = require('../lib/trust');
 
 const POSIX = process.platform !== 'win32';
 const dirs = [];
@@ -561,6 +562,9 @@ test('discovery: a binary that cannot be started any more is looked for again at
 
 test('discovery: a script run through node that is gone is looked for again, not started', async () => {
   // As on Windows, where the fake (and an npm .cmd's cli.js) runs as `node <script>`: node itself still starts.
+  // Under Deno the node on PATH runs it, and discovery passes over one others can write (as the image's own node on
+  // ubuntu-latest is): say so instead of failing on a null below.
+  if (process.versions.deno) assert.ok(trusted(NODE), `the node on PATH (${NODE}) must not be writable by others`);
   const t = rig('ok', { ZAAFPULSE_CLAUDE_BIN: '' });
   const script = fakeClaude(tmp('zp-claude-js-'), 'claude.js');
   const c = createClaude({ env: { ...t.env, ZAAFPULSE_CLAUDE_BIN: script }, home: tmp(), systemDirs: [] });
