@@ -180,13 +180,13 @@ Config placement, following the `deno` skill:
 - compiler options go in `tsconfig.json`;
 - `deno.json` holds only Deno-specific config: permission sets, compile `include`/`exclude`, and `exclude`.
 
-- **Writable state out of the app folder** (found in the P1 permission audit). The app writes into its own install
-  tree, in `lib/data/prices-snapshot.json` and `skills/*`. A compiled binary embeds those folders, so all writes
-  must move to the data dir.
+- **Writable state:** the P1 finding that the app writes into its own install folder was wrong: the permission audit
+  logs a `write` entry for pure reads (corrected in the P1 results). Write permissions are proven by denial testing.
 - Replace the Node SEA pipeline:
   - `scripts/build-single.js` and `scripts/sea-main.js` become `deno compile` with embedded assets;
-  - keep the start-time SHA-256 manifest check;
-  - replace `node:sea`'s `isSea()` in `lib/platform.js` with a Deno check.
+  - a compiled binary serves its files from inside itself and unpacks nothing, so the start-time SHA-256 manifest
+    check goes away; integrity is the release's `SHA256SUMS` and GitHub attestations (P2 spec D2);
+  - `isSea()` in `lib/platform.js` becomes `runtime()` and `isSingleFile()`.
 - The **permission matrix** lives in one place, the `deno.json` permission sets. It has a test per permission: the
   feature works, and the denied neighbour fails loudly.
   - The matrix is shown on the Compliance page as a control.

@@ -7,7 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createClaude, childEnv, destinationOf, removeOpts } = require('../lib/evals/claude-cli');
-const { fakeClaude, winEnv } = require('./helpers');
+const { fakeClaude, winEnv, NODE } = require('./helpers');
 
 const POSIX = process.platform !== 'win32';
 const dirs = [];
@@ -451,7 +451,7 @@ test('discovery: --version must say "(Claude Code)"', async () => {
 
 test('discovery: in the single-file build a script runs through a real node, or is skipped', async () => {
   const t = rig();
-  const sea = { home: tmp(), systemDirs: [], nodeDirs: [], isSea: () => true };
+  const sea = { home: tmp(), systemDirs: [], nodeDirs: [], useOwnNode: () => false };
   const none = createClaude({ env: { ...t.env, PATH: '' }, ...sea });
   const script = fakeClaude(tmp('zp-claude-js-'), 'claude.js');
   const noNode = createClaude({
@@ -459,7 +459,7 @@ test('discovery: in the single-file build a script runs through a real node, or 
     home: tmp(),
     systemDirs: [],
     nodeDirs: [],
-    isSea: () => true,
+    useOwnNode: () => false,
   });
   assert.equal(await noNode.find(), null, 'no node: the script cannot run');
   if (POSIX) {
@@ -468,13 +468,13 @@ test('discovery: in the single-file build a script runs through a real node, or 
     // A node of the test's own in a private folder: the runner's node may sit where anyone can write (Ubuntu's
     // preinstalled tool cache is mode 777), and discovery rightly refuses to run that one (see the next test).
     const nodeDir = tmp('zp-claude-node-');
-    fs.writeFileSync(path.join(nodeDir, 'node'), `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(nodeDir, 'node'), `#!/bin/sh\nexec "${NODE}" "$@"\n`, { mode: 0o755 });
     const withNode = createClaude({
       env: { ZAAFPULSE_CLAUDE_BIN: script, PATH: nodeDir },
       home: tmp(),
       systemDirs: [],
       nodeDirs: [],
-      isSea: () => true,
+      useOwnNode: () => false,
     });
     const bin = await withNode.find();
     assert.equal(bin.file, path.join(nodeDir, 'node'));
@@ -486,19 +486,34 @@ test('discovery: in the single-file build a node that anyone can write is not us
   const script = fakeClaude(tmp('zp-claude-js-'), 'claude.js');
   const nodeDir = tmp('zp-claude-node-');
   const node = path.join(nodeDir, 'node');
-  fs.writeFileSync(node, `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(node, `#!/bin/sh\nexec "${NODE}" "$@"\n`, { mode: 0o755 });
   const find = () =>
     createClaude({
       env: { ZAAFPULSE_CLAUDE_BIN: script, PATH: nodeDir },
       home: tmp(),
       systemDirs: [],
       nodeDirs: [],
-      isSea: () => true,
+      useOwnNode: () => false,
     }).find();
   assert.equal((await find()).file, node, 'a private node is used');
   fs.chmodSync(nodeDir, 0o777);
   fs.chmodSync(node, 0o777);
   assert.equal(await find(), null, 'a node in a folder anyone can write is passed over');
+});
+
+test('discovery: by default a script runs through this process only under Node from source', { skip: !POSIX }, async () => {
+  const script = fakeClaude(tmp('zp-claude-js-'), 'claude.js');
+  const nodeDir = tmp('zp-claude-node-');
+  fs.writeFileSync(path.join(nodeDir, 'node'), `#!/bin/sh\nexec "${NODE}" "$@"\n`, { mode: 0o755 });
+  const bin = await createClaude({
+    env: { ZAAFPULSE_CLAUDE_BIN: script, PATH: nodeDir },
+    home: tmp(),
+    systemDirs: [],
+    nodeDirs: [],
+  }).find();
+  if (process.versions.deno) assert.equal(bin.file, path.join(nodeDir, 'node'), 'a real node, never deno');
+  else assert.equal(bin.file, process.execPath);
+  assert.deepEqual(bin.args, [script]);
 });
 
 test('discovery: only absolute PATH entries, and no found binary that anyone can write', { skip: !POSIX }, async () => {
@@ -573,7 +588,7 @@ test('call: node failing to load the mapped script clears the cached answer', as
   // A script that is there when it is checked but that node cannot load (it went between the check and the start).
   const broken = path.join(tmp('zp-claude-broken-'), 'cli.js');
   fs.writeFileSync(broken, "require('./part-that-is-gone');\n");
-  const bin = { file: process.execPath, args: [broken] };
+  const bin = { file: NODE, args: [broken] };
   await assert.rejects(c.run(bin, { system: 's', user: 'u', schema: SCHEMA }), (e) => {
     assert.equal(e.status, 0);
     assert.equal(e.message, 'Claude Code could not start');
