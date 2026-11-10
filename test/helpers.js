@@ -192,9 +192,17 @@ process.stdin.on('end', () => {
 `;
 // Writes the fake into `dir`: an executable named `claude` on POSIX, `claude.js` (run through Node) on Windows,
 // where a .cmd wrapper could only be started through a shell.
+// The node that runs the fakes and the scripts the tests hand to a node: this process's own under Node; under Deno,
+// whose process.execPath is deno, the node on PATH (an absolute path, so a test that empties PATH still runs it).
+const NODE = process.versions.deno
+  ? require('child_process')
+      .execFileSync(process.platform === 'win32' ? 'where' : 'which', ['node'], { encoding: 'utf8' })
+      .split(/\r?\n/)[0]
+      .trim()
+  : process.execPath;
 function fakeClaude(dir, name = process.platform === 'win32' ? 'claude.js' : 'claude') {
   const file = path.join(dir, name);
-  const node = /\s/.test(process.execPath) ? '/usr/bin/env node' : process.execPath;
+  const node = /\s/.test(NODE) ? '/usr/bin/env node' : NODE;
   const shebang = name.endsWith('.js') ? '' : `#!${node}\n`;
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(file, shebang + FAKE_CLAUDE, { mode: 0o755 });
@@ -210,4 +218,4 @@ const WIN_ENV = ['SystemRoot', 'SYSTEMROOT', 'PATHEXT', 'TEMP', 'TMP'];
 const winEnv = () =>
   Object.fromEntries(WIN_ENV.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
 
-module.exports = { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, winEnv };
+module.exports = { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, winEnv, NODE };

@@ -1576,7 +1576,8 @@ const handler = async (req, res) => {
         baseUrl: BASE_URL,
         auth: auth.required,
         authMode: auth.mode,
-        single: platform.isSea(),
+        single: platform.isSingleFile(),
+        runtime: platform.runtime(),
         version: require('./package.json').version,
       });
     }
