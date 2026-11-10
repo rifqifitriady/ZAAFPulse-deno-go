@@ -172,6 +172,8 @@ Effort is for one developer working with the SDD workflow, as weeks of focused w
   - `health`
   - `shutdown`
 - Contract tests run on both sides from the same fixtures.
+- The transport sits behind one interface on both sides (§11.2), so a network transport with mTLS can be added
+  later without changing any message.
 - **Exit:**
   - schemas frozen at v1;
   - both sides pass the shared fixtures;
@@ -223,7 +225,13 @@ like any client.
 - `install.sh` and `install.ps1` install both binaries.
 - `zaafpulse` supervises `zaafpulse-gw`: restart with back-off, and a health check shown on the Overview.
 - Upgrade path from v1.1.x and rollback (M12).
-- **Exit:** M6 and M8 are met; a clean install and an upgrade from v1.1.0 pass on all 6 targets.
+- An authenticated install and update from the private repo (§11.1), using a token from the OS secret store.
+- Install docs for unsigned binaries: the SmartScreen and Gatekeeper steps, and checking SHA256SUMS and the
+  attestation (§11.3).
+- **Exit:**
+  - M6 and M8 are met;
+  - a clean install and an upgrade from v1.1.0 pass on all 6 targets, both with a token;
+  - without a token, install fails with a clear message.
 
 ### P7 — Hardening and cut-over (1–2 weeks)
 
@@ -231,7 +239,7 @@ like any client.
   `govulncheck`.
 - 7-day soak on the owner's live dashboard (M13).
 - Docs: README, architecture diagram, `docs/governance.md` (the new controls), and a migration note.
-- Release **v2.0.0**, and remove the Node-only code paths.
+- Release **v2.0.0** from this private repo (§11.1), and remove the Node-only code paths.
 - **Exit (gate G4):** every metric M1–M13 is met and recorded in `bench/results/` and the release notes.
 
 ## 6. Decision gates
@@ -242,9 +250,9 @@ like any client.
 | G1 | P1 | Deno compatibility and win-arm64 proven, AsyncLocalStorage overhead acceptable | Fall back to **TypeScript (Node) + Go**: P2 is skipped, P3–P7 unchanged |
 | G2 | P2 | Control plane fully on Deno, 48 h live | Stay on Node for the control plane; continue P3–P4 |
 | G3 | P4 | Gateway fully on Go, M3 and M4 met | Keep the JS gateway for the slices not met; ship hybrid |
-| G4 | P7 | All metrics met | No v2.0.0; keep v1.x as the release line |
+| G4 | P7 | All metrics met | No v2.0.0; the public v1.x line stays the only release |
 
-Every gate leaves a shippable product. Upstream `main` keeps releasing v1.x the whole time.
+Every gate leaves a shippable product. Upstream `main` (public) keeps releasing v1.x the whole time; v2.0.0 is released from this private repo (§11.1).
 
 ## 7. Timeline
 
@@ -291,9 +299,26 @@ Every gate leaves a shippable product. Upstream `main` keeps releasing v1.x the 
 - **Reporting:** a progress table after every task (Task | Status | Progress | Next step), and the metric table
   (§4) updated at every gate.
 
-## 11. Open questions for the owner
+## 11. Owner decisions (2026-11-10)
 
-1. Release line: should v2.0.0 ship from this private repo, with the result pushed back to the public ZAAFPulse, or
-   should the public repo switch at G4?
-2. Should the Go gateway also be offered as a standalone headless server for team deployments after G3?
-3. Windows code signing certificate: is there one, or do we stay ad-hoc/unsigned as in v1.x?
+1. **Release line: v2.0.0 ships from this private repo (`ZAAFPulse-deno-go`).** The public ZAAFPulse stays on the
+   v1.x line and is not switched.
+   - Assets of a private repo cannot be downloaded without authentication, so P6 must deliver an authenticated
+     install and update path:
+     - `install.sh` and `install.ps1` fetch the release with a GitHub token (`GH_TOKEN`, or `gh release download`
+       when `gh` is signed in);
+     - the in-app update check queries the private repo with the same token and degrades to "no update info" without
+       it;
+     - the token is kept in the OS secret store, never in `config.json`.
+   - v1.x users of the public repo do not receive v2 automatically.
+2. **The Go gateway is embedded only (option A)**, running as a sidecar of the Deno control plane. There is no
+   standalone team server in this program.
+   - The P3 IPC contract must still be transport-agnostic:
+     - the messages and schemas are independent of the transport;
+     - the transport sits behind one interface, unix socket or named pipe today, so a network transport with mTLS
+       can be added later without changing messages.
+   - A standalone `zaafpulse-gw` is reconsidered only after G3, with measured numbers.
+3. **Target users are personal, so there is no Windows code-signing certificate** (and no Apple Developer ID). The
+   binaries stay unsigned on Windows and ad-hoc signed on macOS, as in v1.x. Integrity comes from SHA256SUMS and
+   GitHub attestations. The install docs explain the SmartScreen "More info → Run anyway" step and the macOS
+   Gatekeeper step. Enterprise rollout behind AppLocker/WDAC is out of scope.
