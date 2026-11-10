@@ -3,8 +3,8 @@
 # (workflow_call), so a tag is only built when the suite passes.
 # Actions are pinned by commit SHA (the comment names the release); Node is pinned to the exact version
 # the single-file binaries embed. Update both together with release.yml.
-# The deno job runs the same suite under the pinned Deno and reports its counts; in P0 it does not block (47 known
-# failures, P2 work: docs/migration/2026-11-10-p1-deno-spike-results.md §5).
+# The deno job runs the same suite and the contract suite under the pinned Deno with the "test" permission set of
+# deno.json (never -A), and blocks like the Node job (P2 T4). The Node job keeps running until the cut-over (P7).
 name: CI
 on:
   push:
@@ -46,10 +46,9 @@ jobs:
         run: npm run test:contract
       - run: node bin/zaafpulse.js doctor
   deno:
-    name: deno (${{ matrix.os }}, not blocking)
+    name: deno (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    continue-on-error: true # P0: reported, not blocking
     strategy:
       fail-fast: false
       matrix:
@@ -73,25 +72,22 @@ jobs:
           export ZAAFPULSE_DATA="$RUNNER_TEMP/zp-data" HOME="$RUNNER_TEMP/zp-home"
           mkdir -p "$ZAAFPULSE_DATA" "$HOME"
           set +e
-          deno test -A --no-check test/*.test.js > "$RUNNER_TEMP/deno-test.log" 2>&1
+          deno test -q --no-check --no-prompt -P=test test/*.test.js > "$RUNNER_TEMP/deno-test.log" 2>&1
           code=$?
           set -e
           scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-test.log" "deno test (${{ matrix.os }})" \
             > "$RUNNER_TEMP/deno-summary.md"
           cat "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
           exit $code
-      # Runs even when the unit suite above has failures (it has known ones in P0), so the contract result is reported.
+      # Runs even when the unit suite above failed, so both results are reported.
       - name: Gateway contract suite on the Deno server
         if: ${{ !cancelled() }}
         shell: bash
         run: |
           set +e
-          # Scoped grant, not -A: write only the temp folder the harness makes its data folders in, net to this machine,
-          # run only the two runtimes the harness spawns. Allowing deno is effectively unscoped (a spawned deno can be
-          # given any grant); it is accepted as a migration test aid and is narrowed together with M9 in P2.
-          ZP_RUNTIME=deno deno test --no-check --allow-read --allow-write="${TMPDIR:-/tmp}" \
-            --allow-net=127.0.0.1,localhost --allow-run=node,deno --allow-env --allow-sys \
-            test/contract/ > "$RUNNER_TEMP/deno-contract.log" 2>&1
+          # The "test" set: read anywhere, write and run unscoped (symlinks and fakes, see deno.json), net to this
+          # machine only. The harness starts server.js under its own narrow set.
+          ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ > "$RUNNER_TEMP/deno-contract.log" 2>&1
           code=$?
           set -e
           scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract.log" "contract suite under Deno (${{ matrix.os }})" \
