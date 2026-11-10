@@ -215,3 +215,27 @@ T1 → T3 → T2 → T5 → T4.
 - Changing the ledger's on-disk format (D3).
 - Strict mode (D2).
 - Frontend changes.
+
+## Amendments from planning (2026-11-10)
+
+These were found while writing the implementation plan (`docs/superpowers/plans/2026-11-10-p0-foundations.md`) and
+verified against the running server:
+
+1. **Budgets fail open in v1.** `lib/cost/guard.js` fails open on purpose. The only fail-closed path today is the 402
+   for a budgeted key on an unpriced model. The contract suite tests the **current** behaviour. The program's design
+   rule 2 (the Go gateway fails closed when the budget snapshot is stale) is a deliberate change of behaviour; the
+   owner confirms it in P3.
+2. **No timeout cases.** The provider timeout is a fixed 120 s, so the error cases cover a reset connection and a
+   refused connection instead (both 502).
+3. **The `typecheck` CI job arrives in T2**, in the commit that makes it green, not in T1.
+4. **`@types/node` is added with `npm install -D -E`, then `deno install`,** so that `package-lock.json` and
+   `deno.lock` agree. `deno add` alone would leave `npm ci` in `release.yml` broken.
+5. **Six more `round8` copies** exist in `lib/cost/` beyond the three named in T3. All of them move to `lib/money.js`.
+6. **Typedefs with no single producer yet:** `BudgetSnapshot` and the full `GatewayConfigSection` are assembled only
+   in P3. P0 annotates their parts.
+7. **Prices for key budgets must be in `config.json` before the server starts.** A target given by
+   `ZP_CONTRACT_URL` must therefore have been started with the harness seed config.
+8. **Risk:** the `windows-11-arm` hosted runner may not be available to this private repository. If the job cannot
+   start, the G0 item is recorded as blocked rather than failed.
+9. **Product finding, not changed in P0:** the non-streaming chat path passes upstream error bodies through without
+   masking secrets. It is recorded for the owner and fixed outside P0, because behaviour is frozen in P0.
