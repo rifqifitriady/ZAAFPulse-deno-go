@@ -88,3 +88,30 @@ is `/opt/homebrew/bin/deno`, `typeof localStorage === 'object'`, and `process.pl
   - pinned and cached `denort` downloads in CI.
 - M7 (startup ≤ 1.0 s) holds warm (0.46 s). The cold first start (1.26 s) is measured again in P2 on all targets.
 - M5 and M6 look reachable: −13% RSS on macOS arm64, and −8% to −41% binary size.
+
+## 7. Permission audit (rung 3 method, `DENO_AUDIT_PERMISSIONS`)
+
+The demo server ran under `-A` with `DENO_AUDIT_PERMISSIONS=<file>`, and a few dashboard and API pages were opened.
+That produced **13,045 accesses**:
+
+| Permission | Accesses | What was touched |
+|---|---|---|
+| read / write | 6,956 / 6,971 | Almost all in the data dir (`gateway-usage.jsonl`, `kb`, `datasets`, `brain`, `audit`, `traces`, `*.json.tmp`), **plus the app's own folder:** `lib/data/prices-snapshot.json` and `skills/zaafpulse*` |
+| env | 84 | 14 names: `ZAAFPULSE_*` (PUBLIC_URL, TRUST_PROXY, AUTH, CLAUDE_DIRS, DATA, ALLOWED_HOSTS, PORT, HOST, TLS_CERT), `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`, `CODEX_HOME`, `HOST`, `DEMO` |
+| sys | 18 | `homedir`, `umask` |
+| net | 13 | Only `127.0.0.1:<port>` in demo mode (the demo traffic generator calls its own `/v1/*`) |
+| run | 0 | None in demo mode (`ZAAFPULSE_RUNTIME_WATCH=off`). The real matrix comes from the full suite plus live mode. |
+
+**New P2 item:** the app writes into its own install folder. A compiled binary embeds that folder, so these writes
+must move to the data dir.
+
+## 8. Review against the `deno` and `migrate-to-deno` skills
+
+| Skill guidance | Plan before | Change made |
+|---|---|---|
+| Migrate in rungs (package manager → run → tighten permissions → optional toolchain); no rewrites up front | P2 was one block | P2 is now rungs 1–4. CJS, `node:test` and prettier are kept; no `jsr:` or ESM rewrites. |
+| `deno ci` in CI, commit `deno.lock` (seeded from `package-lock.json`) | Not specified | Added to P2 rung 1 |
+| Dependencies in `package.json`, compiler options in `tsconfig.json`, only Deno config in `deno.json` | `deno.json` held tasks, compile config and permissions | Placement rule added; type checking moves from `tsc` to `deno check` + `tsconfig.json`, so there is no `typescript` dependency |
+| Narrowest permissions, derived from what the program asks for; no committed `-A` | Matrix in `deno.json` | Derived from `DENO_AUDIT_PERMISSIONS`; named sets via `-P`; `--deny-*`; the audit trail is offered as Compliance evidence |
+| `--allow-net` scopes unix sockets | n/a | The P3 IPC socket is granted exactly: `--allow-net=unix:<data dir>/gw.sock` |
+| Built-in toolchain is optional, not drop-in | Not addressed | Rung 4 not adopted, apart from `deno check` |
