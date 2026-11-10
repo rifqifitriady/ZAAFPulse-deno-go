@@ -218,4 +218,21 @@ const WIN_ENV = ['SystemRoot', 'SYSTEMROOT', 'PATHEXT', 'TEMP', 'TMP'];
 const winEnv = () =>
   Object.fromEntries(WIN_ENV.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
 
-module.exports = { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, winEnv, NODE };
+// Replaces a global for one test. Deno defines some globals as accessors (localStorage, which Deno keeps on disk), and a
+// plain assignment to one is ignored; defineProperty works on both runtimes. set(undefined) removes the global;
+// restore() puts back what was there before.
+function stubGlobal(name) {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, name);
+  const set = (value) => {
+    delete globalThis[name];
+    if (value !== undefined)
+      Object.defineProperty(globalThis, name, { value, configurable: true, writable: true, enumerable: true });
+  };
+  const restore = () => {
+    delete globalThis[name];
+    if (saved) Object.defineProperty(globalThis, name, saved);
+  };
+  return { set, restore };
+}
+
+module.exports = { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, winEnv, NODE, stubGlobal };

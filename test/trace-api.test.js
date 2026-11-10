@@ -34,6 +34,11 @@ async function startServer(env, { data = tmp('zp-trace-api-'), ports = freePort 
         ZAAFPULSE_AUTH: '',
         ZAAFPULSE_CONTENT: '',
         DEMO: '',
+        // The log roots come from HOME below, never from a variable an earlier test file left set.
+        ZAAFPULSE_CLAUDE_DIRS: '',
+        CLAUDE_CONFIG_DIR: '',
+        CODEX_HOME: '',
+        XDG_CONFIG_HOME: '',
         ...NO_JUDGE_PORTS,
         ...env,
         ZAAFPULSE_PORT: String(port),

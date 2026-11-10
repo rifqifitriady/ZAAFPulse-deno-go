@@ -1194,14 +1194,15 @@ test('material: demo mode serves the synthetic turn through the same content pat
 
 // Fails the last `n` reads of a log range (as a vanished file would), after a counting run.
 async function failLastReads(t, n, run) {
+  const { io } = require('../lib/trace/lines');
   let calls = 0;
-  const real = fs.createReadStream;
-  const count = test.mock.method(fs, 'createReadStream', (...a) => (calls++, real(...a)));
+  const real = io.createReadStream;
+  const count = test.mock.method(io, 'createReadStream', (...a) => (calls++, real(...a)));
   await run();
   const total = calls;
   count.mock.restore();
   calls = 0;
-  const gone = test.mock.method(fs, 'createReadStream', (...a) => (++calls > total - n ? real(path.join(os.tmpdir(), 'zp-gone', 'x.jsonl')) : real(...a)));
+  const gone = test.mock.method(io, 'createReadStream', (...a) => (++calls > total - n ? real(path.join(os.tmpdir(), 'zp-gone', 'x.jsonl')) : real(...a)));
   try {
     return await run();
   } finally {
