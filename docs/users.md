@@ -191,7 +191,7 @@ the CSV export's `actor_id` is the account for dashboard entries (the device for
 
 ## Compliance
 
-The control **Dashboard roles and access reviews** (`access_roles`, one of the eighteen controls) maps to EU AI Act
+The control **Dashboard roles and access reviews** (`access_roles`, one of the nineteen controls) maps to EU AI Act
 Art. 26(2) (human oversight assigned to competent persons), NIST AI RMF GOVERN 2.1 (roles and responsibilities) and
 ISO/IEC 42001 A.3 (internal organization). It is in place when sign-in is required and no account that may sign in has
 gone unused for more than 90 days (by its last sign-in, or its creation when it never signed in); partial when one has,

@@ -264,7 +264,7 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 <td valign="top">
 
 **AI governance**<br>
-<sub>An inventory of every AI system here (apps, the MCP servers in your AI clients, providers, models, agents, keys) with its owner, purpose, risk and your decision; eighteen controls mapped to the EU AI Act, the NIST AI RMF and ISO/IEC 42001 with their evidence, exportable as Markdown or JSON; an audit log of every change made by a person or an API key, chained so an edited or deleted line shows when you verify; and sign-ins of their own for auditors (viewers) and reviewers, each change recorded under their name. <a href="docs/governance.md">docs/governance.md</a> · <a href="docs/users.md">docs/users.md</a></sub>
+<sub>An inventory of every AI system here (apps, the MCP servers in your AI clients, providers, models, agents, keys) with its owner, purpose, risk and your decision; nineteen controls mapped to the EU AI Act, the NIST AI RMF and ISO/IEC 42001 with their evidence, exportable as Markdown or JSON; an audit log of every change made by a person or an API key, chained so an edited or deleted line shows when you verify; and sign-ins of their own for auditors (viewers) and reviewers, each change recorded under their name. <a href="docs/governance.md">docs/governance.md</a> · <a href="docs/users.md">docs/users.md</a></sub>
 
 </td>
 </tr>
@@ -763,7 +763,7 @@ found, its state and the days it was first and last seen.
   looks like a token. The package is the first other package-looking argument, so it can be a plain flag's value
   (`--port 8080`).
 
-**Governance → Compliance** shows eighteen controls (the guardrails, the audit log, approvals, keys, agent control,
+**Governance → Compliance** shows nineteen controls (the guardrails, the audit log, approvals, keys, agent control,
 the Monitors, evals, budgets, sign-in, roles and access reviews, retention, the inventory itself …) with their status from your settings and
 their evidence, mapped to the EU AI Act, the NIST AI RMF 1.0 and ISO/IEC 42001:2023. **Export** the inventory, the
 controls and the audit log's state as Markdown or JSON. It is evidence for your assessment, not a certification.
