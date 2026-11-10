@@ -73,7 +73,8 @@ Changes to `.github/workflows/ci.yml`:
 - **New job `deno`** (ubuntu and macos):
   - install the pinned Deno version (`2.9.8`, from `denoland/setup-deno` pinned by commit SHA, as the existing
     actions are pinned);
-  - run `deno ci`, which needs `deno.lock`, committed in T2;
+  - run `deno ci`, which needs `deno.lock`. T1 creates it with `deno install`, seeded from `package-lock.json`, and
+    commits it;
   - run `deno test -A --no-check test/`;
   - parse and report the pass and fail counts;
   - the job **does not block** in P0 (`continue-on-error: true`), because the 47 known failures are P2 work;
@@ -84,14 +85,14 @@ Changes to `.github/workflows/ci.yml`:
 
 ### T2 — Types: `tsconfig.json`, `deno check`, and JSDoc for the IPC shapes
 
-- `package.json`: `devDependencies` gets `@types/node`, pinned to an exact version.
-- `deno.lock`: created by `deno install` (seeded from `package-lock.json`) and committed.
+- `package.json`: `devDependencies` gets `@types/node`, pinned to an exact version. `deno.lock` (from T1) is refreshed
+  with `deno install`.
 - `tsconfig.json`:
   - `compilerOptions`: `{ checkJs: true, allowJs: true, strict: false, noImplicitAny: false, noEmit: true }`;
   - `include`: `lib/gateway`, `lib/cost` and `lib/governance`.
-- A `deno.json` task `typecheck`: `deno check --sloppy-imports lib/gateway lib/cost lib/governance`. Tasks may live
-  in `package.json` `scripts`; that is the skill's preference when a `package.json` exists, so the script goes
-  there and `deno task typecheck` runs it.
+- A `package.json` script `typecheck`: `deno check --sloppy-imports lib/gateway lib/cost lib/governance`. It is run
+  with `deno task typecheck`. Scripts live in `package.json` because the project has one, as the skill prefers, so no
+  `deno.json` is needed yet.
 - Add `// @ts-check` to every `.js` file in the three areas, and fix the reported errors. A fix must not change
   behaviour. When a fix would, use a `@type` cast or `// @ts-expect-error` with a reason, and list it in the report.
 - Write `lib/types.js`: JSDoc `@typedef`s only, with no runtime code, for:
