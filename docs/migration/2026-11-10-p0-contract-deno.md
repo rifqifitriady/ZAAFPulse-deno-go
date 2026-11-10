@@ -13,7 +13,7 @@ run (`npm run test:contract`: 172 passed, 0 failed, about 2.6 s).
 ZP_RUNTIME=deno node --test --test-concurrency=1 test/contract/*.test.js 2>&1 | grep -E "^(✖|ℹ (tests|pass|fail))"
 
 # 2. Tests and server.js both under Deno
-NO_COLOR=1 ZP_RUNTIME=deno deno test -A --no-check test/contract/ > /tmp/zp-contract-deno.txt 2>&1
+NO_COLOR=1 ZP_RUNTIME=deno deno test --no-check --allow-read --allow-write="${TMPDIR:-/tmp}" --allow-net=127.0.0.1,localhost --allow-run=node,deno --allow-env --allow-sys test/contract/ > /tmp/zp-contract-deno.txt 2>&1
 scripts/migration/deno-test-summary.sh /tmp/zp-contract-deno.txt "contract suite, server and tests under Deno 2.9.8"
 ```
 

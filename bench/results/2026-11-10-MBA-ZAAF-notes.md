@@ -10,3 +10,4 @@ Both runs: committed tree 64369e6 (`git.dirty` false), default knobs, `ulimit -n
   (pids 85769, 85819, 85870, 93329). They were not touched.
 - Local Node is v24.16.0 (CI pins 24.21.0); Deno is 2.9.8.
 - The first Deno start took 498 ms (cold cache), the other four 250 to 271 ms; p50 is of all five.
+- The baseline was recorded at 64369e6; the later commit 15fe9b4 changed only failure handling (stopping every child on a failed step) and request timeouts in `bench/run.js`, not the measuring loops.

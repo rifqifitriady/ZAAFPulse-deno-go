@@ -32,7 +32,7 @@ ZP_RUNTIME=deno node bench/run.js   # the same harness against server.js under D
 Under Deno instead of Node:
 
 ```bash
-deno run --allow-read --allow-write --allow-net=127.0.0.1,localhost --allow-env --allow-run=node,deno,ps,git --allow-sys bench/run.js
+deno run --allow-read --allow-write="${TMPDIR:-/tmp}",bench/results --allow-net=127.0.0.1,localhost --allow-env --allow-run=node,deno,ps,git --allow-sys bench/run.js
 ```
 
 Reading the stream numbers: each worker opens its next stream only when the last one ends, so "completed" is quantized

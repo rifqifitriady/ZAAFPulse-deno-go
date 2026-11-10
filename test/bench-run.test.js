@@ -35,10 +35,10 @@ else if (main.endsWith('server.js') && process.env.ZAAFPULSE_DATA) {
 }
 `,
   );
-  const child = spawn(process.execPath, [RUN], {
+  const child = spawn(process.versions.deno ? 'node' : process.execPath, [RUN], {
     env: {
       ...process.env,
-      NODE_OPTIONS: `--require ${preload}`,
+      NODE_OPTIONS: `--require ${JSON.stringify(preload)}`,
       ZP_RUNTIME: 'node',
       ZP_BENCH_STARTS: '1',
       ZP_BENCH_OUT: dir,
