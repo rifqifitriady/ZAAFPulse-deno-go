@@ -103,14 +103,13 @@ test('parsePsComm and argvFrom: argv[0] whole, then the other arguments', () => 
   assert.deepEqual(argvFrom(exe, exe), [exe]);
 });
 
-// lib/processes takes execFile when it loads and reads the platform when it runs: a fresh copy is loaded with a
-// recording execFile, on a pretend macOS, so nothing real is spawned.
+// lib/processes takes execFile when it loads: a fresh copy is loaded with a recording execFile, and rows() is told the
+// platform (a pretend macOS), so nothing real is spawned.
 async function onFakeMac(fn) {
   const cp = require('child_process');
   const file = require.resolve('../lib/processes');
   const cached = require.cache[file];
   const realExecFile = cp.execFile;
-  const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
   const spawned = [];
   cp.execFile = (cmd, args, opts, cb) => {
     spawned.push(cmd);
@@ -126,23 +125,21 @@ async function onFakeMac(fn) {
   try {
     const fresh = require('../lib/processes');
     cp.execFile = realExecFile;
-    Object.defineProperty(process, 'platform', { ...realPlatform, value: 'darwin' });
     return await fn(fresh, spawned);
   } finally {
     cp.execFile = realExecFile;
-    Object.defineProperty(process, 'platform', realPlatform);
     require.cache[file] = cached;
   }
 }
 
 test('rows({ cwds: false }) reads argv but never runs lsof; rows() does', async () => {
   await onFakeMac(async (fresh, spawned) => {
-    const [light] = await fresh.rows({ cwds: false });
+    const [light] = await fresh.rows({ cwds: false, platform: 'darwin' });
     assert.deepEqual(spawned, ['ps', 'ps']);
     assert.deepEqual(light.argv, ['/home/u/.local/bin/claude', '--resume']);
     assert.equal(light.cwd, undefined);
     spawned.length = 0;
-    const [full] = await fresh.rows();
+    const [full] = await fresh.rows({ platform: 'darwin' });
     assert.deepEqual(spawned, ['ps', 'lsof', 'ps']);
     assert.equal(full.cwd, '/home/u/work');
   });
