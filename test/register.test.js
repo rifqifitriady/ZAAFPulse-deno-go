@@ -459,7 +459,14 @@ test('codex: without the CLI, appends our table and leaves every other byte alon
   const home = tmpHome();
   const c = clients(home).codex;
   put(c.file, CODEX_BEFORE);
-  const data = path.join(home, 'my "data"');
+  // Under Deno the data folder is in the launch's --allow-write, which refuses a quote loudly (lib/permissions.js
+  // checkScope) before anything is written; a backslash still needs TOML escaping.
+  if (process.versions.deno) {
+    const quoted = path.join(home, 'my "data"');
+    assert.throws(() => run('codex', { home, log: quiet, which: noCli, data: quoted }), /--allow-write: .*my \\"data\\"/);
+    assert.equal(fs.readFileSync(c.file, 'utf8'), CODEX_BEFORE);
+  }
+  const data = path.join(home, process.versions.deno ? 'my \\data' : 'my "data"');
   run('codex', { home, log: quiet, which: noCli, data });
   const text = fs.readFileSync(c.file, 'utf8');
   assert.ok(text.startsWith(CODEX_BEFORE.trimEnd()));

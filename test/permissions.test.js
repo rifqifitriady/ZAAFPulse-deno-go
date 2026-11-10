@@ -77,10 +77,13 @@ test('writeScope: the data folder and temp; server adds the agent skill and MCP 
   );
 });
 
-test('runScope: the set, plus the owner runtimes and ZAAFPULSE_CLAUDE_BIN for a deno run launch', () => {
+test('runScope: the set, plus the approved owner runtimes and ZAAFPULSE_CLAUDE_BIN for a deno run launch', () => {
+  const mine = { id: 'mine', command: ['/opt/x/bin/my-server', '--port', '9000'], port: 9000 };
+  const { ownerEntry: entry, commandHash: hash } = require('../lib/runtimes/registry');
   const r = permissions.runScope({
     set: 'server',
-    config: { localRuntimes: [{ id: 'mine', command: ['/opt/x/bin/my-server', '--port', '9000'], port: 9000 }] },
+    config: { localRuntimes: [mine] },
+    approvals: { mine: hash(entry(mine, new Set())) },
     env: { ZAAFPULSE_CLAUDE_BIN: '/opt/claude/claude' },
   });
   assert.ok(r.includes('ps') && r.includes('/opt/x/bin/my-server') && r.includes('/opt/claude/claude'));
@@ -389,4 +392,155 @@ test('mcp.js starts under the mcp-stdio launch and answers with no permission re
     [],
     err,
   );
+});
+
+// ---- launch lines built from config.json and the environment (security review of Task 5) ----
+
+const { ownerEntry, commandHash } = require('../lib/runtimes/registry');
+// The program of an owner runtime that would close the quoted argument in the Windows launcher and run VBScript.
+const PAYLOAD = 'C:\\x" & CreateObject("WScript.Shell").Run("calc") & "';
+const approve = (data, runtimes) => {
+  fs.writeFileSync(path.join(data, 'config.json'), JSON.stringify({ localRuntimes: runtimes }));
+  fs.mkdirSync(path.join(data, 'runtimes'), { recursive: true });
+  const ok = Object.fromEntries(runtimes.map((r) => [r.id, commandHash(ownerEntry(r, new Set()))]));
+  fs.writeFileSync(path.join(data, 'runtimes', 'approved.json'), JSON.stringify(ok));
+};
+const listing = (dir) => fs.readdirSync(dir, { recursive: true }).sort();
+const startLaunch = (dataDir, env = {}) =>
+  permissions.selfCommand({
+    script: path.join('bin', 'zaafpulse.js'),
+    sub: 'start',
+    set: 'server',
+    dataDir,
+    env,
+    runtime: 'deno',
+    singleFile: false,
+  });
+
+test('selfCommand refuses an approved owner runtime whose program would inject into the launch line', () => {
+  const data = tmp();
+  approve(data, [{ id: 'evil', command: [PAYLOAD], port: 9000 }]);
+  const before = listing(data);
+  assert.throws(
+    () => startLaunch(data),
+    (err) => {
+      assert.match(err.message, /--allow-run/);
+      assert.ok(err.message.includes(JSON.stringify(PAYLOAD)), err.message);
+      assert.match(err.message, /"\\""/, 'names the character');
+      return true;
+    },
+  );
+  assert.deepEqual(listing(data), before, 'nothing is written');
+  // The same through the service's start command, which every install builds before it writes a file.
+  assert.throws(
+    () => require('../lib/service').startCommand({ ZAAFPULSE_DATA: data }, { runtime: 'deno', singleFile: false }),
+    /--allow-run/,
+  );
+  assert.deepEqual(listing(data), before);
+});
+
+test('scope entries: every character that splits a grant or a shell line is refused, with the value and why', () => {
+  for (const ch of [',', '"', "'", '%', '$', '`', '&', '|', '<', '>', '^', '\n', '\r', '\t', '\0', '\x7f']) {
+    const v = `/opt/a${ch}b/server`;
+    assert.throws(
+      () => permissions.checkScope('run', [v]),
+      (err) => err.message.includes(JSON.stringify(v)) && err.message.includes('--allow-run'),
+      JSON.stringify(ch),
+    );
+  }
+  assert.deepEqual(permissions.checkScope('run', ['C:\\Program Files\\My Server\\srv.exe', 'ps']), [
+    'C:\\Program Files\\My Server\\srv.exe',
+    'ps',
+  ]);
+});
+
+test('a comma in a folder from the environment fails loudly instead of granting write to another folder', () => {
+  const data = tmp();
+  fs.writeFileSync(path.join(data, 'config.json'), '{}');
+  // ZAAFPULSE_DATA ending in ",/" would add "/" to --allow-write.
+  const evilData = path.join(data, 'x,') + '/';
+  assert.throws(
+    () => startLaunch(evilData),
+    (err) =>
+      err.message.includes(JSON.stringify(evilData)) && /--allow-write/.test(err.message) && /comma/.test(err.message),
+  );
+  assert.throws(() => startLaunch(data, { CLAUDE_CONFIG_DIR: '/tmp/c,/' }), /--allow-write.*comma/s);
+  assert.throws(
+    () =>
+      permissions.writeScope({ set: 'cli', dataDir: data, env: { XDG_CONFIG_HOME: '/tmp/x,/' }, platform: 'linux' }),
+    /--allow-write.*comma/s,
+  );
+  assert.throws(() => startLaunch(data, { ZAAFPULSE_CLAUDE_BIN: '/opt/claude,curl' }), /--allow-run.*comma/s);
+});
+
+test('runScope: only the owner runtimes approved as they are now; a Windows path with spaces is kept', () => {
+  const data = tmp();
+  const legit = { id: 'mine', command: ['C:\\Program Files\\My Server\\srv.exe', '--port', '9000'], port: 9000 };
+  const other = { id: 'other', command: ['/opt/other/server'], port: 9001 };
+  approve(data, [legit]);
+  const config = { localRuntimes: [legit, other] };
+  const approvals = JSON.parse(fs.readFileSync(path.join(data, 'runtimes', 'approved.json'), 'utf8'));
+  const r = permissions.runScope({ set: 'server', config, approvals, env: {} });
+  assert.ok(r.includes('C:\\Program Files\\My Server\\srv.exe'));
+  assert.ok(!r.includes('/opt/other/server'), 'not approved');
+  assert.ok(!permissions.runScope({ set: 'server', config, env: {} }).includes(legit.command[0]), 'no approvals file');
+  const edited = { localRuntimes: [{ ...legit, command: [...legit.command, '--verbose'] }] };
+  assert.ok(!permissions.runScope({ set: 'server', config: edited, approvals, env: {} }).includes(legit.command[0]));
+  // Unapproved, the payload is not passed at all, so it cannot block the launch either.
+  approve(data, []);
+  fs.writeFileSync(
+    path.join(data, 'config.json'),
+    JSON.stringify({ localRuntimes: [{ id: 'evil', command: [PAYLOAD], port: 9000 }] }),
+  );
+  const run = startLaunch(data);
+  assert.ok(run.args.some((a) => a.startsWith('--allow-run=') && !a.includes('CreateObject')));
+});
+
+test('kill: pid and signal are checked before anything is sent', () => {
+  const scoped = { permissions: { querySync: () => ({ state: 'granted', partial: true }) } };
+  const never = () => assert.fail('nothing may be sent');
+  for (const pid of [0, -1, 1.5, NaN, '4242', null, undefined, Infinity])
+    assert.throws(() => permissions.kill(pid, 'SIGTERM', { deno: scoped, spawn: never }), /pid/, String(pid));
+  for (const sig of ['SIGUSR1', 'STOP', 9, 'SIGHUP', '', 'SIGTERM; rm -rf /'])
+    assert.throws(() => permissions.kill(4242, sig, { deno: scoped, spawn: never }), /signal/, String(sig));
+  for (const pid of [0, -1]) assert.throws(() => permissions.kill(pid, 0, { deno: undefined }), /pid/);
+  const seen = [];
+  const ok = (cmd, args, opts) => (seen.push(args), { status: 0 });
+  for (const sig of [0, 'SIGSTOP', 'SIGCONT', 'SIGTERM', 'SIGINT', 'SIGKILL'])
+    assert.equal(permissions.kill(-4242, sig, { deno: scoped, spawn: ok }), true, `${sig} to a process group`);
+  assert.equal(seen.length, 6);
+});
+
+test('kill: the kill program runs with the C locale, so its error text maps the same on every machine', () => {
+  const scoped = { permissions: { querySync: () => ({ state: 'granted', partial: true }) } };
+  let opts;
+  permissions.kill(4242, 0, { deno: scoped, spawn: (c, a, o) => ((opts = o), { status: 0 }) });
+  assert.equal(opts.env.LC_ALL, 'C');
+  assert.equal(opts.env.LANG, 'C');
+  assert.equal(opts.env.PATH, process.env.PATH, 'the rest of the environment is kept');
+});
+
+test('describe: the general-purpose launchers the run grant holds are named', () => {
+  const allowed = new Set(['node', 'osascript', 'ps']);
+  const deno = {
+    version: { deno: '2.9.8' },
+    build: { standalone: false },
+    permissions: {
+      querySync: ({ name, command }) =>
+        name !== 'run'
+          ? { state: 'granted' }
+          : command
+            ? { state: allowed.has(command) ? 'granted' : 'prompt' }
+            : { state: 'prompt' },
+    },
+  };
+  assert.deepEqual(permissions.describe({ deno, limits: () => null }).launchers, ['node', 'osascript']);
+  for (const name of Object.keys(permissions.WHY.launchers)) {
+    assert.ok(
+      PRODUCT.some((set) => list(sets[set].run).includes(name)),
+      `WHY.launchers.${name} is in no product set`,
+    );
+  }
+  for (const name of ['node', 'osascript', 'powershell', 'powershell.exe', 'cmd', 'open', 'brew', 'claude', 'codex'])
+    assert.ok(permissions.WHY.launchers[name], `${name} is a launcher`);
 });

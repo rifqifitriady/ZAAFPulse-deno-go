@@ -841,3 +841,35 @@ test('real child: a child that ignores SIGINT gets SIGTERM after the grace perio
     ['SIGINT', 'SIGTERM'],
   );
 });
+
+// A kill that fails for another reason than ESRCH or EPERM (the kill program refused by the run permissions, or not
+// installed) is that error, not "the process is gone" (security review of Task 5).
+test('a signal that cannot be sent reports the real error, not that the process is gone', async () => {
+  const refused = new Error("kill: not allowed by this build's run permissions");
+  const kill = (pid, signal) => {
+    if (signal === 0) return true;
+    throw refused;
+  };
+  const { ctl, audit } = control({ processes: fakeTable([row(4242, CLAUDE_ARGS)]), kill });
+  for (const action of ['pause', 'stop']) {
+    await assert.rejects(ctl[action]({ pid: 4242, startTime: startOf(600) }, { by: 'owner' }), (err) => {
+      assert.equal(err.status, 502);
+      assert.match(err.message, /not allowed by this build's run permissions/);
+      return true;
+    });
+    const last = audit.entries.at(-1);
+    assert.equal(last.ok, false);
+    assert.match(last.error, /not allowed by this build's run permissions/);
+  }
+  // kill(pid, 0) failing the same way is not "gone" either: the stop says so instead of claiming the process exited.
+  const probeRefused = (pid, signal) => {
+    if (signal === 0) throw refused;
+    return true;
+  };
+  const c2 = control({ processes: fakeTable([row(4242, CLAUDE_ARGS)]), kill: probeRefused });
+  await assert.rejects(c2.ctl.stop({ pid: 4242, startTime: startOf(600) }, { by: 'owner' }), (err) => {
+    assert.equal(err.status, 502);
+    assert.match(err.message, /not allowed by this build's run permissions/);
+    return true;
+  });
+});
