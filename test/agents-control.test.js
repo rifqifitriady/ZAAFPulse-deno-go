@@ -370,6 +370,34 @@ test('Docker is detected from /.dockerenv or the init cgroups', () => {
   assert.equal(detectDocker(fsLike({})), false);
 });
 
+test('Docker detection says once when the runtime refuses /proc/1/cgroup (Deno on Linux), and uses /.dockerenv', () => {
+  const refusedCgroup = (dockerenv) => ({
+    existsSync: () => dockerenv,
+    readFileSync: () => {
+      throw Object.assign(new Error('Requires all access to "/proc/1/cgroup"'), { name: 'NotCapable' });
+    },
+  });
+  const said = [];
+  const opts = { warn: (m) => said.push(m), seen: new Set() };
+  assert.equal(detectDocker(refusedCgroup(false), opts), false);
+  assert.equal(detectDocker(refusedCgroup(false), opts), false);
+  assert.equal(detectDocker(refusedCgroup(true), opts), true);
+  assert.equal(said.length, 1);
+  assert.match(said[0], /\/proc\/1\/cgroup is not readable by this runtime \(Requires all access.*\/\.dockerenv only/);
+  // Any other error (no /proc) is not a refusal and says nothing.
+  const quiet = [];
+  detectDocker(
+    {
+      existsSync: () => false,
+      readFileSync: () => {
+        throw new Error('ENOENT');
+      },
+    },
+    { warn: (m) => quiet.push(m), seen: new Set() },
+  );
+  assert.deepEqual(quiet, []);
+});
+
 test('a rule may only pause, and only for the rules that allow it', async () => {
   const k = fakeKill();
   const { ctl, audit } = control({ processes: fakeTable([row(4242, CLAUDE_ARGS)]), killer: k });

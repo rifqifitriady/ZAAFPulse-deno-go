@@ -42,8 +42,8 @@ function freePort() {
 }
 
 // The command that runs server.js under a runtime. Under `deno test` process.execPath is deno, so node is found on
-// PATH; under `node --test` deno is found on PATH. Deno gets the narrow set P1 measured, not -A: read anywhere, write
-// only the data folder, net to this machine only, env and sys, run only which, ps, lsof and security; never a prompt.
+// PATH; under `node --test` deno is found on PATH. Deno gets the "server" set of deno.json (never -A) with the write
+// scope of this data folder and the temp folder, as a real launch narrows it (lib/permissions.js); never a prompt.
 function command(runtime, data) {
   const server = path.join(ROOT, 'server.js');
   const underDeno = !!(process.versions && process.versions.deno);
@@ -53,13 +53,11 @@ function command(runtime, data) {
       bin: underDeno ? process.execPath : 'deno',
       args: [
         'run',
+        '-q',
         '--no-prompt',
-        '--allow-read',
-        `--allow-write=${data}`,
-        '--allow-net=127.0.0.1,localhost',
-        '--allow-env',
-        '--allow-sys',
-        '--allow-run=which,ps,lsof,security',
+        `--config=${path.join(ROOT, 'deno.json')}`,
+        '-P=server',
+        `--allow-write=${data},${os.tmpdir()}`,
         server,
       ],
     };

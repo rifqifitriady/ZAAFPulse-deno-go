@@ -12,6 +12,8 @@ const {
   argvFrom,
   linuxRows,
   linuxUsedMemory,
+  linuxLimits,
+  linuxExe,
 } = require('../lib/processes');
 
 test('parseVmStat counts app memory, wired and compressed pages', () => {
@@ -212,6 +214,28 @@ test('linuxRows: /proc refused by the runtime falls back to ps, said once', asyn
   assert.match(said[0], /\/proc is not readable.*Requires all access.*ps instead/);
 });
 
+test('linuxRows: /proc refused and no ps either: the error stays, said once', async () => {
+  const said = [];
+  const state = {};
+  const gone = Object.assign(new Error('spawn ps ENOENT'), { code: 'ENOENT' });
+  const opts = {
+    read: () => {
+      throw refusal();
+    },
+    ps: async () => {
+      throw gone;
+    },
+    warn: (m) => said.push(m),
+    seen: new Set(),
+    state,
+  };
+  await assert.rejects(linuxRows(opts), gone);
+  await assert.rejects(linuxRows(opts), gone);
+  assert.equal(state.ps, false);
+  assert.equal(said.length, 2, 'the /proc fallback, then the missing ps, each once');
+  assert.match(said[1], /ps is not installed, so no process can be listed/);
+});
+
 test('linuxRows: /proc readable is used as it is; any other error is not hidden behind ps', async () => {
   let psCalls = 0;
   const ps = async () => {
@@ -254,4 +278,172 @@ test('linuxUsedMemory: MemTotal - MemAvailable; refused /proc uses the OS totals
   };
   assert.equal(linuxUsedMemory({ read: missing, ...totals, warn, seen: new Set() }), null);
   assert.equal(said.length, 1, 'a missing /proc is not a refusal');
+});
+
+// ---- Linux when the runtime refuses /proc (Deno): argv from ps comm and working folders from lsof, as on macOS ----
+
+// A fresh lib/processes over a fake execFile that answers as Linux procps and lsof would (`lsof: false` = not
+// installed), with /proc refused. Returns { fresh, spawned, linux } where `linux` is rows()'s option for that state.
+async function onFakeLinuxWithoutProc(fn, { lsof = true } = {}) {
+  const cp = require('child_process');
+  const file = require.resolve('../lib/processes');
+  const cached = require.cache[file];
+  const realExecFile = cp.execFile;
+  const spawned = [];
+  cp.execFile = (cmd, args, opts, cb) => {
+    spawned.push(args[0] === '-axo' ? 'ps -axo' : cmd === 'ps' ? 'ps comm' : cmd);
+    if (cmd === 'lsof' && !lsof)
+      return setImmediate(() => cb(Object.assign(new Error('spawn lsof ENOENT'), { code: 'ENOENT' }), '', ''));
+    const out =
+      cmd === 'lsof'
+        ? 'p4242\nfcwd\nn/home/u/work\np4343\nfcwd\nn/home/u/other\n'
+        : args[0] === '-axo'
+          ? [
+              '    1     0  0.0  1024    10:00 Ss   /sbin/init',
+              ' 4242     1  1.0  1024    10:00 S    /home/u/.local/bin/claude --resume',
+              ' 4343     1  0.5  2048    05:00 S    node /home/u/.npm/lib/node_modules/@openai/codex/bin/codex.js',
+            ].join('\n')
+          : // procps comm: the kernel task name, cut at 15 characters
+            ' 4242 claude\n 4343 node\n';
+    setImmediate(() => cb(null, out, ''));
+  };
+  delete require.cache[file];
+  try {
+    const fresh = require('../lib/processes');
+    cp.execFile = realExecFile;
+    const said = [];
+    const linux = {
+      read: () => {
+        throw refusal();
+      },
+      state: { procRefused: false, lsof: undefined },
+      warn: (m) => said.push(m),
+      seen: new Set(),
+    };
+    return await fn({ fresh, spawned, linux, said });
+  } finally {
+    cp.execFile = realExecFile;
+    require.cache[file] = cached;
+  }
+}
+
+test('linuxExe: argv[0] is the whole first word when its name starts with the cut task name, else the name', () => {
+  assert.equal(
+    linuxExe('/opt/x/codex-x86_64-unknown-linux-musl exec', 'codex-x86_64-un'),
+    '/opt/x/codex-x86_64-unknown-linux-musl',
+  );
+  assert.equal(linuxExe('/usr/bin/node /x/cli.js', 'node'), '/usr/bin/node');
+  assert.equal(linuxExe('claude --resume', 'claude'), 'claude');
+  assert.equal(linuxExe('MainThread', 'claude'), 'claude', 'a rewritten title: the task name');
+});
+
+test('Linux without /proc: rows() gets argv from ps comm and working folders from lsof, like macOS', async () => {
+  await onFakeLinuxWithoutProc(async ({ fresh, spawned, linux, said }) => {
+    const all = await fresh.rows({ platform: 'linux', linux });
+    assert.deepEqual(spawned, ['ps -axo', 'lsof', 'ps comm']);
+    const by = Object.fromEntries(all.map((r) => [r.pid, r]));
+    assert.deepEqual(by[4242].argv, ['/home/u/.local/bin/claude', '--resume']);
+    assert.equal(by[4242].cwd, '/home/u/work');
+    assert.deepEqual(by[4343].argv, ['node', '/home/u/.npm/lib/node_modules/@openai/codex/bin/codex.js']);
+    assert.equal(by[4343].cwd, '/home/u/other');
+    assert.equal(by[1].argv, undefined, 'only AI app processes are looked up');
+    assert.equal(said.length, 1);
+    assert.match(said[0], /\/proc is not readable.*ps instead, and the working folders of AI agents with lsof/);
+    assert.equal(linux.state.lsof, true);
+  });
+});
+
+test('Linux without /proc: agent control links a session to its process and verifies the program', async () => {
+  const { createAgentControl } = require('../lib/agents/control');
+  await onFakeLinuxWithoutProc(async ({ fresh, linux }) => {
+    const signals = [];
+    const ctl = createAgentControl({
+      processes: { ...fresh, rows: (o) => fresh.rows({ ...o, platform: 'linux', linux }) },
+      platform: 'linux',
+      inDocker: false,
+      kill: (pid, sig) => signals.push([pid, sig]),
+    });
+    const [c] = await ctl.candidates({ cwd: '/home/u/work', firstTs: Date.now(), source: 'claude' });
+    assert.equal(c && c.pid, 4242, 'the Claude Code process in that folder');
+    const r = await ctl.pause({ pid: c.pid, startTime: c.startTime }, { by: 'owner' });
+    assert.equal(r.ok, true);
+    assert.deepEqual(signals.at(-1), [4242, 'SIGSTOP']);
+    assert.equal(ctl.limited(), null);
+  });
+});
+
+test('Linux without /proc and without lsof: no working folders, said once; control says it is limited', async () => {
+  await onFakeLinuxWithoutProc(
+    async ({ fresh, spawned, linux, said }) => {
+      const all = await fresh.rows({ platform: 'linux', linux });
+      assert.equal(all.find((r) => r.pid === 4242).cwd, undefined);
+      assert.deepEqual(all.find((r) => r.pid === 4242).argv, ['/home/u/.local/bin/claude', '--resume']);
+      assert.equal(linux.state.lsof, false);
+      spawned.length = 0;
+      await fresh.rows({ platform: 'linux', linux });
+      assert.deepEqual(spawned, ['ps -axo', 'ps comm'], 'a missing lsof is not tried again');
+      assert.equal(said.length, 2);
+      assert.match(
+        said[1],
+        /lsof is not installed.*agent control \(pause, resume, stop\) and linking a session to its process are unavailable/,
+      );
+      const l = fresh.linuxLimits({ platform: 'linux', state: linux.state });
+      assert.equal(l.lsof, false);
+      const { createAgentControl } = require('../lib/agents/control');
+      const ctl = createAgentControl({
+        processes: { ...fresh, linuxLimits: () => l },
+        platform: 'linux',
+        inDocker: false,
+      });
+      assert.match(ctl.limited(), /agent control .* unavailable/);
+    },
+    { lsof: false },
+  );
+});
+
+test('Linux with /proc (Node): rows() runs neither ps nor lsof', async () => {
+  await onFakeLinuxWithoutProc(async ({ fresh, spawned, linux }) => {
+    const procRow = { pid: 7, args: '/home/u/.local/bin/claude', argv: ['/home/u/.local/bin/claude'] };
+    const all = await fresh.rows({ platform: 'linux', linux: { ...linux, read: () => [procRow] } });
+    assert.deepEqual(all, [procRow]);
+    assert.deepEqual(spawned, []);
+  });
+});
+
+test('linuxLimits: null off Linux and with /proc readable; refused /proc names what is left', () => {
+  const refusedProbe = () => {
+    throw refusal();
+  };
+  assert.equal(linuxLimits({ platform: 'darwin' }), null);
+  assert.equal(linuxLimits({ platform: 'linux', state: {}, probe: () => '1 2' }), null);
+  const withLsof = linuxLimits({
+    platform: 'linux',
+    state: {},
+    probe: refusedProbe,
+    hasLsof: () => true,
+    hasPs: () => true,
+  });
+  assert.equal(withLsof.lsof, true);
+  assert.match(
+    withLsof.text,
+    /cannot read \/proc on Linux \(Deno has no scoped grant for it\): processes come from ps/,
+  );
+  const without = linuxLimits({
+    platform: 'linux',
+    state: {},
+    probe: refusedProbe,
+    hasLsof: () => false,
+    hasPs: () => true,
+  });
+  assert.equal(without.lsof, false);
+  assert.match(without.text, /lsof is not installed.*unavailable/);
+  const noPs = linuxLimits({
+    platform: 'linux',
+    state: {},
+    probe: refusedProbe,
+    hasLsof: () => true,
+    hasPs: () => false,
+  });
+  assert.equal(noPs.ps, false);
+  assert.match(noPs.text, /ps is not installed, so no process can be listed.*unavailable/);
 });
