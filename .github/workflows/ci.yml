@@ -40,6 +40,10 @@ jobs:
           export ZAAFPULSE_DATA="$RUNNER_TEMP/zp-data" HOME="$RUNNER_TEMP/zp-home"
           mkdir -p "$ZAAFPULSE_DATA" "$HOME"
           node --test test/*.test.js
+      # The gateway contract suite (test/contract/): server.js as a child process against a fake upstream, black-box.
+      - name: Gateway contract suite
+        shell: bash
+        run: npm run test:contract
       - run: node bin/zaafpulse.js doctor
   deno:
     name: deno (${{ matrix.os }}, not blocking)
@@ -76,6 +80,18 @@ jobs:
             > "$RUNNER_TEMP/deno-summary.md"
           cat "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
           exit $code
+      # Runs even when the unit suite above has failures (it has known ones in P0), so the contract result is reported.
+      - name: Gateway contract suite on the Deno server
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set +e
+          ZP_RUNTIME=deno deno test -A --no-check test/contract/ > "$RUNNER_TEMP/deno-contract.log" 2>&1
+          code=$?
+          set -e
+          scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract.log" "contract suite under Deno (${{ matrix.os }})" \
+            | tee -a "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -83,6 +99,7 @@ jobs:
           path: |
             ${{ runner.temp }}/deno-summary.md
             ${{ runner.temp }}/deno-test.log
+            ${{ runner.temp }}/deno-contract.log
           if-no-files-found: warn
 
   typecheck:
