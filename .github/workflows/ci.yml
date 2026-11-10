@@ -86,7 +86,11 @@ jobs:
         shell: bash
         run: |
           set +e
-          ZP_RUNTIME=deno deno test -A --no-check test/contract/ > "$RUNNER_TEMP/deno-contract.log" 2>&1
+          # Scoped grant, not -A: write only the temp folder the harness makes its data folders in, net to this machine,
+          # run only the two runtimes the harness spawns.
+          ZP_RUNTIME=deno deno test --no-check --allow-read --allow-write="${TMPDIR:-/tmp}" \
+            --allow-net=127.0.0.1,localhost --allow-run=node,deno --allow-env --allow-sys \
+            test/contract/ > "$RUNNER_TEMP/deno-contract.log" 2>&1
           code=$?
           set -e
           scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract.log" "contract suite under Deno (${{ matrix.os }})" \
