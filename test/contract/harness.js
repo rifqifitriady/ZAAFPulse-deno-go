@@ -104,12 +104,30 @@ async function startServer({ runtime = process.env.ZP_RUNTIME || 'node', config 
       exited = true;
     });
     const base = `http://127.0.0.1:${port}`;
+    // Backstop: a child still running when this process exits (a crash, a test timeout) is killed, never left behind.
+    const reap = () => {
+      if (!exited) child.kill('SIGKILL');
+    };
+    process.once('exit', reap);
     const stop = async () => {
       if (!exited) {
-        const gone = new Promise((resolve) => child.once('exit', resolve));
+        let release;
+        let giveUp;
+        const gone = new Promise((resolve) => {
+          release = resolve;
+          child.once('exit', resolve);
+        });
         child.kill();
+        // SIGTERM first; if the child is still there after 5 s, SIGKILL it and wait at most 2 s more.
+        const killTimer = setTimeout(() => {
+          child.kill('SIGKILL');
+          giveUp = setTimeout(release, 2000);
+        }, 5000);
         await gone;
+        clearTimeout(killTimer);
+        clearTimeout(giveUp);
       }
+      process.removeListener('exit', reap);
       // Retries: on Windows the folder can stay busy for a moment after the child exits.
       fs.rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     };
