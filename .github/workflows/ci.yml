@@ -1,8 +1,9 @@
 # Runs the whole test suite on Linux, macOS, Windows and Windows on Arm for every push and pull request to main and to
 # the migration branches (migrate/**, which includes migrate/deno-go). The release workflow calls it too
 # (workflow_call), so a tag is only built when the suite passes.
-# Actions are pinned by commit SHA (the comment names the release); Node is pinned to the exact version
-# the single-file binaries embed. Update both together with release.yml.
+# Actions are pinned by commit SHA (the comment names the release); Node and Deno are pinned to exact versions. The
+# single-file binaries embed Deno (the build-deno job), not Node. release.yml calls this workflow and pins no Node or
+# Deno of its own, so a version changes here only.
 # The deno job runs the same suite and the contract suite under the pinned Deno with the "test" permission set of
 # deno.json (never -A), and blocks like the Node job (P2 T4). The Node job keeps running until the cut-over (P7).
 # The build-deno job compiles and smoke-tests the six single-file binaries on native runners (P2 T6).

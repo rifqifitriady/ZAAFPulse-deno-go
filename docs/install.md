@@ -103,7 +103,7 @@ chmod +x zaafpulse-1.0.0-linux-x64
 ./zaafpulse-1.0.0-linux-x64 service install      # run in the background and at startup
 ```
 
-The file contains Node.js and the app. On first run it unpacks the app into your cache folder (`~/Library/Caches/ZAAFPulse`, `~/.cache/zaafpulse` or `%LOCALAPPDATA%\ZAAFPulse\app`) and runs it from there. All `zaafpulse` commands work the same way.
+The file contains the Deno runtime and the app, and serves the app from inside itself: nothing is unpacked. All `zaafpulse` commands work the same way.
 
 The binaries are not notarized or code-signed:
 
@@ -357,6 +357,20 @@ Run `zaafpulse service install` again after you change them. It rewrites the ser
   ```
 
 Run `zaafpulse doctor` afterwards to check the folders from your shell; the Overview shows what the running service itself sees.
+
+### On Deno, permissions are fixed when the service is installed
+
+Under Deno, `zaafpulse service install` and `zaafpulse register-mcp` write the permissions of the process they set up into the service file and into each AI client's MCP entry: the folders it may write (the data folder, the temp folder, the skill folders and the AI clients' config folders, found from `CLAUDE_CONFIG_DIR` and the other variables), the programs it may run (the `deno.json` list, the owner model servers approved in Settings, `ZAAFPULSE_CLAUDE_BIN` and where Claude Code, node, brew and the model servers were found) and the `PATH` of the shell you install from. Nothing updates them afterwards. Run `zaafpulse service install` (and `zaafpulse register-mcp` for the MCP entries) again after you:
+
+- approve a model server in Settings, or change one;
+- install or move Claude Code, node, Homebrew or a model server;
+- change `CLAUDE_CONFIG_DIR`, `ZAAFPULSE_CLAUDE_DIRS`, `CODEX_HOME`, `XDG_CONFIG_HOME` or `ZAAFPULSE_DATA`.
+
+Until then an action outside the old grant fails with "Requires ... access to ..." in the dashboard or the log. The service gets the install-time `PATH` (only absolute folders without a comma, a double quote or a control character, each once, then the usual system folders), because launchd and systemd start a service with a minimal one, and Deno grants a program name only when it finds it on `PATH` when it starts; the single-file binary looks its built-in program names up the same way, on the `PATH` it starts with.
+
+- **Linux, `--system`:** the install runs as root, so the skill and AI client folders in the grant are root's (`/root/.claude/skills` and so on), not yours; the service itself runs as the `zaafpulse` user with its data in `/var/lib/zaafpulse`. Install the skills and register the MCP clients from your own account.
+- **Windows:** the Startup launcher runs one `cmd.exe` line, which cannot carry a `%` or a `"` safely. If a folder in the launch (your user folder, the data folder, the app folder) holds a `%`, `service install` stops with an error that names it, before anything is written; move the data folder (`--data`), or start ZAAFPulse yourself.
+- **A comma, a double quote or a control character** in any folder of the grant stops the install with an error that names it (a comma would split one grant into two).
 
 ## What works where
 
