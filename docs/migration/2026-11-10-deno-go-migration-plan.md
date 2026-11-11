@@ -267,7 +267,7 @@ like any client.
 - `install.sh` and `install.ps1` install both binaries.
 - `zaafpulse` supervises `zaafpulse-gw`: restart with back-off, and a health check shown on the Overview.
 - Upgrade path from v1.1.x and rollback (M12).
-- An authenticated install and update from the private repo (§11.1), using a token from the OS secret store.
+- ~~An authenticated install and update from the private repo (§11.1)~~ not needed: the repo is public since 2026-11-11 (§11.5). Install and update fetch the public release assets, as in v1.x.
 - Install docs for unsigned binaries: the SmartScreen and Gatekeeper steps, and checking SHA256SUMS and the
   attestation (§11.3).
 - **Exit:**
@@ -281,7 +281,7 @@ like any client.
   `govulncheck`.
 - 7-day soak on the owner's live dashboard (M13).
 - Docs: README, architecture diagram, `docs/governance.md` (the new controls), and a migration note.
-- Release **v2.0.0** from this private repo (§11.1), and remove the Node-only code paths.
+- Release **v2.0.0** from this repo (§11.1, public since 2026-11-11, §11.5), and remove the Node-only code paths.
 - **Exit (gate G4):** every metric M1–M13 is met and recorded in `bench/results/` and the release notes.
 
 ## 6. Decision gates
@@ -294,7 +294,7 @@ like any client.
 | G3 | P4 | Gateway fully on Go, M3 and M4 met | Keep the JS gateway for the slices not met; ship hybrid |
 | G4 | P7 | All metrics met | No v2.0.0; the public v1.x line stays the only release |
 
-Every gate leaves a shippable product. Upstream `main` (public) keeps releasing v1.x the whole time; v2.0.0 is released from this private repo (§11.1).
+Every gate leaves a shippable product. Upstream `main` (public) keeps releasing v1.x the whole time; v2.0.0 is released from this repo (§11.1; public since 2026-11-11, §11.5).
 
 ## 7. Timeline
 
@@ -346,7 +346,8 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
 
 ## 11. Owner decisions (2026-11-10)
 
-1. **Release line: v2.0.0 ships from this private repo (`ZAAFPulse-deno-go`).** The public ZAAFPulse stays on the
+1. **Release line: v2.0.0 ships from this repo (`ZAAFPulse-deno-go`).** It was private when this was decided; it is
+   public since 2026-11-11 (decision 5), so the authenticated-install bullets below no longer apply. The public ZAAFPulse stays on the
    v1.x line and is not switched.
    - Assets of a private repo cannot be downloaded without authentication, so P6 must deliver an authenticated
      install and update path:
@@ -372,3 +373,9 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    - What this leaves uncovered: a permission that only a long-running real install exercises (the owner's runtimes,
      notifications, the service started by launchd with its install-time PATH). Those surface at the P7 cut-over
      instead, where the rollback to the Node line must stay one command away.
+5. **The repo is public (2026-11-11).** Actions minutes for a private repo ran out and blocked every CI job; a public
+   repo runs the standard runners free. Before the switch the whole history was scanned: the only key-shaped strings
+   are the fake test key `sk-ant-api03-AbCdEf…`, and no `config.json`, data folder or key file was ever committed.
+   - P6 drops the authenticated install and update: the install scripts and the update check read the public
+     release, as in v1.x.
+   - The public ZAAFPulse repo still carries v1.x; v1.x users are not moved to v2 automatically.
