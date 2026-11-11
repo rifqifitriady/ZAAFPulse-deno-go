@@ -309,6 +309,21 @@ test('a seq gap after a mark fails the event (not stored, not acknowledged); any
   assert.throws(() => resumed.handle(msgOf(9), S), /after seq 7/, 'a recovered mark counts too');
 });
 
+test('seed: a mark recovered lower than the outbox start is raised, so the next event is stored, not a gap', () => {
+  const { calls, sinks } = recording();
+  // The stores' tails held only an older mark (2) of the stream; the gateway acknowledged up to 5 (hello outboxFrom 6).
+  const ingest = createIngest({ ...sinks, marks: new Map([[S, 2]]), log: () => {} });
+  ingest.seed(S, 5);
+  assert.equal(ingest.mark(S), 5);
+  assert.equal(ingest.handle(msgOf(6), S), true, 'stored, not refused as a gap');
+  assert.equal(ingest.mark(S), 6);
+  ingest.seed(S, 3);
+  assert.equal(ingest.mark(S), 6, 'never lowered');
+  ingest.seed('b'.repeat(32), 0);
+  assert.equal(ingest.mark('b'.repeat(32)), 0, 'outboxFrom 1: nothing acknowledged yet');
+  assert.equal(calls.spans.length + calls.usage.length + calls.mcp.length + calls.governance.length, 1);
+});
+
 test('the writers take a null second argument as before: no TypeError, the default (lenient) path', (t) => {
   const root = tmpDir(t, 'null-opts');
   const stores = openLocalStores({ root });

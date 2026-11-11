@@ -69,6 +69,37 @@ test('start, ready, snapshots every interval, reload, stop: exit 0', async (t) =
   assert.equal(sup.status().restarts, 0);
 });
 
+test('a control plane whose recovered mark is below the outbox start stores the next event (no restart loop)', async (t) => {
+  const bin = stubBin(t);
+  if (!bin) return;
+  const outbox = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-ipc-sup-ob-'));
+  t.after(() => fs.rmSync(outbox, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
+  const sinks = { recordUsage: () => {}, recordGovernance: () => true, recordMcp: () => {}, writeSpans: () => {} };
+  // Run 1: 9 events stored and acknowledged (the outbox is empty afterwards).
+  const first = createIngest({ ...sinks, log: () => {} });
+  const run1 = supervise(t, bin, ['--emit', '3', '--outbox', outbox], { ingest: first });
+  run1.sup.start();
+  await waitFor(() => run1.sup.status().state === 'ready', 5000, 'ready');
+  await waitFor(
+    () => first.stats().stored === 9 && !fs.readdirSync(outbox).some((f) => f.endsWith('.jsonl')),
+    10000,
+    'nine events stored and acknowledged',
+  );
+  await run1.sup.stop(1000);
+  const stream = JSON.parse(fs.readFileSync(path.join(outbox, 'stream.json'), 'utf8')).stream;
+  assert.equal(first.mark(stream), 9);
+  // Run 2: the control plane restarted and its stores' tails only held an older mark of the stream (4 of 9, the
+  // newest lines were pushed out of the tail window). The gateway sends 10..12 (hello outboxFrom 10).
+  const logs2 = [];
+  const second = createIngest({ ...sinks, marks: new Map([[stream, 4]]), log: (l) => logs2.push(l) });
+  const run2 = supervise(t, bin, ['--emit', '4', '--outbox', outbox], { ingest: second });
+  run2.sup.start();
+  await waitFor(() => second.mark(stream) === 12 || run2.sup.status().restarts > 0, 5000, 'events 10..12 stored');
+  assert.deepEqual(logs2, [], 'no gap refused');
+  assert.equal(run2.sup.status().restarts, 0, 'no restart');
+  assert.equal(second.mark(stream), 12);
+});
+
 test('a gateway that stops sending health is killed and restarted', async (t) => {
   const bin = stubBin(t);
   if (!bin) return;

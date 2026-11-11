@@ -35,6 +35,7 @@ const s = startSession({
   cpVersion: 'kill-test',
   initial,
   log: () => {},
+  onHello: (h) => ingest.seed(h.stream, h.outboxFrom - 1), // as the supervisor does
   onEvent: (msg, stream) => {
     ingest.handle(msg, stream);
     lastSeen = Math.max(lastSeen, msg.seq);
