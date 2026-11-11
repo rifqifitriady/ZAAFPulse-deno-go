@@ -197,7 +197,7 @@ Config placement, following the `deno` skill:
   - 100% of tests green on Deno (M1);
   - 6/6 targets build and smoke-test (M8);
   - Deno RSS and startup within +10% of the Node baseline;
-  - the owner's live dashboard runs on Deno for 48 h without incident.
+  - ~~the owner's live dashboard runs on Deno for 48 h without incident~~ dropped by the owner on 2026-11-11 (§11, decision 4).
 
 ### P3 — IPC contract (1 week)
 
@@ -290,7 +290,7 @@ like any client.
 |---|---|---|---|
 | G0 | P0 | Baselines and contract suite exist | Do not start P1. The suite is the safety net for everything after it. |
 | G1 | P1 | Deno compatibility and win-arm64 proven, AsyncLocalStorage overhead acceptable | Fall back to **TypeScript (Node) + Go**: P2 is skipped, P3–P7 unchanged |
-| G2 | P2 | Control plane fully on Deno, 48 h live | Stay on Node for the control plane; continue P3–P4 |
+| G2 | P2 | Control plane fully on Deno, CI green on every OS (the 48 h live run was dropped, §11 decision 4) | Stay on Node for the control plane; continue P3–P4 |
 | G3 | P4 | Gateway fully on Go, M3 and M4 met | Keep the JS gateway for the slices not met; ship hybrid |
 | G4 | P7 | All metrics met | No v2.0.0; the public v1.x line stays the only release |
 
@@ -310,7 +310,7 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| A Deno Node-compat gap that tests do not catch | Medium | Medium | Dual-runtime CI until cut-over; shadow mode; 48 h live gate |
+| A Deno Node-compat gap that tests do not catch | Medium | Medium | Dual-runtime CI until cut-over; shadow mode; the P7 cut-over is the first live run (the P2 48 h live gate was dropped, §11 decision 4) |
 | AsyncLocalStorage overhead under Deno | Medium | Low–medium | Benchmark in P1; the hot path moves to Go anyway |
 | A permission that is too narrow, so a feature fails silently | Medium | Medium | A test per permission; loud errors; matrix shown on the Compliance page |
 | A two-writer audit chain or ledger | Low | High | Single-writer rule; kill tests in P3; S8 equality test |
@@ -367,3 +367,8 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    binaries stay unsigned on Windows and ad-hoc signed on macOS, as in v1.x. Integrity comes from SHA256SUMS and
    GitHub attestations. The install docs explain the SmartScreen "More info → Run anyway" step and the macOS
    Gatekeeper step. Enterprise rollout behind AppLocker/WDAC is out of scope.
+4. **Gate G2 has no 48 h live run (2026-11-11).** The owner's dashboard stays on the Node checkout through P2–P6.
+   - Gate G2 rests on CI only: the Deno suite, the contract suite and the six native smoke tests.
+   - What this leaves uncovered: a permission that only a long-running real install exercises (the owner's runtimes,
+     notifications, the service started by launchd with its install-time PATH). Those surface at the P7 cut-over
+     instead, where the rollback to the Node line must stay one command away.
