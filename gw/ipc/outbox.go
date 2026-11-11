@@ -23,7 +23,10 @@ import (
 //
 // On open, the next seq is the larger of stream.json's next and the last complete line + 1, so stream.json is written
 // on ack and close only. A line cut short by a kill is truncated: Append returns before the event is sent, so a cut
-// line was never sent and its seq is free again.
+// line was never sent and its seq is free again. A write that fails part-way (disk full) is truncated back at once, so
+// no fragment is left in the middle of a segment; when that truncate fails too, the segment is closed and the next
+// Append starts a new one, which leaves the fragment at the end of a segment that is never written again (Replay
+// stops at a segment's last newline).
 type Outbox struct {
 	dir        string
 	perSegment int
@@ -32,7 +35,10 @@ type Outbox struct {
 	segs       []int64 // first seq of each segment, ascending
 	cur        *os.File
 	curCount   int
-	remove     func(string) error // os.Remove; a test watches the order of writes
+	curSize    int64                               // bytes in cur: where a failed write is truncated back to
+	remove     func(string) error                  // os.Remove; a test watches the order of writes
+	write      func(*os.File, []byte) (int, error) // (*os.File).Write; a test makes it fail part-way
+	truncate   func(*os.File, int64) error         // (*os.File).Truncate; a test makes it fail
 }
 
 type streamState struct {
@@ -48,7 +54,7 @@ func OpenOutbox(dir string) (*Outbox, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	o := &Outbox{dir: dir, perSegment: 1000, remove: os.Remove}
+	o := &Outbox{dir: dir, perSegment: 1000, remove: os.Remove, write: (*os.File).Write, truncate: (*os.File).Truncate}
 	data, err := os.ReadFile(filepath.Join(dir, "stream.json"))
 	switch {
 	case err == nil:
@@ -160,9 +166,17 @@ func (o *Outbox) Append(typ string, body any, ts int64) ([]byte, int64, error) {
 			return nil, 0, err
 		}
 	}
-	if _, err := o.cur.Write(line); err != nil {
+	if n, err := o.write(o.cur, line); err != nil {
+		if n > 0 {
+			if terr := o.truncate(o.cur, o.curSize); terr != nil {
+				_ = o.cur.Close()
+				o.cur = nil
+				return nil, 0, errors.Join(err, terr)
+			}
+		}
 		return nil, 0, err
 	}
+	o.curSize += int64(len(line))
 	o.curCount++
 	o.state.Next = seq + 1
 	return line, seq, nil
@@ -173,14 +187,16 @@ func (o *Outbox) rotate(first int64) error {
 		_ = o.cur.Close()
 		o.cur = nil
 	}
-	f, err := os.OpenFile(o.segPath(first), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	// O_TRUNC: the segment named by the next seq holds no complete event (those would have seq >= first), only a
+	// fragment that a failed write and a failed truncate left behind, if anything.
+	f, err := os.OpenFile(o.segPath(first), os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
 	if n := len(o.segs); n == 0 || o.segs[n-1] != first {
 		o.segs = append(o.segs, first)
 	}
-	o.cur, o.curCount = f, 0
+	o.cur, o.curCount, o.curSize = f, 0, 0
 	return nil
 }
 
@@ -226,10 +242,12 @@ func (o *Outbox) Ack(upTo int64) error {
 	if upTo <= o.state.Acked {
 		return nil
 	}
+	prev := o.state.Acked
 	o.state.Acked = upTo
 	// stream.json first: a kill between the two leaves acknowledged segments behind (deleted on the next open), never
 	// a stream.json whose next seq is behind events already sent (their seqs would be used twice).
 	if err := o.save(); err != nil {
+		o.state.Acked = prev // memory stays with what is on disk
 		return err
 	}
 	return o.prune()

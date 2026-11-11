@@ -77,3 +77,55 @@ test('a line from the gateway that is not JSON is a protocol error: the gateway 
     logs.join('\n'),
   );
 });
+
+// A fake gateway process: the session reads what it writes to stdout, and kill ends it.
+function fakeChild() {
+  const { EventEmitter } = require('events');
+  const { PassThrough } = require('stream');
+  const child = Object.assign(new EventEmitter(), {
+    pid: 1,
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    killed: false,
+    kill() {
+      if (child.killed) return;
+      child.killed = true;
+      setImmediate(() => child.emit('exit', null, 'SIGKILL'));
+    },
+  });
+  return child;
+}
+
+test('an event that cannot be stored ends the session: the events read after it are dropped, nothing is acked', async () => {
+  const child = fakeChild();
+  const sent = [];
+  child.stdin.on('data', (c) => {
+    for (const l of c.toString().split('\n')) if (l) sent.push(JSON.parse(l));
+  });
+  const seen = [];
+  const logs = [];
+  const s = startSession({
+    bin: 'fake',
+    cpVersion: 'test',
+    initial: initial(),
+    spawnImpl: () => child,
+    log: (l) => logs.push(l),
+    ackEveryMs: 1,
+    onEvent: (msg) => {
+      seen.push(msg.seq);
+      throw new Error('disk full');
+    },
+  });
+  const line = (type, seq, body) => JSON.stringify({ v: 1, type, seq, ts: 0, body }) + '\n';
+  const S = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
+  child.stdout.write(line('hello', 1, { protocol: [1], gwVersion: 't', stream: S, outboxFrom: 1 }));
+  const ev = { log: 'mcp', event: { ts: 1, integration: 'i', tool: 't', ok: true, ms: 1, args: [] } };
+  child.stdout.write(line('audit.event', 2, ev) + line('audit.event', 3, ev) + line('audit.event', 4, ev));
+  await assert.rejects(s.ready, /could not be stored/);
+  await s.exited;
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(seen, [2], 'the events after the failed one are not handed on');
+  assert.equal(sent.filter((m) => m.type === 'ack').length, 0);
+  assert.equal(logs.filter((l) => /could not be stored/.test(l)).length, 1, logs.join('\n'));
+});
