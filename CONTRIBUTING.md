@@ -13,7 +13,7 @@ You do not need to get everything below right, and it is fine if this is your fi
 
 ## Getting set up
 
-You need Node.js 18 or newer and nothing else. ZAAFPulse has no runtime dependencies: the only npm package is postject, a pinned `devDependency` used only to build the single-file binaries (see [Releases](#releases)).
+You need Node.js 18 or newer, or Deno 2.9.8, and nothing else. ZAAFPulse has no runtime dependencies: the only npm package is `@types/node`, a pinned `devDependency` that holds types for `deno check`.
 
 Fork the repository, then:
 
@@ -34,7 +34,7 @@ npm start           # your own logs on http://localhost:4777
 | `npx prettier@3 --write .` | Format the code (settings in `.prettierrc.json`; Prettier is not a dependency) |
 | `npm run media` | Regenerate the README screenshots and GIFs from demo data (needs Chrome and ffmpeg) |
 | `node bin/zaafpulse.js doctor` | Check the OS, Node.js, data folder, secret store and service |
-| `npm ci && node scripts/build-single.js` | Build a single-file executable for this machine into `dist/` (see "Releases") |
+| `deno task build` | Build a single-file executable for this machine into `dist/` (see "Releases") |
 
 ## How the project is laid out
 
@@ -101,17 +101,16 @@ For maintainers. A release is the set of binaries, the source package, `SHA256SU
 
 1. Set the version in `package.json`, merge to `main` and wait for CI to pass on all three systems.
 2. Tag the merge commit and push only that tag: `git tag vX.Y.Z <commit>` and then `git push origin vX.Y.Z`. The workflow stops if the tag and `package.json` disagree.
-3. The workflow runs the full suite, builds the six binaries, attests every file and publishes the release. It never creates or moves a tag.
+3. The workflow runs the full suite and builds and smoke-tests the six binaries. While the v2 line is being built it publishes nothing and creates no GitHub release (publishing and attestations return with the v2 release work); the binaries and their SHA-256 sums stay as build artifacts. It never creates or moves a tag.
 4. Check one file: `gh attestation verify zaafpulse-X.Y.Z-linux-x64 --repo rifqifitriady/ZAAFPulse`.
 
 How the build is kept honest:
 
-- Only files tracked by git are packed. `build-single.js` stops when a file that would ship has uncommitted changes. `--allow-dirty` exists for local test builds only.
-- Each binary carries the SHA-256 of every packed file. On every start it checks the unpacked copy in the cache folder against those hashes, and restores any file that changed, is missing or was added before running anything. This costs about 6 ms per start.
-- postject, the only build tool from npm, is an exact `devDependency` in `package-lock.json`. Run `npm ci` before a local build. The app itself still has no runtime dependencies.
-- The workflows pin every action by commit SHA, with its release in a comment, and Node to an exact version, which is the version the binaries embed. To update:
-  - Node: change `node-version` in both `ci.yml` and `release.yml`.
+- The binaries are built by `deno task build` (`scripts/build-deno.js`) from the committed tree with `deno compile -P=cli`. Only files tracked by git are packed, and the build stops when a file that would ship has uncommitted changes. `--allow-dirty` exists for local test builds only.
+- Nothing is unpacked at start. A binary serves its files from inside itself, so integrity is the release's `SHA256SUMS.txt` plus the attestations, not a check at start.
+- CI builds the six targets on runners of their own OS and CPU and smoke-tests each one (`build-deno`: start in demo mode, `/login.html` answers 200, `/api/platform` says single-file on Deno, `doctor`). The app itself has no runtime dependencies. The build downloads Deno's runtime base binary for each target once.
+- The workflows pin every action by commit SHA, with its release in a comment, and Node and Deno to exact versions. To update:
+  - Node: change `node-version` in `ci.yml`. Deno: change `deno-version` in `ci.yml` and the version in this file.
   - An action: look up the release's commit with `gh api repos/actions/checkout/commits/v7.0.1 --jq .sha` (replace the action and version), then update the SHA and the comment together.
-  - postject: `npm install --save-dev --save-exact postject@<version>`.
 
 By contributing, you agree that your contribution is licensed under the [MIT License](LICENSE) and that you will follow the [Code of Conduct](CODE_OF_CONDUCT.md).
