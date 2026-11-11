@@ -272,7 +272,7 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 
 | At a glance | |
 |---|---|
-| Runtime dependencies | **0** (Node standard library only; postject is a build-only dev dependency) |
+| Runtime dependencies | **0** (Node and Deno standard libraries only) |
 | First index of 2 GB of logs | about **30 s** with worker threads, about **70 s** on one thread or a busy machine; a rescan with no changes takes **1–3 ms**. Worked out from 66 MB/s (worker threads) and 24–62 MB/s (one thread) measured on synthetic logs on an Apple M4 ([method and numbers](docs/performance.md)) |
 | Network exposure | **127.0.0.1 only**, host-header checked, sign-in on by default; outbound only to the places listed under [Privacy](#privacy) |
 | 3D scenes | plain `<canvas>` 2D with an isometric projection: no WebGL, no libraries |
@@ -943,7 +943,7 @@ By default the server listens on `127.0.0.1` only and rejects requests whose `Ho
 | Your OTLP endpoint | Only when `"otel": { "enabled": true }` or an `OTEL_EXPORTER_OTLP_*ENDPOINT` variable is set ([OpenTelemetry](#opentelemetry-export)) | Spans; no prompt text unless `captureContent` is on |
 | GitHub and nodejs.org | Only while `install.sh` or `install.ps1` runs | The release (or `main` when you ask), and the official Node.js LTS when your system has no Node 18+ |
 
-Nothing else: no telemetry, no update checks, no accounts. Demo mode fetches nothing. (The maintainer script `scripts/build-single.js` downloads official Node.js binaries to build releases; the running app never does.) Integration and provider secrets stay in the OS secret store or environment variables, never in `config.json`.
+Nothing else: no telemetry, no update checks, no accounts. Demo mode fetches nothing. (The build, `deno task build`, downloads Deno's runtime base binaries once; the running app never does.) Integration and provider secrets stay in the OS secret store or environment variables, never in `config.json`.
 
 - The office, logs and timeline read transcript tails on demand and keep only tool names, sizes, file and command names, hostnames, timing and state; message text is never shown.
 - Message text from your logs is never stored. The cache keeps token counts, metadata and, for flagged quality or safety items only, a masked snippet of up to 160 characters. Secret values are never kept.
@@ -1018,7 +1018,7 @@ skills/                nine Agent Skills (SKILL.md) that teach an AI to use ZAAF
 public/                dashboard UI: plain HTML, CSS and JavaScript, no build step
 public/iso.js          isometric 3D engine, KPI cards and SVG chart helpers shared by all pages
 scripts/               macOS LaunchAgent install/uninstall, launcher, Chrome opener, MCP client registration
-                       (register-mcp.js), media capture, single-file build (build-single.js, sea-main.js)
+                       (register-mcp.js), media capture, single-file build (build-deno.js, smoke-binary.js)
 scripts/eval-signals.js precision and recall of the detectors on the labelled corpus
 scripts/bench-index.js indexer benchmark on seeded synthetic logs
 install.sh, install.ps1 one-command installers for macOS/Linux and Windows

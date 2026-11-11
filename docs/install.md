@@ -110,7 +110,7 @@ The binaries are not notarized or code-signed:
 - **macOS:** a browser download is quarantined. Run `xattr -d com.apple.quarantine zaafpulse-*` once, or download with `curl`.
 - **Windows:** SmartScreen asks once; choose *More info → Run anyway*.
 
-To build them yourself: `node scripts/build-single.js` builds this machine's target, or `node scripts/build-single.js linux-x64 win-x64` builds others. macOS targets need a Mac. Pushing a `v*` tag builds all six in GitHub Actions and attaches them to a release.
+To build them yourself: `deno task build` builds this machine's target, `deno task build --target x86_64-unknown-linux-gnu` or `--all` builds others (Deno cross-compiles every target from any OS).
 
 ## Docker
 

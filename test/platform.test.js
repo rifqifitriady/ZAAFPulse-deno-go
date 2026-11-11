@@ -241,6 +241,22 @@ test('service: the log folder variables are carried into the unit, plist and Win
   assert.match(vbs, /e\("CODEX_HOME"\) = "\/home\/me\/cx"/);
 });
 
+test('service: a single-file binary works in its data folder, a checkout in the app folder', () => {
+  const d = tmp('zp-svc-');
+  const env = { ZAAFPULSE_DATA: d };
+  const at = (dir) => `<key>WorkingDirectory</key><string>${dir}</string>`;
+  assert.ok(service.plist(['/x/zaafpulse', 'start'], env, '/tmp/l.log').includes(at(platform.APP_DIR)));
+  // Restored by hand: under Deno node:test's mock is not undone when the test ends, and the next test would see it.
+  const was = platform.isSingleFile;
+  platform.isSingleFile = () => true;
+  try {
+    assert.ok(service.plist(['/x/zaafpulse', 'start'], env, '/tmp/l.log').includes(at(d)));
+    assert.ok(service.unitText(['/x/zaafpulse', 'start'], env, { system: false }).includes(`WorkingDirectory=${d}`));
+  } finally {
+    platform.isSingleFile = was;
+  }
+});
+
 test('service: unit, plist and Windows launcher carry settings but never secrets', () => {
   const env = service.settings({
     ZAAFPULSE_HOST: '0.0.0.0',
