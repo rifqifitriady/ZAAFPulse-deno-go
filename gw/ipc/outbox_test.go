@@ -19,6 +19,17 @@ func appendN(t *testing.T, o *Outbox, n int) {
 	}
 }
 
+// openOutbox opens the outbox of dir and closes it when the test ends: Windows cannot remove the temporary folder while
+// a segment is open. Tests that "kill" an outbox by opening the folder again close both at the end.
+func openOutbox(t *testing.T, dir string) (*Outbox, error) {
+	t.Helper()
+	o, err := OpenOutbox(dir)
+	if o != nil {
+		t.Cleanup(func() { _ = o.Close() })
+	}
+	return o, err
+}
+
 func replayed(t *testing.T, o *Outbox, from int64) []int64 {
 	t.Helper()
 	var seqs []int64
@@ -37,7 +48,7 @@ func replayed(t *testing.T, o *Outbox, from int64) []int64 {
 }
 
 func TestOutboxAppendReplayAck(t *testing.T) {
-	o, err := OpenOutbox(t.TempDir())
+	o, err := openOutbox(t, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,12 +88,12 @@ func TestOutboxAppendReplayAck(t *testing.T) {
 // the segments.
 func TestOutboxReopenAfterKill(t *testing.T) {
 	dir := t.TempDir()
-	o, _ := OpenOutbox(dir)
+	o, _ := openOutbox(t, dir)
 	stream := o.Stream()
 	appendN(t, o, 5)
 	_ = o.Ack(2)
 	appendN(t, o, 1) // seq 6, after the last stream.json write
-	o2, err := OpenOutbox(dir)
+	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,13 +107,13 @@ func TestOutboxReopenAfterKill(t *testing.T) {
 
 func TestOutboxTruncatesALineCutByAKill(t *testing.T) {
 	dir := t.TempDir()
-	o, _ := OpenOutbox(dir)
+	o, _ := openOutbox(t, dir)
 	appendN(t, o, 3)
 	seg := filepath.Join(dir, "00000000000000000001.jsonl")
 	f, _ := os.OpenFile(seg, os.O_APPEND|os.O_WRONLY, 0)
 	_, _ = f.WriteString(`{"v":1,"type":"usage.rep`)
 	_ = f.Close()
-	o2, err := OpenOutbox(dir)
+	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +132,7 @@ func TestOutboxTruncatesALineCutByAKill(t *testing.T) {
 func TestOutboxDamagedStreamFile(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "stream.json"), []byte(`{"stream":"x"}`), 0o600)
-	if _, err := OpenOutbox(dir); err == nil {
+	if _, err := openOutbox(t, dir); err == nil {
 		t.Fatal("a damaged stream.json must not start a new stream silently")
 	}
 }
@@ -130,11 +141,11 @@ func TestOutboxDamagedStreamFile(t *testing.T) {
 // follows the last event written, so no seq is used twice.
 func TestOutboxEmptyLastSegment(t *testing.T) {
 	dir := t.TempDir()
-	o, _ := OpenOutbox(dir)
+	o, _ := openOutbox(t, dir)
 	o.SetPerSegment(3)
 	appendN(t, o, 4) // segments 1 and 4
 	_ = os.WriteFile(filepath.Join(dir, "00000000000000000005.jsonl"), nil, 0o600)
-	o2, err := OpenOutbox(dir)
+	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +158,7 @@ func TestOutboxEmptyLastSegment(t *testing.T) {
 // next seq (found by the kill tests: a kill between the two made a reopened outbox reuse sent seqs).
 func TestOutboxAckWritesStreamFileBeforeDeleting(t *testing.T) {
 	dir := t.TempDir()
-	o, _ := OpenOutbox(dir)
+	o, _ := openOutbox(t, dir)
 	o.SetPerSegment(2)
 	appendN(t, o, 5)
 	removed := 0
@@ -172,7 +183,7 @@ func TestOutboxAckWritesStreamFileBeforeDeleting(t *testing.T) {
 // the write, so the next Append starts a clean line and Replay reads every stored event.
 func TestOutboxFailedWriteLeavesNoFragment(t *testing.T) {
 	dir := t.TempDir()
-	o, _ := OpenOutbox(dir)
+	o, _ := openOutbox(t, dir)
 	appendN(t, o, 2)
 	o.write = func(f *os.File, b []byte) (int, error) {
 		n, _ := f.Write(b[:len(b)/2])
@@ -190,7 +201,7 @@ func TestOutboxFailedWriteLeavesNoFragment(t *testing.T) {
 	if got := replayed(t, o, 1); !slices.Equal(got, []int64{1, 2, 3, 4}) {
 		t.Fatalf("replay %v", got)
 	}
-	o2, err := OpenOutbox(dir)
+	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +214,7 @@ func TestOutboxFailedWriteLeavesNoFragment(t *testing.T) {
 // the end of a segment that is never written again, where Replay and open skip it.
 func TestOutboxFailedWriteAndTruncateStartsANewSegment(t *testing.T) {
 	dir := t.TempDir()
-	o, _ := OpenOutbox(dir)
+	o, _ := openOutbox(t, dir)
 	appendN(t, o, 2)
 	o.write = func(f *os.File, b []byte) (int, error) {
 		n, _ := f.Write(b[:len(b)/2])
@@ -222,7 +233,7 @@ func TestOutboxFailedWriteAndTruncateStartsANewSegment(t *testing.T) {
 	if got := replayed(t, o, 1); !slices.Equal(got, []int64{1, 2, 3, 4}) {
 		t.Fatalf("replay %v", got)
 	}
-	o2, err := OpenOutbox(dir)
+	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,11 +246,11 @@ func TestOutboxFailedWriteAndTruncateStartsANewSegment(t *testing.T) {
 // open; the next seq follows the last complete line of the segment before it.
 func TestOutboxTornFirstLineOfNewestSegment(t *testing.T) {
 	dir := t.TempDir()
-	o, _ := OpenOutbox(dir)
+	o, _ := openOutbox(t, dir)
 	o.SetPerSegment(2)
 	appendN(t, o, 2)
 	_ = os.WriteFile(filepath.Join(dir, "00000000000000000003.jsonl"), []byte(`{"v":1,"type":"tr`), 0o600)
-	o2, err := OpenOutbox(dir)
+	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +266,7 @@ func TestOutboxTornFirstLineOfNewestSegment(t *testing.T) {
 // An ack whose stream.json write fails leaves the in-memory ack where it was.
 func TestOutboxAckSaveFailureKeepsTheOldAck(t *testing.T) {
 	dir := t.TempDir()
-	o, _ := OpenOutbox(dir)
+	o, _ := openOutbox(t, dir)
 	appendN(t, o, 3)
 	_ = os.Mkdir(filepath.Join(dir, "stream.json.tmp"), 0o700) // WriteFile to a folder fails
 	if err := o.Ack(2); err == nil {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ type Outbox struct {
 	curSize    int64                               // bytes in cur: where a failed write is truncated back to
 	remove     func(string) error                  // os.Remove; a test watches the order of writes
 	write      func(*os.File, []byte) (int, error) // (*os.File).Write; a test makes it fail part-way
-	truncate   func(*os.File, int64) error         // (*os.File).Truncate; a test makes it fail
+	truncate   func(*os.File, int64) error         // truncateAndSeek; a test makes it fail
 }
 
 type streamState struct {
@@ -54,7 +55,7 @@ func OpenOutbox(dir string) (*Outbox, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	o := &Outbox{dir: dir, perSegment: 1000, remove: os.Remove, write: (*os.File).Write, truncate: (*os.File).Truncate}
+	o := &Outbox{dir: dir, perSegment: 1000, remove: os.Remove, write: (*os.File).Write, truncate: truncateAndSeek}
 	data, err := os.ReadFile(filepath.Join(dir, "stream.json"))
 	switch {
 	case err == nil:
@@ -182,6 +183,17 @@ func (o *Outbox) Append(typ string, body any, ts int64) ([]byte, int64, error) {
 	return line, seq, nil
 }
 
+// truncateAndSeek cuts f back to size and moves the write position there. The segment is not opened with O_APPEND (the
+// outbox has one writer, under its mutex): on Windows an append-only handle cannot be truncated at all, so a failed
+// write would leave its fragment in the middle of the segment.
+func truncateAndSeek(f *os.File, size int64) error {
+	if err := f.Truncate(size); err != nil {
+		return err
+	}
+	_, err := f.Seek(size, io.SeekStart)
+	return err
+}
+
 func (o *Outbox) rotate(first int64) error {
 	if o.cur != nil {
 		_ = o.cur.Close()
@@ -189,7 +201,7 @@ func (o *Outbox) rotate(first int64) error {
 	}
 	// O_TRUNC: the segment named by the next seq holds no complete event (those would have seq >= first), only a
 	// fragment that a failed write and a failed truncate left behind, if anything.
-	f, err := os.OpenFile(o.segPath(first), os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(o.segPath(first), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

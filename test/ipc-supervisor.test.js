@@ -5,13 +5,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { createSupervisor } = require('../lib/ipc/supervisor');
 const { createIngest } = require('../lib/ipc/ingest');
 const { DIR } = require('../lib/ipc/schema');
-const { stubBin, initial, waitFor, tmpDir } = require('./ipc-stub');
+const { stubBin, initial, waitFor } = require('./ipc-stub');
 
 function supervise(t, bin, extraArgs = [], opts = {}) {
-  const root = tmpDir(t, 'sup');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-ipc-sup-'));
   const logs = [];
   const first = initial();
   const sup = createSupervisor({
@@ -31,7 +32,15 @@ function supervise(t, bin, extraArgs = [], opts = {}) {
     killAfterMs: 300,
     ...opts,
   });
-  t.after(() => sup.stop(0));
+  // One hook, in this order: the gateway must be gone before its folder is removed (Windows cannot remove a folder
+  // whose files a running process holds open, and a failed hook would leave the gateway running).
+  t.after(async () => {
+    try {
+      await sup.stop(0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
+  });
   return { sup, logs };
 }
 
