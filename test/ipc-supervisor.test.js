@@ -25,6 +25,7 @@ function supervise(t, bin, extraArgs = [], opts = {}) {
       snapshot: () => ({ budgets: [], keyCenter: {} }),
     },
     log: (l) => logs.push(l),
+    ingest: { handle: () => true }, // the tests that look at the stored events pass their own
     // Generous: a busy machine (both suites in parallel) must not see a hang. The hang test sets its own 300 ms.
     healthTimeoutMs: 10000,
     snapshotEveryMs: 100,
@@ -200,11 +201,19 @@ const fakeOpts = (start, logs, clock, extra = {}) => ({
   cpVersion: 'test',
   sources: { config: () => ({}), secrets: () => ({}), snapshot: () => ({ budgets: [], keyCenter: {} }) },
   log: (l) => logs.push(l),
+  ingest: { handle: () => true },
   now: () => clock.t,
   healthTimeoutMs: 60000,
   snapshotEveryMs: 60000,
   start,
   ...extra,
+});
+
+test('no ingest, no supervisor: it never acknowledges events it did not store', () => {
+  const { start } = fakeStart();
+  const base = fakeOpts(start, [], { t: 0 });
+  for (const ingest of [undefined, null, {}, { handle: 'x' }])
+    assert.throws(() => createSupervisor({ ...base, ingest }), /ingest/);
 });
 
 test('a resent event is counted once: only what the ingest stored counts as an unchecked call', async (t) => {
