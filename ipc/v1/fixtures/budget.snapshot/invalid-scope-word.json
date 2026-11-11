@@ -1,0 +1,1 @@
+{"v":1,"type":"budget.snapshot","seq":4,"ts":1767225600004,"body":{"at":1767225600000,"budgets":[{"id":"b-global","name":"All AI","scope":"all","period":"month","currency":"USD","measure":"list","enforce":"block","amount":500,"from":"2026-01-01","to":"2026-01-31","state":"warn_80","spentUSD":412.5,"amountUSD":500,"reason":null}],"keyCenter":{}}}

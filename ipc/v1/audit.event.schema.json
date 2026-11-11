@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "audit.event (gateway to control plane): a governance entry for the HMAC chain, or an MCP tool call for mcp-audit.jsonl",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["log", "event"],
+      "additionalProperties": false,
+      "properties": {
+        "log": { "type": "string", "const": "governance" },
+        "event": {
+          "type": "object",
+          "required": ["action"],
+          "additionalProperties": false,
+          "properties": {
+            "action": { "type": "string", "minLength": 1 },
+            "target": {
+              "type": "object",
+              "required": ["type"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string", "minLength": 1 },
+                "id": { "type": "string" },
+                "name": { "type": "string" }
+              }
+            },
+            "outcome": { "type": "string", "enum": ["ok", "refused", "error"] },
+            "status": { "type": "integer" },
+            "changes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["path"],
+                "additionalProperties": false,
+                "properties": { "path": { "type": "string" }, "from": {}, "to": {} }
+              }
+            },
+            "actor": {
+              "type": "object",
+              "required": ["via"],
+              "additionalProperties": false,
+              "properties": {
+                "via": { "type": "string", "minLength": 1 },
+                "keyId": { "type": "string" },
+                "user": { "type": "string" },
+                "rule": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["log", "event"],
+      "additionalProperties": false,
+      "properties": {
+        "log": { "type": "string", "const": "mcp" },
+        "event": {
+          "type": "object",
+          "required": ["ts", "integration", "tool", "ok", "ms", "args"],
+          "additionalProperties": false,
+          "properties": {
+            "ts": { "type": "integer", "minimum": 0 },
+            "integration": { "type": "string", "minLength": 1 },
+            "tool": { "type": "string", "minLength": 1 },
+            "ok": { "type": "boolean" },
+            "ms": { "type": "number", "minimum": 0 },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "keyId": { "type": "string" }
+          }
+        }
+      }
+    }
+  ]
+}

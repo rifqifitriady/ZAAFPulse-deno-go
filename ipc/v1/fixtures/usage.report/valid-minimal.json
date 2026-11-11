@@ -1,0 +1,1 @@
+{"v":1,"type":"usage.report","seq":42,"ts":1767225630124,"body":{"record":{"ts":1767225630123,"keyId":"dashboard","provider":"ollama","model":"ollama/llama-5","status":599,"ms":30000,"cost":0,"error":"no answer"}}}

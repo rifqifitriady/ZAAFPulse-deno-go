@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "config.push (control plane to gateway): the gateway section without keys or secret references, the keys with their hashes, the price table in nano-USD per 1M tokens",
+  "type": "object",
+  "required": ["gen", "gateway", "keys", "pricing"],
+  "additionalProperties": false,
+  "properties": {
+    "gen": { "type": "integer", "minimum": 1 },
+    "gateway": {
+      "type": "object",
+      "required": ["providers", "routes", "guardrails", "defaults", "tokenSaver", "modelMap"],
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "preset", "baseUrl"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "preset": { "type": "string" },
+              "baseUrl": { "type": "string" },
+              "models": { "type": "array", "items": { "type": "string" } },
+              "aliases": { "type": "object", "additionalProperties": { "type": "string" } },
+              "enabled": { "type": "boolean" },
+              "tier": { "type": "string", "enum": ["private", "external"] },
+              "approved": { "type": "boolean" },
+              "auth": {
+                "type": "object",
+                "required": ["type"],
+                "additionalProperties": false,
+                "properties": {
+                  "type": { "type": "string", "minLength": 1 },
+                  "tokenUrl": { "type": "string" },
+                  "clientId": { "type": "string" },
+                  "scope": { "type": "string" },
+                  "grant": { "type": "string", "enum": ["client_credentials", "refresh_token"] }
+                }
+              },
+              "format": { "type": "string", "enum": ["openai", "anthropic"] },
+              "responses": { "type": "boolean" },
+              "reasoning": { "type": "boolean" },
+              "tokenParam": { "type": "string", "enum": ["max_tokens", "max_completion_tokens"] }
+            }
+          }
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "targets"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "targets": { "type": "array", "items": { "type": "string" } },
+              "strategy": { "type": "string", "enum": ["fallback", "round-robin"] },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "guardrails": {
+          "type": "object",
+          "required": ["scope", "secrets", "pii", "injection"],
+          "additionalProperties": false,
+          "properties": {
+            "scope": { "type": "string", "enum": ["external", "all"] },
+            "secrets": { "type": "string", "enum": ["off", "log", "redact", "block"] },
+            "pii": { "type": "string", "enum": ["off", "log", "redact", "block"] },
+            "injection": { "type": "string", "enum": ["off", "log", "block"] }
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "required": ["model", "plannerModel", "codeModel"],
+          "additionalProperties": false,
+          "properties": {
+            "model": { "type": "string" },
+            "plannerModel": { "type": "string" },
+            "codeModel": { "type": "string" }
+          }
+        },
+        "tokenSaver": { "type": "boolean" },
+        "modelMap": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["match", "to"],
+            "additionalProperties": false,
+            "properties": { "match": { "type": "string" }, "to": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "name", "scopes", "models", "agents", "knowledge", "budgetUSD", "rpm", "privateOnly", "expiresAt",
+          "revokedAt", "guardrails", "prefix", "approveOwnRuns", "createdAt", "lastUsedAt", "hash"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string" },
+          "scopes": { "type": "array", "items": { "type": "string" } },
+          "models": { "type": "array", "items": { "type": "string" } },
+          "agents": { "type": "array", "items": { "type": "string" } },
+          "knowledge": { "type": "array", "items": { "type": "string" } },
+          "budgetUSD": { "type": ["number", "null"] },
+          "rpm": { "type": "integer", "minimum": 0 },
+          "privateOnly": { "type": "boolean" },
+          "expiresAt": { "type": ["integer", "null"] },
+          "revokedAt": { "type": ["integer", "null"] },
+          "guardrails": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "scope": { "type": "string", "enum": ["external", "all"] },
+              "secrets": { "type": "string", "enum": ["off", "log", "redact", "block"] },
+              "pii": { "type": "string", "enum": ["off", "log", "redact", "block"] },
+              "injection": { "type": "string", "enum": ["off", "log", "block"] }
+            }
+          },
+          "prefix": { "type": "string" },
+          "approveOwnRuns": { "type": "boolean" },
+          "createdAt": { "type": "integer", "minimum": 0 },
+          "lastUsedAt": { "type": ["integer", "null"] },
+          "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "pricing": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["input", "output"],
+        "additionalProperties": false,
+        "properties": {
+          "input": { "type": "integer", "minimum": 0 },
+          "output": { "type": "integer", "minimum": 0 },
+          "cacheRead": { "type": "integer", "minimum": 0 },
+          "cacheWrite5m": { "type": "integer", "minimum": 0 },
+          "cacheWrite1h": { "type": "integer", "minimum": 0 },
+          "webSearch": { "type": "integer", "minimum": 0 },
+          "tiers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["above", "input", "output"],
+              "additionalProperties": false,
+              "properties": {
+                "above": { "type": "integer", "minimum": 0 },
+                "input": { "type": "integer", "minimum": 0 },
+                "output": { "type": "integer", "minimum": 0 },
+                "cacheRead": { "type": "integer", "minimum": 0 },
+                "cacheWrite5m": { "type": "integer", "minimum": 0 },
+                "cacheWrite1h": { "type": "integer", "minimum": 0 }
+              }
+            }
+          },
+          "estimate": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

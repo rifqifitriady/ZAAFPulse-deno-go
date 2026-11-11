@@ -1,0 +1,1 @@
+{"v":1,"type":"audit.event","seq":45,"ts":1767225650200,"body":{"log":"mcp","event":{"ts":1767225650200,"integration":"dynatrace","tool":"list_problems","ok":true,"ms":312,"args":["from","limit"],"keyId":"k1"}}}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ready (gateway to control plane): the first config, secrets and snapshot are applied",
+  "type": "object",
+  "required": ["gen"],
+  "additionalProperties": false,
+  "properties": { "gen": { "type": "integer", "minimum": 1 } }
+}

@@ -65,7 +65,7 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 │  process control · supervisor of zaafpulse-gw      │
 │  permissions: write=data dir · net=localhost only  │
 └───────────────┬───────────────────────────────────┘
-                │ local IPC (unix socket / named pipe, token-auth, versioned JSON)
+                │ local IPC (the gateway's stdin/stdout, one JSON message per line, versioned)
                 │  config push · secret handoff · budget snapshot ⇄ usage
                 │  audit events → · trace spans → · health
 ┌───────────────▼───────────────────────────────────┐
@@ -203,9 +203,9 @@ Config placement, following the `deno` skill:
 
 ### P3 — IPC contract (1 week)
 
-- Transport: HTTP/1.1 over a unix domain socket (named pipe on Windows), with a per-start random token. The fallback
-  is 127.0.0.1 TCP with the same token.
-  - Deno grants the socket exactly, with `--allow-net=unix:<data dir>/gw.sock`.
+- Transport (corrected 2026-11-11, P3 spec D1): the gateway's stdin and stdout, one JSON message per line. No socket,
+  port or token: only the parent holds the pipes. Deno needs no `net` grant, only `run` for the gateway binary. The
+  gateway exits when its stdin closes. The messages below, plus `hello`, `ready`, `ack` and `error` (P3 spec D3).
 - Messages, as versioned JSON schemas generated from the P0 JSDoc types:
   - `config.push`
   - `secrets.handoff`
@@ -363,7 +363,7 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    standalone team server in this program.
    - The P3 IPC contract must still be transport-agnostic:
      - the messages and schemas are independent of the transport;
-     - the transport sits behind one interface, unix socket or named pipe today, so a network transport with mTLS
+     - the transport sits behind one interface, the child's stdin and stdout today, so a network transport with mTLS
        can be added later without changing messages.
    - A standalone `zaafpulse-gw` is reconsidered only after G3, with measured numbers.
 3. **Target users are personal, so there is no Windows code-signing certificate** (and no Apple Developer ID). The

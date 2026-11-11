@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "hello (gateway to control plane): protocols offered, gateway version, durable event stream, first unacknowledged seq",
+  "type": "object",
+  "required": ["protocol", "gwVersion", "stream", "outboxFrom"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": { "type": "array", "minItems": 1, "items": { "type": "integer" } },
+    "gwVersion": { "type": "string", "minLength": 1 },
+    "stream": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "outboxFrom": { "type": "integer", "minimum": 1 }
+  }
+}
