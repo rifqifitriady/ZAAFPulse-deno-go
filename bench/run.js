@@ -1,8 +1,8 @@
 // The gateway benchmark (P0 T4): startup, gateway overhead on non-streaming calls, concurrent SSE streams and RSS, for
-// the runtime in ZP_RUNTIME (node or deno), written to bench/results/<date>-<runtime>-<host>.json. Node standard
+// the runtime in ZP_RUNTIME (node, deno or binary), written to bench/results/<date>-<runtime>-<host>.json. Node standard
 // library only; runs under Node and Deno. The mock provider runs in its own process, so the load generator here does
 // not share an event loop with it; server.js is started and seeded by the contract harness (test/contract/harness.js).
-//   node bench/run.js                      (ZP_RUNTIME=deno node bench/run.js for the Deno server)
+//   node bench/run.js                      (ZP_RUNTIME=deno node bench/run.js for the Deno server; ZP_RUNTIME=binary ZP_BINARY=<path> for a compiled one)
 // Knobs (defaults in brackets): ZP_BENCH_REQUESTS [2000], ZP_BENCH_LEVELS [50,200,500], ZP_BENCH_SECONDS [10],
 // ZP_BENCH_DELAY_MS [20], ZP_BENCH_CHUNKS [20], ZP_BENCH_INTERVAL_MS [25], ZP_BENCH_STARTS [5], ZP_BENCH_OUT
 // [bench/results], ZP_BENCH_HOST [the host name].
@@ -52,6 +52,10 @@ function rssMB(pid) {
 }
 
 function versionOf(runtime) {
+  if (runtime === 'binary') {
+    const r = spawnSync(path.resolve(process.env.ZP_BINARY || ''), ['version'], { encoding: 'utf8' });
+    return `binary ${String(r.stdout || '').trim()}`.trim();
+  }
   const bin = runtime === 'deno' ? (underDeno ? process.execPath : 'deno') : underDeno ? 'node' : process.execPath;
   const r = spawnSync(bin, ['--version'], { encoding: 'utf8' });
   return (

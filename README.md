@@ -555,6 +555,23 @@ If the Overview shows 0 sessions, 0 tokens and $0 even though your AI apps are r
 - Using another folder? Set `CLAUDE_CONFIG_DIR` (or `ZAAFPULSE_CLAUDE_DIRS` for several) or `CODEX_HOME` **before starting ZAAFPulse**. The background service does not inherit your shell profile; `zaafpulse service install` copies these variables from the shell it runs in, so export them and run it again after any change. Details: see [docs/install.md](docs/install.md#the-background-service-does-not-see-your-shell-variables).
 - Claude Desktop, ChatGPT and other chat apps keep no readable logs; they show as apps only.
 
+### Run on Deno (v2 line)
+
+ZAAFPulse runs on Deno 2.9.8 with a narrow permission set per entry point (`deno.json`: `server`, `cli`,
+`mcp-stdio`, `test`). The single-file binaries carry the `cli` set, because their entry point is the command line
+(it serves the dashboard, the MCP server, the service install and `doctor`). From a checkout:
+
+```bash
+deno task build                                   # dist/zaafpulse-<version>-<os>-<cpu>
+deno run -q --no-prompt -P=server --allow-write="<data folder>,${TMPDIR:-/tmp}" server.js
+```
+
+A denied action fails with "Requires ... access to ..." in the UI or the log, never silently. The Compliance page
+shows what the running process holds (control "Runtime permissions"). Any environment variable can be named by a
+secret reference in `config.json`; a program outside the run list of `deno.json` (an owner model server that is not one
+of the presets, a Claude Code that is installed only inside an IDE extension folder) is refused with "Requires run
+access", and a build of your own can add it to the list.
+
 ### Run it on login (macOS, from source)
 
 ```bash

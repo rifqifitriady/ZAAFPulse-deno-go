@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "date": "2026-11-11",
+  "runtime": "binary",
+  "runtimeVersion": "binary 1.1.0",
+  "git": {
+    "sha": "8a77e5eded08d93a5fb38a7ad0e12d9b4b09386a",
+    "dirty": true
+  },
+  "host": {
+    "name": "MBA-ZAAF",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "cores": 10,
+    "memGB": 16,
+    "osRelease": "25.6.0"
+  },
+  "config": {
+    "runtime": "binary",
+    "requests": 300,
+    "levels": [
+      50
+    ],
+    "seconds": 5,
+    "delayMs": 20,
+    "chunks": 20,
+    "intervalMs": 25,
+    "starts": 5
+  },
+  "startup": {
+    "ms": [
+      417,
+      241.1,
+      220.6,
+      217.8,
+      223.1
+    ],
+    "p50": 223.1
+  },
+  "idleRssMB": 74.1,
+  "nonStream": {
+    "gateway": {
+      "n": 300,
+      "p50": 26.57,
+      "p95": 28.73,
+      "p99": 29.4
+    },
+    "direct": {
+      "n": 300,
+      "p50": 23.1,
+      "p95": 23.96,
+      "p99": 24.37
+    },
+    "overhead": {
+      "n": 300,
+      "p50": 3.43,
+      "p95": 5.73,
+      "p99": 6.75
+    }
+  },
+  "streams": [
+    {
+      "level": 50,
+      "seconds": 5,
+      "gateway": {
+        "completed": 500,
+        "errors": 0,
+        "ttfbP95": 49.75,
+        "durP50": 537.42,
+        "durP95": 575.17
+      },
+      "direct": {
+        "completed": 500,
+        "errors": 0,
+        "ttfbP95": 26.52,
+        "durP50": 530.05,
+        "durP95": 541.51
+      },
+      "overheadP95": 33.66,
+      "ttfbOverheadP95": 23.23
+    }
+  ],
+  "peakRssMB": 118.9,
+  "durationS": 35
+}

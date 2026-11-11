@@ -54,3 +54,10 @@ node bench/compare.js bench/results/a.json bench/results/b.json
 
 prints each metric of a and b, `b - a` and the change in percent. Lower is better for everything but completed
 streams. `node bench/compare.js --baseline <file>` prints the rows the program plan's baseline table takes.
+
+## Compiled binary
+
+`ZP_RUNTIME=binary ZP_BINARY=<path of a built binary> node bench/run.js` measures a `deno task build` executable the
+same way (the file is named `<date>-binary-<host>.json`; the contract harness runs the binary with `start`). Keep the
+Mac awake and on power: on battery it falls into dark wake during a run, which stalls or resets requests (seen on
+2026-11-11); `caffeinate -dims node bench/run.js` keeps it awake.

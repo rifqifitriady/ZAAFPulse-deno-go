@@ -1,7 +1,7 @@
 // The gateway contract harness (P0 T5). Black-box: it starts the fake upstream (./upstream.js), starts server.js as a
 // child process on a temp data folder (or uses a running instance at ZP_CONTRACT_URL), and seeds providers, routes and
 // keys through the admin API only, so the same cases hold any engine behind /v1/* to the same contract.
-//   ZP_RUNTIME=node|deno   the runtime that runs server.js (default node)
+//   ZP_RUNTIME=node|deno|binary   what runs the server (default node); binary needs ZP_BINARY=<path of a built binary>
 //   ZP_CONTRACT_URL        a running instance on this machine (sign-in off) instead of spawning one; it must have been
 //                          started with SEED_CONFIG in its config.json (prices are read at start, for budgets)
 //   ZP_CONTRACT_KEY        with ZP_CONTRACT_URL: the main key to use instead of creating one
@@ -61,7 +61,11 @@ function command(runtime, data) {
         server,
       ],
     };
-  throw new Error(`ZP_RUNTIME must be node or deno, not "${runtime}"`);
+  if (runtime === 'binary') {
+    if (!process.env.ZP_BINARY) throw new Error('ZP_RUNTIME=binary needs ZP_BINARY, the path of a built binary');
+    return { bin: path.resolve(process.env.ZP_BINARY), args: ['start'] };
+  }
+  throw new Error(`ZP_RUNTIME must be node, deno or binary, not "${runtime}"`);
 }
 
 // startServer({ runtime, config, env }) -> { base, data, pid, startupMs, stderr(), stop() }. Ready means the first 200
