@@ -218,10 +218,13 @@ Config placement, following the `deno` skill:
 - Contract tests run on both sides from the same fixtures.
 - The transport sits behind one interface on both sides (§11.2), so a network transport with mTLS can be added
   later without changing any message.
-- **Exit:**
-  - schemas frozen at v1;
-  - both sides pass the shared fixtures;
-  - a kill test: killing either process never corrupts the audit chain or the ledger.
+- **Exit** (met 2026-11-11, `docs/migration/2026-11-11-p3-results.md`):
+  - [x] schemas frozen at v1 (`ipc/v1`), with the additive-only rule written down;
+  - [x] both sides pass the shared fixtures, on Node, Deno and Go, on 4 OS in CI;
+  - [x] a kill test: killing either process never corrupts the audit chain or the ledger, and loses or duplicates no
+    usage line;
+  - [x] no change in product behaviour: `server.js` does not start the gateway (four writers gained an opt-in `strict`
+    option the product never passes, see the results document).
 
 ### P4 — Go data plane, strangler slices (5–8 weeks)
 
