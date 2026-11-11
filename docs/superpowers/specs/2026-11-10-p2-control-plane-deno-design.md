@@ -87,7 +87,9 @@ new UI framework.
   where it can run), windows x64 and windows-11-arm.
 - Publishing releases, the authenticated install from the private repo and signing docs belong to P6.
 
-**D7. Gate G2's live run is the owner's action.**
+**D7. Gate G2's live run is the owner's action.** Dropped by the owner on 2026-11-11: there is no 48 h live run in P2.
+The owner's dashboard stays on Node; the first live run on Deno is the P7 cut-over (program plan §11, decision 4).
+The text below is kept for the record.
 - The owner's dashboard (launchd `com.zaaf.aipulse.server`) is switched to the Deno binary for 48 h only with the
   owner's explicit go-ahead.
 - The rollback is the current `.worktrees/live` Node checkout, with a backup taken first.
@@ -115,7 +117,7 @@ Order: T1 → T2 → T3 → T4 → T5 → T6 → T7.
 - [ ] 6/6 targets built in CI; native smoke tests green, including windows-11-arm (M8).
 - [ ] Permission sets narrow and tested; no `-A` in committed tasks or CI (M9, partial: net stays broad until P5).
 - [ ] Startup and idle RSS of the compiled binary within +10% of the Node baseline (M5, M7).
-- [ ] The owner's live dashboard runs on the Deno binary for 48 h without incident (owner action, D7).
+- [x] ~~The owner's live dashboard runs on the Deno binary for 48 h without incident (owner action, D7).~~ Dropped by the owner, 2026-11-11.
 - [ ] The Node suite still green (dual-runtime until P7).
 
 ## Out of scope
