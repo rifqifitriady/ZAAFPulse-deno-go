@@ -89,6 +89,133 @@ test('a writer that throws leaves the mark where it was, so the event is not ack
   assert.equal(ingest.mark(S), 0);
 });
 
+// Every store fails for real (its file or folder is replaced so the append cannot happen): the event is not marked,
+// handle throws (the session does not acknowledge it), the failure is logged once per cause, and the same event is
+// stored once the store works again (the resend after the restart). The in-process writers still swallow errors.
+const BLOCKERS = {
+  'usage.report': (f) => fs.mkdirSync(f.usageFile, { recursive: true }), // appending to a folder fails
+  'audit.event:governance': (f) => {
+    fs.rmSync(f.governanceDir, { recursive: true, force: true });
+    fs.writeFileSync(f.governanceDir, 'not a folder'); // the audit key cannot be read
+  },
+  'audit.event:mcp': (f) => fs.mkdirSync(f.mcpAuditFile, { recursive: true }),
+  'trace.span': (f) => {
+    fs.rmSync(f.traceDir, { recursive: true, force: true });
+    fs.writeFileSync(f.traceDir, 'not a folder');
+  },
+};
+const SEQ_OF = { 'usage.report': 1, 'audit.event:governance': 2, 'audit.event:mcp': 5, 'trace.span': 3 };
+for (const [sink, block] of Object.entries(BLOCKERS)) {
+  test(`a ${sink} store that fails is not marked and not acknowledged; the resend stores it once`, (t) => {
+    const root = tmpDir(t, 'strict');
+    const stores = openLocalStores({ root });
+    const logged = [];
+    const ingest = createIngest({ ...stores.sinks, log: (l) => logged.push(l) });
+    // The events before this one are stored first, so the failing event is the next one in seq order.
+    const seq = SEQ_OF[sink];
+    for (let s = 1; s < seq; s++) ingest.handle(msgOf(s), S);
+    const backup = `${root}-backup`;
+    fs.cpSync(root, backup, { recursive: true });
+    t.after(() => fs.rmSync(backup, { recursive: true, force: true }));
+    block(stores.files);
+    assert.throws(() => ingest.handle(msgOf(seq), S));
+    assert.throws(() => ingest.handle(msgOf(seq), S), 'the same failure again');
+    assert.equal(ingest.mark(S), seq - 1, 'not marked');
+    assert.equal(logged.length, 1, `logged once per cause: ${logged.join(' | ')}`);
+    assert.match(logged[0], new RegExp(`${msgOf(seq).type}`));
+    assert.throws(() => ingest.handle(msgOf(seq + 1), S), /before seq/, 'a later event waits for the unstored one');
+    assert.equal(ingest.mark(S), seq - 1);
+    // The store works again (the restart's resend): the event is stored once and marked.
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.cpSync(backup, root, { recursive: true });
+    const again = openLocalStores({ root });
+    const resumed = createIngest({ ...again.sinks, marks: recoverMarks(again.files), log: () => {} });
+    assert.equal(resumed.mark(S), seq - 1);
+    assert.equal(resumed.handle(msgOf(seq), S), true);
+    assert.equal(resumed.mark(S), seq);
+    assert.equal(recoverMarks(again.files).get(S), seq, 'the mark is in the stored line');
+  });
+}
+
+test('the in-process writers still swallow a failed write', (t) => {
+  const root = tmpDir(t, 'lenient');
+  const stores = openLocalStores({ root });
+  fs.mkdirSync(stores.files.usageFile, { recursive: true });
+  fs.mkdirSync(stores.files.mcpAuditFile, { recursive: true });
+  assert.doesNotThrow(() => stores.usage.record({ keyId: 'k', model: 'm', cost: 0 }));
+  assert.doesNotThrow(() => stores.mcpAudit.record({ tool: 't' }));
+});
+
+test('a post-store hook that throws neither undoes nor skips the mark; the event is acknowledged', () => {
+  const { calls, sinks } = recording();
+  const logged = [];
+  const ingest = createIngest({
+    ...sinks,
+    recordUsage: (e) => (calls.usage.push(e), e),
+    afterUsage: () => {
+      throw new Error('budget report failed');
+    },
+    log: (l) => logged.push(l),
+  });
+  assert.equal(ingest.handle(msgOf(1), S), true, 'stored: the session acknowledges it');
+  assert.equal(ingest.mark(S), 1);
+  assert.equal(ingest.handle(msgOf(4), S), true);
+  assert.equal(ingest.mark(S), 4);
+  assert.equal(ingest.handle(msgOf(1), S), false, 'a resend is a duplicate, not stored twice');
+  assert.equal(calls.usage.length, 2);
+  assert.equal(logged.length, 1, 'logged once per cause');
+  assert.match(logged[0], /budget report failed/);
+});
+
+test('local stores: the budget report runs after the usage line is stored and marked', (t) => {
+  const root = tmpDir(t, 'hook');
+  const seen = [];
+  const stores = openLocalStores({
+    root,
+    onUsage: (entry) => {
+      seen.push(entry.ipc.seq);
+      throw new Error('budget report failed');
+    },
+  });
+  const ingest = createIngest({ ...stores.sinks, log: () => {} });
+  assert.equal(ingest.handle(msgOf(1), S), true);
+  assert.deepEqual(seen, [1]);
+  assert.equal(ingest.mark(S), 1);
+  assert.equal(recoverMarks(stores.files).get(S), 1);
+});
+
+test('trace store: an index failure after the append does not fail writeSpans; the next write indexes it', (t) => {
+  const root = tmpDir(t, 'trace-index');
+  const stores = openLocalStores({ root });
+  const realRead = fs.readSync;
+  let fail = true;
+  fs.readSync = (...a) => {
+    if (fail) {
+      fail = false;
+      throw new Error('EIO');
+    }
+    return realRead(...a);
+  };
+  t.after(() => (fs.readSync = realRead));
+  const ingest = createIngest({ ...stores.sinks, log: () => {} });
+  assert.equal(ingest.handle(msgOf(3), S), true);
+  assert.equal(ingest.mark(S), 3);
+  fs.readSync = realRead;
+  ingest.handle(msgOf(6), S);
+  const [type, body] = synthetic(3);
+  assert.equal(type, 'trace.span');
+  assert.ok(stores.traces.getSpans(body.span.t), 'indexed by the next write');
+});
+
+test('an audit.event with an unknown log is refused, not stored in the MCP log', () => {
+  const { calls, sinks } = recording();
+  const ingest = createIngest({ ...sinks, log: () => {} });
+  const m = msgOf(2);
+  assert.throws(() => ingest.handle({ ...m, body: { ...m.body, log: 'other' } }, S), /unknown log/);
+  assert.equal(calls.mcp.length + calls.governance.length, 0);
+  assert.equal(ingest.mark(S), 0);
+});
+
 test('marks: the highest seq per stream from the stores, rotated usage log included; a cut last line is ignored', (t) => {
   const root = tmpDir(t, 'marks');
   const stores = openLocalStores({ root });
@@ -202,7 +329,8 @@ test('stored through the IPC equals the same events recorded in process (stub)',
   const a = openLocalStores({ root: local, onUsage: (e) => budgetLocal.push(e) });
   for (let seq = 1; seq <= TOTAL; seq++) {
     const [type, body] = synthetic(seq);
-    if (type === 'usage.report') a.sinks.recordUsage({ ...body.record, cost: fromNano(body.record.cost) });
+    if (type === 'usage.report')
+      a.sinks.afterUsage(a.usage.record({ ...body.record, cost: fromNano(body.record.cost) }));
     else if (type === 'audit.event' && body.log === 'governance') a.sinks.recordGovernance(body.event);
     else if (type === 'audit.event') a.sinks.recordMcp(body.event);
     else a.sinks.writeSpans([body.span]);
