@@ -39,6 +39,7 @@ const sup = createSupervisor({
     handle: (msg, stream) => {
       const stored = ingest.handle(msg, stream);
       console.log(`${stored ? 'stored' : 'duplicate'} ${msg.type} #${msg.seq}`);
+      return stored; // the supervisor counts an unchecked call only when it was stored
     },
   },
   log: (l) => console.log(l),
