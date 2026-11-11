@@ -72,6 +72,7 @@ test('a line from the gateway that is not JSON is a protocol error: the gateway 
   await s.ready;
   const r = await s.exited;
   assert.notEqual(r.code, 0);
+  assert.deepEqual(s.failure, { kind: 'protocol', message: 'protocol error: a line is not JSON' });
   assert.ok(
     logs.some((l) => l === 'gw: protocol error: a line is not JSON'),
     logs.join('\n'),
@@ -126,6 +127,8 @@ test('an event that cannot be stored ends the session: the events read after it 
   await s.exited;
   await new Promise((r) => setTimeout(r, 20));
   assert.deepEqual(seen, [2], 'the events after the failed one are not handed on');
+  assert.equal(s.failure.kind, 'store', 'the session says why it stopped');
+  assert.match(s.failure.message, /disk full/);
   assert.equal(sent.filter((m) => m.type === 'ack').length, 0);
   assert.equal(logs.filter((l) => /could not be stored/.test(l)).length, 1, logs.join('\n'));
 });

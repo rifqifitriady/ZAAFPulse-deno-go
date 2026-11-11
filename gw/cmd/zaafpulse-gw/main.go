@@ -43,6 +43,8 @@ type options struct {
 	emitEveryMs       int
 	emitBase          int64
 	segmentEvents     int
+	staleMs           int64
+	healthOnSnapshot  bool
 }
 
 func main() {
@@ -67,6 +69,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.emitEveryMs, "emit-every-ms", 0, "test only: pause between synthetic events, in ms")
 	fs.Int64Var(&o.emitBase, "emit-base", ipc.DefaultEmitBase, "test only: ts of the first synthetic round")
 	fs.IntVar(&o.segmentEvents, "segment-events", 0, "test only: events per outbox segment (default 1000)")
+	fs.Int64Var(&o.staleMs, "stale-ms", ipc.StaleAfterMs, "test only: age at which a budget snapshot is stale, in ms")
+	fs.BoolVar(&o.healthOnSnapshot, "health-on-snapshot", false, "test only: send health after every budget snapshot")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -212,6 +216,9 @@ func (g *gateway) handle(msg ipc.Message) int {
 		g.mu.Lock()
 		g.snap, g.snapAt = b, time.Now()
 		g.mu.Unlock()
+		if g.o.healthOnSnapshot {
+			g.sendHealth()
+		}
 		g.maybeReady()
 	case *ipc.Ack:
 		if b.Stream != g.box.Stream() {
@@ -293,6 +300,7 @@ func (g *gateway) startEmitter() {
 			default:
 			}
 			typ, body := ipc.Synthetic(g.box.Next(), g.o.emitBase)
+			g.checkBudget(body)
 			if err := g.appendAndSend(typ, body); err != nil {
 				g.log.Printf("emit: %v", err)
 				return
@@ -307,6 +315,27 @@ func (g *gateway) startEmitter() {
 		}
 		g.log.Printf("emitted every synthetic event up to seq %d", total)
 	}()
+}
+
+// checkBudget applies the budget decision to a synthetic call, as the gateway will before a call goes upstream
+// (P4): refused, the record is a 402 with the guard's message and no cost; unchecked, it carries budget "unchecked".
+func (g *gateway) checkBudget(body any) {
+	r, ok := body.(*ipc.UsageReport)
+	if !ok {
+		return
+	}
+	g.mu.Lock()
+	snap := g.snap
+	g.mu.Unlock()
+	// "stub/model-a" normalized as lib/pricing.js normalizeModel does.
+	in := ipc.CheckInput{KeyID: r.Record.KeyID, Model: "model-a", Provider: r.Record.Provider}
+	switch d := ipc.Decide(snap, time.Now().UnixMilli(), g.o.staleMs, in); d.Action {
+	case ipc.Unchecked:
+		u := ipc.Unchecked
+		r.Budget = &u
+	case ipc.Refuse:
+		r.Record.Status, r.Record.Error, r.Record.Cost = 402, &d.Message, 0
+	}
 }
 
 // appendAndSend writes an event to the outbox, then sends it (D4: never the other way round).
