@@ -50,9 +50,11 @@ test('a gateway that offers only another protocol is refused and exits 2', async
   const { s, logs } = start(t, bin, ['--protocol', '2']);
   await assert.rejects(s.ready, /protocol mismatch/);
   assert.deepEqual(await s.exited, { code: 2, signal: null });
-  assert.ok(
-    logs.some((l) => l.includes('refused by the control plane')),
-    logs.join('\n'),
+  // The 'exit' event can come before the last stderr lines are read (it did on macOS under Deno): wait for the line.
+  await waitFor(
+    () => logs.some((l) => l.includes('refused by the control plane')),
+    5000,
+    'the refusal in the gateway log',
   );
 });
 
