@@ -289,6 +289,26 @@ test('an audit.event with an unknown log is refused, not stored in the MCP log',
   assert.equal(ingest.mark(S), 0);
 });
 
+test('a seq gap after a mark fails the event (not stored, not acknowledged); any first seq is accepted', () => {
+  const { calls, sinks } = recording();
+  const logged = [];
+  const ingest = createIngest({ ...sinks, log: (l) => logged.push(l) });
+  assert.equal(ingest.handle(msgOf(5), S), true, 'mark 0: the first seq may be anything (a replay from Acked+1)');
+  assert.throws(() => ingest.handle(msgOf(7), S), /seq 7 of .* after seq 5/);
+  assert.throws(() => ingest.handle(msgOf(7), S), /after seq 5/, 'again');
+  assert.equal(ingest.mark(S), 5, 'not marked');
+  const all = calls.mcp.length + calls.spans.length + calls.usage.length + calls.governance.length;
+  assert.equal(all, 1, 'not stored');
+  assert.equal(logged.length, 1, 'logged once per cause');
+  assert.match(logged[0], /gap/);
+  assert.equal(ingest.handle(msgOf(5), S), false, 'a resend at the mark is still a duplicate');
+  assert.equal(ingest.handle(msgOf(6), S), true, 'the replay, in order');
+  assert.equal(ingest.handle(msgOf(7), S), true);
+  assert.equal(ingest.mark(S), 7);
+  const resumed = createIngest({ ...sinks, marks: new Map([[S, 7]]), log: () => {} });
+  assert.throws(() => resumed.handle(msgOf(9), S), /after seq 7/, 'a recovered mark counts too');
+});
+
 test('the writers take a null second argument as before: no TypeError, the default (lenient) path', (t) => {
   const root = tmpDir(t, 'null-opts');
   const stores = openLocalStores({ root });
