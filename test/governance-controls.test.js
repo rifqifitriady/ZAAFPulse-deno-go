@@ -309,6 +309,26 @@ test('inventory coverage: AI client files that could not be read cap it at parti
   assert.equal(one(s, 'inventory_coverage').status, 'off', 'a cap never raises a status');
 });
 
+test('runtime permissions: the compiled binary, whose set grants write: true, reads all but denied entries', () => {
+  // Deno reports a set's `write: true` as { state: 'granted', partial: true } in a binary built with -P (measured,
+  // 2.9.8), like net with its deny list: the label must not call write's exceptions "hosts".
+  const partial = new Set(['write', 'net']);
+  const deno = {
+    version: { deno: '2.9.8' },
+    build: { standalone: true },
+    permissions: {
+      querySync: ({ name }) =>
+        name === 'run' || name === 'sys' ? { state: 'prompt' } : { state: 'granted', partial: partial.has(name) },
+    },
+  };
+  const rp = require('../lib/permissions').describe({ deno, limits: () => null });
+  assert.equal(rp.grants.write, 'all but denied');
+  assert.equal(rp.grants.net, 'all but denied');
+  const c = one({ ...good(), runtimePermissions: rp }, 'runtime_permissions');
+  assert.ok(c.evidence.includes('all but denied entries: write, net'), c.evidence.join(' | '));
+  assert.ok(!c.evidence.some((e) => /hosts/.test(e)), c.evidence.join(' | '));
+});
+
 test('runtime permissions: off on Node, partial while a permission is unrestricted, in place when all are scoped', () => {
   const rp = (v) => ({ ...good(), runtimePermissions: v });
   assert.equal(one(rp({ runtime: 'node' }), 'runtime_permissions').status, 'off');
@@ -329,7 +349,7 @@ test('runtime permissions: off on Node, partial while a permission is unrestrict
   assert.deepEqual(live.evidence, [
     'Deno 2.9.8, single-file build',
     'unrestricted: read, write, env',
-    'all but denied hosts: net',
+    'all but denied entries: net',
     'allow-listed: run, sys',
     'matrix: deno.json; tests: test/permissions.test.js',
   ]);
