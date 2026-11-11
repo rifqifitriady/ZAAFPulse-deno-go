@@ -71,7 +71,7 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 ┌───────────────▼───────────────────────────────────┐
 │ zaafpulse-gw — Go data plane                       │
 │  /v1/* gateway: key auth · guardrails · translate  │
-│  · routing · budget check (fail-closed) · stream   │
+│  · routing · budget check (fail-open) · stream     │
 │  egress proxy: providers, connectors, price sync   │
 │  (allow-list from config, every egress audited)    │
 └───────────────┬───────────────────────────────────┘
@@ -81,8 +81,10 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 **Fixed design rules:**
 
 1. **One audit writer.** Only the control plane appends to the HMAC chain. The gateway sends audit events over IPC.
-2. **Budgets fail closed.** The gateway enforces from a pushed budget snapshot. When the snapshot is older than
-   5 s, or IPC is down, it refuses metered requests.
+2. **Budgets fail open, as in v1 (owner decision 2026-11-11, §11.6).** The gateway enforces from a pushed budget
+   snapshot. When the snapshot is older than 5 s, or IPC is down, metered requests still pass: each one is marked
+   `budget_unchecked` in the usage report and the audit, and the dashboard raises an alert. A budget that the snapshot
+   says is spent is still refused. Fail-closed stays a later option behind a setting, not in this program.
 3. **Secrets are handed over, not read.** The control plane reads the OS keychain and hands provider secrets to the
    gateway at start and on change. The gateway never needs a keychain library.
 4. **One config.** `config.json` is owned by the control plane and pushed to the gateway on reload.
@@ -235,7 +237,7 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 | S4 | API-key auth, per-key allow-lists and modes | Contract cases green |
 | S5 | Translate (Anthropic, OpenAI, Gemini, routers, Ollama/local) | Fixtures from `translate` tests pass byte-for-byte |
 | S6 | Guardrails: secrets, PII and injection; block → 400 `guardrail_blocked` | Fixtures from the guardrail tests pass |
-| S7 | Budget guard, fail closed | Kill-IPC test refuses metered calls |
+| S7 | Budget guard, fail open (§11.6) | Kill-IPC test: metered calls pass, each marked `budget_unchecked` and alerted; a spent budget in the snapshot is still refused |
 | S8 | Usage, audit events and trace spans over IPC | Ledger and audit identical to JS for the same run |
 | S9 | `/mcp` `tools/call` path, gateway keys | Contract cases green |
 | S10 | Google service-account JWT (`createSign` RSA-SHA256) and other provider auth | Live provider smoke tests (owner keys, manual) |
@@ -379,3 +381,6 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    - P6 drops the authenticated install and update: the install scripts and the update check read the public
      release, as in v1.x.
    - The public ZAAFPulse repo still carries v1.x; v1.x users are not moved to v2 automatically.
+6. **Budgets fail open for now (2026-11-11).** When the gateway cannot check a budget (stale snapshot, IPC down), the
+   request passes, as in v1.x, and is marked and alerted (design rule 2). A spent budget is still refused. Fail-closed
+   may come later as an opt-in setting.
