@@ -95,19 +95,19 @@ npm test
 
 ## Releases
 
-For maintainers. A release is the set of binaries, the source package, `SHA256SUMS.txt` and their attestations that `.github/workflows/release.yml` builds from a version tag.
+For maintainers. A release is the set of binaries, the source package, `SHA256SUMS.txt` and their attestations that `.github/workflows/release.yml` builds from a version tag. **While the v2 line is being built (migration P2 to P5), the workflow only builds and tests: it publishes nothing, makes no attestations and does not check the tag against `package.json`. Those return with the v2 release work (P6); the steps below marked "from P6" do not apply until then.**
 
 **Never move a published tag; ship a new patch version.** Once `vX.Y.Z` is pushed, it names that commit for good, even when the release turns out broken. Fix it in `vX.Y.(Z+1)`, and say in the old release's notes which version replaces it. Do not delete or replace the old release's files. A moved tag means two people who installed "the same version" ran different code, and it invalidates the checksums and attestations they relied on. With the tag ruleset and immutable releases switched on ([docs/release-hardening.md](docs/release-hardening.md)), GitHub refuses the move anyway.
 
 1. Set the version in `package.json`, merge to `main` and wait for CI to pass on all three systems.
-2. Tag the merge commit and push only that tag: `git tag vX.Y.Z <commit>` and then `git push origin vX.Y.Z`. The workflow stops if the tag and `package.json` disagree.
+2. Tag the merge commit and push only that tag: `git tag vX.Y.Z <commit>` and then `git push origin vX.Y.Z`. From P6 the workflow stops if the tag and `package.json` disagree; today nothing checks it, so make sure they match by hand.
 3. The workflow runs the full suite and builds and smoke-tests the six binaries. While the v2 line is being built it publishes nothing and creates no GitHub release (publishing and attestations return with the v2 release work); the binaries and their SHA-256 sums stay as build artifacts. It never creates or moves a tag.
-4. Check one file: `gh attestation verify zaafpulse-X.Y.Z-linux-x64 --repo rifqifitriady/ZAAFPulse`.
+4. From P6: check one file with `gh attestation verify zaafpulse-X.Y.Z-linux-x64 --repo rifqifitriady/ZAAFPulse`. Today there is no attestation to check.
 
 How the build is kept honest:
 
 - The binaries are built by `deno task build` (`scripts/build-deno.js`) from the committed tree with `deno compile -P=cli`. Only files tracked by git are packed, and the build stops when a file that would ship has uncommitted changes. `--allow-dirty` exists for local test builds only.
-- Nothing is unpacked at start. A binary serves its files from inside itself, so integrity is the release's `SHA256SUMS.txt` plus the attestations, not a check at start.
+- Nothing is unpacked at start. A binary serves its files from inside itself, so integrity rests on the published `SHA256SUMS.txt` and the attestations, not on a check at start. Neither is published before P6: today the sums are build artifacts of a workflow run only, and nothing proves who built a binary.
 - CI builds the six targets on runners of their own OS and CPU and smoke-tests each one (`build-deno`: start in demo mode, `/login.html` answers 200, `/api/platform` says single-file on Deno, `doctor`). The app itself has no runtime dependencies. The build downloads Deno's runtime base binary for each target once.
 - The workflows pin every action by commit SHA, with its release in a comment, and Node and Deno to exact versions. To update:
   - Node: change `node-version` in `ci.yml`. Deno: change `deno-version` in `ci.yml` and the version in this file.

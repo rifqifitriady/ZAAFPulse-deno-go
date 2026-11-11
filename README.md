@@ -563,8 +563,17 @@ ZAAFPulse runs on Deno 2.9.8 with a narrow permission set per entry point (`deno
 
 ```bash
 deno task build                                   # dist/zaafpulse-<version>-<os>-<cpu>
-deno run -q --no-prompt -P=server --allow-write="<data folder>,${TMPDIR:-/tmp}" server.js
+deno run -q --no-prompt -P=cli bin/zaafpulse.js service install   # background service, scopes computed for you
 ```
+
+`service install` writes the whole launch line into the service file: `-P=server` with the write scope (data folder,
+temp, the skill folders `~/.claude/skills` and `~/.agents/skills`, and the AI clients' config folders) and the run list
+computed for this machine (`lib/permissions.js writeScope`, `runScope`). Run it again after approving a model server or
+changing `CLAUDE_CONFIG_DIR` (see [docs/install.md](docs/install.md#on-deno-permissions-are-fixed-when-the-service-is-installed)).
+To run in a terminal instead, copy that launch line from the service file. A hand-made
+`--allow-write` that holds only the data folder and temp starts the dashboard, but installing a skill and registering an
+MCP client are then refused with "Requires write access"; `-P=cli bin/zaafpulse.js start` without an `--allow-write`
+works too, with an unscoped write (the `cli` set's `write: true`, as in the single-file binary).
 
 A denied action fails with "Requires ... access to ..." in the UI or the log, never silently. The Compliance page
 shows what the running process holds (control "Runtime permissions"). Any environment variable can be named by a

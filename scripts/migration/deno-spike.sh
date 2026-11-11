@@ -1,7 +1,8 @@
 #!/bin/bash
 # Deno spike for ZAAFPulse (P1 of docs/migration/2026-11-10-deno-go-migration-plan.md). DENO=path/to/deno, OUT=output dir.
 # Every step runs under a permission set of deno.json (P2 T5), never with all permissions: the probe and the suite
-# under "test", the compiled binaries under "server".
+# under "test"; step 3 compiles only server.js, under "server". The release binaries are built by scripts/build-deno.js
+# from bin/zaafpulse.js under "cli", not by this script.
 set -u
 D=${DENO:-deno}; S=$(cd "$(dirname "$0")" && pwd); A=$(cd "$S/../.." && pwd); O=${OUT:-$(mktemp -d)}
 echo "== deno"; $D --version | head -1
