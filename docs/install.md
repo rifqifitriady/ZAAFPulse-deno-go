@@ -112,6 +112,8 @@ The binaries are not notarized or code-signed:
 
 To build them yourself: `deno task build` builds this machine's target, `deno task build --target x86_64-unknown-linux-gnu` or `--all` builds others (Deno cross-compiles every target from any OS).
 
+The binaries are Deno binaries (`deno compile`), and each is the whole program: `zaafpulse start`, `mcp`, `doctor` and `service install` are subcommands of the one file. `zaafpulse service install` points launchd, systemd or the Startup folder at the binary itself, with the data folder as the service's working folder (a binary's app folder exists only inside it). `zaafpulse doctor` prints `Deno <version>` and `(single-file build)`.
+
 ## Docker
 
 ```bash
