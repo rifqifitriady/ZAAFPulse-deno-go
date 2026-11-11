@@ -26,6 +26,74 @@ const initial = (at = Date.now()) => ({
   snapshot: { ...fixtureBody('budget.snapshot/valid-empty.json'), at },
 });
 
+// The JS twin of gw/ipc/synthetic.go Synthetic(): the event the stub's --emit sends as `seq`, as [type, body].
+const EMIT_BASE = 1767225600000;
+function synthetic(seq, base = EMIT_BASE) {
+  const round = Math.floor((seq - 1) / 3) + 1;
+  const ts = base + round;
+  const kind = (seq - 1) % 3;
+  if (kind === 0)
+    return [
+      'usage.report',
+      {
+        record: {
+          ts,
+          keyId: 'k-emit',
+          provider: 'stub',
+          model: 'stub/model-a',
+          kind: 'chat',
+          format: 'openai',
+          stream: false,
+          status: 200,
+          ms: 12,
+          input: 1000,
+          output: 500,
+          cached: 0,
+          cost: 1500000,
+          sessionId: `emit-${round}`,
+        },
+      },
+    ];
+  if (kind === 1)
+    return round % 2 === 1
+      ? [
+          'audit.event',
+          {
+            log: 'governance',
+            event: {
+              action: 'key.update',
+              target: { type: 'key', id: 'k-emit', name: `emit ${round}` },
+              actor: { via: 'apikey', keyId: 'k-emit' },
+            },
+          },
+        ]
+      : [
+          'audit.event',
+          {
+            log: 'mcp',
+            event: { ts, integration: 'stub', tool: 'echo', ok: true, ms: 3, args: ['text'], keyId: 'k-emit' },
+          },
+        ];
+  return [
+    'trace.span',
+    {
+      span: {
+        t: round.toString(16).padStart(32, '0'),
+        s: round.toString(16).padStart(16, '0'),
+        p: null,
+        n: 'chat stub/model-a',
+        k: 'client',
+        st: ts * 1000,
+        d: 12000,
+        ok: true,
+        src: 'gateway',
+        svc: 'zaafpulse',
+        a: { 'gen_ai.request.model': 'model-a' },
+      },
+    },
+  ];
+}
+
 function killHard(pid) {
   if (!pid) return;
   if (process.platform === 'win32') spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore' });
@@ -61,4 +129,4 @@ function tmpDir(t, name) {
   return d;
 }
 
-module.exports = { stubBin, initial, fixtureBody, killHard, alive, sleep, waitFor, tmpDir };
+module.exports = { stubBin, initial, fixtureBody, synthetic, EMIT_BASE, killHard, alive, sleep, waitFor, tmpDir };

@@ -7,7 +7,8 @@
 // error (after an "error" message) or --crash-after-ready-ms.
 //
 // Test-only flags make it misbehave for the supervisor tests: --protocol, --hang-after-ready, --crash-after-ready-ms,
-// --bad-line and --ignore-shutdown.
+// --bad-line and --ignore-shutdown; --emit N sends N rounds of synthetic events (ipc.Synthetic) for the ingest and
+// kill tests.
 package main
 
 import (
@@ -38,6 +39,10 @@ type options struct {
 	crashAfterReadyMs int
 	badLine           bool
 	ignoreShutdown    bool
+	emit              int64
+	emitEveryMs       int
+	emitBase          int64
+	segmentEvents     int
 }
 
 func main() {
@@ -58,6 +63,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.crashAfterReadyMs, "crash-after-ready-ms", 0, "test only: exit 3 this many ms after ready")
 	fs.BoolVar(&o.badLine, "bad-line", false, "test only: write a line that is not JSON once ready")
 	fs.BoolVar(&o.ignoreShutdown, "ignore-shutdown", false, "test only: ignore shutdown")
+	fs.Int64Var(&o.emit, "emit", 0, "test only: send this many rounds of synthetic usage, audit and trace events")
+	fs.IntVar(&o.emitEveryMs, "emit-every-ms", 0, "test only: pause between synthetic events, in ms")
+	fs.Int64Var(&o.emitBase, "emit-base", ipc.DefaultEmitBase, "test only: ts of the first synthetic round")
+	fs.IntVar(&o.segmentEvents, "segment-events", 0, "test only: events per outbox segment (default 1000)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -81,6 +90,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer box.Close()
+	box.SetPerSegment(o.segmentEvents)
 	g := &gateway{
 		o:       o,
 		box:     box,
@@ -113,6 +123,10 @@ type gateway struct {
 	started time.Time
 	done    chan struct{}
 	unknown map[string]bool
+
+	sendMu   sync.Mutex // an event's append and its send stay in seq order
+	stopEmit chan struct{}
+	emitDone chan struct{}
 
 	mu      sync.Mutex
 	cfgGen  int64
@@ -157,6 +171,11 @@ func (g *gateway) serve(protocols []int) int {
 					return 2
 				}
 				handshaken = true
+				// Everything not acknowledged goes out again, before any new event (D4).
+				if err := g.box.Replay(g.box.Acked()+1, g.ch.SendLine); err != nil {
+					g.log.Printf("outbox replay: %v", err)
+					return 1
+				}
 				go g.healthLoop()
 			case *ipc.HelloRefused:
 				g.log.Printf("refused by the control plane: %s", b.Reason)
@@ -195,7 +214,13 @@ func (g *gateway) handle(msg ipc.Message) int {
 		g.mu.Unlock()
 		g.maybeReady()
 	case *ipc.Ack:
-		// The outbox (Task 4) deletes what is acknowledged.
+		if b.Stream != g.box.Stream() {
+			g.log.Printf("ack for another stream %s, ignored", b.Stream)
+			return -1
+		}
+		if err := g.box.Ack(b.UpTo); err != nil {
+			g.log.Printf("outbox ack: %v", err)
+		}
 	case *ipc.Shutdown:
 		if g.o.ignoreShutdown {
 			g.log.Print("shutdown ignored (--ignore-shutdown)")
@@ -248,6 +273,63 @@ func (g *gateway) afterReady() {
 	if g.o.badLine {
 		_ = g.ch.SendLine([]byte("this line is not JSON"))
 	}
+	g.startEmitter()
+}
+
+// startEmitter sends the synthetic events of --emit from the outbox's next seq up to 3*emit: a restarted stub picks up
+// where the killed one stopped, so a run is exactly 3*emit events whatever the kills.
+func (g *gateway) startEmitter() {
+	if g.o.emit <= 0 {
+		return
+	}
+	g.stopEmit, g.emitDone = make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(g.emitDone)
+		total := 3 * g.o.emit
+		for g.box.Next() <= total {
+			select {
+			case <-g.stopEmit:
+				return
+			default:
+			}
+			typ, body := ipc.Synthetic(g.box.Next(), g.o.emitBase)
+			if err := g.appendAndSend(typ, body); err != nil {
+				g.log.Printf("emit: %v", err)
+				return
+			}
+			if g.o.emitEveryMs > 0 {
+				select {
+				case <-g.stopEmit:
+					return
+				case <-time.After(time.Duration(g.o.emitEveryMs) * time.Millisecond):
+				}
+			}
+		}
+		g.log.Printf("emitted every synthetic event up to seq %d", total)
+	}()
+}
+
+// appendAndSend writes an event to the outbox, then sends it (D4: never the other way round).
+func (g *gateway) appendAndSend(typ string, body any) error {
+	g.sendMu.Lock()
+	defer g.sendMu.Unlock()
+	line, _, err := g.box.Append(typ, body, time.Now().UnixMilli())
+	if err != nil {
+		return err
+	}
+	return g.ch.SendLine(line)
+}
+
+func (g *gateway) stopEmitter(grace time.Duration) {
+	if g.stopEmit == nil {
+		return
+	}
+	close(g.stopEmit)
+	select {
+	case <-g.emitDone:
+	case <-time.After(grace):
+		g.log.Print("the emitter did not stop within the grace period")
+	}
 }
 
 func (g *gateway) healthLoop() {
@@ -283,8 +365,10 @@ func (g *gateway) sendHealth() {
 // drain: the control plane closed the channel.
 func (g *gateway) drain() {
 	g.log.Print("the control plane closed the channel: exiting")
+	g.stopEmitter(time.Second)
 }
 
 func (g *gateway) shutdown(grace time.Duration) {
 	g.log.Printf("shutting down (grace %s)", grace)
+	g.stopEmitter(grace)
 }
