@@ -220,11 +220,14 @@ Config placement, following the `deno` skill:
   later without changing any message.
 - **Exit** (met 2026-11-11, `docs/migration/2026-11-11-p3-results.md`):
   - [x] schemas frozen at v1 (`ipc/v1`), with the additive-only rule written down;
-  - [x] both sides pass the shared fixtures, on Node, Deno and Go, on 4 OS in CI;
+  - [x] both sides pass the shared fixtures, on Node and Go on 4 OS and on Deno on Ubuntu and macOS in CI (evidence:
+    the manual full-matrix run 43039341557 on `b954107`; the pull request's run will be added);
   - [x] a kill test: killing either process never corrupts the audit chain or the ledger, and loses or duplicates no
     usage line;
-  - [x] no change in product behaviour: `server.js` does not start the gateway (four writers gained an opt-in `strict`
-    option the product never passes, see the results document).
+  - [x] no change in product behaviour: `server.js` does not start the gateway; by owner decision three writers
+    (`lib/audit.js`, `jsonlLog.append`, `usage.record`) gained an opt-in parameter that changes nothing by default and
+    that the product never passes; `lib/trace` is unchanged (see the results document, which also lists the P4 S1
+    entry conditions).
 
 ### P4 — Go data plane, strangler slices (5–8 weeks)
 
