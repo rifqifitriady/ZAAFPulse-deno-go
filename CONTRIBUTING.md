@@ -75,7 +75,7 @@ docs/                install guide, integrations, README media
 
 - Every change that adds behaviour adds or updates a test in `test/`.
 - Tests must not touch the real Keychain, `config.json`, `.data/` or the network. Use temporary folders, `test/helpers.js` and the fake servers in it.
-- CI runs the whole suite on macOS, Ubuntu and Windows. A change that depends on path separators or the shell will show up there.
+- CI runs the whole suite on macOS, Ubuntu, Windows and Windows on Arm, under Node and under Deno. A change that depends on path separators or the shell will show up there. A push to a work branch runs the Ubuntu jobs only, to save Actions minutes; the full matrix and the six binary builds run on the pull request (and on `main`, `migrate/deno-go`, tags and a manual run), so open the pull request before relying on the other systems.
 
 ```bash
 npm test
