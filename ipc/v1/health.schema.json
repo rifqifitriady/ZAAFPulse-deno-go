@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "health (gateway to control plane): every second; snapshotAgeMs is null before the first snapshot",
+  "type": "object",
+  "required": ["inflight", "outboxDepth", "uptimeMs", "gen", "snapshotAgeMs"],
+  "additionalProperties": false,
+  "properties": {
+    "inflight": { "type": "integer", "minimum": 0 },
+    "outboxDepth": { "type": "integer", "minimum": 0 },
+    "uptimeMs": { "type": "integer", "minimum": 0 },
+    "gen": { "type": "integer", "minimum": 0 },
+    "snapshotAgeMs": { "type": ["integer", "null"], "minimum": 0 }
+  }
+}

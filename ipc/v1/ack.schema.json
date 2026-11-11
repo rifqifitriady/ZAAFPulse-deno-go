@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ack (control plane to gateway): every event of the stream with seq <= upTo is stored",
+  "type": "object",
+  "required": ["stream", "upTo"],
+  "additionalProperties": false,
+  "properties": {
+    "stream": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "upTo": { "type": "integer", "minimum": 0 }
+  }
+}

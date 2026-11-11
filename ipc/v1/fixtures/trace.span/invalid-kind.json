@@ -1,0 +1,1 @@
+{"v":1,"type":"trace.span","seq":47,"ts":1767225650400,"body":{"span":{"t":"4bf92f3577b34da6a3ce929d0e0e4736","s":"53995c3f42cd8ad8","p":null,"n":"x","k":"producer","st":1,"d":1,"ok":true,"src":"gateway","svc":"zaafpulse","a":{}}}}
