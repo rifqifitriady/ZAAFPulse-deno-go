@@ -1,10 +1,18 @@
 # Runs the whole test suite on Linux, macOS, Windows and Windows on Arm for every push and pull request to main and to
 # the migration branches (migrate/**, which includes migrate/deno-go). The release workflow calls it too
 # (workflow_call), so a tag is only built when the suite passes.
-# Actions are pinned by commit SHA (the comment names the release); Node is pinned to the exact version
-# the single-file binaries embed. Update both together with release.yml.
-# The deno job runs the same suite under the pinned Deno and reports its counts; in P0 it does not block (47 known
-# failures, P2 work: docs/migration/2026-11-10-p1-deno-spike-results.md §5).
+# Actions are pinned by commit SHA (the comment names the release); Node and Deno are pinned to exact versions. The
+# single-file binaries embed Deno (the build-deno job), not Node. release.yml calls this workflow and pins no Node or
+# Deno of its own, so a version changes here only.
+# The deno job runs the same suite and the contract suite under the pinned Deno with the "test" permission set of
+# deno.json (never -A), and blocks like the Node job (P2 T4). The Node job keeps running until the cut-over (P7).
+# The build-deno job compiles and smoke-tests the six single-file binaries on native runners (P2 T6).
+# Scope, to keep a private repo inside its Actions minutes (macOS minutes bill at 10x, Windows at 2x): a push to a work
+# branch (migrate/<anything> other than migrate/deno-go) runs the Ubuntu jobs only (Node suite, Deno suite,
+# typecheck). The full matrix (four OS for Node, ubuntu and macOS for Deno, the six build-deno targets) runs on pull
+# requests, on pushes to main and migrate/deno-go, on tags (through release.yml) and on a manual run
+# (workflow_dispatch). The condition is repeated in the three places that use it, because a matrix cannot read
+# workflow env.
 name: CI
 on:
   push:
@@ -12,8 +20,13 @@ on:
   pull_request:
     branches: [main, 'migrate/**']
   workflow_call:
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  # A newer push to the same branch or pull request supersedes a run still in progress; tags are never cancelled.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -22,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false # report every OS, not just the first failure
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
+        os: ${{ fromJSON((github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest","macos-latest","windows-latest","windows-11-arm"]' || '["ubuntu-latest"]') }}
     steps:
       # Windows runners convert line endings on checkout; keep LF so text fixtures read alike everywhere.
       - run: git config --global core.autocrlf false
@@ -46,14 +59,13 @@ jobs:
         run: npm run test:contract
       - run: node bin/zaafpulse.js doctor
   deno:
-    name: deno (${{ matrix.os }}, not blocking)
+    name: deno (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    continue-on-error: true # P0: reported, not blocking
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ fromJSON((github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]') }}
     env:
       DENO_DIR: ${{ github.workspace }}/../deno-dir # outside HOME, which the test step points at a temp folder
       NO_COLOR: '1'
@@ -65,6 +77,12 @@ jobs:
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: 2.9.8
+      # Under Deno a script (the judge's fake Claude Code, an npm cli.js) runs through a real node found on PATH, and
+      # discovery passes over a node others can write. The image's own node on ubuntu-latest is /usr/local/bin/node,
+      # mode 0777 in a 0777 folder (measured), so the pinned node is put first on PATH, as in the Node job.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
       # Installs exactly what deno.lock pins; fails when the lockfile is stale.
       - run: deno ci
       - name: Test suite under Deno
@@ -73,25 +91,22 @@ jobs:
           export ZAAFPULSE_DATA="$RUNNER_TEMP/zp-data" HOME="$RUNNER_TEMP/zp-home"
           mkdir -p "$ZAAFPULSE_DATA" "$HOME"
           set +e
-          deno test -A --no-check test/*.test.js > "$RUNNER_TEMP/deno-test.log" 2>&1
+          deno test -q --no-check --no-prompt -P=test test/*.test.js > "$RUNNER_TEMP/deno-test.log" 2>&1
           code=$?
           set -e
           scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-test.log" "deno test (${{ matrix.os }})" \
             > "$RUNNER_TEMP/deno-summary.md"
           cat "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
           exit $code
-      # Runs even when the unit suite above has failures (it has known ones in P0), so the contract result is reported.
+      # Runs even when the unit suite above failed, so both results are reported.
       - name: Gateway contract suite on the Deno server
         if: ${{ !cancelled() }}
         shell: bash
         run: |
           set +e
-          # Scoped grant, not -A: write only the temp folder the harness makes its data folders in, net to this machine,
-          # run only the two runtimes the harness spawns. Allowing deno is effectively unscoped (a spawned deno can be
-          # given any grant); it is accepted as a migration test aid and is narrowed together with M9 in P2.
-          ZP_RUNTIME=deno deno test --no-check --allow-read --allow-write="${TMPDIR:-/tmp}" \
-            --allow-net=127.0.0.1,localhost --allow-run=node,deno --allow-env --allow-sys \
-            test/contract/ > "$RUNNER_TEMP/deno-contract.log" 2>&1
+          # The "test" set: read anywhere, write and run unscoped (symlinks and fakes, see deno.json), net to this
+          # machine only. The harness starts server.js under its own narrow set.
+          ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ > "$RUNNER_TEMP/deno-contract.log" 2>&1
           code=$?
           set -e
           scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract.log" "contract suite under Deno (${{ matrix.os }})" \
@@ -121,3 +136,61 @@ jobs:
       - run: deno ci
       # lib/gateway, lib/cost and lib/governance with // @ts-check and tsconfig.json; @types/node is dev-only.
       - run: deno task typecheck
+
+  # Compiles the six single-file binaries with deno compile and the "cli" permission set (the binary's entry is the
+  # command line, so it holds the superset of the server set), and smoke-tests each one on a runner of its own OS and
+  # CPU (P2 T6): start in demo mode on a throwaway data folder, /login.html 200, /api/platform
+  # single-file on Deno, doctor. Full-scope runs only (see the header): pull requests, main, migrate/deno-go, tags and
+  # manual runs. The denort base binary of each target is cached (a download failed once in P1). Publishing is P6.
+  build-deno:
+    name: build-deno (${{ matrix.name }})
+    if: ${{ (github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, runner: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { name: darwin-arm64, runner: macos-latest, target: aarch64-apple-darwin }
+          - { name: darwin-x64, runner: macos-15-intel, target: x86_64-apple-darwin }
+          - { name: win-x64, runner: windows-latest, target: x86_64-pc-windows-msvc }
+          - { name: win-arm64, runner: windows-11-arm, target: aarch64-pc-windows-msvc }
+    env:
+      DENO_DIR: ${{ github.workspace }}/../deno-dir
+      NO_COLOR: '1'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/../deno-dir/dl
+          key: denort-2.9.8-${{ matrix.target }}
+      - name: Build
+        shell: bash
+        run: deno task build --target ${{ matrix.target }}
+      - name: Smoke test on this runner
+        shell: bash
+        run: |
+          B="$(cd dist && ls zaafpulse-*-${{ matrix.name }}*)"
+          deno run -q --no-prompt --allow-read --allow-write=dist --allow-net=127.0.0.1 --allow-run="dist/$B" \
+            --allow-env=PATH,SystemRoot,SYSTEMROOT,PATHEXT,TEMP,TMP,windir,ComSpec --ignore-env \
+            scripts/smoke-binary.js "dist/$B" | tee "$RUNNER_TEMP/smoke.json"
+          echo "| ${{ matrix.name }} | $(cat "$RUNNER_TEMP/smoke.json") |" >> "$GITHUB_STEP_SUMMARY"
+      - run: mv dist/SHA256SUMS.txt dist/SHA256SUMS-${{ matrix.name }}.txt
+        shell: bash
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zaafpulse-${{ matrix.name }}
+          path: dist/zaafpulse-*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sha256-${{ matrix.name }}
+          path: dist/SHA256SUMS-${{ matrix.name }}.txt

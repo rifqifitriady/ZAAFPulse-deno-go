@@ -221,10 +221,13 @@ const commands = {
     const home = os.homedir();
     const rows = [];
     const add = (k, v, ok = true) => rows.push(`${ok ? '✓' : '·'} ${k.padEnd(16)} ${v}`);
-    add('ZAAFPulse', `${pkg.version}${platform.isSea() ? ' (single-file build)' : ''}`);
+    add('ZAAFPulse', `${pkg.version}${platform.isSingleFile() ? ' (single-file build)' : ''}`);
     add('OS', `${platform.OS_LABEL} ${os.release()} ${process.arch}`);
-    const major = Number(process.versions.node.split('.')[0]);
-    add('Node.js', process.versions.node, major >= 18);
+    if (platform.runtime() === 'deno') add('Deno', process.versions.deno);
+    else {
+      const major = Number(process.versions.node.split('.')[0]);
+      add('Node.js', process.versions.node, major >= 18);
+    }
     add('Data folder', platform.dataDir());
     let store;
     try {

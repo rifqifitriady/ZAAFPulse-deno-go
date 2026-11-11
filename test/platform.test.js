@@ -241,6 +241,22 @@ test('service: the log folder variables are carried into the unit, plist and Win
   assert.match(vbs, /e\("CODEX_HOME"\) = "\/home\/me\/cx"/);
 });
 
+test('service: a single-file binary works in its data folder, a checkout in the app folder', () => {
+  const d = tmp('zp-svc-');
+  const env = { ZAAFPULSE_DATA: d };
+  const at = (dir) => `<key>WorkingDirectory</key><string>${dir}</string>`;
+  assert.ok(service.plist(['/x/zaafpulse', 'start'], env, '/tmp/l.log').includes(at(platform.APP_DIR)));
+  // Restored by hand: under Deno node:test's mock is not undone when the test ends, and the next test would see it.
+  const was = platform.isSingleFile;
+  platform.isSingleFile = () => true;
+  try {
+    assert.ok(service.plist(['/x/zaafpulse', 'start'], env, '/tmp/l.log').includes(at(d)));
+    assert.ok(service.unitText(['/x/zaafpulse', 'start'], env, { system: false }).includes(`WorkingDirectory=${d}`));
+  } finally {
+    platform.isSingleFile = was;
+  }
+});
+
 test('service: unit, plist and Windows launcher carry settings but never secrets', () => {
   const env = service.settings({
     ZAAFPULSE_HOST: '0.0.0.0',
@@ -285,7 +301,16 @@ test('platform: home expansion, data folder rules and the MCP command', () => {
   const inApp = ['.git', 'config.json', '.data'].some((f) => fs.existsSync(path.join(platform.APP_DIR, f)));
   const system = platform.OS === 'linux' && process.getuid && process.getuid() === 0;
   assert.equal(platform.dataDir({}), inApp ? platform.APP_DIR : platform.defaultDataDir({ system }));
-  const plain = { command: process.execPath, args: [path.join(platform.APP_DIR, 'mcp.js')] };
+  // Under Deno the command is a `deno run` launch with the mcp-stdio set and its scopes (lib/permissions.js).
+  const plain = process.versions.deno
+    ? require('../lib/permissions').selfCommand({
+        script: 'mcp.js',
+        sub: 'mcp',
+        set: 'mcp-stdio',
+        dataDir: platform.dataDir({}),
+        env: {},
+      })
+    : { command: process.execPath, args: [path.join(platform.APP_DIR, 'mcp.js')] };
   assert.deepEqual(platform.mcpCommand({ env: {} }), plain);
   // A chosen data folder or config file travels with the command; the folder mcp.js finds by itself does not.
   assert.deepEqual(platform.mcpCommand({ env: { ZAAFPULSE_DATA: platform.APP_DIR } }), plain);

@@ -25,7 +25,12 @@ const put = (f, text) => {
   fs.writeFileSync(f, text);
 };
 const backups = (f) => fs.readdirSync(path.dirname(f)).filter((n) => n.startsWith(`${path.basename(f)}.bak-`));
-const MCP_JS = path.join(__dirname, '..', 'mcp.js');
+// The command's arguments for a data folder: [mcp.js] under Node; under Deno a `deno run` launch with the mcp-stdio
+// permission set and that folder's write scope, ending with mcp.js (lib/permissions.js selfCommand).
+const argsFor = (env = {}, data) => require('../lib/platform').mcpCommand({ env, data }).args;
+const MCP_ARGS = argsFor();
+// The same as a TOML array, the way the codex table writes it.
+const tomlArgs = (args) => `[${args.map((a) => JSON.stringify(a)).join(', ')}]`;
 
 test('the server is registered as zaafpulse', () => {
   assert.equal(NAME, 'zaafpulse');
@@ -50,7 +55,7 @@ test('kiro: creates the settings file with our entry and no backup', () => {
   const file = clients(home).kiro.file;
   const data = readJ(file);
   assert.equal(data.mcpServers[NAME].command, process.execPath);
-  assert.match(data.mcpServers[NAME].args[0], /mcp\.js$/);
+  assert.match(data.mcpServers[NAME].args.at(-1), /mcp\.js$/);
   assert.equal(data.mcpServers[NAME].env, undefined, 'no env when nothing differs from the defaults');
   assert.deepEqual(fs.readdirSync(path.dirname(file)), ['mcp.json']);
 });
@@ -110,7 +115,7 @@ test('a stale entry (other node, other install path) is replaced; settings the u
   run('kiro', { home, log: (m) => logs.push(m) });
   const e = readJ(file).mcpServers[NAME];
   assert.equal(e.command, process.execPath);
-  assert.deepEqual(e.args, [MCP_JS]);
+  assert.deepEqual(e.args, MCP_ARGS);
   assert.deepEqual(e.autoApprove, ['x']);
   assert.match(logs[0], /updated/);
 });
@@ -152,7 +157,7 @@ test('--remove removes both the new and the old name', () => {
     file,
     JSON.stringify({
       mcpServers: {
-        [NAME]: { command: process.execPath, args: [MCP_JS] },
+        [NAME]: { command: process.execPath, args: MCP_ARGS },
         'ai-command-center': { command: 'node', args: ['C:\\zp\\mcp.js'] },
         other: { command: 'x' },
       },
@@ -271,13 +276,13 @@ test('claude: a stale entry is removed and added again; the old name is removed;
     'stdio',
     NAME,
   ]);
-  assert.deepEqual(calls[2].slice(9), ['--', process.execPath, MCP_JS]);
+  assert.deepEqual(calls[2].slice(9), ['--', process.execPath, ...argsFor({}, data)]);
   assert.equal(backups(file).length, 1, '~/.claude.json is backed up before the CLI changes it');
   if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(home, backups(file)[0])).mode & 0o777, 0o600);
   // Up to date: nothing runs.
   put(
     file,
-    JSON.stringify({ mcpServers: { [NAME]: { type: 'stdio', command: process.execPath, args: [MCP_JS], env: {} } } }),
+    JSON.stringify({ mcpServers: { [NAME]: { type: 'stdio', command: process.execPath, args: MCP_ARGS, env: {} } } }),
   );
   const logs = [];
   run('claude', { home, log: (m) => logs.push(m), which: () => '/bin/claude', exec: () => assert.fail('ran') });
@@ -386,9 +391,9 @@ test('cursor, claude desktop, gemini, windsurf: an mcpServers entry; cursor adds
   const home = tmpHome();
   for (const id of ['cursor', 'claude-desktop', 'gemini', 'windsurf']) run(id, { home, log: quiet });
   const c = clients(home);
-  assert.deepEqual(readJ(c.cursor.file).mcpServers[NAME], { type: 'stdio', command: process.execPath, args: [MCP_JS] });
+  assert.deepEqual(readJ(c.cursor.file).mcpServers[NAME], { type: 'stdio', command: process.execPath, args: MCP_ARGS });
   for (const id of ['claude-desktop', 'gemini', 'windsurf'])
-    assert.deepEqual(readJ(c[id].file).mcpServers[NAME], { command: process.execPath, args: [MCP_JS] }, id);
+    assert.deepEqual(readJ(c[id].file).mcpServers[NAME], { command: process.execPath, args: MCP_ARGS }, id);
   for (const id of ['cursor', 'claude-desktop', 'gemini', 'windsurf']) assert.ok(isRegistered(c[id]), id);
 });
 
@@ -401,7 +406,7 @@ test('vscode: a top-level "servers" key with type stdio; a JSONC file is left al
   assert.deepEqual(j.servers[NAME], {
     type: 'stdio',
     command: process.execPath,
-    args: [MCP_JS],
+    args: argsFor({}, path.join(home, 'd')),
     env: { ZAAFPULSE_DATA: path.join(home, 'd') },
   });
   assert.ok(j.servers.other && Array.isArray(j.inputs));
@@ -424,7 +429,7 @@ test('zed: context_servers in plain JSON settings; JSONC settings get instructio
   run('zed', { home, log: quiet });
   assert.deepEqual(readJ(c.file), {
     theme: 'One Dark',
-    context_servers: { [NAME]: { command: process.execPath, args: [MCP_JS] } },
+    context_servers: { [NAME]: { command: process.execPath, args: MCP_ARGS } },
   });
   const jsonc = '// Zed settings\n{\n  "theme": "One Dark",\n}\n';
   put(c.file, jsonc);
@@ -454,17 +459,24 @@ test('codex: without the CLI, appends our table and leaves every other byte alon
   const home = tmpHome();
   const c = clients(home).codex;
   put(c.file, CODEX_BEFORE);
-  const data = path.join(home, 'my "data"');
+  // Under Deno the data folder is in the launch's --allow-write, which refuses a quote loudly (lib/permissions.js
+  // checkScope) before anything is written; a backslash still needs TOML escaping.
+  if (process.versions.deno) {
+    const quoted = path.join(home, 'my "data"');
+    assert.throws(() => run('codex', { home, log: quiet, which: noCli, data: quoted }), /--allow-write: .*my \\"data\\"/);
+    assert.equal(fs.readFileSync(c.file, 'utf8'), CODEX_BEFORE);
+  }
+  const data = path.join(home, process.versions.deno ? 'my \\data' : 'my "data"');
   run('codex', { home, log: quiet, which: noCli, data });
   const text = fs.readFileSync(c.file, 'utf8');
   assert.ok(text.startsWith(CODEX_BEFORE.trimEnd()));
   assert.ok(
     text.endsWith(
-      `\n\n[mcp_servers.zaafpulse]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(MCP_JS)}]\nenv = { ZAAFPULSE_DATA = ${JSON.stringify(data)} }\n`,
+      `\n\n[mcp_servers.zaafpulse]\ncommand = ${JSON.stringify(process.execPath)}\nargs = ${tomlArgs(argsFor({}, data))}\nenv = { ZAAFPULSE_DATA = ${JSON.stringify(data)} }\n`,
     ),
   );
   const f = toml.find(text, NAME);
-  assert.deepEqual(f.value, { command: process.execPath, args: [MCP_JS], env: { ZAAFPULSE_DATA: data } });
+  assert.deepEqual(f.value, { command: process.execPath, args: argsFor({}, data), env: { ZAAFPULSE_DATA: data } });
   assert.ok(isRegistered(c));
   const logs = [];
   run('codex', { home, log: (m) => logs.push(m), which: noCli, data });
@@ -493,7 +505,7 @@ test('codex: a fresh entry uses `codex mcp add` when the CLI is installed', () =
     `ZAAFPULSE_DATA=${path.join(home, 'd')}`,
     '--',
     process.execPath,
-    MCP_JS,
+    ...argsFor({}, path.join(home, 'd')),
   ]);
 });
 
@@ -502,7 +514,7 @@ test('codex: a stale table is replaced in place, keeping keys the user added; th
   const c = clients(home).codex;
   // How `codex mcp add` writes it: env as a sub-table. An absolute folder for this OS ("/d" is D:\d on Windows).
   const d = path.join(home, 'd');
-  const cliFormat = `[mcp_servers.zaafpulse]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(MCP_JS)}]\n\n[mcp_servers.zaafpulse.env]\nZAAFPULSE_DATA = ${JSON.stringify(d)}\n`;
+  const cliFormat = `[mcp_servers.zaafpulse]\ncommand = ${JSON.stringify(process.execPath)}\nargs = ${tomlArgs(argsFor({ ZAAFPULSE_DATA: d }))}\n\n[mcp_servers.zaafpulse.env]\nZAAFPULSE_DATA = ${JSON.stringify(d)}\n`;
   put(c.file, `${CODEX_BEFORE}\n${cliFormat}`);
   const logs = [];
   run('codex', { home, log: (m) => logs.push(m), which: noCli, env: { ZAAFPULSE_DATA: d } });
@@ -515,7 +527,7 @@ test('codex: a stale table is replaced in place, keeping keys the user added; th
     text,
     CODEX_BEFORE.replace(
       '[profiles.fast]',
-      `[mcp_servers.zaafpulse]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(MCP_JS)}]\nenabled = false\ntool_timeout_sec = 30\n\n[profiles.fast]`,
+      `[mcp_servers.zaafpulse]\ncommand = ${JSON.stringify(process.execPath)}\nargs = ${tomlArgs(MCP_ARGS)}\nenabled = false\ntool_timeout_sec = 30\n\n[profiles.fast]`,
     ),
   );
   assert.equal(backups(c.file).length, 1);

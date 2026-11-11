@@ -11,6 +11,9 @@ const claudeDir = path.join(home, 'claude-cfg');
 const codexDir = path.join(home, 'codex-home');
 fs.mkdirSync(path.join(claudeDir, 'projects', '-work-app'), { recursive: true });
 fs.mkdirSync(path.join(codexDir, 'sessions'), { recursive: true });
+// Put back when the file is done: `deno test` runs every test file in one process, so a later file would see them.
+const ENV_KEYS = ['HOME', 'USERPROFILE', 'ZAAFPULSE_CLAUDE_DIRS', 'CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME', 'CODEX_HOME'];
+const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 Object.assign(process.env, {
   HOME: home,
   USERPROFILE: home,
@@ -21,7 +24,13 @@ Object.assign(process.env, {
 });
 const reqlogs = require('../lib/reqlogs');
 
-test.after(() => fs.rmSync(home, { recursive: true, force: true }));
+test.after(() => {
+  for (const k of ENV_KEYS) {
+    if (savedEnv[k] === undefined) delete process.env[k];
+    else process.env[k] = savedEnv[k];
+  }
+  fs.rmSync(home, { recursive: true, force: true });
+});
 
 test('logs: an API error carries the tool it came from, and a normal turn is a request', () => {
   const now = Date.now();

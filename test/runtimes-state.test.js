@@ -165,6 +165,25 @@ test('Linux: a systemd system unit is "system"; a user unit or a terminal is a p
   assert.equal(byId(await gone.st.list()).ollama.how, 'process');
 });
 
+test('Linux: a refused /proc cgroup read (Deno) is said once, and the server shows as a process', async () => {
+  const said = [];
+  const rows = [row(901, 1, '/usr/local/bin/ollama serve')];
+  const x = stateOf(rows, {
+    platform: 'linux',
+    readCgroup: () => {
+      throw Object.assign(new Error('Requires all access to "/proc/901/cgroup"'), { name: 'NotCapable' });
+    },
+    extra: { warn: (m) => said.push(m) },
+  });
+  assert.equal(byId(await x.st.list()).ollama.how, 'process');
+  await x.st.list();
+  assert.equal(said.length, 1);
+  assert.match(
+    said[0],
+    /cgroup is not readable by this runtime \(Requires all access.*systemd system unit shows as a plain process/,
+  );
+});
+
 test('an owner entry claims the llama-server on its port; another port stays the llama.cpp preset', async () => {
   const rows = [
     row(1001, 1, '/opt/homebrew/bin/llama-server -m /m/qwen.gguf --port 8081'),

@@ -128,7 +128,7 @@ of AI meets a law or a standard.
 | External providers need approval (A.2) | every enabled external provider is approved or waits for approval | one is served without a recorded approval (set up before approvals existed) | |
 | API keys with scopes, budgets and expiry | every active key has a budget or an expiry (or there is no active key) | some do | none does |
 | Human approval in workflows | every workflow that sends, changes or decides (tier R2 or R3) has an approval step (or there is none) | some do | none does |
-| Pause and stop an agent | agent control is on | | it is off: server mode, password or no sign-in, Docker |
+| Pause and stop an agent | agent control is on | it is on, but no session can be linked to its process: on Linux under Deno, which cannot read `/proc`, with no `ps` or `lsof` installed | it is off: server mode, password or no sign-in, Docker |
 | Monitors rules | `guardrail_block`, `audit_chain_broken` and `inventory_unreviewed` are on | one or two of them are off | all three are off |
 | Evals running | a judge model is ready, judge evaluators are on and the judge is not paused | the judge is off, waiting for a model or paused by its daily or cost cap (the code evaluators always run) | |
 | Dataset experiments | an experiment finished in the last 90 days | datasets, but no experiment finished in the last 90 days | no dataset |
@@ -140,6 +140,41 @@ of AI meets a law or a standard.
 | OpenTelemetry export | spans are exported | the exporter reports failed exports since start | not set up |
 | Trace retention | traces are kept at least 183 days (6 months) | they are kept less | tracing is off |
 | AI inventory reviewed | every item is reviewed, every high or unacceptable one has a decision and every unacceptable one is blocked, every inventory source was read and every AI client file could be read | some are reviewed, or a source or an AI client file could not be read ("N AI client files could not be read") | none is |
+| Runtime permissions (MEASURE 2.7, A.6) | ZAAFPulse runs on Deno, every permission (read, write, net, env, run, sys) is an allow-list and run holds no interpreter or launcher (never the case today) | it runs on Deno and a permission is unrestricted or all but denied entries (net's denied hosts; write in the single-file build, which Deno reports as partial), run includes an interpreter or launcher (node, osascript, powershell, cmd, open, brew, claude, codex …), or (Linux) agent control is lost because `/proc` is unreadable and `ps` or `lsof` is missing | it runs on Node.js: no runtime permission sandbox |
+
+**Runtime permissions.** Under Deno ZAAFPulse runs with the permission set of its entry point in `deno.json`
+(`server`, `cli`, `mcp-stdio`): read all files, write only the data folder, the temp folder, the skill folders and the
+AI clients' config folders (computed at each `deno run` launch; the single-file build writes anywhere for now), every
+host except the cloud metadata addresses `169.254.169.254` and `metadata.google.internal`, every environment
+variable (so a secret reference to any variable keeps working), a fixed list of programs and of system values. The
+evidence names what is unrestricted, what is all but denied and what is allow-listed; the reason for each entry is in
+`lib/permissions.js`. On Linux, Deno refuses every read under `/proc` unless the process holds all permissions (no
+scoped grant reaches it), so ZAAFPulse lists processes with `ps` and finds an agent's working folder with `lsof`, and
+the evidence says so. Without `ps` or `lsof` (procps and lsof packages), agent control and linking a session to its
+process are unavailable: this control and **Pause and stop an agent** turn `partial`, and the server log says why
+once. Signals (pause, resume, stop) go through the `kill` program, since Deno allows its own only with every program
+allowed. On Windows there is no `kill` program and no pause: whether a process is still alive is asked of `tasklist`
+(on the run list for that), and a stop goes through `taskkill`, as under Node. The single-file build reports its
+unscoped write as "all but denied entries", like net with its denied hosts.
+
+**Run is not a sandbox boundary.** The run list holds interpreters and launchers that ZAAFPulse needs: `node` (a
+Claude Code installed as `cli.js`), `osascript`, `powershell`, `cmd`, `open`, `xdg-open`, `brew`, `claude`, `codex`,
+`launchctl`, and for the CLI `wscript.exe`, `explorer.exe`, `schtasks`, `systemctl`. Each runs any code it is given, outside Deno's
+permissions, so code that can spawn one can also write anywhere. The run and write scopes guard against accidents and
+against code paths that were never meant to spawn or write, not against a determined attacker inside the process. The
+evidence names the launchers the running process holds ("run includes interpreters and launchers (…): not a sandbox
+boundary; the write scope guards against accidents, not a determined attacker") and the control stays `partial` while
+it holds any. The reason for each is in `lib/permissions.js` `WHY.launchers`.
+
+**Launch lines are checked.** A `deno run` launch (the service, an MCP client's entry) carries `--allow-write` and
+`--allow-run` lists built from the environment (`ZAAFPULSE_DATA`, `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`,
+`ZAAFPULSE_CLAUDE_BIN`, …) and from `config.json`. Only owner model servers approved in Settings, as their command is
+now, are added to `--allow-run`. An entry holding a comma (it would split into a second grant: a data folder named
+`x,/` would grant `/`), a double quote or a control character is refused before anything is written, with an error
+naming the value. Other characters a name can hold (`O'Brien`, `AT&T`, `$`, `^`, `%`) are passed as they are: the launch
+is an argument list, and the plist, the systemd unit, the MCP client JSON and the Codex TOML each escape them. The
+Windows launcher refuses an argument with a quote or `%` (cmd.exe cannot take them safely inside quotes), and the
+systemd unit writes `%` as `%%` and `$` as `$$`.
 
 Guardrails are the strictest of these: the default configuration (secrets `redact`, personal data `off`, injection
 `log`) shows `partial`, and `in place` needs personal data on and injection set to `block`.

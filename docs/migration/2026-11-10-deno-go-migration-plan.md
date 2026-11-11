@@ -180,13 +180,13 @@ Config placement, following the `deno` skill:
 - compiler options go in `tsconfig.json`;
 - `deno.json` holds only Deno-specific config: permission sets, compile `include`/`exclude`, and `exclude`.
 
-- **Writable state out of the app folder** (found in the P1 permission audit). The app writes into its own install
-  tree, in `lib/data/prices-snapshot.json` and `skills/*`. A compiled binary embeds those folders, so all writes
-  must move to the data dir.
+- **Writable state:** the P1 finding that the app writes into its own install folder was wrong: the permission audit
+  logs a `write` entry for pure reads (corrected in the P1 results). Write permissions are proven by denial testing.
 - Replace the Node SEA pipeline:
   - `scripts/build-single.js` and `scripts/sea-main.js` become `deno compile` with embedded assets;
-  - keep the start-time SHA-256 manifest check;
-  - replace `node:sea`'s `isSea()` in `lib/platform.js` with a Deno check.
+  - a compiled binary serves its files from inside itself and unpacks nothing, so the start-time SHA-256 manifest
+    check goes away; integrity is the release's `SHA256SUMS` and GitHub attestations (P2 spec D2);
+  - `isSea()` in `lib/platform.js` becomes `runtime()` and `isSingleFile()`.
 - The **permission matrix** lives in one place, the `deno.json` permission sets. It has a test per permission: the
   feature works, and the denied neighbour fails loudly.
   - The matrix is shown on the Compliance page as a control.
@@ -197,7 +197,7 @@ Config placement, following the `deno` skill:
   - 100% of tests green on Deno (M1);
   - 6/6 targets build and smoke-test (M8);
   - Deno RSS and startup within +10% of the Node baseline;
-  - the owner's live dashboard runs on Deno for 48 h without incident.
+  - ~~the owner's live dashboard runs on Deno for 48 h without incident~~ dropped by the owner on 2026-11-11 (§11, decision 4).
 
 ### P3 — IPC contract (1 week)
 
@@ -267,7 +267,7 @@ like any client.
 - `install.sh` and `install.ps1` install both binaries.
 - `zaafpulse` supervises `zaafpulse-gw`: restart with back-off, and a health check shown on the Overview.
 - Upgrade path from v1.1.x and rollback (M12).
-- An authenticated install and update from the private repo (§11.1), using a token from the OS secret store.
+- ~~An authenticated install and update from the private repo (§11.1)~~ not needed: the repo is public since 2026-11-11 (§11.5). Install and update fetch the public release assets, as in v1.x.
 - Install docs for unsigned binaries: the SmartScreen and Gatekeeper steps, and checking SHA256SUMS and the
   attestation (§11.3).
 - **Exit:**
@@ -281,7 +281,7 @@ like any client.
   `govulncheck`.
 - 7-day soak on the owner's live dashboard (M13).
 - Docs: README, architecture diagram, `docs/governance.md` (the new controls), and a migration note.
-- Release **v2.0.0** from this private repo (§11.1), and remove the Node-only code paths.
+- Release **v2.0.0** from this repo (§11.1, public since 2026-11-11, §11.5), and remove the Node-only code paths.
 - **Exit (gate G4):** every metric M1–M13 is met and recorded in `bench/results/` and the release notes.
 
 ## 6. Decision gates
@@ -290,11 +290,11 @@ like any client.
 |---|---|---|---|
 | G0 | P0 | Baselines and contract suite exist | Do not start P1. The suite is the safety net for everything after it. |
 | G1 | P1 | Deno compatibility and win-arm64 proven, AsyncLocalStorage overhead acceptable | Fall back to **TypeScript (Node) + Go**: P2 is skipped, P3–P7 unchanged |
-| G2 | P2 | Control plane fully on Deno, 48 h live | Stay on Node for the control plane; continue P3–P4 |
+| G2 | P2 | Control plane fully on Deno, CI green on every OS (the 48 h live run was dropped, §11 decision 4) | Stay on Node for the control plane; continue P3–P4 |
 | G3 | P4 | Gateway fully on Go, M3 and M4 met | Keep the JS gateway for the slices not met; ship hybrid |
 | G4 | P7 | All metrics met | No v2.0.0; the public v1.x line stays the only release |
 
-Every gate leaves a shippable product. Upstream `main` (public) keeps releasing v1.x the whole time; v2.0.0 is released from this private repo (§11.1).
+Every gate leaves a shippable product. Upstream `main` (public) keeps releasing v1.x the whole time; v2.0.0 is released from this repo (§11.1; public since 2026-11-11, §11.5).
 
 ## 7. Timeline
 
@@ -310,7 +310,7 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| A Deno Node-compat gap that tests do not catch | Medium | Medium | Dual-runtime CI until cut-over; shadow mode; 48 h live gate |
+| A Deno Node-compat gap that tests do not catch | Medium | Medium | Dual-runtime CI until cut-over; shadow mode; the P7 cut-over is the first live run (the P2 48 h live gate was dropped, §11 decision 4) |
 | AsyncLocalStorage overhead under Deno | Medium | Low–medium | Benchmark in P1; the hot path moves to Go anyway |
 | A permission that is too narrow, so a feature fails silently | Medium | Medium | A test per permission; loud errors; matrix shown on the Compliance page |
 | A two-writer audit chain or ledger | Low | High | Single-writer rule; kill tests in P3; S8 equality test |
@@ -346,7 +346,8 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
 
 ## 11. Owner decisions (2026-11-10)
 
-1. **Release line: v2.0.0 ships from this private repo (`ZAAFPulse-deno-go`).** The public ZAAFPulse stays on the
+1. **Release line: v2.0.0 ships from this repo (`ZAAFPulse-deno-go`).** It was private when this was decided; it is
+   public since 2026-11-11 (decision 5), so the authenticated-install bullets below no longer apply. The public ZAAFPulse stays on the
    v1.x line and is not switched.
    - Assets of a private repo cannot be downloaded without authentication, so P6 must deliver an authenticated
      install and update path:
@@ -367,3 +368,14 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    binaries stay unsigned on Windows and ad-hoc signed on macOS, as in v1.x. Integrity comes from SHA256SUMS and
    GitHub attestations. The install docs explain the SmartScreen "More info → Run anyway" step and the macOS
    Gatekeeper step. Enterprise rollout behind AppLocker/WDAC is out of scope.
+4. **Gate G2 has no 48 h live run (2026-11-11).** The owner's dashboard stays on the Node checkout through P2–P6.
+   - Gate G2 rests on CI only: the Deno suite, the contract suite and the six native smoke tests.
+   - What this leaves uncovered: a permission that only a long-running real install exercises (the owner's runtimes,
+     notifications, the service started by launchd with its install-time PATH). Those surface at the P7 cut-over
+     instead, where the rollback to the Node line must stay one command away.
+5. **The repo is public (2026-11-11).** Actions minutes for a private repo ran out and blocked every CI job; a public
+   repo runs the standard runners free. Before the switch the whole history was scanned: the only key-shaped strings
+   are the fake test key `sk-ant-api03-AbCdEf…`, and no `config.json`, data folder or key file was ever committed.
+   - P6 drops the authenticated install and update: the install scripts and the update check read the public
+     release, as in v1.x.
+   - The public ZAAFPulse repo still carries v1.x; v1.x users are not moved to v2 automatically.

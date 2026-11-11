@@ -5,6 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { stubGlobal } = require('./helpers');
 
 global.esc = (v) =>
   String(v ?? '').replace(
@@ -317,8 +318,8 @@ test('fix round 1: a refused report shows its error and keeps the controls; the 
     location: global.location,
     fetch: global.fetch,
     document: global.document,
-    localStorage: global.localStorage,
   };
+  const store = stubGlobal('localStorage');
   const els = {
     '#cost-body': { isConnected: true, innerHTML: '' },
     '#cost-bar': { innerHTML: '' },
@@ -329,7 +330,7 @@ test('fix round 1: a refused report shows its error and keeps the controls; the 
   global.state = { sub: 'reports' };
   global.location = { hash: '#cost/reports?month=2026-01&center=gone' };
   global.document = { addEventListener() {} };
-  global.localStorage = { getItem: () => JSON.stringify({ cur: 'IDR' }) };
+  store.set({ getItem: () => JSON.stringify({ cur: 'IDR' }) });
   const settings = {
     settings: { centers: [], currency: { code: 'IDR', rates: [{ from: '2026-01-01', perUSD: 16000 }] } },
     keys: [],
@@ -353,7 +354,7 @@ test('fix round 1: a refused report shows its error and keeps the controls; the 
     assert.ok(!/month=/.test(global.location.hash), global.location.hash);
   } finally {
     Object.assign(global, saved);
-    if (saved.localStorage === undefined) delete global.localStorage;
+    store.restore();
   }
 });
 
@@ -364,20 +365,20 @@ test('fix round 2: the USD button saves the choice, so a stored IDR does not com
     location: global.location,
     fetch: global.fetch,
     document: global.document,
-    localStorage: global.localStorage,
   };
+  const store = stubGlobal('localStorage');
   const els = {
     '#cost-body': { isConnected: true, innerHTML: '' },
     '#cost-bar': { innerHTML: '' },
     '#cost-ribbon': { innerHTML: '' },
   };
   const urls = [];
-  let store = JSON.stringify({ range: '7d', cur: 'IDR' });
+  let stored = JSON.stringify({ range: '7d', cur: 'IDR' });
   global.$ = (s) => els[s] || null;
   global.state = { sub: 'reports' };
   global.location = { hash: '#cost/reports?month=2026-10' };
   global.document = { addEventListener() {} };
-  global.localStorage = { getItem: () => store, setItem: (k, v) => (store = v) };
+  store.set({ getItem: () => stored, setItem: (k, v) => (stored = v) });
   const settings = {
     settings: { centers: [], currency: { code: 'IDR', rates: [{ from: '2026-01-01', perUSD: 16000 }] } },
     keys: [],
@@ -392,7 +393,7 @@ test('fix round 2: the USD button saves the choice, so a stored IDR does not com
     await U.costMountReports();
     assert.ok(urls.some((u) => u.includes('currency=IDR')));
     U.costRepGo({ cur: 'USD' });
-    assert.equal(JSON.parse(store).range, '7d', 'the other stored choices stay');
+    assert.equal(JSON.parse(stored).range, '7d', 'the other stored choices stay');
     urls.length = 0;
     await U.costMountReports();
     assert.ok(
@@ -402,6 +403,6 @@ test('fix round 2: the USD button saves the choice, so a stored IDR does not com
     assert.ok(!urls.some((u) => u.includes('currency=')), urls.join(' '));
   } finally {
     Object.assign(global, saved);
-    if (saved.localStorage === undefined) delete global.localStorage;
+    store.restore();
   }
 });

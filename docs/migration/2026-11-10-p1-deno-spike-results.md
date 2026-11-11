@@ -96,14 +96,18 @@ That produced **13,045 accesses**:
 
 | Permission | Accesses | What was touched |
 |---|---|---|
-| read / write | 6,956 / 6,971 | Almost all in the data dir (`gateway-usage.jsonl`, `kb`, `datasets`, `brain`, `audit`, `traces`, `*.json.tmp`), **plus the app's own folder:** `lib/data/prices-snapshot.json` and `skills/zaafpulse*` |
+| read / write | 6,956 / 6,971 | Almost all in the data dir (`gateway-usage.jsonl`, `kb`, `datasets`, `brain`, `audit`, `traces`, `*.json.tmp`), plus reads of the app's own folder (`lib/data/prices-snapshot.json`, `skills/zaafpulse*`). The audit logs a `write` entry for every pure read (corrected in P2, see below), so this column does not show writes. |
 | env | 84 | 14 names: `ZAAFPULSE_*` (PUBLIC_URL, TRUST_PROXY, AUTH, CLAUDE_DIRS, DATA, ALLOWED_HOSTS, PORT, HOST, TLS_CERT), `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`, `CODEX_HOME`, `HOST`, `DEMO` |
 | sys | 18 | `homedir`, `umask` |
 | net | 13 | Only `127.0.0.1:<port>` in demo mode (the demo traffic generator calls its own `/v1/*`) |
 | run | 0 | None in demo mode (`ZAAFPULSE_RUNTIME_WATCH=off`). The real matrix comes from the full suite plus live mode. |
 
-**New P2 item:** the app writes into its own install folder. A compiled binary embeds that folder, so these writes
-must move to the data dir.
+**Correction (P2, 2026-11-10):** the paragraph that stood here said the app writes into its own install folder. It
+does not. `DENO_AUDIT_PERMISSIONS` logs a `write` entry for pure reads: a script doing only `fs.readFileSync`,
+`existsSync` and `statSync` produced one `read` and one `write` entry per call and ran with `--allow-read` alone.
+`lib/pricing.js` only reads the snapshot, and `lib/gateway/skills.js` reads the bundled skills and writes copies into
+the agents' skill folders. P2 therefore takes read, net, env, sys and run candidates from the audit and proves write
+permissions by denial testing (`--no-prompt` and a scoped `--allow-write`).
 
 ## 8. Review against the `deno` and `migrate-to-deno` skills
 

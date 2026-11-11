@@ -376,27 +376,34 @@ test('external: a selected provider that is unavailable or has no model waits, w
 });
 
 test('external: the timeout aborts the request, not only the wait', async () => {
-  let signal;
-  const gateway = cloud({
-    complete: ({ signal: s }) => {
-      signal = s;
-      return new Promise((_, rej) => s.addEventListener('abort', () => rej(new Error('aborted upstream'))));
-    },
-  });
-  const m = createModels({
-    settings: () => ({ model: 'big-1', provider: 'cloud' }),
-    gateway,
-    ollamaUrl: 'http://127.0.0.1:9',
-    lmstudioUrl: 'http://127.0.0.1:9',
-    callMs: 50,
-  });
-  const r = await m.resolve();
-  await assert.rejects(m.call(r, { system: 's', user: 'u', schema: SCHEMA }), (e) => {
-    assert.equal(e.status, 0);
-    assert.match(e.message, /timed out/);
-    return true;
-  });
-  assert.equal(signal.aborted, true);
+  // The call's timer is unref'd, and this fake upstream holds no socket: keep the event loop alive for the test, as a
+  // real request would. Deno's test runner ends a test whose loop is empty; Node's does not.
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    let signal;
+    const gateway = cloud({
+      complete: ({ signal: s }) => {
+        signal = s;
+        return new Promise((_, rej) => s.addEventListener('abort', () => rej(new Error('aborted upstream'))));
+      },
+    });
+    const m = createModels({
+      settings: () => ({ model: 'big-1', provider: 'cloud' }),
+      gateway,
+      ollamaUrl: 'http://127.0.0.1:9',
+      lmstudioUrl: 'http://127.0.0.1:9',
+      callMs: 50,
+    });
+    const r = await m.resolve();
+    await assert.rejects(m.call(r, { system: 's', user: 'u', schema: SCHEMA }), (e) => {
+      assert.equal(e.status, 0);
+      assert.match(e.message, /timed out/);
+      return true;
+    });
+    assert.equal(signal.aborted, true);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 test('resolve: overlapping calls share one probe', async () => {

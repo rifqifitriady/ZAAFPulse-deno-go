@@ -370,6 +370,34 @@ test('Docker is detected from /.dockerenv or the init cgroups', () => {
   assert.equal(detectDocker(fsLike({})), false);
 });
 
+test('Docker detection says once when the runtime refuses /proc/1/cgroup (Deno on Linux), and uses /.dockerenv', () => {
+  const refusedCgroup = (dockerenv) => ({
+    existsSync: () => dockerenv,
+    readFileSync: () => {
+      throw Object.assign(new Error('Requires all access to "/proc/1/cgroup"'), { name: 'NotCapable' });
+    },
+  });
+  const said = [];
+  const opts = { warn: (m) => said.push(m), seen: new Set() };
+  assert.equal(detectDocker(refusedCgroup(false), opts), false);
+  assert.equal(detectDocker(refusedCgroup(false), opts), false);
+  assert.equal(detectDocker(refusedCgroup(true), opts), true);
+  assert.equal(said.length, 1);
+  assert.match(said[0], /\/proc\/1\/cgroup is not readable by this runtime \(Requires all access.*\/\.dockerenv only/);
+  // Any other error (no /proc) is not a refusal and says nothing.
+  const quiet = [];
+  detectDocker(
+    {
+      existsSync: () => false,
+      readFileSync: () => {
+        throw new Error('ENOENT');
+      },
+    },
+    { warn: (m) => quiet.push(m), seen: new Set() },
+  );
+  assert.deepEqual(quiet, []);
+});
+
 test('a rule may only pause, and only for the rules that allow it', async () => {
   const k = fakeKill();
   const { ctl, audit } = control({ processes: fakeTable([row(4242, CLAUDE_ARGS)]), killer: k });
@@ -812,4 +840,36 @@ test('real child: a child that ignores SIGINT gets SIGTERM after the grace perio
     audit.entries.map((e) => e.signal),
     ['SIGINT', 'SIGTERM'],
   );
+});
+
+// A kill that fails for another reason than ESRCH or EPERM (the kill program refused by the run permissions, or not
+// installed) is that error, not "the process is gone" (security review of Task 5).
+test('a signal that cannot be sent reports the real error, not that the process is gone', async () => {
+  const refused = new Error("kill: not allowed by this build's run permissions");
+  const kill = (pid, signal) => {
+    if (signal === 0) return true;
+    throw refused;
+  };
+  const { ctl, audit } = control({ processes: fakeTable([row(4242, CLAUDE_ARGS)]), kill });
+  for (const action of ['pause', 'stop']) {
+    await assert.rejects(ctl[action]({ pid: 4242, startTime: startOf(600) }, { by: 'owner' }), (err) => {
+      assert.equal(err.status, 502);
+      assert.match(err.message, /not allowed by this build's run permissions/);
+      return true;
+    });
+    const last = audit.entries.at(-1);
+    assert.equal(last.ok, false);
+    assert.match(last.error, /not allowed by this build's run permissions/);
+  }
+  // kill(pid, 0) failing the same way is not "gone" either: the stop says so instead of claiming the process exited.
+  const probeRefused = (pid, signal) => {
+    if (signal === 0) throw refused;
+    return true;
+  };
+  const c2 = control({ processes: fakeTable([row(4242, CLAUDE_ARGS)]), kill: probeRefused });
+  await assert.rejects(c2.ctl.stop({ pid: 4242, startTime: startOf(600) }, { by: 'owner' }), (err) => {
+    assert.equal(err.status, 502);
+    assert.match(err.message, /not allowed by this build's run permissions/);
+    return true;
+  });
 });
