@@ -1134,3 +1134,25 @@ test('the test guard: a kill that was not injected is recorded, throws and fails
   assert.throws(() => noRealKill(4_000_009, 'SIGKILL'), /without injecting kill/);
   assert.deepEqual(strayKills.splice(0), [[4_000_009, 'SIGKILL']]);
 });
+
+// A kill that fails for another reason than ESRCH or EPERM (refused by the run permissions, or no kill program) is that
+// error, not "already gone" (security review of Task 5).
+test('stop: a signal that cannot be sent reports the real error, not that the server is gone', async (t) => {
+  const refused = new Error("kill: not allowed by this build's run permissions");
+  const failing = { calls: [], kill: () => { throw refused; }, sent: () => [] };
+  const s = stopSetup({ killer: failing });
+  t.after(s.cleanup);
+  await rejects(s.ctl.stop({ id: 'ollama', ...SRV }), 502, /not allowed by this build's run permissions/);
+  assert.ok(!s.audit.lines.some((l) => l.note === 'already gone'));
+  const probeOnly = {
+    calls: [],
+    kill: (pid, signal) => {
+      if (signal === 0) throw refused;
+      return true;
+    },
+    sent: () => [],
+  };
+  const p = stopSetup({ killer: probeOnly });
+  t.after(p.cleanup);
+  await rejects(p.ctl.stop({ id: 'ollama', ...SRV }), 502, /not allowed by this build's run permissions/);
+});

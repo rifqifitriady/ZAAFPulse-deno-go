@@ -72,11 +72,7 @@ of it, and one file runs on one thread.
    - `ZAAFPULSE_INDEX_WORKERS=N` sets the pool size, and `0` turns it off.
    - A worker loads the parser by its module file, found through `require.cache`. A source without
      one, a worker that cannot start, or a worker that dies falls back to the main thread (tested).
-   - **Single-file build:** `scripts/sea-main.js` unpacks the app into a cache folder and requires
-     it from there, so the worker script and parsers are real files. This was checked with a real SEA
-     binary, built locally from the official Node 24.16.0 binary with postject 1.0.0-alpha.6. Three
-     workers started and the results were identical to in-thread parsing, file by file. Windows and
-     Linux builds were not tried.
+   - **Single-file build:** `deno compile` serves the worker script and parsers from inside the binary (worker_threads work there, checked in P2).
    - Cost: each worker has its own heap, so peak memory during a large first index is higher (512 MB
      instead of 326 MB for 300 MB of logs). The workers exit when the index is done. With
      `ZAAFPULSE_INDEX_WORKERS=0`, memory is slightly lower than in 1.0.3.

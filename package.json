@@ -17,13 +17,13 @@
     "test": "node --test test/*.test.js",
     "test:contract": "node --test --test-concurrency=1 test/contract/*.test.js",
     "typecheck": "deno check --sloppy-imports lib/gateway lib/cost lib/governance lib/money.js lib/types.js",
+    "build": "deno run -q --no-prompt --allow-read --allow-write=dist --allow-run=git,tar,deno --allow-env=PATH --ignore-env scripts/build-deno.js",
     "media": "node scripts/capture-media.js"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
-    "@types/node": "24.19.2",
-    "postject": "1.0.0-alpha.6"
+    "@types/node": "24.19.2"
   }
 }

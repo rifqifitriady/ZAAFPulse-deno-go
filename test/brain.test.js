@@ -8,6 +8,9 @@ const { fakeServer, secretsFor } = require('./helpers');
 const { scanMarkdown, paraOf } = require('../lib/brain/markdown');
 const apps = require('../lib/brain/apps');
 const vectors = require('../lib/brain/vectors');
+// A stored secret: its hyphens and length keep it out of any temp path (mkdtemp adds six letters and digits), so the
+// check that it never reaches the config cannot match the folder names in it by chance.
+const QK = 'qk-stored-secret-7f3';
 const pg = require('../lib/brain/pg');
 const { createBrain } = require('../lib/brain');
 
@@ -388,11 +391,11 @@ test('sources: Obsidian by default, connected sources saved with secrets, and on
   ]);
   assert.ok(brain.save({ type: 'logseq', id: 'work', name: 'Work graph', path: lsq }).source);
   assert.ok(
-    brain.save({ type: 'qdrant', id: 'vec', url: 'http://127.0.0.1:1', secret: { mode: 'store', value: 'qk' } }).source,
+    brain.save({ type: 'qdrant', id: 'vec', url: 'http://127.0.0.1:1', secret: { mode: 'store', value: QK } }).source,
   );
-  assert.equal(stored.vec, 'qk');
+  assert.equal(stored.vec, QK);
   assert.equal(conf.brain.sources[1].secret.env, 'BRAIN_VEC');
-  assert.ok(!JSON.stringify(conf).includes('qk'));
+  assert.ok(!JSON.stringify(conf).includes(QK), 'the stored secret is not in the config');
   assert.equal(brain.save({ type: 'logseq', id: 'obsidian', path: lsq }).errors[0], 'that id is reserved');
   const all = await brain.graph('all');
   assert.equal(all.layout, 'sources');

@@ -264,7 +264,7 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 <td valign="top">
 
 **AI governance**<br>
-<sub>An inventory of every AI system here (apps, the MCP servers in your AI clients, providers, models, agents, keys) with its owner, purpose, risk and your decision; eighteen controls mapped to the EU AI Act, the NIST AI RMF and ISO/IEC 42001 with their evidence, exportable as Markdown or JSON; an audit log of every change made by a person or an API key, chained so an edited or deleted line shows when you verify; and sign-ins of their own for auditors (viewers) and reviewers, each change recorded under their name. <a href="docs/governance.md">docs/governance.md</a> · <a href="docs/users.md">docs/users.md</a></sub>
+<sub>An inventory of every AI system here (apps, the MCP servers in your AI clients, providers, models, agents, keys) with its owner, purpose, risk and your decision; nineteen controls mapped to the EU AI Act, the NIST AI RMF and ISO/IEC 42001 with their evidence, exportable as Markdown or JSON; an audit log of every change made by a person or an API key, chained so an edited or deleted line shows when you verify; and sign-ins of their own for auditors (viewers) and reviewers, each change recorded under their name. <a href="docs/governance.md">docs/governance.md</a> · <a href="docs/users.md">docs/users.md</a></sub>
 
 </td>
 </tr>
@@ -272,7 +272,7 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 
 | At a glance | |
 |---|---|
-| Runtime dependencies | **0** (Node standard library only; postject is a build-only dev dependency) |
+| Runtime dependencies | **0** (Node and Deno standard libraries only) |
 | First index of 2 GB of logs | about **30 s** with worker threads, about **70 s** on one thread or a busy machine; a rescan with no changes takes **1–3 ms**. Worked out from 66 MB/s (worker threads) and 24–62 MB/s (one thread) measured on synthetic logs on an Apple M4 ([method and numbers](docs/performance.md)) |
 | Network exposure | **127.0.0.1 only**, host-header checked, sign-in on by default; outbound only to the places listed under [Privacy](#privacy) |
 | 3D scenes | plain `<canvas>` 2D with an isometric projection: no WebGL, no libraries |
@@ -555,6 +555,32 @@ If the Overview shows 0 sessions, 0 tokens and $0 even though your AI apps are r
 - Using another folder? Set `CLAUDE_CONFIG_DIR` (or `ZAAFPULSE_CLAUDE_DIRS` for several) or `CODEX_HOME` **before starting ZAAFPulse**. The background service does not inherit your shell profile; `zaafpulse service install` copies these variables from the shell it runs in, so export them and run it again after any change. Details: see [docs/install.md](docs/install.md#the-background-service-does-not-see-your-shell-variables).
 - Claude Desktop, ChatGPT and other chat apps keep no readable logs; they show as apps only.
 
+### Run on Deno (v2 line)
+
+ZAAFPulse runs on Deno 2.9.8 with a narrow permission set per entry point (`deno.json`: `server`, `cli`,
+`mcp-stdio`, `test`). The single-file binaries carry the `cli` set, because their entry point is the command line
+(it serves the dashboard, the MCP server, the service install and `doctor`). From a checkout:
+
+```bash
+deno task build                                   # dist/zaafpulse-<version>-<os>-<cpu>
+deno run -q --no-prompt -P=cli bin/zaafpulse.js service install   # background service, scopes computed for you
+```
+
+`service install` writes the whole launch line into the service file: `-P=server` with the write scope (data folder,
+temp, the skill folders `~/.claude/skills` and `~/.agents/skills`, and the AI clients' config folders) and the run list
+computed for this machine (`lib/permissions.js writeScope`, `runScope`). Run it again after approving a model server or
+changing `CLAUDE_CONFIG_DIR` (see [docs/install.md](docs/install.md#on-deno-permissions-are-fixed-when-the-service-is-installed)).
+To run in a terminal instead, copy that launch line from the service file. A hand-made
+`--allow-write` that holds only the data folder and temp starts the dashboard, but installing a skill and registering an
+MCP client are then refused with "Requires write access"; `-P=cli bin/zaafpulse.js start` without an `--allow-write`
+works too, with an unscoped write (the `cli` set's `write: true`, as in the single-file binary).
+
+A denied action fails with "Requires ... access to ..." in the UI or the log, never silently. The Compliance page
+shows what the running process holds (control "Runtime permissions"). Any environment variable can be named by a
+secret reference in `config.json`; a program outside the run list of `deno.json` (an owner model server that is not one
+of the presets, a Claude Code that is installed only inside an IDE extension folder) is refused with "Requires run
+access", and a build of your own can add it to the list.
+
 ### Run it on login (macOS, from source)
 
 ```bash
@@ -763,7 +789,7 @@ found, its state and the days it was first and last seen.
   looks like a token. The package is the first other package-looking argument, so it can be a plain flag's value
   (`--port 8080`).
 
-**Governance → Compliance** shows eighteen controls (the guardrails, the audit log, approvals, keys, agent control,
+**Governance → Compliance** shows nineteen controls (the guardrails, the audit log, approvals, keys, agent control,
 the Monitors, evals, budgets, sign-in, roles and access reviews, retention, the inventory itself …) with their status from your settings and
 their evidence, mapped to the EU AI Act, the NIST AI RMF 1.0 and ISO/IEC 42001:2023. **Export** the inventory, the
 controls and the audit log's state as Markdown or JSON. It is evidence for your assessment, not a certification.
@@ -943,7 +969,7 @@ By default the server listens on `127.0.0.1` only and rejects requests whose `Ho
 | Your OTLP endpoint | Only when `"otel": { "enabled": true }` or an `OTEL_EXPORTER_OTLP_*ENDPOINT` variable is set ([OpenTelemetry](#opentelemetry-export)) | Spans; no prompt text unless `captureContent` is on |
 | GitHub and nodejs.org | Only while `install.sh` or `install.ps1` runs | The release (or `main` when you ask), and the official Node.js LTS when your system has no Node 18+ |
 
-Nothing else: no telemetry, no update checks, no accounts. Demo mode fetches nothing. (The maintainer script `scripts/build-single.js` downloads official Node.js binaries to build releases; the running app never does.) Integration and provider secrets stay in the OS secret store or environment variables, never in `config.json`.
+Nothing else: no telemetry, no update checks, no accounts. Demo mode fetches nothing. (The build, `deno task build`, downloads Deno's runtime base binaries once; the running app never does.) Integration and provider secrets stay in the OS secret store or environment variables, never in `config.json`.
 
 - The office, logs and timeline read transcript tails on demand and keep only tool names, sizes, file and command names, hostnames, timing and state; message text is never shown.
 - Message text from your logs is never stored. The cache keeps token counts, metadata and, for flagged quality or safety items only, a masked snippet of up to 160 characters. Secret values are never kept.
@@ -1018,7 +1044,7 @@ skills/                nine Agent Skills (SKILL.md) that teach an AI to use ZAAF
 public/                dashboard UI: plain HTML, CSS and JavaScript, no build step
 public/iso.js          isometric 3D engine, KPI cards and SVG chart helpers shared by all pages
 scripts/               macOS LaunchAgent install/uninstall, launcher, Chrome opener, MCP client registration
-                       (register-mcp.js), media capture, single-file build (build-single.js, sea-main.js)
+                       (register-mcp.js), media capture, single-file build (build-deno.js, smoke-binary.js)
 scripts/eval-signals.js precision and recall of the detectors on the labelled corpus
 scripts/bench-index.js indexer benchmark on seeded synthetic logs
 install.sh, install.ps1 one-command installers for macOS/Linux and Windows

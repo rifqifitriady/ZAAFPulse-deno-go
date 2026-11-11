@@ -283,6 +283,7 @@ test('a failing compaction inside put is logged once and does not throw', (t) =>
   const store = createEvalStore({ file, maxBytes: 400 });
   store.put(R(T(0), 'relevance', 'relevant'));
   fs.mkdirSync(`${file}.tmp`); // a directory in the way makes every rewrite fail
+  fs.writeFileSync(path.join(`${file}.tmp`, 'keep'), ''); // not empty: Deno's unlinkSync removes an empty folder
   for (let i = 1; i < 5; i++) assert.doesNotThrow(() => store.put(R(T(i), 'relevance', 'relevant')));
   assert.equal(warn.mock.callCount(), 1);
   assert.equal(store.all().length, 5);
