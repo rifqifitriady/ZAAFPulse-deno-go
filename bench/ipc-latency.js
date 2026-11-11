@@ -2,6 +2,7 @@
 // gateway's event stream into the control plane's stores. Runs under Node and Deno; builds the Go stub (or uses
 // ZP_GW_BIN). Prints one JSON object; nothing is written outside a temp folder.
 //   node bench/ipc-latency.js [--count 2000] [--events 30000]
+//   deno run -q --no-prompt --allow-read --allow-write --allow-run --allow-env bench/ipc-latency.js [same flags]
 // Round trip: a budget.snapshot sent, the health the stub answers with (--health-on-snapshot) received, timed with
 // performance.now(), one at a time. Throughput: --emit with no pause, from ready until the last event is stored by the
 // real writers (lib/ipc/local.js), acks included.
@@ -28,6 +29,14 @@ const initial = () => ({
 });
 const pct = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 const round3 = (x) => Math.round(x * 1000) / 1000;
+// A lost reply must end the run with an error (the caller kills the stub), not hang it.
+function within(promise, ms, what) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`bench: no ${what} within ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 async function roundTrip(bin, root) {
   let resolveHealth = null;
@@ -43,12 +52,17 @@ async function roundTrip(bin, root) {
   await new Promise((r) => setTimeout(r, 100)); // the health that answers the first snapshot
   const snapshot = body('budget.snapshot/valid.json');
   const times = [];
-  for (let i = 0; i < COUNT + 100; i++) {
-    const got = new Promise((r) => (resolveHealth = r));
-    const t0 = performance.now();
-    s.send('budget.snapshot', { ...snapshot, at: Date.now() });
-    await got;
-    if (i >= 100) times.push(performance.now() - t0); // the first 100 warm up
+  try {
+    for (let i = 0; i < COUNT + 100; i++) {
+      const got = new Promise((r) => (resolveHealth = r));
+      const t0 = performance.now();
+      s.send('budget.snapshot', { ...snapshot, at: Date.now() });
+      await within(got, 5000, 'health reply to a snapshot');
+      if (i >= 100) times.push(performance.now() - t0); // the first 100 warm up
+    }
+  } catch (err) {
+    s.kill();
+    throw err;
   }
   await s.shutdown(1000);
   times.sort((a, b) => a - b);
@@ -75,7 +89,13 @@ async function throughput(bin, root) {
   });
   await s.ready;
   t0 = performance.now();
-  const t1 = await finished;
+  let t1;
+  try {
+    t1 = await within(finished, Math.max(60000, 10 * EVENTS), `stored event ${3 * rounds}`);
+  } catch (err) {
+    s.kill();
+    throw err;
+  }
   await s.shutdown(2000);
   const seconds = (t1 - t0) / 1000;
   return { events: 3 * rounds, seconds: round3(seconds), eventsPerSecond: Math.round((3 * rounds) / seconds) };
