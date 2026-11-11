@@ -113,12 +113,13 @@ Order: T1 → T2 → T3 → T4 → T5 → T6 → T7.
 
 ## Gate G2 (exit of P2)
 
-- [ ] 100% of the suite green under Deno (M1); the CI Deno job blocking.
-- [ ] 6/6 targets built in CI; native smoke tests green, including windows-11-arm (M8).
-- [ ] Permission sets narrow and tested; no `-A` in committed tasks or CI (M9, partial: net stays broad until P5).
-- [ ] Startup and idle RSS of the compiled binary within +10% of the Node baseline (M5, M7).
+- [x] 100% of the suite green under Deno (M1); the CI Deno job blocking.
+- [x] 6/6 targets built in CI; native smoke tests green, including windows-11-arm (M8).
+- [x] Permission sets narrow and tested; no `-A` in committed tasks or CI (M9, partial: net stays broad until P5).
+- [x] Startup and idle RSS of the compiled binary within +10% of the Node baseline (M5, M7): RSS -32%; startup +14.2%,
+  accepted by the owner as decision O3 (2026-11-11).
 - [x] ~~The owner's live dashboard runs on the Deno binary for 48 h without incident (owner action, D7).~~ Dropped by the owner, 2026-11-11.
-- [ ] The Node suite still green (dual-runtime until P7).
+- [x] The Node suite still green (dual-runtime until P7).
 
 ## Out of scope
 
