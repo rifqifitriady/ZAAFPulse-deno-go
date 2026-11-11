@@ -12,6 +12,8 @@ const { recoverMarks, marksIn, tailLines } = require('../lib/ipc/marks');
 const { openLocalStores } = require('../lib/ipc/local');
 const { startSession } = require('../lib/ipc/session');
 const { fromNano } = require('../lib/money');
+const { createRecorder } = require('../lib/trace/recorder');
+const { jsonlLog } = require('../lib/gateway/store');
 const { stubBin, initial, synthetic, waitFor, tmpDir } = require('./ipc-stub');
 
 const S = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
@@ -159,6 +161,7 @@ test('a post-store hook that throws neither undoes nor skips the mark; the event
   });
   assert.equal(ingest.handle(msgOf(1), S), true, 'stored: the session acknowledges it');
   assert.equal(ingest.mark(S), 1);
+  for (const seq of [2, 3]) ingest.handle(msgOf(seq), S);
   assert.equal(ingest.handle(msgOf(4), S), true);
   assert.equal(ingest.mark(S), 4);
   assert.equal(ingest.handle(msgOf(1), S), false, 'a resend is a duplicate, not stored twice');
@@ -184,27 +187,97 @@ test('local stores: the budget report runs after the usage line is stored and ma
   assert.equal(recoverMarks(stores.files).get(S), 1);
 });
 
-test('trace store: an index failure after the append does not fail writeSpans; the next write indexes it', (t) => {
-  const root = tmpDir(t, 'trace-index');
-  const stores = openLocalStores({ root });
+// Fails the next fs.readSync once. Right after a trace store append, that is the store's index scan (the append itself
+// does not read); the ingest's own tail check reads after it, with the real readSync.
+function failNextRead(t) {
   const realRead = fs.readSync;
   let fail = true;
   fs.readSync = (...a) => {
     if (fail) {
       fail = false;
-      throw new Error('EIO');
+      throw Object.assign(new Error('EIO: injected'), { code: 'EIO' });
     }
     return realRead(...a);
   };
   t.after(() => (fs.readSync = realRead));
-  const ingest = createIngest({ ...stores.sinks, log: () => {} });
-  assert.equal(ingest.handle(msgOf(3), S), true);
+}
+
+test('trace index failure after a completed append: the span is in the newest segment, so it is stored once', (t) => {
+  const root = tmpDir(t, 'trace-index');
+  const stores = openLocalStores({ root });
+  const logged = [];
+  const ingest = createIngest({ ...stores.sinks, log: (l) => logged.push(l) });
+  ingest.handle(msgOf(1), S);
+  ingest.handle(msgOf(2), S);
+  failNextRead(t);
+  assert.throws(
+    () => stores.traces.writeSpans([{ t: 'a'.repeat(32), s: 'b'.repeat(16) }]),
+    /EIO/,
+    'the trace store itself throws, as at aa78352',
+  );
+  failNextRead(t);
+  assert.equal(ingest.handle(msgOf(3), S), true, 'stored: the session acknowledges it');
   assert.equal(ingest.mark(S), 3);
-  fs.readSync = realRead;
-  ingest.handle(msgOf(6), S);
+  assert.deepEqual(logged, []);
   const [type, body] = synthetic(3);
   assert.equal(type, 'trace.span');
+  const stored = traceSpans(stores.files.traceDir).filter((sp) => sp.ipc && sp.ipc.stream === S && sp.ipc.seq === 3);
+  assert.equal(stored.length, 1, 'on disk once');
+  assert.equal(ingest.handle(msgOf(3), S), false, 'the resend is a duplicate');
+  for (const seq of [4, 5, 6]) ingest.handle(msgOf(seq), S);
   assert.ok(stores.traces.getSpans(body.span.t), 'indexed by the next write');
+});
+
+test('writeSpans throws and the span is not in the newest segment: a store failure, not acknowledged', (t) => {
+  const root = tmpDir(t, 'trace-nomark');
+  const stores = openLocalStores({ root });
+  const other = 'a'.repeat(32);
+  const logged = [];
+  let fail = false;
+  const ingest = createIngest({
+    ...stores.sinks,
+    writeSpans: (list) => {
+      if (fail) throw Object.assign(new Error('EIO: injected'), { code: 'EIO' });
+      return stores.sinks.writeSpans(list);
+    },
+    log: (l) => logged.push(l),
+  });
+  ingest.handle(msgOf(3), other); // the same seq of another stream is in the segment: it must not count
+  ingest.handle(msgOf(1), S);
+  ingest.handle(msgOf(2), S);
+  fail = true;
+  assert.throws(() => ingest.handle(msgOf(3), S), /EIO/);
+  assert.equal(ingest.mark(S), 2, 'not marked');
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /trace\.span could not be stored/);
+  fail = false;
+  assert.equal(ingest.handle(msgOf(3), S), true, 'the resend stores it');
+  assert.equal(ingest.mark(S), 3);
+});
+
+test('product trace recorder: an index failure after the append counts the spans dropped and logs "traces: write failed"', (t) => {
+  const root = tmpDir(t, 'trace-recorder');
+  const stores = openLocalStores({ root });
+  const logged = [];
+  const rec = createRecorder({ store: stores.traces, flushMs: 0, log: (l) => logged.push(l) });
+  rec.add({
+    traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
+    spanId: '00f067aa0ba902b7',
+    name: 'chat m',
+    kind: 3,
+    startNs: 1792642201123456789n,
+    endNs: 1792642201223456789n,
+    attributes: {},
+    status: { code: 0, message: '' },
+  });
+  failNextRead(t);
+  assert.equal(rec.flush(), 0);
+  const st = rec.stats();
+  assert.equal(st.written, 0);
+  assert.equal(st.dropped, 1);
+  assert.equal(st.writeErrors, 1);
+  assert.equal(logged.length, 1, logged.join(' | '));
+  assert.match(logged[0], /^traces: write failed: EIO/);
 });
 
 test('an audit.event with an unknown log is refused, not stored in the MCP log', () => {
@@ -214,6 +287,22 @@ test('an audit.event with an unknown log is refused, not stored in the MCP log',
   assert.throws(() => ingest.handle({ ...m, body: { ...m.body, log: 'other' } }, S), /unknown log/);
   assert.equal(calls.mcp.length + calls.governance.length, 0);
   assert.equal(ingest.mark(S), 0);
+});
+
+test('the writers take a null second argument as before: no TypeError, the default (lenient) path', (t) => {
+  const root = tmpDir(t, 'null-opts');
+  const stores = openLocalStores({ root });
+  assert.doesNotThrow(() => stores.mcpAudit.record({ tool: 't' }, null));
+  assert.doesNotThrow(() => stores.usage.record({ keyId: 'k', model: 'm', cost: 0 }, null));
+  assert.equal(readJsonl(stores.files.mcpAuditFile).length, 1);
+  assert.equal(readJsonl(stores.files.usageFile).length, 1);
+  fs.rmSync(stores.files.usageFile);
+  fs.rmSync(stores.files.mcpAuditFile);
+  fs.mkdirSync(stores.files.usageFile, { recursive: true });
+  fs.mkdirSync(stores.files.mcpAuditFile, { recursive: true });
+  assert.doesNotThrow(() => stores.mcpAudit.record({ tool: 't' }, null), 'a failed append is swallowed');
+  assert.doesNotThrow(() => stores.usage.record({ keyId: 'k', model: 'm', cost: 0 }, null));
+  assert.doesNotThrow(() => jsonlLog(path.join(stores.files.usageFile, 'x')).append({}, null));
 });
 
 test('marks: the highest seq per stream from the stores, rotated usage log included; a cut last line is ignored', (t) => {
