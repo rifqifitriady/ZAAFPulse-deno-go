@@ -30,7 +30,7 @@ const INCLUDE = [
   'config.example.json',
   'LICENSE',
 ];
-// deno.json is in the source folder for -P=server to find; it is not embedded.
+// deno.json is in the source folder for -P=cli to find; it is not embedded.
 const ARCHIVE = [...INCLUDE, 'deno.json'];
 // Deno target triple -> the release name used since v1 (install.sh and install.ps1 pick by it).
 const TARGETS = {

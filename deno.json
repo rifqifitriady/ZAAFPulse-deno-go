@@ -23,7 +23,7 @@
       "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
       "run": [
         "ps", "lsof", "vm_stat", "scutil", "id", "hostnamectl", "getent", "which", "where",
-        "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill",
+        "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill", "tasklist",
         "launchctl", "open", "xdg-open", "cmd", "claude", "codex", "node", "kill",
         "ollama", "lms", "llama-server", "local-ai", "brew"
       ]
@@ -38,7 +38,7 @@
       "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "osRelease"],
       "run": [
         "ps", "lsof", "vm_stat", "scutil", "id", "hostnamectl", "getent", "which", "where",
-        "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill",
+        "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill", "tasklist",
         "launchctl", "open", "xdg-open", "cmd", "claude", "codex", "node", "kill",
         "ollama", "lms", "llama-server", "local-ai", "brew",
         "systemctl", "loginctl", "useradd", "chown", "schtasks", "wscript.exe", "explorer.exe"

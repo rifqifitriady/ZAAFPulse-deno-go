@@ -127,12 +127,12 @@ test('spawnRefused: only the empty result Deno gives for a refused program', () 
   );
 });
 
-test('kill: process.kill on Node, with all run access or on Windows; else the kill program, errors as process.kill', () => {
+test('kill: process.kill on Node or with all run access; else the kill program, errors as process.kill', () => {
   assert.equal(permissions.kill(process.pid, 0, { deno: undefined }), true);
   const deno = (state, partial) => ({ permissions: { querySync: () => ({ state, partial }) } });
   const never = () => assert.fail('the kill program is not used here');
   assert.equal(permissions.kill(process.pid, 0, { deno: deno('granted', false), spawn: never }), true);
-  assert.equal(permissions.kill(process.pid, 0, { deno: deno('prompt'), spawn: never, platform: 'win32' }), true);
+  assert.equal(permissions.kill(process.pid, 0, { deno: undefined, spawn: never, platform: 'win32' }), true);
   const calls = [];
   const answer = (r) => (cmd, args) => (calls.push([cmd, ...args]), r);
   const scoped = deno('granted', true);
@@ -578,4 +578,47 @@ test('describe: the general-purpose launchers the run grant holds are named', ()
   }
   for (const name of ['node', 'osascript', 'powershell', 'powershell.exe', 'cmd', 'open', 'brew', 'claude', 'codex'])
     assert.ok(permissions.WHY.launchers[name], `${name} is a launcher`);
+});
+
+test('kill: on Windows under a run allow-list, signal 0 asks tasklist; a real signal is left to taskkill', () => {
+  const scoped = { permissions: { querySync: () => ({ state: 'granted', partial: true }) } };
+  const win = { platform: 'win32', deno: scoped };
+  const calls = [];
+  const answer = (r) => (cmd, args, opts) => (calls.push([cmd, ...args, opts.windowsHide]), r);
+  const row = '"node.exe","4242","Console","1","12,345 K"\r\n';
+  assert.equal(permissions.kill(4242, 0, { ...win, spawn: answer({ status: 0, stdout: row }) }), true);
+  assert.deepEqual(
+    calls,
+    [['tasklist', '/FI', 'PID eq 4242', '/NH', '/FO', 'CSV', true]],
+    'no shell, the pid as a number',
+  );
+  const thrown = (r, pid = 4242, sig = 0) => {
+    try {
+      permissions.kill(pid, sig, { ...win, spawn: answer(r) });
+    } catch (err) {
+      return err;
+    }
+    return assert.fail('no error');
+  };
+  const none = 'INFO: No tasks are running which match the specified criteria.\r\n';
+  assert.equal(thrown({ status: 0, stdout: none }).code, 'ESRCH');
+  assert.equal(thrown({ status: 0, stdout: '"x.exe","42420","Console","1","1 K"\r\n' }).code, 'ESRCH', 'whole pid');
+  assert.match(thrown({}).message, /not allowed by this build's run permissions/);
+  const enoent = Object.assign(new Error('spawnSync tasklist ENOENT'), { code: 'ENOENT' });
+  assert.equal(thrown({ error: enoent }), enoent);
+  assert.equal(thrown({ status: 1, stdout: '', stderr: 'ERROR: x' }).code, undefined, 'cannot tell: not "gone"');
+  const before = calls.length;
+  assert.match(thrown({ status: 0 }, -4242).message, /pid/, 'no process groups on Windows');
+  assert.match(thrown({ status: 0 }, 4242, 'SIGTERM').message, /taskkill/);
+  assert.equal(calls.length, before, 'nothing spawned for those');
+  // The same signal 0 under Node or with all run access is process.kill, as before.
+  assert.equal(
+    permissions.kill(process.pid, 0, { platform: 'win32', deno: undefined, spawn: () => assert.fail() }),
+    true,
+  );
+});
+
+test('tasklist is allowed where taskkill is, with a reason', () => {
+  for (const set of ['server', 'cli']) assert.ok(list(sets[set].run).includes('tasklist'), set);
+  assert.ok(permissions.WHY.run.tasklist);
 });
