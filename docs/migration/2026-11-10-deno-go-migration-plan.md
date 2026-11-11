@@ -221,7 +221,8 @@ Config placement, following the `deno` skill:
 - **Exit** (met 2026-11-11, `docs/migration/2026-11-11-p3-results.md`):
   - [x] schemas frozen at v1 (`ipc/v1`), with the additive-only rule written down;
   - [x] both sides pass the shared fixtures, on Node and Go on 4 OS and on Deno on Ubuntu and macOS in CI (evidence:
-    the manual full-matrix run 43039341557 on `b954107`; the pull request's run will be added);
+    the manual full-matrix runs 43039341557 on `b954107` and 43048746223 on `4627057`; the pull request's run will be
+    added);
   - [x] a kill test: killing either process never corrupts the audit chain or the ledger, and loses or duplicates no
     usage line;
   - [x] no change in product behaviour: `server.js` does not start the gateway; by owner decision three writers
