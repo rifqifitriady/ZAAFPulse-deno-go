@@ -36,6 +36,10 @@ type inst struct {
 	greedy, neg, behind bool
 	sub                 *prog
 	capFirst, capLast   int
+	set                 *bitset     // opChar, opStar: the code units the atom matches (i flag applied)
+	follow              *bitset     // opStar: what must come next, or nil when unknown
+	ascii               *[128][]int // opAlt: the viable alternatives for each ASCII code unit
+	atEnd               []int       // opAlt: the viable alternatives at the end of the input
 }
 
 type prog struct {
@@ -48,6 +52,7 @@ type prog struct {
 const maxInsts = 200000
 
 type compiler struct {
+	follow *bitset // set by kSeq for the repeat it generates next
 	p      *prog
 	icase  bool
 	firsts firstCache
@@ -76,12 +81,20 @@ func (c *compiler) gen(n *node) {
 	if c.err != nil {
 		return
 	}
+	follow := c.follow // meant for this node only, never for what it contains
+	c.follow = nil
 	switch n.kind {
 	case kChar, kSet, kClass:
-		c.emit(inst{op: opChar, atom: n})
+		c.emit(inst{op: opChar, atom: n, set: c.atomSet(n)})
 	case kSeq:
-		for _, s := range n.subs {
+		for i, s := range n.subs {
+			// A single-character repeat followed by something that must start with a known character can skip the
+			// counts after which that character is absent (the VM still tries them in JS order; skipped ones fail).
+			if s.kind == kRep && i+1 < len(n.subs) {
+				c.follow = c.followOf(n.subs[i+1:])
+			}
 			c.gen(s)
+			c.follow = nil
 		}
 	case kAlt:
 		at := c.emit(inst{op: opAlt})
@@ -101,13 +114,27 @@ func (c *compiler) gen(n *node) {
 		for _, j := range jumps {
 			c.p.insts[j].x = end
 		}
-		c.p.insts[at].alts, c.p.insts[at].firsts = alts, firsts
+		in := &c.p.insts[at]
+		in.alts, in.firsts = alts, firsts
+		in.ascii = new([128][]int)
+		for u := 0; u < 128; u++ {
+			for k, f := range firsts {
+				if f == nil || f.has(uint16(u)) {
+					in.ascii[u] = append(in.ascii[u], k)
+				}
+			}
+		}
+		for k, f := range firsts {
+			if f == nil {
+				in.atEnd = append(in.atEnd, k)
+			}
+		}
 	case kGroup:
 		c.emit(inst{op: opSave, n: 2 * n.idx})
 		c.gen(n.subs[0])
 		c.emit(inst{op: opSave, n: 2*n.idx + 1})
 	case kRep:
-		c.genRep(n)
+		c.genRep(n, follow)
 	case kBackref:
 		c.emit(inst{op: opBackref, n: n.idx})
 	case kBegin:
@@ -128,10 +155,10 @@ func (c *compiler) gen(n *node) {
 	}
 }
 
-func (c *compiler) genRep(n *node) {
+func (c *compiler) genRep(n *node, follow *bitset) {
 	a := n.subs[0]
 	if (a.kind == kChar || a.kind == kSet || a.kind == kClass) && n.capLast < 0 {
-		c.emit(inst{op: opStar, atom: a, min: n.min, max: n.max, greedy: n.greedy})
+		c.emit(inst{op: opStar, atom: a, set: c.atomSet(a), follow: follow, min: n.min, max: n.max, greedy: n.greedy})
 		return
 	}
 	iteration := func(check bool) {
@@ -175,6 +202,21 @@ func (c *compiler) genRep(n *node) {
 	for _, s := range splits {
 		setSplit(s, s+1, end)
 	}
+}
+
+// followOf is the first-character set of a sequence tail, or nil when the tail can match empty.
+func (c *compiler) followOf(rest []*node) *bitset {
+	f, empty := firstOf(&node{kind: kSeq, subs: rest}, c.icase)
+	if empty {
+		return nil
+	}
+	return f
+}
+
+// atomSet is the set of code units a one-character node matches; the first-character sets are the same thing.
+func (c *compiler) atomSet(n *node) *bitset {
+	f, _ := c.firsts.of(n, c.icase)
+	return f
 }
 
 // program compiles the pattern on first use.

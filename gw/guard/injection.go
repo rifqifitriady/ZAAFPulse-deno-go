@@ -72,40 +72,95 @@ func indexOf(s []uint16, c uint16, from int) int {
 	return -1
 }
 
-func inDocContext(text []uint16, at, n int) bool {
-	if reQuoteBefore.Test(slice(text, at-2, at)) {
+// scan holds one text being scanned: its newline offsets (so line bounds cost a binary search, not a scan back to
+// the start of a long line) and the line tests already run. The JS runs CODE_LINE and STRING_ITEM over the whole line
+// for every candidate; on one long line with many candidates that is quadratic. A line's answer never changes, so
+// it is computed once: the same results in linear time.
+type scan struct {
+	text []uint16
+	nl   []int
+	line map[[2]int]bool
+	b    *jsre.Budget
+}
+
+func newScan(text []uint16, b *jsre.Budget) *scan {
+	sc := &scan{text: text, line: map[[2]int]bool{}, b: b}
+	for i, c := range text {
+		if c == '\n' {
+			sc.nl = append(sc.nl, i)
+		}
+	}
+	return sc
+}
+
+// lastNL is text.lastIndexOf('\n', from); nextNL is text.indexOf('\n', from).
+func (sc *scan) lastNL(from int) int {
+	if from < 0 {
+		from = 0 // JS clamps a negative fromIndex to 0
+	}
+	i := sort.SearchInts(sc.nl, from+1) - 1
+	if i < 0 {
+		return -1
+	}
+	return sc.nl[i]
+}
+
+func (sc *scan) nextNL(from int) int {
+	i := sort.SearchInts(sc.nl, max(from, 0))
+	if i >= len(sc.nl) {
+		return -1
+	}
+	return sc.nl[i]
+}
+
+func (sc *scan) inDocContext(at, n int) bool {
+	text, b := sc.text, sc.b
+	if reQuoteBefore.TestB(slice(text, at-2, at), b) {
 		return true
 	}
-	ls := lastIndexOf(text, '\n', at) + 1
-	le := indexOf(text, '\n', at+n)
+	ls := sc.lastNL(at) + 1
+	le := sc.nextNL(at + n)
 	if le < 0 {
 		le = len(text)
 	}
 	line := slice(text, ls, le)
 	var prev []uint16
 	if ls > 1 {
-		prev = slice(text, lastIndexOf(text, '\n', ls-2)+1, ls-1)
+		prev = slice(text, sc.lastNL(ls-2)+1, ls-1)
 	}
-	around := append(append(append([]uint16{}, prev...), '\n'), line...)
-	if k := n + 400; k < len(around) {
-		around = around[len(around)-k:]
+	// `${prev}\n${line}`.slice(-(n + 400)), built without copying a long line.
+	k := n + 400
+	var around []uint16
+	switch total := len(prev) + 1 + len(line); {
+	case k >= total:
+		around = append(append(append([]uint16{}, prev...), '\n'), line...)
+	case k <= len(line):
+		around = append([]uint16{}, line[len(line)-k:]...)
+	default:
+		around = append(append(append([]uint16{}, prev[len(prev)-(k-len(line)-1):]...), '\n'), line...)
 	}
-	around = reMasked.ReplaceAll(around, func([]int) []uint16 { return []uint16{' '} })
-	if reDocContext.Test(around) {
+	around = reMasked.ReplaceAllB(around, func([]int) []uint16 { return []uint16{' '} }, b)
+	if reDocContext.TestB(around, b) {
 		return true
 	}
-	return reCodeLine.Test(line) || reStringItem.Test(line)
+	key := [2]int{ls, le}
+	code, ok := sc.line[key]
+	if !ok {
+		code = reCodeLine.TestB(line, b) || reStringItem.TestB(line, b)
+		sc.line[key] = code
+	}
+	return code
 }
 
 var reMasked = jsre.MustCompile(`\S+@\S+|https?:\/\/\S+`, "g")
 
 // anchorWindows: spans worth matching, around each anchor, widened to line starts and merged when they overlap.
-func anchorWindows(text []uint16) [][2]int {
+func anchorWindows(text []uint16, b *jsre.Budget) [][2]int {
 	var spans [][2]int
 	for _, re := range []*jsre.Regexp{reInjAnchor, reInjAnchorMark} {
 		last := 0
 		for {
-			m := re.Exec(text, last)
+			m := re.ExecB(text, last, b)
 			if m == nil {
 				break
 			}
@@ -143,25 +198,26 @@ func anchorWindows(text []uint16) [][2]int {
 	return out
 }
 
-func matchInjection(text []uint16, offsetOf func(int) int, windows [][2]int) []injHit {
+func matchInjection(text []uint16, offsetOf func(int) int, windows [][2]int, b *jsre.Budget) []injHit {
 	if len(windows) == 0 {
 		return nil
 	}
+	sc := newScan(text, b)
 	var hits []injHit
 	for _, p := range injection {
 		var hit *injHit
 		for _, w := range windows {
 			part := text[w[0]:w[1]]
 			for _, re := range p.res {
-				m := re.Exec(part, 0)
+				m := re.ExecB(part, 0, b)
 				if m == nil {
 					continue
 				}
 				at, n := w[0]+m[0], m[1]-m[0]
-				if p.carries && !reInjCarries.Test(slice(text, at+n, at+200)) {
+				if p.carries && !reInjCarries.TestB(slice(text, at+n, at+200), b) {
 					continue
 				}
-				if inDocContext(text, at, n) {
+				if sc.inDocContext(at, n) {
 					continue
 				}
 				hit = &injHit{id: p.id, label: p.label, at: offsetOf(at), match: text[at : at+n], supporting: p.supporting}
@@ -186,15 +242,14 @@ func matchInjection(text []uint16, offsetOf func(int) int, windows [][2]int) []i
 var leet = map[uint16]uint16{'0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's'}
 
 var (
-	reLeetWord   = jsre.MustCompile(`\b[a-z0-9@$]*[a-z][a-z0-9@$]*\b`, "gi")
-	reDigit      = jsre.MustCompile(`\d`, "")
-	reLeetChar   = jsre.MustCompile(`[013457@$]`, "g")
-	reLetterOnly = jsre.MustCompile(`[a-z]`, "i")
+	reLeetWord = jsre.MustCompile(`\b[a-z0-9@$]*[a-z][a-z0-9@$]*\b`, "gi")
+	reDigit    = jsre.MustCompile(`\d`, "")
+	reLeetChar = jsre.MustCompile(`[013457@$]`, "g")
 )
 
 // deobfuscate undoes spelled-out (i-g-n-o-r-e), zero-width-split and leetspeak words. It returns the new text and,
 // for each of its code units, the offset in text; nil when there is nothing to undo.
-func deobfuscate(text []uint16, windows [][2]int) ([]uint16, []int) {
+func deobfuscate(text []uint16, windows [][2]int, b *jsre.Budget) ([]uint16, []int) {
 	var near []uint16
 	for i, w := range windows {
 		if i > 0 {
@@ -202,17 +257,17 @@ func deobfuscate(text []uint16, windows [][2]int) ([]uint16, []int) {
 		}
 		near = append(near, text[w[0]:w[1]]...)
 	}
-	isLeet := reHasLeet.Test(near)
-	if !reHasZeroWidth.Test(text) && !isLeet && !reHasSplit.Test(near) {
+	isLeet := reHasLeet.TestB(near, b)
+	if !reHasZeroWidth.TestB(text, b) && !isLeet && !reHasSplit.TestB(near, b) {
 		return nil, nil
 	}
 	drop := make([]bool, len(text))
-	for _, m := range reZeroWidth.FindAll(text) {
+	for _, m := range reZeroWidth.FindAllB(text, b) {
 		drop[m[0]] = true
 	}
-	for _, m := range reSplitLetters.FindAll(text) {
+	for _, m := range reSplitLetters.FindAllB(text, b) {
 		for i := m[0]; i < m[1]; i++ {
-			if !reLetterOnly.Test(text[i : i+1]) {
+			if c := text[i] | 0x20; c < 'a' || c > 'z' { // !/[a-z]/i.test(ch)
 				drop[i] = true
 			}
 		}
@@ -226,33 +281,34 @@ func deobfuscate(text []uint16, windows [][2]int) ([]uint16, []int) {
 		}
 	}
 	if isLeet {
-		s = reLeetWord.ReplaceAll(s, func(m []int) []uint16 {
+		s = reLeetWord.ReplaceAllB(s, func(m []int) []uint16 {
 			w := s[m[0]:m[1]]
-			if !reDigit.Test(w) {
+			if !reDigit.TestB(w, b) {
 				return w
 			}
-			return reLeetChar.ReplaceAll(w, func(c []int) []uint16 { return []uint16{leet[w[c[0]]]} })
-		})
+			return reLeetChar.ReplaceAllB(w, func(c []int) []uint16 { return []uint16{leet[w[c[0]]]} }, b)
+		}, b)
 	}
 	return s, idx
 }
 
 // ScanInjection is lib/signals.js scanInjection: nil, or the categories that matched.
-func ScanInjection(text string) *Injection {
-	s := jsre.U16(text)
+func ScanInjection(text string) *Injection { return scanInjection(jsre.U16(text), nil) }
+
+func scanInjection(s []uint16, b *jsre.Budget) *Injection {
 	if len(s) < 8 {
 		return nil
 	}
-	windows := anchorWindows(s)
-	hits := matchInjection(s, func(i int) int { return i }, windows)
-	if len(hits) == 0 && (len(windows) > 0 || reHasZeroWidth.Test(s)) {
-		if d, idx := deobfuscate(s, windows); d != nil {
+	windows := anchorWindows(s, b)
+	hits := matchInjection(s, func(i int) int { return i }, windows, b)
+	if len(hits) == 0 && (len(windows) > 0 || reHasZeroWidth.TestB(s, b)) {
+		if d, idx := deobfuscate(s, windows, b); d != nil {
 			hits = matchInjection(d, func(i int) int {
 				if i < len(idx) {
 					return idx[i]
 				}
 				return 0
-			}, anchorWindows(d))
+			}, anchorWindows(d, b), b)
 		}
 	}
 	if len(hits) == 0 {

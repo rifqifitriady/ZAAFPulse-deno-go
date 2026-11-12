@@ -86,10 +86,44 @@ func (m *vm) wordAt(i int) bool { return i >= 0 && i < len(m.s) && isWord(m.s[i]
 
 // altFrom returns the first alternative at index >= k whose first character can match at pos, or -1.
 func (m *vm) altFrom(in *inst, k, pos int) int {
-	for ; k < len(in.alts); k++ {
-		f := in.firsts[k]
-		if f == nil || (pos < len(m.s) && f.has(m.s[pos])) {
-			return k
+	var list []int
+	switch {
+	case pos >= len(m.s):
+		list = in.atEnd
+	case m.s[pos] < 128:
+		list = in.ascii[m.s[pos]]
+	default:
+		for ; k < len(in.alts); k++ {
+			if f := in.firsts[k]; f == nil || f.has(m.s[pos]) {
+				return k
+			}
+		}
+		return -1
+	}
+	for _, x := range list {
+		if x >= k {
+			return x
+		}
+	}
+	return -1
+}
+
+// followDown is the largest count c in [lo, hi] after which the repeat's follow set can match (all counts when the
+// follow set is unknown), or -1. A count it skips would fail at once on the next instruction.
+func (m *vm) followDown(in *inst, base, hi, lo int) int {
+	for c := hi; c >= lo; c-- {
+		if in.follow == nil || (base+c < len(m.s) && in.follow.has(m.s[base+c])) {
+			return c
+		}
+	}
+	return -1
+}
+
+// followUp is followDown for a lazy repeat: the smallest count in [lo, hi].
+func (m *vm) followUp(in *inst, base, lo, hi int) int {
+	for c := lo; c <= hi; c++ {
+		if in.follow == nil || (base+c < len(m.s) && in.follow.has(m.s[base+c])) {
+			return c
 		}
 	}
 	return -1
@@ -107,7 +141,7 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 		ok := true
 		switch in.op {
 		case opChar:
-			if pos < len(s) && charMatch(in.atom, s[pos], m.icase) {
+			if pos < len(s) && in.set.has(s[pos]) {
 				pos++
 				pc++
 			} else {
@@ -115,26 +149,31 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 			}
 		case opStar:
 			r := 0
-			for (in.max < 0 || r < in.max) && pos+r < len(s) && charMatch(in.atom, s[pos+r], m.icase) {
+			for (in.max < 0 || r < in.max) && pos+r < len(s) && in.set.has(s[pos+r]) {
 				r++
 			}
 			m.step(r)
-			switch {
-			case r < in.min:
+			if r < in.min {
 				ok = false
-			case in.greedy:
-				if r > in.min {
-					m.stack = append(m.stack, frame{kind: fStarG, pc: pc + 1, pos: pos, a: r, b: in.min})
-				}
-				pos += r
-				pc++
-			default:
-				if r > in.min {
-					m.stack = append(m.stack, frame{kind: fStarL, pc: pc + 1, pos: pos, a: in.min, b: r})
-				}
-				pos += in.min
-				pc++
+				break
 			}
+			var c int
+			if in.greedy {
+				c = m.followDown(in, pos, r, in.min)
+			} else {
+				c = m.followUp(in, pos, in.min, r)
+			}
+			if c < 0 {
+				ok = false
+				break
+			}
+			if in.greedy && c > in.min {
+				m.stack = append(m.stack, frame{kind: fStarG, pc: pc + 1, pos: pos, a: c, b: in.min})
+			} else if !in.greedy && c < r {
+				m.stack = append(m.stack, frame{kind: fStarL, pc: pc + 1, pos: pos, a: c, b: r})
+			}
+			pos += c
+			pc++
 		case opSplit:
 			m.stack = append(m.stack, frame{kind: fBranch, pc: in.y, pos: pos})
 			pc = in.x
@@ -231,13 +270,19 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 			case fBranch:
 				pc, pos, resumed = f.pc, f.pos, true
 			case fStarG:
-				c := f.a - 1
+				c := m.followDown(&p.insts[f.pc-1], f.pos, f.a-1, f.b)
+				if c < 0 {
+					continue
+				}
 				if c > f.b {
 					m.stack = append(m.stack, frame{kind: fStarG, pc: f.pc, pos: f.pos, a: c, b: f.b})
 				}
 				pc, pos, resumed = f.pc, f.pos+c, true
 			case fStarL:
-				c := f.a + 1
+				c := m.followUp(&p.insts[f.pc-1], f.pos, f.a+1, f.b)
+				if c < 0 {
+					continue
+				}
 				if c < f.b {
 					m.stack = append(m.stack, frame{kind: fStarL, pc: f.pc, pos: f.pos, a: c, b: f.b})
 				}

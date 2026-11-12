@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard/jsre"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate/jsv"
 )
 
@@ -33,7 +34,7 @@ func TestCheckBodyNeverChangesItsInput(t *testing.T) {
 func TestFailClosed(t *testing.T) {
 	real := detectSecrets
 	t.Cleanup(func() { detectSecrets = real })
-	detectSecrets = func([]uint16) []Span { panic("boom") }
+	detectSecrets = func([]uint16, *jsre.Budget) []Span { panic("boom") }
 	for _, mode := range []string{"redact", "block"} {
 		if _, err := CheckBody(chat("hello"), Policy{Secrets: mode, PII: "off", Injection: "log"}, "openai-chat"); err == nil || err.Error() != "boom" {
 			t.Fatalf("%s: %v", mode, err)
