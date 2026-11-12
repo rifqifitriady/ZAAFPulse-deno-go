@@ -36,7 +36,8 @@ const RAW = [
   '/v1/traces',
   '/v1/a;b/c',
   "/v1/a!$&'()*+,=:@~_-.x",
-  '/v1/a^b',
+  // '/v1/a^b' is not here: Node escapes the ^ (/v1/a%5Eb), Deno keeps it, and the corpus holds only what both runtimes
+  // agree on (gw/front/route_test.go TestCaretPathIsNotCanonical pins it).
   '/v1/a{b}',
   '/v1/a|b',
   '/v1/a[b]',

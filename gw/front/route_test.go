@@ -156,3 +156,11 @@ func TestClientShadowMarksAreRemoved(t *testing.T) {
 		t.Fatalf("forwarded %v", h)
 	}
 }
+
+// Node and Deno disagree on /v1/a^b (Node's pathname is /v1/a%5Eb, Deno's /v1/a^b), so it is not in the route corpus:
+// the front never classifies it, and the control plane routes it whatever its runtime does.
+func TestCaretPathIsNotCanonical(t *testing.T) {
+	if Canonical("/v1/a^b") || Classify("/v1/a^b") != "" {
+		t.Fatal("/v1/a^b is classified")
+	}
+}

@@ -87,7 +87,7 @@ func TestKeysFixtures(t *testing.T) {
 			}
 			bad := 0
 			for u := 0; u < 0x10000; u++ {
-				if u >= 0xd800 && u <= 0xdfff {
+				if (u >= 0xd800 && u <= 0xdfff) || divergentFold[rune(u)] {
 					continue
 				}
 				exp := uint16(u)
@@ -133,5 +133,18 @@ func mustDecode(t *testing.T, c fixture, v any) {
 	t.Helper()
 	if err := json.Unmarshal(c.In, v); err != nil {
 		t.Fatalf("%s: %v", c.Name, err)
+	}
+}
+
+// Node and Deno upper-case three units differently (gen-keys.js leaves them out of the corpus): the v2 product runs on
+// Deno, which does not fold them, so neither does the engine.
+func TestUnitsTheRuntimesFoldDifferently(t *testing.T) {
+	for _, u := range []uint16{0xa7cf, 0xa7d3, 0xa7d5} {
+		if got := canon(u); got != u {
+			t.Errorf("canon(U+%04X) = U+%04X, Deno keeps it", u, got)
+		}
+	}
+	if Allows([]string{"oa/\ua7cf"}, "oa/\ua7ce") {
+		t.Error("U+A7CF matched U+A7CE")
 	}
 }
