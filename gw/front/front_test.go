@@ -364,3 +364,77 @@ func TestBadTLSFilesAreAnError(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// I1 (P4a final review): a request without a Host (HTTP/1.0) reaches the control plane flagged as host-less, so its
+// host check sees no Host, as on the main port in js mode; never the internal 127.0.0.1:<port>. A client's own copy of
+// the flag is removed.
+func TestHostlessRequestIsFlagged(t *testing.T) {
+	type seen struct{ host, flag string }
+	got := make(chan seen, 2)
+	u := startUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		got <- seen{r.Host, strings.Join(r.Header.Values(NoHostHeader), "|")}
+	})
+	s := startFront(t, u.port(), nil)
+	resp, _ := rawRequest(t, s.Addr().String(), "GET /api/platform HTTP/1.0\r\n\r\n")
+	if !strings.HasPrefix(resp, "HTTP/1.0 200") {
+		t.Fatalf("answer %q", resp)
+	}
+	if g := <-got; g.flag != "1" {
+		t.Fatalf("a host-less request reached the control plane as %+v, want the %s flag", g, NoHostHeader)
+	}
+	resp, _ = rawRequest(t, s.Addr().String(), "GET / HTTP/1.1\r\nHost: dash.test\r\n"+NoHostHeader+": 1\r\nConnection: close\r\n\r\n")
+	if !strings.HasPrefix(resp, "HTTP/1.1 200") {
+		t.Fatalf("answer %q", resp)
+	}
+	if g := <-got; g != (seen{"dash.test", ""}) {
+		t.Fatalf("a request with a Host reached the control plane as %+v", g)
+	}
+}
+
+// I1: an absolute-form target ("GET http://evil.example/ HTTP/1.1") is refused with 400, as the control plane refuses
+// it on its own port: net/http drops the Host header of such a request, so the front cannot hand on the Host the
+// control plane would check.
+func TestAbsoluteFormIsRefused(t *testing.T) {
+	u := startUpstream(t, func(w http.ResponseWriter, r *http.Request) {})
+	s := startFront(t, u.port(), nil)
+	for _, target := range []string{"http://evil.example/", "http://127.0.0.1/api/platform", "HTTPS://dash.test/x"} {
+		resp, _ := rawRequest(t, s.Addr().String(), "GET "+target+" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+		if !strings.HasPrefix(resp, "HTTP/1.1 400") || !strings.Contains(resp, AbsoluteFormError) {
+			t.Fatalf("%s: answer %q", target, resp)
+		}
+	}
+	if c := u.seen(); len(c) != 0 {
+		t.Fatalf("the control plane saw %d requests", len(c))
+	}
+}
+
+// m1 (P4a final review): the proxy headers the control plane looks for pass through even when the client names them
+// in Connection (Node keeps them), and X-Forwarded-Host and X-Forwarded-Proto pass through as sent (T4-c).
+func TestProxyHeadersPassThrough(t *testing.T) {
+	names := []string{"Via", "X-Real-Ip", "X-Forwarded-Port", "Cf-Connecting-Ip", "True-Client-Ip",
+		"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "Forwarded"}
+	got := make(chan http.Header, 2)
+	u := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { got <- r.Header.Clone() })
+	s := startFront(t, u.port(), nil)
+	for _, nominate := range []bool{false, true} {
+		req := "GET / HTTP/1.1\r\nHost: dash.test\r\n"
+		if nominate {
+			req += "Connection: close, " + strings.Join(names, ", ") + "\r\n"
+		} else {
+			req += "Connection: close\r\n"
+		}
+		for i, n := range names {
+			req += fmt.Sprintf("%s: v%d\r\n", n, i)
+		}
+		resp, _ := rawRequest(t, s.Addr().String(), req+"\r\n")
+		if !strings.HasPrefix(resp, "HTTP/1.1 200") {
+			t.Fatalf("answer %q", resp)
+		}
+		h := <-got
+		for i, n := range names {
+			if v := h.Values(n); len(v) != 1 || v[0] != fmt.Sprintf("v%d", i) {
+				t.Errorf("nominated in Connection %v: %s reached the control plane as %q", nominate, n, v)
+			}
+		}
+	}
+}

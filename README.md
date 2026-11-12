@@ -587,10 +587,10 @@ ZAAFPulse v2 moves the Agent Gateway's data plane into a Go process, `zaafpulse-
 Deno control plane. The two talk over the gateway's stdin and stdout, one JSON message per line, as frozen in
 [`ipc/v1`](ipc/v1/README.md): config, resolved secrets and budget snapshots go in; usage, audit events and trace spans
 come out through a durable outbox, so killing either process loses or duplicates no record. The control plane stays
-the only writer of the usage log, the cost ledger and the audit chain. With `"gateway": { "engine": "front" }` in `config.json` the Go process holds the main port and forwards every request
-to the server, which still answers all of them (build it with `npm run gw:build`, or point `ZAAFPULSE_GW_BIN` at a
-binary); if it cannot run, the server serves the port itself and the Overview shows it. The default, `"js"`, starts no
-Go process.
+the only writer of the usage log, the cost ledger and the audit chain. With `"gateway": { "engine": "front" }` in
+`config.json` the Go process holds the main port and forwards every request to the server, which still answers all of
+them (build it with `npm run gw:build`, or point `ZAAFPULSE_GW_BIN` at a binary); if it cannot run, the server serves
+the port itself and the Overview shows it. The default, `"js"`, starts no Go process.
 
 ### Run it on login (macOS, from source)
 

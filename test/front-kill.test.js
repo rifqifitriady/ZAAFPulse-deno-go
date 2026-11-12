@@ -62,6 +62,12 @@ test('the gateway killed during a stream: the client sees the cut, the port retu
   const up = await slowProvider(t);
   const s = await startServer({ runtime: RUNTIME, config: { ...SEED_CONFIG, gateway: { engine: 'front' } } });
   t.after(() => s.stop());
+  // The gateway in front must be up before the stream starts: one that failed to start (Deno serving the fallback)
+  // would leave nothing to kill, and the stream would wait for a cut that never comes (P4a final review T6-1).
+  const before = await (await fetch(`${s.base}/api/gateway/status`)).json();
+  assert.deepEqual([before.mode, before.state], ['front', 'ready'], JSON.stringify(before));
+  assert.ok(Number.isInteger(before.pid) && before.pid > 0, `no gateway pid: ${JSON.stringify(before)}`);
+  const pid = before.pid;
   const c = clientFor(s.base);
   await c.admin('providers', {
     action: 'save',
@@ -74,7 +80,6 @@ test('the gateway killed during a stream: the client sees the cut, the port retu
     secret: { mode: 'store', value: 'sk-slow' },
   });
   const key = await c.newKey({ scopes: ['llm'] });
-  const pid = (await (await fetch(`${s.base}/api/gateway/status`)).json()).pid;
 
   const r = await fetch(`${s.base}/v1/chat/completions`, {
     method: 'POST',

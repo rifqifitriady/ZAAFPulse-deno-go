@@ -48,7 +48,8 @@ P4 is too large for one spec. Each sub-project below goes through its own spec, 
 - **Deno trusts the TCP peer address**, in three places:
   - `lib/auth.js:112` `clientKey` uses `req.socket.remoteAddress` for lockouts and rate limits;
   - `lib/auth.js:160` lets a loopback `Origin` through when the auth mode is not `password`;
-  - `server.js:1493` accepts `POST /v1/traces` only from a loopback peer with no forwarding header.
+  - `server.js` accepts `POST /v1/traces` only from a loopback peer with no forwarding header (`isTraceCaller`,
+    `lib/gateway/client.js`; through the front, the peer is the client named in `X-ZP-Client`, D3).
 
   `req.socket.encrypted` decides whether cookies are `Secure` (`lib/auth.js:300`). `ZAAFPULSE_TRUST_PROXY=1` makes
   `X-Forwarded-*` trusted.
@@ -90,9 +91,14 @@ P4 is too large for one spec. Each sub-project below goes through its own spec, 
 - In P4a every class is `js`, and so is anything not classified (the dashboard). Go has no `go` engine handler yet.
   A class set to `go` is refused at `config.push` validation with an error.
 - `js` means a reverse proxy to `upstream.port` through `net/http/httputil.ReverseProxy`, with a `Rewrite` function:
-  - **Kept as is:** method, path, query, body, the Host header and every client header.
-  - **Removed, not added:** the hop-by-hop headers and any `X-Forwarded-*` or `Forwarded` header the client sent.
-    Go does not add forwarding headers; the client's address travels in the connection preamble (D3).
+  - **Kept as is:** method, path, query, body, the Host header and every client header. A request without a Host
+    (HTTP/1.0) carries `X-ZP-No-Host: 1` instead, and the internal listener removes the Host Go's transport has to
+    write, so the host check sees none, as in js mode. An absolute-form target (`GET http://host/ HTTP/1.1`) is refused
+    with 400 in both modes: `net/http` drops its Host header, which the server's host check reads.
+  - **Removed, not added:** the hop-by-hop headers, except the proxy headers the server reads (`X-Forwarded-*`,
+    `Forwarded`, `Via`, `X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`): they pass through as the client sent them,
+    even when the client names them in `Connection`, and Go adds none. The client's address travels in the signed
+    `X-ZP-Client` header, which Go sets on every request and which replaces any copy the client sent (D3).
   - **Streaming:** `FlushInterval: -1` flushes at once, so SSE (gateway and dashboard) and chunked bodies pass
     through without buffering.
   - **Protocol upgrades:** WebSocket upgrades pass through, using `ReverseProxy`'s built-in upgrade handling.
@@ -128,7 +134,8 @@ loopback `Origin` rule reads only the `Origin` header, so the auth mode is what 
 the host checks keep reading the public listen host (`ZAAFPULSE_HOST`), and without sign-in a client Go names from
 another machine is refused (`peerMayConnect`). A request on the main port in js mode never carries a stored client, so
 a client that sends the header itself changes nothing.
-- Forwarding headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `Via`) pass through Go unchanged and Go adds none:
+- Forwarding headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `Via`, `CF-Connecting-IP`, `True-Client-IP`) pass
+  through Go unchanged, even when the client names them in `Connection`, and Go adds none:
   the server reads their presence as "a proxy is in front", and `ZAAFPULSE_TRUST_PROXY=1` keeps its meaning (a proxy
   in front of Go).
 - `Expect: 100-continue` gets its `100` only after the header check. A connection may wait for its first request as
@@ -181,7 +188,7 @@ small UI change, and the owner checks it in the preview.
 |---|---|---|
 | T1 | Go hardening: E1, E2, E6, E10, E11, exit codes 4 and 5 | Go tests on 4 OS: a second gateway on the same outbox exits 5; segments without `stream.json` exit 1; no secret in any log output |
 | T2 | JS hardening: E3, E4, E5, E7, E8, E9 | Tests: mark file beats the tail window; no wrapped writer; minimal environment; `failed` state on 1, 2, 4 and 5; reload queued; compiled binary loads the schemas |
-| T3 | The probe first, then the client header and the internal listener (D3; the probe failed on Deno, so the header design) | Tests on Node and Deno: wrong or missing token closes the connection; a forged `X-Forwarded-For` is ignored; `/v1/traces` from outside is refused through Go; `clientKey` sees the preamble address; `Secure` cookies follow `tls` |
+| T3 | The probe first, then the client header and the internal listener (D3; the probe failed on Deno, so the header design) | Tests on Node and Deno: wrong or missing token closes the connection; a forged `X-Forwarded-For` is ignored; `/v1/traces` from outside is refused through Go; `clientKey` sees the address named in `X-ZP-Client`; `Secure` cookies follow `tls` |
 | T4 | Go front proxy (D1, D2): listen with TLS, route table, reverse proxy that overwrites the signed `X-ZP-Client` on every request, `front` in `config.push`, `frontToken` | Go tests: SSE flushes per event; WebSocket upgrade passes; hop-by-hop headers removed, forwarding headers passed as sent; a client's own `X-ZP-Client` replaced; 502 when upstream is down; port in use exits 4 |
 | T5 | `server.js` wiring (D1.5, D5, D6, D7): `gateway.engine`, start order, fallback, status API and chip, `runScope` | Tests: `js` mode unchanged; `front` mode serves the dashboard and gateway through Go; killing Go brings the port back; 5 failures fall back to Deno on the same port |
 | T6 | Contract suite through the front, kill tests, overhead bench, 6-target smoke | All 172 contract cases green in `front` mode on Node and Deno; kill test (Go killed during SSE: the client sees the cut, the port returns, nothing double-counted); proxy overhead recorded (p50, p99, per request); the binaries start and stop on all 6 targets in CI |
@@ -191,6 +198,8 @@ Order: T1 → T2 → T3 → T4 → T5 → T6 → T7. T1 and T3 do not depend on 
 Ubuntu only, start a **full-matrix CI dispatch after T1, T4 and T5** (lesson from P3).
 
 ## Exit criteria (P4a, gate S1)
+
+The record of these is `docs/migration/2026-11-12-p4a-results.md`.
 
 - [ ] The P3 entry conditions E1 to E11 are met, each with a test.
 - [ ] In `front` mode, Go holds the main port and every request reaches Deno with its real client address. A forged

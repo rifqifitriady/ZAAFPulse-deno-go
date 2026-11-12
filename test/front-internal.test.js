@@ -9,7 +9,7 @@ const http = require('http');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { createInternalListener } = require('../lib/front/internal');
+const { createInternalListener, NO_HOST_HEADER } = require('../lib/front/internal');
 const { CLIENT_HEADER, signClient, parseClientHeader, peerOf } = require('../lib/front/client');
 const { createAuth, clientKey, originAllowed } = require('../lib/auth');
 const { isLocalRequest, isTraceCaller, isLoopback } = require('../lib/gateway/client');
@@ -162,6 +162,21 @@ test('internal listener: clientKey sees the address Go named, and the header nev
   assert.deepEqual(seen, [
     { header: undefined, raw: false },
     { header: undefined, raw: false },
+  ]);
+});
+
+test('internal listener: the no-Host flag of Go drops the Host Go wrote; the flag never reaches the handler', async (t) => {
+  const seen = [];
+  const f = await front(t, (req, res) => {
+    const raw = req.rawHeaders.filter((_, i) => i % 2 === 0).map((h) => h.toLowerCase());
+    seen.push({ host: req.headers.host, flag: req.headers[NO_HOST_HEADER], raw: raw.filter((h) => /host/.test(h)) });
+    res.end();
+  });
+  await ask(f.port, { headers: { ...signed(), [NO_HOST_HEADER]: '1' } });
+  await ask(f.port, { headers: { ...signed(), host: 'dash.test' } });
+  assert.deepEqual(seen, [
+    { host: undefined, flag: undefined, raw: [] },
+    { host: 'dash.test', flag: undefined, raw: ['host'] },
   ]);
 });
 

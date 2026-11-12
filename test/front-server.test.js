@@ -122,6 +122,22 @@ test('front mode: a gateway that cannot run (its outbox held) falls back to Deno
   assert.equal(await answers(`${s.base}/login.html`), 200);
 });
 
+// T5-M3 (P4a final review): a gateway binary that is not there (installed before gw:build, or not granted to deno run)
+// is the failed state at once, so Deno holds the port within moments, not after about 31 s of restarts.
+test('front mode: a missing gateway binary falls back to Deno at once', async (t) => {
+  if (!stubBin(t)) return;
+  const s = await startServer({
+    runtime: RUNTIME,
+    config: FRONT,
+    env: { ZAAFPULSE_GW_BIN: path.join(__dirname, 'no-such-gateway') },
+  });
+  t.after(() => s.stop());
+  assert.ok(s.startupMs < 15000, `the port answered after ${Math.round(s.startupMs)} ms`);
+  const st = await status(s.base);
+  assert.deepEqual([st.mode, st.state, st.restarts], ['fallback', 'failed', 0], JSON.stringify(st));
+  assert.match(st.reason, /could not be started/);
+});
+
 // A gateway holding the outbox of the server's data folder before the server starts; the server's own gateway exits 5.
 function holdOutbox(t, bin) {
   const h = { proc: null, gone: null };

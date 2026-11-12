@@ -30,6 +30,17 @@ type Config struct {
 	Engines  map[string]string
 }
 
+// NoHostHeader flags a request that came without a Host header (HTTP/1.0): Go's transport cannot send an empty Host,
+// so the internal listener (lib/front/internal.js) removes the Host Go writes and this header (P4a final review I1).
+const NoHostHeader = "X-Zp-No-Host"
+
+// AbsoluteFormError is the answer to an absolute-form target, the same text server.js sends on its own port.
+const AbsoluteFormError = "absolute-form request targets are not accepted"
+
+// proxyHeaders are the headers the control plane's proxy checks read (server.js, lib/auth.js), in canonical form.
+var proxyHeaders = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port",
+	"Forwarded", "Via", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip"}
+
 // ErrAddrInUse: another process holds the main port. The gateway exits 4.
 var ErrAddrInUse = errors.New("front: the main port is in use")
 
@@ -70,10 +81,20 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 	s.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
+			// The client's Host. Without one (HTTP/1.0) Go's transport would write the internal 127.0.0.1:<port>, so
+			// the request is flagged and the internal listener removes that Host: the host check sees none, as in js
+			// mode (P4a final review I1). Set and Del replace any copy of the flag the client sent.
 			pr.Out.Host = pr.In.Host
-			// Rewrite drops these four from Out before it runs. The control plane reads them as the client sent them
-			// (its proxy checks look for their presence), so they go through unchanged; the front adds none.
-			for _, h := range []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "Forwarded"} {
+			if pr.In.Host == "" {
+				pr.Out.Header.Set(NoHostHeader, "1")
+			} else {
+				pr.Out.Header.Del(NoHostHeader)
+			}
+			// The control plane reads these as the client sent them (its proxy checks look for their presence), so
+			// they go through unchanged and the front adds none. Rewrite drops the X-Forwarded ones and Forwarded
+			// from Out before it runs, and every header the client names in Connection; Node keeps them all, so they
+			// are put back (P4a final review m1).
+			for _, h := range proxyHeaders {
 				if v, ok := pr.In.Header[h]; ok {
 					pr.Out.Header[h] = append([]string(nil), v...)
 				}
@@ -157,6 +178,15 @@ func (s *Server) Close() error { return s.srv.Close() }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.inflight.Add(1)
 	defer s.inflight.Add(-1)
+	if r.URL.IsAbs() {
+		// net/http has dropped this request's Host header (RFC 9112 3.2.2: the target's host wins), and the control
+		// plane checks the Host header: neither can be handed on, so it is refused here, as server.js refuses it on its
+		// own port (P4a final review I1).
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"` + AbsoluteFormError + `"}`))
+		return
+	}
 	if s.engine(Classify(r.URL.Path)) != "js" {
 		// Unreachable in P4a: config.push refuses a go engine. P4b answers here.
 		w.Header().Set("Content-Type", "application/json")
