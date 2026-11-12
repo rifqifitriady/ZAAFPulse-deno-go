@@ -9,8 +9,8 @@ import (
 // C1 (review): a repeat of a group must not recurse once per iteration. Each of these used to overflow the goroutine
 // stack (a fatal error no recover() catches) on about 1 MB; at 20 MB each must finish within the bound.
 func TestLargeInputsDoNotRecurse(t *testing.T) {
-	if testing.Short() {
-		t.Skip("20 MB inputs")
+	if testing.Short() || raceEnabled {
+		t.Skip("20 MB inputs: not under -short or the race detector")
 	}
 	const mb20 = 20 << 20
 	cases := []struct {
