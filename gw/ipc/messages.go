@@ -53,6 +53,46 @@ type ConfigPush struct {
 	Gateway GatewayConfig         `json:"gateway"`
 	Keys    []GatewayKeyAuth      `json:"keys"`
 	Pricing map[string]PriceEntry `json:"pricing"`
+	Front   *FrontConfig          `json:"front,omitzero"` // P4a: present when the gateway holds the main port
+}
+
+// FrontConfig puts the gateway in front (P4a spec D1): it listens on the main port and forwards each route class to
+// the engine named in Engines; "js" is the control plane's internal port on 127.0.0.1.
+type FrontConfig struct {
+	Listen   FrontListen       `json:"listen"`
+	TLS      *FrontTLS         `json:"tls,omitzero"`
+	Upstream FrontUpstream     `json:"upstream"`
+	Engines  map[string]Engine `json:"engines"`
+	Shadow   FrontShadow       `json:"shadow"`
+}
+
+type FrontListen struct {
+	Host string `json:"host" ipc:"minlen=1"`
+	Port int64  `json:"port" ipc:"min=1,max=65535"`
+}
+
+type FrontTLS struct {
+	CertPath string `json:"certPath" ipc:"minlen=1"`
+	KeyPath  string `json:"keyPath" ipc:"minlen=1"`
+}
+
+type FrontUpstream struct {
+	Port int64 `json:"port" ipc:"min=1,max=65535"`
+}
+
+// FrontShadow is reserved for the shadow compare (P4b): empty in P4a.
+type FrontShadow struct{}
+
+// Engine is "js" or "go".
+type Engine string
+
+func (e *Engine) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil || (s != "js" && s != "go") {
+		return fmt.Errorf("engine %s is not \"js\" or \"go\"", b)
+	}
+	*e = Engine(s)
+	return nil
 }
 
 type GatewayConfig struct {
@@ -166,9 +206,10 @@ type PriceTier struct {
 // SecretsHandoff carries resolved provider secrets. They live in memory only: String and GoString hide them from every
 // log, and Decode zeroes the envelope's raw body (E6).
 type SecretsHandoff struct {
-	Gen       int64            `json:"gen" ipc:"min=1"`
-	Providers []ProviderSecret `json:"providers"`
-	Mask      []string         `json:"mask"`
+	Gen        int64            `json:"gen" ipc:"min=1"`
+	Providers  []ProviderSecret `json:"providers"`
+	Mask       []string         `json:"mask"`
+	FrontToken string           `json:"frontToken,omitzero" ipc:"pattern=hex64"` // P4a: the key of the X-ZP-Client header's HMAC
 }
 
 func (s SecretsHandoff) String() string {

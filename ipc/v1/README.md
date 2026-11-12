@@ -38,8 +38,8 @@ a reply (`hello`) and `"re"` on the reply (`hello.ok`, `hello.refused`).
 |---|---|---|
 | `hello` | gw → cp | `protocol`, `gwVersion`, `stream`, `outboxFrom` |
 | `hello.ok` / `hello.refused` | cp → gw | `protocol`, `cpVersion` / `reason` (the gateway exits 2) |
-| `config.push` | cp → gw | `gen`, `gateway` (no keys, no secret references), `keys` (with `hash`), `pricing` (Money per 1M tokens) |
-| `secrets.handoff` | cp → gw | `gen`, `providers[{id, value?, token?}]`, `mask` |
+| `config.push` | cp → gw | `gen`, `gateway` (no keys, no secret references), `keys` (with `hash`), `pricing` (Money per 1M tokens), `front?` (P4a: `listen`, `tls?`, `upstream`, `engines`, `shadow`) |
+| `secrets.handoff` | cp → gw | `gen`, `providers[{id, value?, token?}]`, `mask`, `frontToken?` (P4a: 64 hex) |
 | `budget.snapshot` | cp → gw | `at`, `budgets` (BudgetView), `keyCenter` |
 | `shutdown` | cp → gw | `graceMs` |
 | `ack` | cp → gw | `stream`, `upTo` |
@@ -53,3 +53,15 @@ a reply (`hello`) and `"re"` on the reply (`hello.ok`, `hello.refused`).
 Budget rule: no snapshot, or `now - at > 5000`: the call passes and its usage record carries `budget: "unchecked"`,
 except that a blocking budget in scope that the snapshot shows as `exceeded` is always refused (402
 `insufficient_quota`, `budget "<name>" is used up for this <period>`). Shared decisions: `fixtures/budget-decide/`.
+
+## The front (added in v1 by P4a, both fields optional)
+
+With `config.push.front` the gateway holds the main port (`listen`, TLS from `tls` when given) and forwards each
+route class to the engine `engines` names: `js` is the control plane's internal port `upstream.port` on 127.0.0.1;
+`go` is accepted by the schema for P4b and refused by a P4a gateway (exit 2). `shadow` is reserved (empty). Every
+request the gateway forwards to the internal port carries the header
+`X-ZP-Client: <client-ip> <client-port> <tls:0|1> <hmac>` (at most 256 bytes; the gateway replaces any such header the
+client sent), where `<hmac>` is the lowercase hex HMAC-SHA256 of `"<client-ip> <client-port> <tls>"` keyed with
+`secrets.handoff.frontToken` (its hex text as UTF-8), new on every control-plane start. Exit codes of the gateway: 1 damaged outbox, 2 refused
+(handshake or config), 3 protocol error, 4 main port not opened, 5 outbox in use; before 1, 2, 4 and 5 it logs a line
+starting with `fatal: `.
