@@ -25,9 +25,14 @@ func TestLargeInputsDoNotRecurse(t *testing.T) {
 		re := MustCompile(c.src, c.flags)
 		s := U16(c.text)
 		start := time.Now()
-		n := len(re.FindAll(s))
+		n := 0
+		b := &Budget{Limit: 1 << 62}
+		err := b.Run(func() { n = len(re.FindAllB(s, b)) })
 		d := time.Since(start)
-		t.Logf("%s: %d matches in %v", c.name, n, d)
+		t.Logf("%s: %d matches in %v (%v)", c.name, n, d, err)
+		if err != nil && err != ErrStack {
+			t.Errorf("%s: %v", c.name, err)
+		}
 		if d > 60*time.Second {
 			t.Errorf("%s: %v over the 60 s bound", c.name, d)
 		}
@@ -46,5 +51,18 @@ func TestBudget(t *testing.T) {
 	b = &Budget{Limit: 1 << 40}
 	if err := b.Run(func() { re.ExecB(U16("aab"), 0, b) }); err != nil || b.Steps == 0 {
 		t.Fatalf("err %v, steps %d", err, b.Steps)
+	}
+}
+
+// I3 (re-review 1): the backtrack stack is capped; past MaxFrames a run stops with ErrStack instead of growing.
+func TestStackCap(t *testing.T) {
+	re := MustCompile(`(?:ab)*c`, "")
+	s := U16(strings.Repeat("ab", MaxFrames+10))
+	b := &Budget{Limit: 1 << 62}
+	if err := b.Run(func() { re.ExecB(s, 0, b) }); err != ErrStack {
+		t.Fatalf("got %v", err)
+	}
+	if m := re.Exec(U16(strings.Repeat("ab", 1000)+"c"), 0); m == nil || m[1] != 2001 {
+		t.Fatalf("got %v", m)
 	}
 }

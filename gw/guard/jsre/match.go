@@ -198,8 +198,21 @@ func (re *Regexp) ReplaceAllB(s []uint16, f func(caps []int) []uint16, b *Budget
 	return append(out, s[last:]...)
 }
 
-// U16 is a Go string as JS code units.
-func U16(s string) []uint16 { return utf16.Encode([]rune(s)) }
+// U16 is a Go string as JS code units, without an intermediate rune slice.
+func U16(s string) []uint16 {
+	n := 0
+	for _, r := range s {
+		n++
+		if r >= 0x10000 {
+			n++
+		}
+	}
+	out := make([]uint16, 0, n)
+	for _, r := range s {
+		out = utf16.AppendRune(out, r)
+	}
+	return out
+}
 
 // Str is code units as a Go string (a lone surrogate becomes U+FFFD).
 func Str(u []uint16) string { return string(utf16.Decode(u)) }
