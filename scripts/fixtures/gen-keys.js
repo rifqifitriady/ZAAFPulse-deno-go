@@ -148,9 +148,13 @@ for (const [name, rpm, times] of [
 // Canonicalize (ECMAScript 22.2.2.7.3, a regular expression with i and without u), the folding allows() relies on: for
 // every BMP code unit whose canonical unit is another one, that unit. Computed with this runtime's own toUpperCase,
 // which is what the JS gateway's /i globs use (P4b review I3).
+// Three units Node 24 upper-cases and Deno 2.9.8 does not (U+A7CF, U+A7D3, U+A7D5, Unicode 17 letters its ICU data
+// lacks) are left out: the corpus holds only what both runtimes agree on, and Go keeps Deno's answer (no folding),
+// pinned by gw/engine/keys_test.go TestUnitsTheRuntimesFoldDifferently.
+const DIVERGENT = new Set([0xa7cf, 0xa7d3, 0xa7d5]);
 const canonical = {};
 for (let u = 0; u < 0x10000; u++) {
-  if (u >= 0xd800 && u <= 0xdfff) continue;
+  if ((u >= 0xd800 && u <= 0xdfff) || DIVERGENT.has(u)) continue;
   const up = String.fromCharCode(u).toUpperCase();
   if (up.length !== 1) continue;
   const cu = up.charCodeAt(0);

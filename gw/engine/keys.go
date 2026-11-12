@@ -137,7 +137,7 @@ func canon(u uint16) uint16 {
 	}
 	r := rune(u)
 	up := unicode.ToUpper(r)
-	if up > 0xffff || specialUpper[r] {
+	if up > 0xffff || specialUpper[r] || divergentFold[r] {
 		return u
 	}
 	if r >= 128 && up < 128 {
@@ -145,6 +145,10 @@ func canon(u uint16) uint16 {
 	}
 	return uint16(up)
 }
+
+// divergentFold are the units Node 24 upper-cases and Deno 2.9.8 does not (Unicode 17 letters); the engine keeps
+// Deno's answer, the v2 runtime's.
+var divergentFold = map[rune]bool{0xa7cf: true, 0xa7d3: true, 0xa7d5: true}
 
 // specialUpper are the BMP code units whose JavaScript toUpperCase is more than one unit (SpecialCasing.txt: the 102 the
 // keys fixture lists through gen-keys.js "canonicalize"), so Canonicalize leaves them as they are, though Go's simple

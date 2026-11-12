@@ -1,15 +1,17 @@
 // Fixtures for the go engine's chat route (P4b, slice S2): the real JS gateway (lib/gateway createGateway) answers each
-// case over HTTP on 127.0.0.1, against a provider stubbed at fetch, and this records what it sent the provider, what
+// case in process (a request and a response object handed to gateway.handle, no socket), against a provider stubbed
+// at fetch, and this records what it sent the provider, what
 // it answered the client and the usage line it wrote. gw/engine/chat_test.go plans and answers the same case from the
 // config.push and secrets.handoff the control plane would send (lib/front/push.js) and must give the same bytes.
 // Writes gw/testdata/chat/<n>-<name>.json as { fn: "chat", in: { config, secrets, request, provider }, out }.
 // Only cases the engine serves are here (guardrails off, no budget, one OpenAI-format target, not streaming); the
 // hand-offs are Go tests of their own.
-// Run: node scripts/fixtures/gen-chat.js (CI runs every scripts/fixtures/gen-*.js and fails on a diff).
+// Run: node scripts/fixtures/gen-chat.js. It needs no network, environment, subprocess or system access, and writes
+// only under gw/testdata (its scratch data folder gw/testdata/.gen-chat-data is removed at the end and git-ignored), so
+// it runs under the CI fixtures job's Deno flags (--allow-read --allow-write=gw/testdata --deny-env --deny-net
+// --deny-run --deny-sys) and gives the same bytes on Node and Deno.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const http = require('http');
 const { createGateway } = require('../../lib/gateway');
 const { createSecrets } = require('../../lib/secrets');
 const { configPush, secretsPush } = require('../../lib/front/push');
@@ -181,8 +183,47 @@ const CASES = [
   ['timed-out', {}, { model: 'oa/m1', messages: user }, { throw: 'timeout' }],
 ];
 
+// A request as gateway.handle reads it: headers, the target, a loopback client, the body as one chunk.
+const requestOf = (headers, text) => ({
+  method: 'POST',
+  url: '/v1/chat/completions',
+  headers,
+  socket: { remoteAddress: '127.0.0.1', encrypted: false },
+  on() {},
+  once() {},
+  async *[Symbol.asyncIterator]() {
+    yield Buffer.from(text, 'utf8');
+  },
+});
+// A response that keeps what the gateway writes.
+function responseOf() {
+  const res = {
+    statusCode: 200,
+    headers: {},
+    body: '',
+    writableEnded: false,
+    writeHead(status, h = {}) {
+      res.statusCode = status;
+      for (const [k, v] of Object.entries(h)) res.headers[k.toLowerCase()] = String(v);
+      return res;
+    },
+    setHeader: (k, v) => (res.headers[k.toLowerCase()] = String(v)),
+    write: (c) => ((res.body += String(c)), true),
+    end(c) {
+      if (c !== undefined) res.body += String(c);
+      res.writableEnded = true;
+      return res;
+    },
+    on() {},
+    once() {},
+  };
+  return res;
+}
+
 async function main() {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-gen-chat-'));
+  const dataDir = path.join(OUT, '..', '.gen-chat-data');
+  fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify({ keys: KEYS }));
   let provider = null;
   let sent = null;
@@ -210,12 +251,8 @@ async function main() {
     getPricing: () => PRICING,
     getIntegrations: () => ({ listTools: async () => [], callTool: async () => ({}) }),
     fetchImpl,
+    toolsHome: dataDir, // never the real home folder (and no sys access under the CI flags)
   });
-  const server = http.createServer(async (req, res) => {
-    if (!(await gateway.handle(req, res, new URL(req.url, 'http://localhost')))) res.end();
-  });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  const base = `http://127.0.0.1:${server.address().port}`;
   const config = configPush({ gateway: GATEWAY, keys: KEYS, pricing: PRICING });
   const handoff = secretsPush({ gateway: GATEWAY, resolve: (ref, f) => secrets.resolve(ref, f) });
   fs.rmSync(OUT, { recursive: true, force: true });
@@ -243,16 +280,18 @@ async function main() {
       ...(opt.headers || {}),
     };
     const text = typeof body === 'string' ? body : JSON.stringify(body);
-    const r = await fetch(`${base}/v1/chat/completions`, { method: 'POST', headers, body: text });
+    const res = responseOf();
+    const req = requestOf(headers, text);
+    await gateway.handle(req, res, new URL(req.url, 'http://localhost'));
     const client = {
-      status: r.status,
+      status: res.statusCode,
       headers: Object.fromEntries(
         ['content-type', 'cache-control', 'access-control-allow-origin', 'retry-after'].map((h) => [
           h,
-          r.headers.get(h),
+          h in res.headers ? res.headers[h] : null,
         ]),
       ),
-      body: await r.text(),
+      body: res.body,
     };
     const { ts: _ts, ms: _ms, cost, ...usage } = gateway.usage.recent(1)[0];
     const out = {
@@ -266,7 +305,6 @@ async function main() {
       `${JSON.stringify({ fn: 'chat', in: input, out })}\n`,
     );
   }
-  server.close();
   gateway.flush();
   fs.rmSync(dataDir, { recursive: true, force: true });
   console.log(`gen-chat: ${n} cases in ${path.relative(process.cwd(), OUT)}`);

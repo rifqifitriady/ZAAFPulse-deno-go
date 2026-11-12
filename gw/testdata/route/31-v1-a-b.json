@@ -1,1 +1,1 @@
-{"fn":"pathname","in":"/v1/a|b","out":"/v1/a|b"}
+{"fn":"pathname","in":"/v1/a[b]","out":"/v1/a[b]"}

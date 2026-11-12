@@ -3,7 +3,6 @@
 // <name>.json as { fn, in, out }.
 // Run: node scripts/fixtures/gen-pricing.js (CI runs every scripts/fixtures/gen-*.js and fails on a diff).
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { normalizeModel, makePricer } = require('../../lib/pricing');
 const { createUsage } = require('../../lib/gateway/usage');
@@ -42,7 +41,8 @@ const cases = [];
 for (const m of MODELS) cases.push({ fn: 'normalize', name: m, in: m, out: normalizeModel(m) });
 const pricer = makePricer(TABLE);
 for (const m of MODELS) cases.push({ fn: 'key', name: m, in: m, out: pricer.key(m) });
-const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zp-gen-pricing-')), 'u.jsonl');
+// The usage log is never written (cost() only reads the price table): a path that does not exist, under gw/testdata.
+const file = path.join(OUT, '..', '.gen-pricing-unused.jsonl');
 const usage = createUsage({ file, getPricing: () => TABLE });
 for (const [m, u] of [
   ['oa/m1', { input: 1000, output: 500 }],
@@ -53,7 +53,6 @@ for (const [m, u] of [
   ['unknown-model', { input: 10, output: 10 }],
 ])
   cases.push({ fn: 'cost', name: m, in: { model: m, ...u }, out: toNano(usage.cost(m, u)) });
-fs.rmSync(path.dirname(file), { recursive: true, force: true });
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 const table = configPush({ gateway: {}, keys: [], pricing: TABLE }).pricing;
