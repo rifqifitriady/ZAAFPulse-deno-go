@@ -20,7 +20,7 @@ func appendN(t *testing.T, o *Outbox, n int) {
 }
 
 // openOutbox opens the outbox of dir and closes it when the test ends: Windows cannot remove the temporary folder while
-// a segment is open. Tests that "kill" an outbox by opening the folder again close both at the end.
+// a segment or the lock file is open. Tests that kill an outbox and open the folder again close both at the end.
 func openOutbox(t *testing.T, dir string) (*Outbox, error) {
 	t.Helper()
 	o, err := OpenOutbox(dir)
@@ -28,6 +28,14 @@ func openOutbox(t *testing.T, dir string) (*Outbox, error) {
 		t.Cleanup(func() { _ = o.Close() })
 	}
 	return o, err
+}
+
+// kill stands for a killed gateway: its files are closed and its lock is dropped, as the system does when a process
+// dies, and stream.json is not written.
+func kill(o *Outbox) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.release()
 }
 
 func replayed(t *testing.T, o *Outbox, from int64) []int64 {
@@ -93,6 +101,7 @@ func TestOutboxReopenAfterKill(t *testing.T) {
 	appendN(t, o, 5)
 	_ = o.Ack(2)
 	appendN(t, o, 1) // seq 6, after the last stream.json write
+	kill(o)
 	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +122,7 @@ func TestOutboxTruncatesALineCutByAKill(t *testing.T) {
 	f, _ := os.OpenFile(seg, os.O_APPEND|os.O_WRONLY, 0)
 	_, _ = f.WriteString(`{"v":1,"type":"usage.rep`)
 	_ = f.Close()
+	kill(o)
 	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +155,7 @@ func TestOutboxEmptyLastSegment(t *testing.T) {
 	o.SetPerSegment(3)
 	appendN(t, o, 4) // segments 1 and 4
 	_ = os.WriteFile(filepath.Join(dir, "00000000000000000005.jsonl"), nil, 0o600)
+	kill(o)
 	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -201,6 +212,7 @@ func TestOutboxFailedWriteLeavesNoFragment(t *testing.T) {
 	if got := replayed(t, o, 1); !slices.Equal(got, []int64{1, 2, 3, 4}) {
 		t.Fatalf("replay %v", got)
 	}
+	kill(o)
 	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -233,6 +245,7 @@ func TestOutboxFailedWriteAndTruncateStartsANewSegment(t *testing.T) {
 	if got := replayed(t, o, 1); !slices.Equal(got, []int64{1, 2, 3, 4}) {
 		t.Fatalf("replay %v", got)
 	}
+	kill(o)
 	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -250,6 +263,7 @@ func TestOutboxTornFirstLineOfNewestSegment(t *testing.T) {
 	o.SetPerSegment(2)
 	appendN(t, o, 2)
 	_ = os.WriteFile(filepath.Join(dir, "00000000000000000003.jsonl"), []byte(`{"v":1,"type":"tr`), 0o600)
+	kill(o)
 	o2, err := openOutbox(t, dir)
 	if err != nil {
 		t.Fatal(err)
