@@ -1,0 +1,13 @@
+{
+  "fn": "blockMessage",
+  "in": [
+    [
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 1
+      }
+    ]
+  ],
+  "out": "Blocked by ZAAFPulse guardrails: secret (Anthropic API key). Remove it, or ask the owner to change the policy."
+}

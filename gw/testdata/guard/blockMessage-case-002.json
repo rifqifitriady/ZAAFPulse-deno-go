@@ -1,0 +1,33 @@
+{
+  "fn": "blockMessage",
+  "in": [
+    [
+      {
+        "check": "injection",
+        "label": "Exfiltration request",
+        "count": 1
+      },
+      {
+        "check": "pii",
+        "label": "email",
+        "count": 2
+      },
+      {
+        "check": "secrets",
+        "label": "GitHub token",
+        "count": 1
+      },
+      {
+        "check": "pii",
+        "label": "ip",
+        "count": 1
+      },
+      {
+        "check": "injection",
+        "label": "Instruction override",
+        "count": 1
+      }
+    ]
+  ],
+  "out": "Blocked by ZAAFPulse guardrails: secret (GitHub token); personal data (email, ip); prompt injection (Exfiltration request, Instruction override). Remove it, or ask the owner to change the policy."
+}

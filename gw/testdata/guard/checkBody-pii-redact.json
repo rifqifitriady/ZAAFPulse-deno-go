@@ -1,0 +1,51 @@
+{
+  "fn": "checkBody",
+  "in": [
+    {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "mail ana@example.com, call +62 812-3456-7890 from 10.0.0.7 in /Users/ana/app and C:\\Users\\ana\\x"
+        }
+      ]
+    },
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "redact",
+      "injection": "log"
+    },
+    "openai-chat"
+  ],
+  "out": {
+    "body": {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "mail ‹email›, call ‹phone› from ‹ip› in /Users/ana/app and C:\\Users\\ana\\x"
+        }
+      ]
+    },
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "pii",
+        "label": "email",
+        "count": 1
+      },
+      {
+        "check": "pii",
+        "label": "phone",
+        "count": 1
+      },
+      {
+        "check": "pii",
+        "label": "ip",
+        "count": 1
+      }
+    ],
+    "error": false
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "fn": "cleanPolicy",
+  "in": [
+    "nope"
+  ],
+  "out": {
+    "scope": "external",
+    "secrets": "redact",
+    "pii": "off",
+    "injection": "log"
+  }
+}

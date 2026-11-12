@@ -1,0 +1,19 @@
+{
+  "fn": "checkBody",
+  "in": [
+    null,
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "off",
+      "injection": "log"
+    },
+    "openai-chat"
+  ],
+  "out": {
+    "body": null,
+    "action": null,
+    "hits": [],
+    "error": false
+  }
+}

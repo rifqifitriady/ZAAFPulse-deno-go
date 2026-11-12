@@ -1,0 +1,57 @@
+{
+  "fn": "checkBody",
+  "in": [
+    {
+      "input": [
+        {
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "a@b.com"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "a@b.com"
+        }
+      ]
+    },
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "redact",
+      "injection": "log"
+    },
+    "responses"
+  ],
+  "out": {
+    "body": {
+      "input": [
+        {
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "a@b.com"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "‹email›"
+        }
+      ]
+    },
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "pii",
+        "label": "email",
+        "count": 1
+      }
+    ],
+    "error": false
+  }
+}

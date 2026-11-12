@@ -1,0 +1,7 @@
+{
+  "fn": "blockMessage",
+  "in": [
+    []
+  ],
+  "out": "Blocked by ZAAFPulse guardrails: . Remove it, or ask the owner to change the policy."
+}

@@ -1,0 +1,20 @@
+{
+  "fn": "resolvePolicy",
+  "in": [
+    {
+      "pii": "log"
+    },
+    {
+      "guardrails": {
+        "pii": "off",
+        "injection": "block"
+      }
+    }
+  ],
+  "out": {
+    "scope": "external",
+    "secrets": "redact",
+    "pii": "off",
+    "injection": "block"
+  }
+}
