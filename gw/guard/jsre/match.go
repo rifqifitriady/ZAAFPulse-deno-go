@@ -24,6 +24,7 @@ const (
 	kLookbehind
 )
 
+// node is the parsed pattern; compile.go turns it into a program for the iterative matcher (vm.go).
 type node struct {
 	kind              kind
 	ch                uint16
@@ -118,222 +119,36 @@ func classMatch(c *charClass, u uint16, icase bool) bool {
 	return found != c.neg
 }
 
-type machine struct {
-	s     []uint16
-	caps  []int
-	icase bool
-}
-
-func (m *machine) wordAt(i int) bool { return i >= 0 && i < len(m.s) && isWord(m.s[i]) }
-
-func (m *machine) charOK(n *node, i int) bool {
-	if i >= len(m.s) {
-		return false
-	}
-	u := m.s[i]
+// charMatch tests one code unit against a one-character node.
+func charMatch(n *node, u uint16, icase bool) bool {
 	switch n.kind {
 	case kChar:
-		return u == n.ch || (m.icase && canon(u) == canon(n.ch))
+		return u == n.ch || (icase && canon(u) == canon(n.ch))
 	case kSet:
 		return n.set(u)
 	case kClass:
-		return classMatch(n.cls, u, m.icase)
+		return classMatch(n.cls, u, icase)
 	}
 	return false
-}
-
-// match runs n at i and calls k with each end position, in JS backtracking order, until k returns true.
-func (m *machine) match(n *node, i int, k func(int) bool) bool {
-	switch n.kind {
-	case kChar, kSet, kClass:
-		return m.charOK(n, i) && k(i+1)
-	case kSeq:
-		return m.seq(n.subs, i, k)
-	case kAlt:
-		for _, s := range n.subs {
-			if m.match(s, i, k) {
-				return true
-			}
-		}
-		return false
-	case kGroup:
-		return m.match(n.subs[0], i, func(j int) bool {
-			a, b := m.caps[2*n.idx], m.caps[2*n.idx+1]
-			m.caps[2*n.idx], m.caps[2*n.idx+1] = i, j
-			if k(j) {
-				return true
-			}
-			m.caps[2*n.idx], m.caps[2*n.idx+1] = a, b
-			return false
-		})
-	case kRep:
-		if a := n.subs[0]; (a.kind == kChar || a.kind == kSet || a.kind == kClass) && n.capLast < 0 {
-			return m.repSingle(n, a, i, k)
-		}
-		return m.rep(n, i, 0, k)
-	case kBackref:
-		a, b := m.caps[2*n.idx], m.caps[2*n.idx+1]
-		if a < 0 || b < 0 {
-			return k(i)
-		}
-		l := b - a
-		if i+l > len(m.s) {
-			return false
-		}
-		for x := 0; x < l; x++ {
-			p, q := m.s[a+x], m.s[i+x]
-			if p != q && !(m.icase && canon(p) == canon(q)) {
-				return false
-			}
-		}
-		return k(i + l)
-	case kBegin:
-		return i == 0 && k(i)
-	case kEnd:
-		return i == len(m.s) && k(i)
-	case kWordB:
-		return m.wordAt(i-1) != m.wordAt(i) && k(i)
-	case kNotWordB:
-		return m.wordAt(i-1) == m.wordAt(i) && k(i)
-	case kLookahead:
-		saved := append([]int(nil), m.caps...)
-		ok := m.match(n.subs[0], i, func(int) bool { return true })
-		if n.neg {
-			copy(m.caps, saved)
-			return !ok && k(i)
-		}
-		if ok && k(i) {
-			return true
-		}
-		copy(m.caps, saved)
-		return false
-	case kLookbehind:
-		saved := append([]int(nil), m.caps...)
-		ok := m.behind(n, i)
-		if n.neg {
-			copy(m.caps, saved)
-			return !ok && k(i)
-		}
-		if ok && k(i) {
-			return true
-		}
-		copy(m.caps, saved)
-		return false
-	}
-	return false
-}
-
-// behind reports whether n's body matches a span that ends exactly at i. The ported patterns hold no capture inside a
-// lookbehind, so a forward match from each possible start finds the same answer as JS's backward match.
-func (m *machine) behind(n *node, i int) bool {
-	lo := 0
-	if n.max >= 0 {
-		lo = i - n.max
-	}
-	if lo < 0 {
-		lo = 0
-	}
-	for j := i - n.min; j >= lo; j-- {
-		if m.match(n.subs[0], j, func(e int) bool { return e == i }) {
-			return true
-		}
-	}
-	return false
-}
-
-func (m *machine) seq(subs []*node, i int, k func(int) bool) bool {
-	if len(subs) == 0 {
-		return k(i)
-	}
-	return m.match(subs[0], i, func(j int) bool { return m.seq(subs[1:], j, k) })
-}
-
-// repSingle repeats a one-character atom without recursion: greedy tries the longest run first, lazy the shortest.
-func (m *machine) repSingle(n, a *node, i int, k func(int) bool) bool {
-	run := 0
-	for (n.max < 0 || run < n.max) && m.charOK(a, i+run) {
-		run++
-	}
-	if run < n.min {
-		return false
-	}
-	if n.greedy {
-		for c := run; c >= n.min; c-- {
-			if k(i + c) {
-				return true
-			}
-		}
-		return false
-	}
-	for c := n.min; c <= run; c++ {
-		if k(i + c) {
-			return true
-		}
-	}
-	return false
-}
-
-// rep is the ECMA-262 RepeatMatcher: captures inside the atom are cleared before each iteration, and an iteration
-// that matched nothing once the minimum is reached fails.
-func (m *machine) rep(n *node, i, count int, k func(int) bool) bool {
-	if n.max >= 0 && count >= n.max {
-		return k(i)
-	}
-	more := func() bool {
-		var saved []int
-		if n.capLast >= 0 {
-			saved = append([]int(nil), m.caps[2*n.capFirst:2*n.capLast+2]...)
-			for x := 2 * n.capFirst; x < 2*n.capLast+2; x++ {
-				m.caps[x] = -1
-			}
-		}
-		ok := m.match(n.subs[0], i, func(j int) bool {
-			if j == i && count >= n.min {
-				return false
-			}
-			return m.rep(n, j, count+1, k)
-		})
-		if !ok && saved != nil {
-			copy(m.caps[2*n.capFirst:], saved)
-		}
-		return ok
-	}
-	if count < n.min {
-		return more()
-	}
-	if n.greedy {
-		return more() || k(i)
-	}
-	return k(i) || more()
 }
 
 // MatchAt runs the pattern anchored at pos. It returns the capture offsets (2 per group, group 0 first; -1 unset)
 // or nil.
-func (re *Regexp) MatchAt(s []uint16, pos int) []int {
-	return re.matchAt(&machine{s: s, caps: make([]int, 2*(re.ncap+1)), icase: re.icase}, pos)
-}
-
-func (re *Regexp) matchAt(m *machine, pos int) []int {
-	for x := range m.caps {
-		m.caps[x] = -1
-	}
-	end := -1
-	if !m.match(re.root, pos, func(e int) bool { end = e; return true }) {
-		return nil
-	}
-	m.caps[0], m.caps[1] = pos, end
-	return m.caps
-}
+func (re *Regexp) MatchAt(s []uint16, pos int) []int { return re.newVM(s, nil).matchAt(pos) }
 
 // Exec is RegExp.prototype.exec with lastIndex = from: the first match at or after from, or nil.
-func (re *Regexp) Exec(s []uint16, from int) []int {
-	m := &machine{s: s, caps: make([]int, 2*(re.ncap+1)), icase: re.icase}
+func (re *Regexp) Exec(s []uint16, from int) []int { return re.ExecB(s, from, nil) }
+
+// ExecB is Exec counting its steps against b (nil: no limit). Past the limit it panics with ErrBudget; run it inside
+// Budget.Run.
+func (re *Regexp) ExecB(s []uint16, from int, b *Budget) []int {
+	m := re.newVM(s, b)
 	pre := re.filter()
 	for p := from; p <= len(s); p++ {
 		if pre.ok && (p == len(s) || !pre.set.has(s[p])) {
 			continue
 		}
-		if c := re.matchAt(m, p); c != nil {
+		if c := m.matchAt(p); c != nil {
 			return c
 		}
 	}
@@ -341,13 +156,19 @@ func (re *Regexp) Exec(s []uint16, from int) []int {
 }
 
 // Test is RegExp.prototype.test from the start.
-func (re *Regexp) Test(s []uint16) bool { return re.Exec(s, 0) != nil }
+func (re *Regexp) Test(s []uint16) bool { return re.ExecB(s, 0, nil) != nil }
+
+// TestB is Test under a budget.
+func (re *Regexp) TestB(s []uint16, b *Budget) bool { return re.ExecB(s, 0, b) != nil }
 
 // FindAll is String.prototype.matchAll for a g pattern: each match, an empty one advancing by one.
-func (re *Regexp) FindAll(s []uint16) [][]int {
+func (re *Regexp) FindAll(s []uint16) [][]int { return re.FindAllB(s, nil) }
+
+// FindAllB is FindAll under a budget.
+func (re *Regexp) FindAllB(s []uint16, b *Budget) [][]int {
 	var out [][]int
 	for p := 0; p <= len(s); {
-		c := re.Exec(s, p)
+		c := re.ExecB(s, p, b)
 		if c == nil {
 			break
 		}
@@ -362,9 +183,14 @@ func (re *Regexp) FindAll(s []uint16) [][]int {
 
 // ReplaceAll is String.prototype.replace with a g pattern and a function.
 func (re *Regexp) ReplaceAll(s []uint16, f func(caps []int) []uint16) []uint16 {
+	return re.ReplaceAllB(s, f, nil)
+}
+
+// ReplaceAllB is ReplaceAll under a budget.
+func (re *Regexp) ReplaceAllB(s []uint16, f func(caps []int) []uint16, b *Budget) []uint16 {
 	var out []uint16
 	last := 0
-	for _, c := range re.FindAll(s) {
+	for _, c := range re.FindAllB(s, b) {
 		out = append(out, s[last:c[0]]...)
 		out = append(out, f(c)...)
 		last = c[1]
