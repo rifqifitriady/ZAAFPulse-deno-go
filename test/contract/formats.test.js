@@ -771,6 +771,9 @@ const CASES = [
     run: async () => {
       const r = await h.call('/v1/models/%E0%A4%A', { method: 'GET', key: h.key });
       assert.equal(r.status, 400);
+      // With the Go gateway in front, Go's HTTP server refuses a request target with a broken escape itself, before
+      // any handler, with its own plain-text 400 (P4a: accepted; only the body differs, for a request no client sends).
+      if (process.env.ZP_ENGINE === 'front' && r.text === '400 Bad Request') return;
       assert.equal(r.json.error.message, 'model id is not valid URL encoding');
     },
   },
