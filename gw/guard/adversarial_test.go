@@ -38,7 +38,7 @@ var adversarialInputs = []adversarial{
 
 func TestAdversarialInputs(t *testing.T) {
 	sizes := []int{256 << 10, 1 << 20, 20 << 20}
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		sizes = sizes[:2]
 	}
 	bound := map[int]time.Duration{256 << 10: 10 * time.Second, 1 << 20: 20 * time.Second, 20 << 20: 120 * time.Second}
