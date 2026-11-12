@@ -49,7 +49,7 @@ func TestFixtures(t *testing.T) {
 			}
 			fn, ok := fixtureFns[fx.Fn]
 			if !ok {
-				t.Skipf("no Go port registered for %s", fx.Fn)
+				t.Fatalf("no Go port registered for %s", fx.Fn)
 			}
 			checkFixture(t, fx, func() (jsv.Value, error) { return fn(fixedEnv(), fx.In) })
 		})
