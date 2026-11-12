@@ -175,7 +175,14 @@ type Block struct {
 
 func (b *Block) Error() string {
 	if b.Overrun != "" {
-		return "Blocked by ZAAFPulse guardrails: the " + word[b.Overrun] + " check did not finish within its limit. " +
+		name, ok := word[b.Overrun]
+		switch {
+		case b.Overrun == dataURLCheck:
+			name = "data URL"
+		case !ok:
+			name = "content"
+		}
+		return "Blocked by ZAAFPulse guardrails: the " + name + " check did not finish within its limit. " +
 			"Send a shorter input, or ask the owner to change the policy."
 	}
 	return BlockMessage(b.Hits)
@@ -348,6 +355,20 @@ func (r *run) finish() (action string, hits []Hit, err error) {
 	return action, hits, nil
 }
 
+// isBase64URL is BASE64_URL.test(s) under its own step budget; past it the call fails closed like a check.
+func isBase64URL(s string) bool {
+	u := jsre.U16(s)
+	b := budgetFor(len(u))
+	var ok bool
+	if err := b.Run(func() { ok = reBase64URL.TestB(u, b) }); err != nil {
+		panic(errOverrun{dataURLCheck})
+	}
+	return ok
+}
+
+// dataURLCheck names the walker's data: URL test in an overrun Block.
+const dataURLCheck = "data-url"
+
 func isStructuralKey(key string, hasKey bool) bool {
 	return hasKey && (structural[key] || strings.HasSuffix(key, "_id"))
 }
@@ -357,7 +378,7 @@ func isStructuralKey(key string, hasKey bool) bool {
 func (r *run) walk(v jsv.Value, key string, hasKey bool, fresh, structural bool) (jsv.Value, bool) {
 	switch x := v.(type) {
 	case string:
-		if (structural && isStructuralKey(key, hasKey)) || reBase64URL.Test(jsre.U16(x)) {
+		if (structural && isStructuralKey(key, hasKey)) || isBase64URL(x) {
 			return x, false
 		}
 		out := r.visitStr(x, fresh)
@@ -439,6 +460,13 @@ func catchCheck(err *error) {
 			*err = e.err
 		case errOverrun:
 			*err = &Block{Overrun: e.check}
+		case error:
+			// A limit reached outside a check (no path is known to do so): still fail closed, never panic out.
+			if errors.Is(e, jsre.ErrBudget) || errors.Is(e, jsre.ErrStack) {
+				*err = &Block{Overrun: "limit"}
+				return
+			}
+			panic(p)
 		default:
 			panic(p)
 		}
