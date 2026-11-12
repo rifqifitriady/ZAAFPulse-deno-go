@@ -94,7 +94,11 @@ function fakeChild() {
     kill() {
       if (child.killed) return;
       child.killed = true;
-      setImmediate(() => child.emit('exit', null, 'SIGKILL'));
+      // As a real child: 'exit', then 'close' once its pipes are done.
+      setImmediate(() => {
+        child.emit('exit', null, 'SIGKILL');
+        child.emit('close', null, 'SIGKILL');
+      });
     },
   });
   return child;
