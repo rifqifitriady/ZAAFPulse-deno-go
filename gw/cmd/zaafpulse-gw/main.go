@@ -219,7 +219,7 @@ func (g *gateway) handle(msg ipc.Message) int {
 		g.mu.Lock()
 		g.cfgGen = b.Gen
 		g.mu.Unlock()
-		return g.maybeReady()
+		return g.applied()
 	case *ipc.SecretsHandoff:
 		m := make(map[string]ipc.ProviderSecret, len(b.Providers))
 		for _, p := range b.Providers {
@@ -228,7 +228,7 @@ func (g *gateway) handle(msg ipc.Message) int {
 		g.mu.Lock()
 		g.secGen, g.secrets, g.mask, g.frontToken = b.Gen, m, b.Mask, b.FrontToken
 		g.mu.Unlock()
-		return g.maybeReady()
+		return g.applied()
 	case *ipc.BudgetSnapshot:
 		g.mu.Lock()
 		g.snap, g.snapAt = b, time.Now()
@@ -255,6 +255,20 @@ func (g *gateway) handle(msg ipc.Message) int {
 	default:
 		g.log.Printf("unexpected %s from the control plane, dropped", msg.Type)
 	}
+	return -1
+}
+
+// applied runs after a config.push or a secrets.handoff: before ready it may complete the start; after it, once both of
+// a generation are in, a health names that generation at once, so the control plane need not wait for the next tick
+// (lib/ipc/supervisor.js synced: an API key revoked or a provider changed is in force when the save answers).
+func (g *gateway) applied() int {
+	g.mu.Lock()
+	done := g.ready && g.cfgGen == g.secGen
+	g.mu.Unlock()
+	if !done {
+		return g.maybeReady()
+	}
+	g.sendHealth()
 	return -1
 }
 
