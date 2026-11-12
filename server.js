@@ -581,8 +581,7 @@ const gateway = createGateway({
 function frontIngest() {
   const files = localPaths(DIR);
   const sinks = serverSinks({
-    usageFile: files.usageFile,
-    getPricing: () => config.pricing,
+    recordUsage: (e) => gateway.ingestUsage(e),
     budgetRecord: (entry) => budgetGuard.record(entry),
     governance,
     mcpAudit: audit,
