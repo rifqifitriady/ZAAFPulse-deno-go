@@ -337,3 +337,37 @@ test('acks go out only after the mark file holds them, and never ahead of the st
   );
   assert.equal(seen[seen.length - 1], 6);
 });
+
+// T5-M3 (P4a final review): a binary that is not there, or cannot be run (no exec bit, or no run grant under Deno), is
+// an exit a restart cannot fix: the failed state at once, not after the back-off (1, 2, 4, 8, 16 s: about 31 s).
+test('a gateway binary that is missing or cannot be run fails at once, with no restart', async (t) => {
+  const stops = [];
+  const root = tmpDir(t, 'nobin', stops);
+  const notExec = path.join(root, 'zaafpulse-gw-data');
+  fs.writeFileSync(notExec, 'not a program');
+  const bins = [path.join(root, 'no-such-gateway')];
+  if (process.platform !== 'win32') bins.push(notExec); // Windows has no exec bit
+  for (const bin of bins) {
+    const failures = [];
+    const kinds = [];
+    const sup = createSupervisor({
+      bin,
+      cpVersion: 'test',
+      sources: {
+        config: () => initial().config,
+        secrets: () => initial().secrets,
+        snapshot: () => ({ budgets: [], keyCenter: {} }),
+      },
+      ingest: { handle: () => true },
+      log: () => {},
+      backoff: { firstMs: 60000, maxMs: 60000 }, // a restart would wait a minute: the test would time out
+      onFailed: (r, info) => failures.push(r) && kinds.push(info && info.kind),
+    });
+    stops.push(() => sup.stop(0));
+    sup.start();
+    await waitFor(() => sup.status().state === 'failed', 5000, `failed (${path.basename(bin)})`);
+    assert.equal(sup.status().restarts, 0);
+    assert.deepEqual(kinds, ['fatal'], 'lib/front may retry front after a config change (the binary may be built)');
+    assert.match(failures[0], /could not be started/);
+  }
+});

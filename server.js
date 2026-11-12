@@ -1462,6 +1462,10 @@ const MIME = {
 };
 
 const handler = async (req, res) => {
+  // An absolute-form target ("GET http://host/ HTTP/1.1") is for proxies. Node checks its Host header, the Go front
+  // never sees that header (net/http drops it), so both modes refuse it, with the same answer (P4a final review I1).
+  if (/^[a-z][a-z0-9+.-]*:/i.test(req.url))
+    return send(res, 400, { error: 'absolute-form request targets are not accepted' });
   const url = new URL(req.url, 'http://localhost');
   // Reject requests addressed to other names (DNS rebinding / cross-origin writes).
   const host = String(req.headers.host || '')
