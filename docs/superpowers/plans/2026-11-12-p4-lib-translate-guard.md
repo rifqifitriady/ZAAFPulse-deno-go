@@ -201,3 +201,15 @@ func MaskPII(text string) (string, map[string]int) // the guardrail's call: home
 6. **The CI step edits `.github/workflows/ci.yml`**, which the spec's table gives to no stream but the spec requires ("A CI step regenerates the fixtures"). It is a separate job so it does not touch the lines the other streams may change.
 7. **More fixture functions than the spec lists:** `scanInjection`, `secretSpans`, `maskPii` and `cleanPolicy` are replayed too; they test the engine against the whole labelled corpus. `scopeTier`, `cleanSettings`, `cleanKeyPolicy` and `inScope` are not ported (settings and routing, not the request path's checks).
 8. **TypeErrors:** Go reproduces V8's message only for property reads on `null`/`undefined` (`Cannot read properties of undefined (reading 'x')`); other malformed shapes (a number where an array is expected) return a `jsv.TypeError` with a Go message and are not in the corpus.
+
+## Execution notes (recorded after the run)
+
+9. **Signatures settled during the run:** `AnthropicUsageToOpenAI` returns `(*jsv.Object, error)` (a `null` usage
+   throws in JS); the stream methods are `Push(chunk) (string, error)` / `Finish() (string, error)` on the stream
+   value (the `Env` is held by the stream); `ResponsesToOpenAI` returns the custom names as `[]string`.
+10. **Scanner prefixes are escaped in every fixture file** (`sk_` → `sk_`, also `rk_ pk_ sk- AKIA ASIA gh?_
+    github_pat_ xox?- AIza hf_ eyJ -----BEGIN`), as the signals corpus does, besides the `<<ZPSECRET:i>>` encoding:
+    GitHub push protection rejected two placeholder Stripe keys from the corpus otherwise.
+11. **Speed:** `jsre` scans with a first-character filter. A 1 MB chat body with every check on takes about 0.8 s and a
+    1 MB minified JS line about 2.3 s on an M-series Mac (the JS takes well under 1 s); the Go test bounds them at
+    20 s. P4e wiring (stage 2) should measure again before the guard runs on the request path.
