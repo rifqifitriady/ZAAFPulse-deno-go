@@ -118,3 +118,21 @@ func TestQuietLoggerRateLimitsNoisyLines(t *testing.T) {
 		t.Errorf("log %q, want %q", buf.String(), want)
 	}
 }
+
+// The front forwards the request target exactly as the client sent it (P4b review I2): a backslash, a "|" or a ";" in
+// the query reach the control plane unchanged, so js and front mode route the same text.
+func TestRequestTargetIsForwardedAsSent(t *testing.T) {
+	got := make(chan string, 8)
+	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { got <- r.RequestURI })
+	s := startFront(t, up.port(), nil)
+	for _, target := range []string{`/v1\chat/completions`, "/v1/a|b", "/api/x?q=a;b&c=1", "/v1/a^b?x=%zz&y=\\", "/v1/chat%2Fcompletions?a=%2F"} {
+		out, _ := rawRequest(t, s.Addr().String(), "GET "+target+" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+		if !strings.Contains(out, "200 OK") {
+			t.Errorf("%s: %q", target, out)
+			continue
+		}
+		if r := <-got; r != target {
+			t.Errorf("forwarded %q, sent %q", r, target)
+		}
+	}
+}

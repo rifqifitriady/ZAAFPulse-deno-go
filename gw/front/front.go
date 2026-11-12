@@ -99,6 +99,11 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 	s.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
+			// The request target exactly as the client sent it (P4b review I2): net/http re-escapes a path it decoded
+			// ("\" and "|" become %5C and %7C) and drops query pairs it cannot parse (";"), so the control plane would
+			// route another text than in js mode. Opaque is written as it is; RawQuery is kept whole.
+			pr.Out.URL.Opaque = RawPath(pr.In.RequestURI)
+			pr.Out.URL.RawQuery = pr.In.URL.RawQuery
 			// The client's Host. Without one (HTTP/1.0) Go's transport would write the internal 127.0.0.1:<port>, so
 			// the request is flagged and the internal listener removes that Host: the host check sees none, as in js
 			// mode (P4a final review I1). Set and Del replace any copy of the flag the client sent.

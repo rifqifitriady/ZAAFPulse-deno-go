@@ -75,6 +75,7 @@ for (const [name, patterns, value] of [
   ['kelvin', ['oa/k'], 'oa/K'],
   ['sharp-s', ['oa/ß'], 'oa/ẞ'],
   ['greek-sigma', ['oa/σ'], 'oa/Σ'],
+  ['ypogegrammeni-not-folded', ['oa/\u1f80'], 'oa/\u1f88'],
   ['astral', ['oa/*'], 'oa/\u{1F600}'],
   ['empty-value', ['*'], ''],
 ])
@@ -143,6 +144,20 @@ for (const [name, rpm, times] of [
   });
   add('rateLimit', name, { rpm, times }, out);
 }
+
+// Canonicalize (ECMAScript 22.2.2.7.3, a regular expression with i and without u), the folding allows() relies on: for
+// every BMP code unit whose canonical unit is another one, that unit. Computed with this runtime's own toUpperCase,
+// which is what the JS gateway's /i globs use (P4b review I3).
+const canonical = {};
+for (let u = 0; u < 0x10000; u++) {
+  if (u >= 0xd800 && u <= 0xdfff) continue;
+  const up = String.fromCharCode(u).toUpperCase();
+  if (up.length !== 1) continue;
+  const cu = up.charCodeAt(0);
+  if (u >= 128 && cu < 128) continue;
+  if (cu !== u) canonical[u.toString(16)] = cu.toString(16);
+}
+add('canonicalize', 'bmp', null, canonical);
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });

@@ -433,7 +433,8 @@ func (g *gateway) sendHealth() {
 		g.mu.Unlock()
 		return
 	}
-	h := ipc.Health{OutboxDepth: g.box.Depth(), UptimeMs: time.Since(g.started).Milliseconds(), Gen: g.cfgGen}
+	// The generation in force: its config and its secrets both applied (P4b review m2).
+	h := ipc.Health{OutboxDepth: g.box.Depth(), UptimeMs: time.Since(g.started).Milliseconds(), Gen: min(g.cfgGen, g.secGen)}
 	if g.front != nil {
 		h.Inflight = g.front.Inflight()
 	}
