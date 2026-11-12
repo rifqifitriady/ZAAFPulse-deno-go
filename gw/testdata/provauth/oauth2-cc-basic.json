@@ -1,0 +1,86 @@
+{
+  "fn": "accessToken",
+  "in": {
+    "id": "prov",
+    "auth": {
+      "type": "oauth2",
+      "tokenUrl": "https://login.example.test/tenant/oauth2/v2.0/token",
+      "clientId": "app-1",
+      "scope": "https://cognitiveservices.azure.com/.default",
+      "grant": "client_credentials"
+    },
+    "secret": "s3cret-value",
+    "mask": [],
+    "responses": [
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"cc-1\",\"expires_in\":3600}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"cc-2\",\"expires_in\":\"7200\"}"
+      }
+    ],
+    "steps": [
+      {
+        "now": 1767225600000
+      },
+      {
+        "now": 1767225601000
+      },
+      {
+        "now": 1767228899999
+      },
+      {
+        "now": 1767228900000
+      },
+      {
+        "now": 1767228960000
+      }
+    ]
+  },
+  "out": {
+    "requests": [
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s3cret-value&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s3cret-value&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      }
+    ],
+    "results": [
+      {
+        "token": "cc-1",
+        "exp": 1767229200000
+      },
+      {
+        "token": "cc-1",
+        "exp": 1767229200000
+      },
+      {
+        "token": "cc-1",
+        "exp": 1767229200000
+      },
+      {
+        "token": "cc-2",
+        "exp": 1767236100000
+      },
+      {
+        "token": "cc-2",
+        "exp": 1767236100000
+      }
+    ]
+  }
+}

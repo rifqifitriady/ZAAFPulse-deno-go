@@ -1,0 +1,193 @@
+{
+  "fn": "accessToken",
+  "in": {
+    "id": "prov",
+    "auth": {
+      "type": "oauth2",
+      "tokenUrl": "https://login.example.test/tenant/oauth2/v2.0/token",
+      "clientId": "app-1",
+      "scope": "https://cognitiveservices.azure.com/.default",
+      "grant": "client_credentials"
+    },
+    "secret": "s",
+    "mask": [],
+    "responses": [
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"t1\"}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"t2\",\"expires_in\":0}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"t3\",\"expires_in\":\" 90 \"}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"t4\",\"expires_in\":\"abc\"}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"t5\",\"expires_in\":\"0x10\"}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"t6\",\"expires_in\":-5}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"t7\",\"expires_in\":1.5}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"t8\",\"expires_in\":null}"
+      }
+    ],
+    "steps": [
+      {
+        "now": 1767225601000,
+        "force": true
+      },
+      {
+        "now": 1767225602000,
+        "force": true
+      },
+      {
+        "now": 1767225603000,
+        "force": true
+      },
+      {
+        "now": 1767225604000,
+        "force": true
+      },
+      {
+        "now": 1767225605000,
+        "force": true
+      },
+      {
+        "now": 1767225606000,
+        "force": true
+      },
+      {
+        "now": 1767225607000,
+        "force": true
+      },
+      {
+        "now": 1767225608000,
+        "force": true
+      }
+    ]
+  },
+  "out": {
+    "requests": [
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      }
+    ],
+    "results": [
+      {
+        "token": "t1",
+        "exp": 1767229201000
+      },
+      {
+        "token": "t2",
+        "exp": 1767229202000
+      },
+      {
+        "token": "t3",
+        "exp": 1767225693000
+      },
+      {
+        "token": "t4",
+        "exp": 1767229204000
+      },
+      {
+        "token": "t5",
+        "exp": 1767225621000
+      },
+      {
+        "token": "t6",
+        "exp": 1767225601000
+      },
+      {
+        "token": "t7",
+        "exp": 1767225608500
+      },
+      {
+        "token": "t8",
+        "exp": 1767229208000
+      }
+    ]
+  }
+}
