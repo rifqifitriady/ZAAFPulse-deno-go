@@ -232,7 +232,7 @@ func (r *run) add(check, label string, n int) {
 func (r *run) guarded(check string, f func() []uint16, fallback []uint16) (out []uint16) {
 	defer func() {
 		if p := recover(); p != nil {
-			if p == jsre.ErrBudget {
+			if p == jsre.ErrBudget || p == jsre.ErrStack {
 				panic(errOverrun{check})
 			}
 			if r.policy.mode(check) != "log" {

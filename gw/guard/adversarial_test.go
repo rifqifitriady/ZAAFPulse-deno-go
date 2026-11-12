@@ -3,6 +3,7 @@ package guard
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -42,15 +43,22 @@ func TestAdversarialInputs(t *testing.T) {
 		sizes = sizes[:2]
 	}
 	bound := map[int]time.Duration{256 << 10: 10 * time.Second, 1 << 20: 20 * time.Second, 20 << 20: 120 * time.Second}
-	var table strings.Builder
+	var table, mem strings.Builder
 	for _, a := range adversarialInputs {
 		fmt.Fprintf(&table, "\n| %s |", a.name)
 		for _, n := range sizes {
 			body := jsv.NewObject().Set("model", "m").Set("messages",
 				jsv.Arr(jsv.NewObject().Set("role", "user").Set("content", a.build(n))))
 			start := time.Now()
-			_, err := CheckBody(body, a.policy, "openai-chat")
+			var err error
+			peak := peakHeapDuring(func() { _, err = CheckBody(body, a.policy, "openai-chat") })
 			d := time.Since(start)
+			if n == 20<<20 {
+				fmt.Fprintf(&mem, "\n%s: peak heap growth %d MB", a.name, peak>>20)
+				if peak > maxHeapGrowth {
+					t.Errorf("%s at %d bytes: heap grew by %d MB, bound %d MB", a.name, n, peak>>20, maxHeapGrowth>>20)
+				}
+			}
 			var b *Block
 			outcome := "ok"
 			switch {
@@ -68,6 +76,43 @@ func TestAdversarialInputs(t *testing.T) {
 		}
 	}
 	t.Log(table.String())
+	t.Log(mem.String())
+}
+
+// maxHeapGrowth bounds the extra heap one 20 MB body may take through CheckBody (I3, re-review 1). The body itself
+// is about 20 MB of Go string; the checks convert it to UTF-16 (40 MB) through a rune slice (80 MB) and may copy it.
+const maxHeapGrowth = 512 << 20
+
+// peakHeapDuring runs f and returns the highest HeapAlloc seen above the level before it, sampled every millisecond.
+func peakHeapDuring(f func()) uint64 {
+	runtime.GC()
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	base := ms.HeapAlloc
+	var peak uint64
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(time.Millisecond)
+		defer t.Stop()
+		var m runtime.MemStats
+		for {
+			runtime.ReadMemStats(&m)
+			if m.HeapAlloc > base && m.HeapAlloc-base > peak {
+				peak = m.HeapAlloc - base
+			}
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+			}
+		}
+	}()
+	f()
+	close(stop)
+	<-done
+	return peak
 }
 
 func TestOverrunFailsClosedInEveryMode(t *testing.T) {

@@ -175,6 +175,11 @@ func (c *compiler) genRep(n *node, follow *bitset) {
 		c.gen(a)
 		c.emit(inst{op: opRegCheck, n: r})
 	}
+	// The empty-iteration check (and its register frame) is only needed when the atom can match nothing.
+	if lo, _ := width(a); lo > 0 {
+		check := iteration
+		iteration = func(bool) { check(false) }
+	}
 	for k := 0; k < n.min && c.err == nil; k++ {
 		iteration(false) // a mandatory iteration may match empty
 	}

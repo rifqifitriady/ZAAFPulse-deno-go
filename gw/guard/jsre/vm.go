@@ -9,18 +9,28 @@ import "errors"
 // ErrBudget is what a run past its Budget reports.
 var ErrBudget = errors.New("jsre: step budget exceeded")
 
+// ErrStack is what a run reports when its backtrack stack would pass MaxFrames. It is raised whether or not a Budget
+// is given (a nil-budget call panics with it); Budget.Run turns it into an error like ErrBudget.
+var ErrStack = errors.New("jsre: backtrack stack limit exceeded")
+
+// MaxFrames caps the backtrack stack of one run: 2,097,152 frames of 40 bytes, 80 MiB. V8 caps its own backtrack
+// stack too (it throws a RangeError). No fixture or legitimate text measured comes near it; a crafted repeat of a
+// group over about two million iterations (a 4 MB run of "a a a …") does, and then fails closed.
+const MaxFrames = 2 << 20
+
 // Budget counts matcher steps (one per instruction, one per character a repeat consumes) across every call that is
 // given it. Past Limit the matcher panics with ErrBudget; Run turns that back into an error.
 type Budget struct {
 	Steps, Limit int64
 }
 
-// Run calls f and returns ErrBudget if a matcher inside ran past the budget. Other panics propagate.
+// Run calls f and returns ErrBudget or ErrStack if a matcher inside ran past the budget or the stack limit. Other
+// panics propagate.
 func (b *Budget) Run(f func()) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if r == ErrBudget {
-				err = ErrBudget
+			if r == ErrBudget || r == ErrStack {
+				err = r.(error)
 				return
 			}
 			panic(r)
@@ -67,6 +77,14 @@ func (m *vm) step(n int) {
 			panic(ErrBudget)
 		}
 	}
+}
+
+// push adds a backtrack frame; past MaxFrames the run stops with ErrStack.
+func (m *vm) push(f frame) {
+	if len(m.stack) >= MaxFrames {
+		panic(ErrStack)
+	}
+	m.stack = append(m.stack, f)
 }
 
 func (m *vm) matchAt(pos int) []int {
@@ -168,14 +186,14 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 				break
 			}
 			if in.greedy && c > in.min {
-				m.stack = append(m.stack, frame{kind: fStarG, pc: pc + 1, pos: pos, a: c, b: in.min})
+				m.push(frame{kind: fStarG, pc: pc + 1, pos: pos, a: c, b: in.min})
 			} else if !in.greedy && c < r {
-				m.stack = append(m.stack, frame{kind: fStarL, pc: pc + 1, pos: pos, a: c, b: r})
+				m.push(frame{kind: fStarL, pc: pc + 1, pos: pos, a: c, b: r})
 			}
 			pos += c
 			pc++
 		case opSplit:
-			m.stack = append(m.stack, frame{kind: fBranch, pc: in.y, pos: pos})
+			m.push(frame{kind: fBranch, pc: in.y, pos: pos})
 			pc = in.x
 		case opJmp:
 			pc = in.x
@@ -186,23 +204,23 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 				break
 			}
 			if next := m.altFrom(in, k+1, pos); next >= 0 {
-				m.stack = append(m.stack, frame{kind: fAlt, pos: pos, a: pc, b: next})
+				m.push(frame{kind: fAlt, pos: pos, a: pc, b: next})
 			}
 			pc = in.alts[k]
 		case opSave:
-			m.stack = append(m.stack, frame{kind: fCap, a: in.n, b: m.caps[in.n]})
+			m.push(frame{kind: fCap, a: in.n, b: m.caps[in.n]})
 			m.caps[in.n] = pos
 			pc++
 		case opClear:
 			for i := 2 * in.capFirst; i < 2*in.capLast+2; i++ {
 				if m.caps[i] != -1 {
-					m.stack = append(m.stack, frame{kind: fCap, a: i, b: m.caps[i]})
+					m.push(frame{kind: fCap, a: i, b: m.caps[i]})
 					m.caps[i] = -1
 				}
 			}
 			pc++
 		case opRegSet:
-			m.stack = append(m.stack, frame{kind: fReg, a: in.n, b: regs[in.n]})
+			m.push(frame{kind: fReg, a: in.n, b: regs[in.n]})
 			regs[in.n] = pos
 			pc++
 		case opRegCheck:
@@ -275,7 +293,7 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 					continue
 				}
 				if c > f.b {
-					m.stack = append(m.stack, frame{kind: fStarG, pc: f.pc, pos: f.pos, a: c, b: f.b})
+					m.push(frame{kind: fStarG, pc: f.pc, pos: f.pos, a: c, b: f.b})
 				}
 				pc, pos, resumed = f.pc, f.pos+c, true
 			case fStarL:
@@ -284,13 +302,13 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 					continue
 				}
 				if c < f.b {
-					m.stack = append(m.stack, frame{kind: fStarL, pc: f.pc, pos: f.pos, a: c, b: f.b})
+					m.push(frame{kind: fStarL, pc: f.pc, pos: f.pos, a: c, b: f.b})
 				}
 				pc, pos, resumed = f.pc, f.pos+c, true
 			case fAlt:
 				in := &p.insts[f.a]
 				if next := m.altFrom(in, f.b+1, f.pos); next >= 0 {
-					m.stack = append(m.stack, frame{kind: fAlt, pos: f.pos, a: f.a, b: next})
+					m.push(frame{kind: fAlt, pos: f.pos, a: f.a, b: next})
 				}
 				pc, pos, resumed = in.alts[f.b], f.pos, true
 			}
@@ -332,7 +350,7 @@ func (m *vm) look(in *inst, pos int) bool {
 	if found && !in.neg {
 		for i, v := range saved {
 			if m.caps[i] != v {
-				m.stack = append(m.stack, frame{kind: fCap, a: i, b: v})
+				m.push(frame{kind: fCap, a: i, b: v})
 			}
 		}
 		return true

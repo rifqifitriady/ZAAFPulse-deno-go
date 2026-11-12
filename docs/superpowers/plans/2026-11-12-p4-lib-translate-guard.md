@@ -265,3 +265,62 @@ numbers vary by up to 2× between runs; an earlier run measured exfil at 266 ms 
 Before this round Go crashed (`fatal error: stack overflow`) on the first three at 1 MB, took 2.5 s on exfil at 1 MB
 and 1 min 54 s on doc-context at 1 MB. Exfil is now 2.4–6× the JS time; the 2× target is not met under load. All
 outcomes equal the JS's where the JS finishes; at 20 MB V8 itself throws a RangeError on the IPv6 and email inputs.
+
+## Fix round 2 (re-review 1)
+
+19. **I3: the backtrack stack is capped.** `jsre.MaxFrames` = 2,097,152 frames of 40 bytes (80 MiB). Past it a run
+    panics with `jsre.ErrStack`, which `Budget.Run` returns like `ErrBudget` and the guard turns into
+    `*Block{Overrun}` in every mode (fail closed). The cap applies with or without a budget: a nil-budget call
+    (`Exec`, `ScanInjection`, …) panics with `ErrStack` (see M7 below). To keep legitimate long repeats under it, a
+    repeat whose atom cannot match empty no longer pushes the empty-check register frame (one frame per iteration
+    instead of two), and `jsre.U16` no longer goes through a rune slice. Peak heap growth of one 20 MB body through
+    `CheckBody` (`TestAdversarialInputs`, sampled every millisecond, bound 512 MB):
+
+    | Input | Before | After | Outcome after |
+    |---|---|---|---|
+    | `"token "+"a "×N` | 2,838 MB | 358 MB | blocked: injection over its limit (JS returns `null` in 0.8 s) |
+    | `" "+"1:"×N+"x"` (IPv6) | 2,456 MB | 399 MB | blocked: pii over its limit (JS throws a RangeError) |
+    | `" x@"+"a."×N+"1"` (email) | 2,818 MB | 338 MB | blocked: pii over its limit (JS throws a RangeError) |
+    | exfil | 360 MB | 248 MB | blocked (a hit, as in JS) |
+    | `"the ai said you "×N` | 360 MB | 252 MB | no action, as in JS |
+    | doc-context, one line | 330 MB | 174 MB | no action, as in JS |
+
+    At 256 KB and 1 MB every outcome is unchanged and equal to the JS.
+20. **M8: the cap lowers the per-character allowance above about 5M code units.** The budget is
+    `min(20M + 600 × length, 3G)` steps; above about 5M code units the 3G cap gives fewer than 600 steps per code
+    unit (150 at 20M). The heaviest crafted text found needs 208 steps per code unit, so a crafted string of 14M+
+    code units overruns and **blocks even in `log` mode**. Legitimate text measured 8–40 steps per code unit and
+    stays under the budget up to about 75M code units.
+
+## P4e entry conditions
+
+The reviewer's performance entry condition for wiring the guard into the request path (P4e, stage 2), verbatim:
+
+These must be measured on the ubuntu CI runner with a committed benchmark: real text from the guard corpus, code and docs, and agent transcripts, plus the review's adversarial set. All three checks on.
+
+1. **Typical latency for one request's guard pass:**
+   - 32 KB: p50 ≤ 5 ms, p99 ≤ 15 ms.
+   - 128 KB: p50 ≤ 30 ms, p99 ≤ 60 ms.
+   - 1 MB: p99 ≤ 300 ms.
+   - At each size, no more than 3× the JS on the same runner.
+
+   Today's laptop numbers meet the absolute targets: 4.6 ms, 28 ms and 285 ms max.
+2. **A bounded worst case per request:**
+   - One budget shared across the whole `CheckBody` call (I4), plus a wall-clock deadline of at most 2 s. Running out of either returns a `*Block` (fail closed).
+   - Any body up to `MAX_BODY` (20 MB) finishes or fails closed within 2.5 s of CPU.
+   - Extra heap per request stays at or below 256 MB (I3 fixed).
+3. **No false blocks:** no budget overrun on the real-text benchmark at any size up to 20 MB.
+4. **The wiring treats any error from `CheckBody` that is not a `*Block` as a rejection, never as a pass.** Errors from a detector failing in `redact` or `block` mode are such non-`*Block` errors.
+
+Shorter version: guard p99 ≤ 15 ms at 32 KB and ≤ 60 ms at 128 KB, within 3× of the JS, with a per-request budget and a deadline of 2 s or less that fails closed.
+
+Also carried into P4e (not fixed in stage 1):
+
+- **I4: one budget per `CheckBody` call, plus a 2 s deadline.** Today each check gets its own budget per string, so
+  a 20 MB body split into 1,000 crafted strings runs 17–18 s with no overrun (JS 5.2 s). Share one `jsre.Budget`
+  across the call and add a wall-clock deadline; running out of either returns `*Block{Overrun}`.
+- **M7: budgets for the exported scanners.** `ScanInjection`, `SecretSpans` and `MaskPII` run with a nil budget (no
+  step limit; the 80 MiB stack cap still applies and panics with `jsre.ErrStack`). Either unexport them (the fixtures
+  can use the package-internal forms) or give them a `*jsre.Budget` parameter.
+- **Heap per request:** condition 2 asks for at most 256 MB; one 20 MB body measures 174–399 MB today (note 19),
+  mostly the UTF-16 copies of the text.
