@@ -93,7 +93,7 @@ test('recoverMarks: reread is not an entry and runs the same recovery again', (t
   assert.equal(typeof marks.reread().reread, 'function');
 });
 
-test('the mark file: a server never lowers or drops a mark another server wrote', (t) => {
+test('the mark file: with one writer at a time, a server never lowers or drops a mark another server wrote', (t) => {
   const file = path.join(tmpDir(t, 'shared'), '.data', 'ipc-marks.json');
   const one = createMarkFile(file);
   const two = createMarkFile(file); // read before one wrote anything
@@ -110,7 +110,62 @@ test('the mark file: a failed write leaves the marks in memory at what the file 
   const file = path.join(dir, '.data', 'ipc-marks.json');
   const m = createMarkFile(file);
   m.save(S, 2);
-  fs.mkdirSync(`${file}.tmp`); // the temp file cannot be written
+  fs.rmSync(file);
+  fs.mkdirSync(file); // the rename onto the mark file fails
   assert.throws(() => m.save(S, 4));
   assert.equal(m.get().get(S), 2);
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(file)).filter((f) => f.endsWith('.tmp')),
+    [],
+    'no temp file is left behind',
+  );
+});
+
+test('the mark file: the temp file is unique per process and per save', (t) => {
+  const file = path.join(tmpDir(t, 'tmpname'), '.data', 'ipc-marks.json');
+  const seen = [];
+  const rename = fs.renameSync;
+  fs.renameSync = (from, to) => {
+    seen.push(path.basename(String(from)));
+    return rename(from, to);
+  };
+  try {
+    const m = createMarkFile(file);
+    m.save(S, 1);
+    m.save(S, 2);
+  } finally {
+    fs.renameSync = rename;
+  }
+  assert.equal(seen.length, 2);
+  assert.notEqual(seen[0], seen[1]);
+  for (const name of seen) assert.match(name, new RegExp(`^ipc-marks\\.json\\.${process.pid}\\.[0-9a-f]{12}\\.tmp$`));
+});
+
+// The per-session re-read travels as recoverMarks' reread(), a property of the Map itself (no wiring file changes in
+// P4 stage 1). A copy (new Map(...), a spread, structuredClone) drops it silently, so every place that builds the
+// ingest for real must pass recoverMarks' own Map. This test fails when one of them copies it or passes other marks.
+test('the wiring passes the Map recoverMarks returned to createIngest, so the per-session re-read is kept', () => {
+  const root = path.join(__dirname, '..');
+  const calls = [];
+  for (const file of ['server.js', 'scripts/gw-dev.js']) {
+    const src = fs.readFileSync(path.join(root, file), 'utf8');
+    for (const m of src.matchAll(/createIngest\(\{(.*?)\}\)/g)) calls.push({ file, args: m[1] });
+  }
+  assert.ok(
+    calls.some((c) => c.file === 'server.js'),
+    'server.js builds the ingest',
+  );
+  for (const { file, args } of calls) {
+    const marks = /(?:^|[\s,{])marks:\s*([^,}]+)/.exec(args);
+    assert.ok(marks, `${file}: createIngest gets marks`);
+    assert.match(marks[1].trim(), /^recoverMarks\([^()]*\)$/, `${file}: marks must be recoverMarks(...) itself`);
+  }
+  // What the check guards against: a copy loses reread(), and the ingest then never reads the marks again.
+  const sinks = { recordUsage: () => {}, recordGovernance: () => {}, recordMcp: () => {}, writeSpans: () => {} };
+  let reads = 0;
+  const own = new Map();
+  Object.defineProperty(own, 'reread', { value: () => (reads++, new Map()) });
+  createIngest({ ...sinks, marks: own }).seed(S, 0);
+  createIngest({ ...sinks, marks: new Map(own) }).seed(S, 0);
+  assert.equal(reads, 1);
 });
