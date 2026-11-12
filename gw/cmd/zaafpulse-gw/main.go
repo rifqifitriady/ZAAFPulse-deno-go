@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/engine"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/front"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
@@ -110,6 +111,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		done:    make(chan struct{}),
 		unknown: map[string]bool{},
 	}
+	g.engine = engine.New(engine.NewUpstream(os.Getenv), g.emitUsage, g.log.Printf)
 	return g.serve(protocols)
 }
 
@@ -147,6 +149,8 @@ type gateway struct {
 	ready   bool
 	quiet   bool // --hang-after-ready
 
+	engine     *engine.Engine   // the go engine (P4b): its state is the newest generation with the newest snapshot
+	cfgBody    *ipc.ConfigPush  // under mu: the newest config.push, until its secrets arrive
 	frontCfg   *ipc.FrontConfig // under mu: the first config.push's front section, opened on ready
 	frontToken string           // under mu: from secrets.handoff, never logged
 	front      *front.Server    // under mu: the main port, once open
@@ -217,7 +221,7 @@ func (g *gateway) handle(msg ipc.Message) int {
 			return code
 		}
 		g.mu.Lock()
-		g.cfgGen = b.Gen
+		g.cfgGen, g.cfgBody = b.Gen, b
 		g.mu.Unlock()
 		return g.applied()
 	case *ipc.SecretsHandoff:
@@ -227,11 +231,21 @@ func (g *gateway) handle(msg ipc.Message) int {
 		}
 		g.mu.Lock()
 		g.secGen, g.secrets, g.mask, g.frontToken = b.Gen, m, b.Mask, b.FrontToken
+		if g.cfgBody != nil && g.cfgBody.Gen == b.Gen {
+			st := engine.NewState(g.cfgBody, b)
+			if g.snap != nil {
+				st = st.WithSnapshot(g.snap)
+			}
+			g.engine.SetState(st)
+		}
 		g.mu.Unlock()
 		return g.applied()
 	case *ipc.BudgetSnapshot:
 		g.mu.Lock()
 		g.snap, g.snapAt = b, time.Now()
+		if st := g.engine.State(); st != nil {
+			g.engine.SetState(st.WithSnapshot(b))
+		}
 		g.mu.Unlock()
 		if g.o.healthOnSnapshot {
 			g.sendHealth()
@@ -376,6 +390,10 @@ func (g *gateway) checkBudget(body any) {
 		r.Record.Status, r.Record.Error, r.Record.Cost = 402, &d.Message, 0
 	}
 }
+
+// emitUsage stores a go-engine call in the outbox and sends it (P4b; the control plane stores it through the JS
+// gateway's own usage writer, lib/ipc/server-sinks.js).
+func (g *gateway) emitUsage(r *ipc.UsageReport) error { return g.appendAndSend(ipc.TypeUsageReport, r) }
 
 // appendAndSend writes an event to the outbox, then sends it (D4: never the other way round), under the outbox's send
 // lock, which the replay holds too (E10).

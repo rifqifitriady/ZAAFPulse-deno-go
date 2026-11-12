@@ -45,6 +45,15 @@ var proxyHeaders = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-
 // and net/http reads MaxHeaderBytes plus 4096 bytes before it answers 431 (P4a final review m2, P4b entry condition 6).
 const MaxHeaderBytes = 16384 - 4096
 
+// GoClasses are the route classes the go engine serves (P4b: chat, not streaming; the engine hands the rest of a
+// class's requests to js itself). A config.push that puts another class on go is refused.
+var GoClasses = map[string]bool{"chat": true}
+
+// GoEngine serves a request of a class on the go engine, or hands it to js (gw/engine Engine).
+type GoEngine interface {
+	Serve(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler)
+}
+
 // ErrAddrInUse: another process holds the main port. The gateway exits 4.
 var ErrAddrInUse = errors.New("front: the main port is in use")
 
@@ -56,7 +65,11 @@ type Server struct {
 	proxy    *httputil.ReverseProxy
 	engines  atomic.Pointer[map[string]string]
 	inflight atomic.Int64
+	goEngine GoEngine
 }
+
+// SetGoEngine installs the go engine before Serve (without one, a class on go is answered 501).
+func (s *Server) SetGoEngine(e GoEngine) { s.goEngine = e }
 
 // Listen loads the TLS files (when set) and opens the main port. ErrAddrInUse when the port is taken.
 func Listen(cfg Config, logger *log.Logger) (*Server, error) {
@@ -204,8 +217,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if s.engine(Classify(RawPath(r.RequestURI))) != "js" {
-		// Unreachable in P4a: config.push refuses a go engine. P4b answers here.
+	raw := RawPath(r.RequestURI)
+	if class := Classify(raw); s.engine(class) == "go" && GoClasses[class] && s.goEngine != nil {
+		s.goEngine.Serve(class, w, r, raw, s.proxy)
+		return
+	} else if s.engine(class) != "js" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotImplemented)
 		_, _ = w.Write([]byte(`{"error":"the go engine is not available in this gateway"}`))
