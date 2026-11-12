@@ -1,0 +1,29 @@
+{
+  "fn": "accessToken",
+  "in": {
+    "id": "prov",
+    "auth": {
+      "type": "oauth2",
+      "tokenUrl": "https://login.example.test/tenant/oauth2/v2.0/token",
+      "clientId": "app-1",
+      "scope": "",
+      "grant": "refresh_token"
+    },
+    "secret": "plain-client-secret",
+    "mask": [],
+    "responses": [],
+    "steps": [
+      {
+        "now": 1767225600000
+      }
+    ]
+  },
+  "out": {
+    "requests": [],
+    "results": [
+      {
+        "throws": "prov: no refresh_token in the stored credential"
+      }
+    ]
+  }
+}
