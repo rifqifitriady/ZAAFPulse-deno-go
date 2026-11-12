@@ -103,33 +103,36 @@ P4 is too large for one spec. Each sub-project below goes through its own spec, 
 - **Upstream down** (Deno not listening): Go answers 502 with a JSON body
   `{"error":"the control plane is not answering"}`, plus a `Retry-After: 2` header.
 
-### D3. Connection preamble: no request looks local by accident
+### D3. The client header: no request looks local by accident
 
-Go opens its connections to Deno's internal port with a **preamble line** before the HTTP bytes:
+(Revised 2026-11-12 after the Task 3 probe; the first version used a connection preamble.) The probe failed: on Deno
+2.9.8 an `http.Server` handed a socket with `emit('connection')` answers the first request on that connection and not
+the next one, and Go's connection pool shares one upstream connection between clients, which a per-connection preamble
+cannot describe. So Go names the client in a header on **every** request it forwards:
 
 ```
-ZPGW1 <frontToken> <client-ip> <client-port> <tls:0|1>\r\n
+X-ZP-Client: <client-ip> <client-port> <tls:0|1> <hmac>
 ```
 
-Deno's internal listener is a `net.Server`. For each connection it:
-1. reads up to 256 bytes and up to the first `\r\n`, within 2 s, and closes the connection otherwise;
-2. compares the token in constant time (`crypto.timingSafeEqual`), and closes the connection without a reply when
-   the token is wrong or missing;
-3. sets the connection's `remoteAddress`, `remotePort` and `encrypted` to the preamble's values, on the socket object
-   the HTTP server sees, then hands the socket to the existing HTTP server with `server.emit('connection', socket)`,
-   pushing back any bytes read past the preamble with `socket.unshift`.
+`<hmac>` is the lowercase hex HMAC-SHA256 of the exact text `"<client-ip> <client-port> <tls>"`, keyed with the
+`frontToken`'s hex text as UTF-8 bytes; the value is at most 256 bytes. Go overwrites any `X-ZP-Client` the client sent
+(never appends). Deno's internal listener (`lib/front/internal.js`) is an `http.Server` on `127.0.0.1:0`. For each
+request it:
+1. checks the header with `parseClientHeader` (`lib/front/client.js`, constant-time compare) and closes the connection
+   without a reply when it is missing, malformed or not signed with this token;
+2. stores the client on the request, removes the header, and hands the request to the dashboard server's own handler.
 
-Every existing check therefore reads the real client: `clientKey`, the loopback `Origin` rule, the `/v1/traces`
-loopback check and `Secure` cookies. No call site changes.
-- A client that sends `X-Forwarded-For` gets it removed by Go (D2), so `ZAAFPULSE_TRUST_PROXY=1` keeps its meaning:
-  a proxy in front of Go.
-- `ZAAFPULSE_TRUST_PROXY` is passed to Go in `front`. When it is set, Go keeps the right-most `X-Forwarded-*` entries,
-  so the proxy's headers still reach Deno.
-- Task 3 starts with a probe on Deno 2.9.8 and Node 24. It checks that `remoteAddress` can be redefined on a
-  `node:net` socket and that `emit('connection')` with `unshift` works. If either fails on Deno, the fallback is that
-  Go sends one header, `X-ZP-Client: <ip> <port> <tls> <hmac>`, and Deno reads the client from that header in
-  `clientKey`, the `Origin` rule, the traces check and `Secure` cookies (four call sites). The probe result decides;
-  the spec does not.
+The six checks that read the peer use `peerAddress()` / `peerEncrypted()`: `clientKey`, `Secure` cookies,
+`isTraceCaller` (the `/v1/traces` rule), `isLocalRequest`, the gateway's `publicBase` and otel's `url.scheme`. The
+loopback `Origin` rule reads only the `Origin` header, so the auth mode is what keeps front mode safe: `pickMode` and
+the host checks keep reading the public listen host (`ZAAFPULSE_HOST`), and without sign-in a client Go names from
+another machine is refused (`peerMayConnect`). A request on the main port in js mode never carries a stored client, so
+a client that sends the header itself changes nothing.
+- Forwarding headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `Via`) pass through Go unchanged and Go adds none:
+  the server reads their presence as "a proxy is in front", and `ZAAFPULSE_TRUST_PROXY=1` keeps its meaning (a proxy
+  in front of Go).
+- `Expect: 100-continue` gets its `100` only after the header check. A connection may wait for its first request as
+  long as Go keeps an idle pooled connection (the front passes 130 s; Go's idle timeout is 120 s).
 
 ### D4. P3 entry conditions (all in P4a, before `server.js` starts Go)
 
@@ -178,8 +181,8 @@ small UI change, and the owner checks it in the preview.
 |---|---|---|
 | T1 | Go hardening: E1, E2, E6, E10, E11, exit codes 4 and 5 | Go tests on 4 OS: a second gateway on the same outbox exits 5; segments without `stream.json` exit 1; no secret in any log output |
 | T2 | JS hardening: E3, E4, E5, E7, E8, E9 | Tests: mark file beats the tail window; no wrapped writer; minimal environment; `failed` state on 1, 2, 4 and 5; reload queued; compiled binary loads the schemas |
-| T3 | Connection preamble: the probe first, then the internal listener (D3) | Tests on Node and Deno: wrong or missing token closes the connection; a forged `X-Forwarded-For` is ignored; `/v1/traces` from outside is refused through Go; `clientKey` sees the preamble address; `Secure` cookies follow `tls` |
-| T4 | Go front proxy (D1, D2): listen with TLS, route table, reverse proxy with preamble, `front` in `config.push`, `frontToken` | Go tests: SSE flushes per event; WebSocket upgrade passes; client hop and forwarding headers removed; 502 when upstream is down; port in use exits 4 |
+| T3 | The probe first, then the client header and the internal listener (D3; the probe failed on Deno, so the header design) | Tests on Node and Deno: wrong or missing token closes the connection; a forged `X-Forwarded-For` is ignored; `/v1/traces` from outside is refused through Go; `clientKey` sees the preamble address; `Secure` cookies follow `tls` |
+| T4 | Go front proxy (D1, D2): listen with TLS, route table, reverse proxy that overwrites the signed `X-ZP-Client` on every request, `front` in `config.push`, `frontToken` | Go tests: SSE flushes per event; WebSocket upgrade passes; hop-by-hop headers removed, forwarding headers passed as sent; a client's own `X-ZP-Client` replaced; 502 when upstream is down; port in use exits 4 |
 | T5 | `server.js` wiring (D1.5, D5, D6, D7): `gateway.engine`, start order, fallback, status API and chip, `runScope` | Tests: `js` mode unchanged; `front` mode serves the dashboard and gateway through Go; killing Go brings the port back; 5 failures fall back to Deno on the same port |
 | T6 | Contract suite through the front, kill tests, overhead bench, 6-target smoke | All 172 contract cases green in `front` mode on Node and Deno; kill test (Go killed during SSE: the client sees the cut, the port returns, nothing double-counted); proxy overhead recorded (p50, p99, per request); the binaries start and stop on all 6 targets in CI |
 | T7 | Results doc, README note, plan §5 P4 S1 ticked | Docs match the code |

@@ -163,6 +163,40 @@
           "estimate": { "type": "boolean" }
         }
       }
+    },
+    "front": {
+      "description": "P4a: the gateway holds the main port and forwards each route class to an engine; js is the control plane's internal port on 127.0.0.1",
+      "type": "object",
+      "required": ["listen", "upstream", "engines", "shadow"],
+      "additionalProperties": false,
+      "properties": {
+        "listen": {
+          "type": "object",
+          "required": ["host", "port"],
+          "additionalProperties": false,
+          "properties": {
+            "host": { "type": "string", "minLength": 1 },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "required": ["certPath", "keyPath"],
+          "additionalProperties": false,
+          "properties": {
+            "certPath": { "type": "string", "minLength": 1 },
+            "keyPath": { "type": "string", "minLength": 1 }
+          }
+        },
+        "upstream": {
+          "type": "object",
+          "required": ["port"],
+          "additionalProperties": false,
+          "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+        },
+        "engines": { "type": "object", "additionalProperties": { "type": "string", "enum": ["js", "go"] } },
+        "shadow": { "type": "object", "additionalProperties": false }
+      }
     }
   }
 }
