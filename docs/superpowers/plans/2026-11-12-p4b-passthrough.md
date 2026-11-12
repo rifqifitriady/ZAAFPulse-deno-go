@@ -21,7 +21,7 @@
 - Patches: every "Apply" block is `git apply` of a unified diff made against the tree the previous task left; run it from the repository root. A patch that does not apply means the tree is not where the plan expects: stop and report.
 - Never touch the live dashboard (port **4777**) or the preview (port **4787**). Tests never reach the network, never bind a non-loopback address, and never signal a process they did not start. `node:test` runs `t.after` hooks first-added-first: stop processes before removing their folder, in one hook (or `test/ipc-stub.js tmpDir`).
 - Commits: one plain descriptive English sentence, like the repo history; **no** `Co-Authored-By` and no AI attribution. Never commit `.superpowers/`. Each task ends with its commit and `git push origin migrate/p4b-passthrough`. No temporary branches.
-- CI: a push to the work branch runs Ubuntu only. Start the full matrix after **Tasks 1, 8 and 10**: `gh workflow run ci.yml -R rifqifitriady/ZAAFPulse-deno-go --ref migrate/p4b-passthrough`, then `gh run list -R rifqifitriady/ZAAFPulse-deno-go --workflow ci.yml --branch migrate/p4b-passthrough --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId'` and `gh run watch <id> -R rifqifitriady/ZAAFPulse-deno-go --exit-status`. A red job is fixed before the next task starts.
+- CI: a push to the work branch runs Ubuntu only. Start the full matrix after **Tasks 5 and 11** (coordinator): `gh workflow run ci.yml -R rifqifitriady/ZAAFPulse-deno-go --ref migrate/p4b-passthrough`, then `gh run list -R rifqifitriady/ZAAFPulse-deno-go --workflow ci.yml --branch migrate/p4b-passthrough --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId'` and `gh run watch <id> -R rifqifitriady/ZAAFPulse-deno-go --exit-status`. A red job is fixed before the next task starts.
 
 ## Decisions
 
@@ -62,7 +62,9 @@ No question is open.
 6. **Provider quota and cool-down readings** (`providers.js noteResponse`) do not see go-served calls until G3.
 7. **Error names follow Node's fetch**, not Deno's (Deno words some failures differently). A failed call has no provider answer, so the shadow never compares it.
 8. **Known byte differences, all handed off or visible in the shadow:** an escaped lone surrogate or nesting deeper than 512 in the request is handed off; an invalid UTF-8 provider answer is decoded with one U+FFFD per bad byte (WHATWG uses one per maximal subpart); a 200-unit cut through a surrogate pair drops the high half (JS keeps it); a token count that is not a whole number is 0; two price keys that normalize to the same name tie-break by name, not by `config.json` order.
-9. **One CI step regenerates every stream's fixtures** (`for f in scripts/fixtures/gen-*.js`), added by this stream in the `go` job, so streams B and C need no `ci.yml` change of their own.
+9. **This stream does not edit `ci.yml`** (coordinator, 2026-11-12). Stream B's fixtures job regenerates every `gen-*.js` on Node and Deno; this stream's generators run under its flags and give identical bytes on both. The contract suite in shadow and go mode runs locally until a CI step is added after stream B merges.
+11. **Known Node/Deno differences** (the v2 product runs on Deno, so Go matches Deno; the cases are out of the generated corpus and pinned in Go tests): U+A7CF, U+A7D3 and U+A7D5 are upper-cased by Node 24 (to U+A7CE, U+A7D2, U+A7D4) and not by Deno 2.9.8, and the engine does not fold them; `new URL('/v1/a^b', base).pathname` is `/v1/a%5Eb` on Node and `/v1/a^b` on Deno, and the front never classifies it.
+12. **A `//` request target** reaches the control plane through `URL.RawPath`; it is byte-exact unless the path also holds a character net/url escapes (`\`, `|`).
 10. **P4a minors.** Done here: m2, m3, m4, r1, T5-N4. Deferred again, with reason: T1-d (cross-process lock holder: stream C owns the lock), T2-c (Windows exit-5 retry: front is not offered on Windows beyond CI yet; P6), T3-M5, T4-c (the two remaining tests), T5-N3 (watch the PR matrix), T6-4, T6-5, T6-6 (M3 is re-measured with streaming in P4c).
 
 ## Facts measured for this plan (2026-11-12, macOS arm64, base 063d39f)
@@ -92,7 +94,7 @@ No question is open.
 | `gw/engine/{providers,pricing,chat}.go`, `scripts/fixtures/gen-{chat,pricing}.js` | 7 | the chat plan, the answer, the usage line, the cost |
 | `gw/engine/{upstream,serve}.go`, `gw/front/front.go`, `gw/cmd/zaafpulse-gw/*`, `lib/front/index.js` (`enginesOf`), `test/contract/{harness,go-chat}.test.js` | 8 | serving chat on go |
 | `gw/engine/shadow.go`, `lib/gateway/shadow.js`, `lib/front/{shadow-log,internal}.js`, `gw/ipc/messages.go`, `ipc/v1/config.push.schema.json` | 9 | the shadow compare and the switch rule |
-| `.github/workflows/ci.yml` | 10 | contract in shadow and go modes, fixtures regenerated |
+| `scripts/fixtures/gen-{chat,pricing,route,keys}.js`, `gw/engine/keys.go` (`divergentFold`), `.gitignore` | 10 | generators under the CI fixtures job's flags; Node/Deno differences pinned |
 | `docs/migration/2026-11-12-p4b-results.md`, `README.md`, `docs/migration/2026-11-10-deno-go-migration-plan.md` | 11 | docs |
 
 ---
@@ -551,13 +553,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 7: Commit and push**
@@ -568,11 +571,6 @@ git status --short   # nothing outside this task's files, nothing under .superpo
 git commit -m "P4b T1: classify the raw request path, answer 431 past Node's header limit, quiet the noisy log lines, close CONNECT"
 git push origin migrate/p4b-passthrough
 ```
-
-- [ ] **Step 8: Start the full-matrix CI run**
-
-Run the dispatch from the Global Constraints (`gh workflow run ci.yml ... --ref migrate/p4b-passthrough`, then `gh run watch <id> --exit-status`).
-Expected: every job green; the `go` job on Windows covers the Hijack-based CONNECT close.
 
 ---
 
@@ -864,13 +862,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 6: Commit and push**
@@ -1125,13 +1124,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 6: Commit and push**
@@ -2102,13 +2102,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 6: Commit and push**
@@ -2808,13 +2809,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 7: Commit and push**
@@ -2825,6 +2827,11 @@ git status --short   # nothing outside this task's files, nothing under .superpo
 git commit -m "P4b T5: API keys, allow-lists and the rate limit in Go, checked against fixtures from lib/gateway/keys.js"
 git push origin migrate/p4b-passthrough
 ```
+
+- [ ] **Step 8: Start the full-matrix CI run**
+
+Run the dispatch from the Global Constraints (`gh workflow run ci.yml ... --ref migrate/p4b-passthrough`, then `gh run watch <id> --exit-status`).
+Expected: every job green (the run on `99c6280` was red on typecheck and on Windows go; fix round 1 fixes both).
 
 ---
 
@@ -3521,13 +3528,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 7: Commit and push**
@@ -4903,13 +4911,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 7: Commit and push**
@@ -6019,13 +6028,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 6: Run the contract suite with chat on go, on both runtimes**
@@ -6048,9 +6058,685 @@ git commit -m "P4b T8: chat on the go engine: provider calls with the JS timeout
 git push origin migrate/p4b-passthrough
 ```
 
-- [ ] **Step 8: Start the full-matrix CI run**
+---
 
-As in Task 1. Expected: every job green (the engine's Windows path is the `go` job and the front contract runs).
+### Fix round 1 (review of Tasks 1–5): typecheck, raw request targets, key fields and /i folding, Windows cleanup, health, saves, base URLs, store timer
+
+The review of Tasks 1–5 (`.superpowers/sdd/p4s1/stream-a-review-1.md`, I1–I4, m1, m2, m5, m7), applied after Task 8. Each item got its failing test first.
+
+**Files:**
+- Create: `test/gateway-store.test.js`
+- Modify: `gw/cmd/zaafpulse-gw/main.go`, `gw/cmd/zaafpulse-gw/reload_test.go`, `gw/engine/keys.go`, `gw/engine/keys_test.go`, `gw/front/front.go`, `gw/front/route_test.go`, `lib/front/index.js`, `lib/front/push.js`, `lib/gateway/index.js`, `lib/gateway/keys.js`, `lib/gateway/store.js`, `scripts/fixtures/gen-keys.js`, `test/front-push.test.js`, `test/front.test.js`
+
+
+**Interfaces:**
+- Produces: `deno task typecheck` clean (the usage object typed loosely, `push.js` without the guardrails import, `requestSecret` narrowed); the front's Rewrite sets `URL.Opaque` to the raw path and keeps `RawQuery`; `keyAuth` reads `rpm` (ceil), `expiresAt` (floor, 0.x is -1), `revokedAt` (truthy), list fields (`String()`), and drops a key whose field JS would misread; `specialUpper` lists all 102 BMP units with a multi-unit upper case, with a `canonicalize` fixture over the BMP; `drive()` waits for the gateway before its folder goes; health names `min(cfgGen, secGen)`; `front.synced` logs a timeout; a base URL with a credential is pushed cut and disabled; `jsonStore(file, fallback, { log })` logs a failed debounced save.
+
+- [ ] **Step 1: Check the starting point**
+
+Run: `git log --oneline -1`
+Expected: Task 8's commit.
+
+- [ ] **Step 2: Write the failing tests**
+
+Create `test/gateway-store.test.js`:
+
+```js
+// lib/gateway/store.js jsonStore: a debounced save that fails is logged, never thrown from its timer (P4b review m7:
+// keys.authenticate and gateway.ingestUsage save lastUsedAt that way, and an exception there would end the process).
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const { jsonStore } = require('../lib/gateway/store');
+const { tmpDir } = require('./ipc-stub');
+
+test('a debounced save that fails is logged once and does not throw from its timer', async (t) => {
+  const dir = tmpDir(t, 'json-store');
+  fs.writeFileSync(path.join(dir, 'blocker'), ''); // a file where the store's folder should be: every write fails
+  const logged = [];
+  const s = jsonStore(path.join(dir, 'blocker', 'keys.json'), { keys: [] }, { log: (l) => logged.push(l) });
+  s.get().keys.push({ id: 'k' });
+  s.save();
+  await new Promise((r) => setTimeout(r, 1300));
+  s.save();
+  await new Promise((r) => setTimeout(r, 1300));
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /^store: .*keys\.json could not be saved/);
+  assert.throws(() => s.save(true), 'an immediate save still throws to its caller');
+});
+```
+
+Apply (from the repository root):
+
+```bash
+git apply <<'PATCH'
+diff --git a/gw/cmd/zaafpulse-gw/reload_test.go b/gw/cmd/zaafpulse-gw/reload_test.go
+index af40077..b008e7f 100644
+--- a/gw/cmd/zaafpulse-gw/reload_test.go
++++ b/gw/cmd/zaafpulse-gw/reload_test.go
+@@ -36,13 +36,14 @@ func secretsLine(seq, gen int) string {
+ 		seq, gen, frontToken)
+ }
+ 
+-func drive(t *testing.T) *gwRun {
++func drive(t *testing.T, extra ...string) *gwRun {
+ 	t.Helper()
+ 	inR, inW := io.Pipe()
+ 	outR, outW := io.Pipe()
+ 	r := &gwRun{code: make(chan int, 1), stderr: &syncBuffer{}, lines: make(chan string, 64)}
++	dir := t.TempDir() // before the cleanup below, so it is removed after the gateway has exited
+ 	go func() {
+-		r.code <- run([]string{"--outbox", t.TempDir(), "--health-ms", "60000"}, inR, outW, r.stderr)
++		r.code <- run(append([]string{"--outbox", dir, "--health-ms", "60000"}, extra...), inR, outW, r.stderr)
+ 		_ = outW.Close()
+ 		_ = inR.Close()
+ 	}()
+@@ -66,7 +67,17 @@ func drive(t *testing.T) *gwRun {
+ 		}
+ 	}()
+ 	r.send = func(l string) { writes <- l }
+-	t.Cleanup(func() { close(writes); _ = inW.Close() })
++	// Closing stdin ends the gateway; wait for it before t.TempDir's cleanup removes the outbox, whose lock file it holds
++	// open (Windows refuses to remove an open file: P4b review I4).
++	t.Cleanup(func() {
++		close(writes)
++		_ = inW.Close()
++		select {
++		case <-r.code:
++		case <-time.After(10 * time.Second):
++			t.Error("the gateway did not exit within 10 s of stdin closing")
++		}
++	})
+ 	return r
+ }
+ 
+@@ -132,3 +143,19 @@ func TestALateFrontSectionAppliesAfterARestart(t *testing.T) {
+ func dialQuick(port int) (io.Closer, error) {
+ 	return net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 300*time.Millisecond)
+ }
++
++// A health between a generation's config.push and its secrets.handoff names the generation before it (P4b review m2):
++// synced() must not resolve before the gateway has the new credentials too.
++func TestHealthNeverNamesAGenerationWithoutItsSecrets(t *testing.T) {
++	r := drive(t, "--health-on-snapshot")
++	r.ready(t, "")
++	r.send(configLine(5, 2, ""))
++	r.send(`{"v":1,"type":"budget.snapshot","seq":6,"ts":0,"body":{"at":0,"budgets":[],"keyCenter":{}}}`)
++	if h := r.next(t, "health"); !strings.Contains(h, `"gen":1`) {
++		t.Fatalf("health before the secrets: %s", h)
++	}
++	r.send(secretsLine(7, 2))
++	if h := r.next(t, "health"); !strings.Contains(h, `"gen":2`) {
++		t.Fatalf("health after the secrets: %s", h)
++	}
++}
+diff --git a/gw/engine/keys_test.go b/gw/engine/keys_test.go
+index 8c5440e..8f5ba2f 100644
+--- a/gw/engine/keys_test.go
++++ b/gw/engine/keys_test.go
+@@ -3,6 +3,7 @@ package engine
+ import (
+ 	"encoding/json"
+ 	"net/http"
++	"strconv"
+ 	"strings"
+ 	"testing"
+ 
+@@ -78,11 +79,37 @@ func TestKeysFixtures(t *testing.T) {
+ 				got = append(got, r.Take("k", in.RPM, 1767225600000+dt))
+ 			}
+ 			sameJSON(t, c.Name, got, c.Out)
++		case "canonicalize":
++			// Every BMP code unit folds as JavaScript's /i folds it (the fixture lists the ones that change).
++			var want map[string]string
++			if err := json.Unmarshal(c.Out, &want); err != nil {
++				t.Fatal(err)
++			}
++			bad := 0
++			for u := 0; u < 0x10000; u++ {
++				if u >= 0xd800 && u <= 0xdfff {
++					continue
++				}
++				exp := uint16(u)
++				if v, ok := want[strconv.FormatInt(int64(u), 16)]; ok {
++					n, _ := strconv.ParseUint(v, 16, 16)
++					exp = uint16(n)
++				}
++				if got := canon(uint16(u)); got != exp {
++					bad++
++					if bad <= 10 {
++						t.Errorf("canon(U+%04X) = U+%04X, JS U+%04X", u, got, exp)
++					}
++				}
++			}
++			if bad > 0 {
++				t.Errorf("%d code units fold differently", bad)
++			}
+ 		default:
+ 			t.Errorf("%s: unknown fn %q", c.Name, c.Fn)
+ 		}
+ 	}
+-	for _, fn := range []string{"secret", "allows", "authenticate", "authorize", "rateLimit"} {
++	for _, fn := range []string{"secret", "allows", "authenticate", "authorize", "rateLimit", "canonicalize"} {
+ 		if seen[fn] == 0 {
+ 			t.Errorf("no %s fixtures", fn)
+ 		}
+diff --git a/gw/front/route_test.go b/gw/front/route_test.go
+index 7a25f09..bfc7357 100644
+--- a/gw/front/route_test.go
++++ b/gw/front/route_test.go
+@@ -118,3 +118,21 @@ func TestQuietLoggerRateLimitsNoisyLines(t *testing.T) {
+ 		t.Errorf("log %q, want %q", buf.String(), want)
+ 	}
+ }
++
++// The front forwards the request target exactly as the client sent it (P4b review I2): a backslash, a "|" or a ";" in
++// the query reach the control plane unchanged, so js and front mode route the same text.
++func TestRequestTargetIsForwardedAsSent(t *testing.T) {
++	got := make(chan string, 8)
++	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { got <- r.RequestURI })
++	s := startFront(t, up.port(), nil)
++	for _, target := range []string{`/v1\chat/completions`, "/v1/a|b", "/api/x?q=a;b&c=1", "/v1/a^b?x=%zz&y=\\", "/v1/chat%2Fcompletions?a=%2F"} {
++		out, _ := rawRequest(t, s.Addr().String(), "GET "+target+" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
++		if !strings.Contains(out, "200 OK") {
++			t.Errorf("%s: %q", target, out)
++			continue
++		}
++		if r := <-got; r != target {
++			t.Errorf("forwarded %q, sent %q", r, target)
++		}
++	}
++}
+diff --git a/scripts/fixtures/gen-keys.js b/scripts/fixtures/gen-keys.js
+index 61f9bf0..bc156df 100644
+--- a/scripts/fixtures/gen-keys.js
++++ b/scripts/fixtures/gen-keys.js
+@@ -75,6 +75,7 @@ for (const [name, patterns, value] of [
+   ['kelvin', ['oa/k'], 'oa/K'],
+   ['sharp-s', ['oa/ß'], 'oa/ẞ'],
+   ['greek-sigma', ['oa/σ'], 'oa/Σ'],
++  ['ypogegrammeni-not-folded', ['oa/\u1f80'], 'oa/\u1f88'],
+   ['astral', ['oa/*'], 'oa/\u{1F600}'],
+   ['empty-value', ['*'], ''],
+ ])
+@@ -144,6 +145,20 @@ for (const [name, rpm, times] of [
+   add('rateLimit', name, { rpm, times }, out);
+ }
+ 
++// Canonicalize (ECMAScript 22.2.2.7.3, a regular expression with i and without u), the folding allows() relies on: for
++// every BMP code unit whose canonical unit is another one, that unit. Computed with this runtime's own toUpperCase,
++// which is what the JS gateway's /i globs use (P4b review I3).
++const canonical = {};
++for (let u = 0; u < 0x10000; u++) {
++  if (u >= 0xd800 && u <= 0xdfff) continue;
++  const up = String.fromCharCode(u).toUpperCase();
++  if (up.length !== 1) continue;
++  const cu = up.charCodeAt(0);
++  if (u >= 128 && cu < 128) continue;
++  if (cu !== u) canonical[u.toString(16)] = cu.toString(16);
++}
++add('canonicalize', 'bmp', null, canonical);
++
+ fs.rmSync(OUT, { recursive: true, force: true });
+ fs.mkdirSync(OUT, { recursive: true });
+ cases.forEach((c, i) => {
+diff --git a/test/front-push.test.js b/test/front-push.test.js
+index 654513d..9c6cb86 100644
+--- a/test/front-push.test.js
++++ b/test/front-push.test.js
+@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
+ const { configPush, secretsPush, snapshotPush, keyAuth } = require('../lib/front/push');
+ const { frontSection } = require('../lib/front');
+ const { check } = require('../lib/ipc/schema');
++const { resolvePolicy } = require('../lib/gateway/guardrails');
+ 
+ const msg = (type, body) => ({ v: 1, type, seq: 2, ts: 0, body: { ...body, gen: 1 } });
+ const GATEWAY = {
+@@ -69,7 +70,8 @@ test('configPush: a valid config.push with keys by hash, prices in nano-USD, no
+ });
+ 
+ test('keyAuth: every required field, with defaults for an old key', () => {
+-  const k = keyAuth({ id: 'old', hash: 'b'.repeat(64) });
++  const k = keyAuth({ id: 'old', hash: 'b'.repeat(64), scopes: [] });
++  assert.equal(keyAuth({ id: 'old', hash: 'b'.repeat(64) }), null, 'no scopes: JS cannot check it either');
+   assert.deepEqual(Object.keys(k).sort(), [
+     'agents',
+     'approveOwnRuns',
+@@ -166,3 +168,82 @@ test('snapshotPush: the blocking budgets with their state, and the keys cost cen
+     { budgets: [], keyCenter: {} },
+   );
+ });
++
++test('configPush: the global guardrails policy is the one lib/gateway/guardrails.js resolves', () => {
++  for (const g of [
++    undefined,
++    null,
++    'x',
++    {},
++    { scope: 'all', secrets: 'block', pii: 'redact', injection: 'off' },
++    { scope: 'nope', secrets: 'redact', pii: 'nonsense', injection: 'redact' },
++  ])
++    assert.deepEqual(
++      configPush({ gateway: { guardrails: g }, keys: [], pricing: {} }).gateway.guardrails,
++      resolvePolicy(g, null),
++      JSON.stringify(g),
++    );
++});
++
++// P4b review I3: a key's fields as JS reads them, never more permissive in Go. Fractions the dashboard stores keep their
++// meaning; a field JS would misread is a key the gateway does not know (it hands the call to the server, which decides).
++test('keyAuth: fractional rpm and expiry mean what they mean in JS; a field JS would misread drops the key', () => {
++  const { createKeys, hash: sha } = require('../lib/gateway/keys');
++  const base = { id: 'k', hash: 'c'.repeat(64), scopes: ['llm'], models: [], agents: [] };
++  // rpm 2.5: JS allows 3 a minute (w.length >= 2.5), so does rpm 3.
++  let t = 0;
++  const keys = createKeys({ get: () => ({ keys: [] }), save: () => {} }, { now: () => t });
++  const waits = [0, 1, 2, 3].map((i) => ((t = i), keys.rateLimit({ id: 'k', rpm: 2.5 })));
++  assert.deepEqual(
++    waits.map((w) => w > 0),
++    [false, false, false, true],
++  );
++  assert.equal(keyAuth({ ...base, rpm: 2.5 }).rpm, 3);
++  assert.equal(keyAuth({ ...base, rpm: 0 }).rpm, 0, 'JS reads 0 as 60, Go too');
++  // A fractional expiry still expires: now > 1767225600000.5 as soon as now > 1767225600000.
++  assert.equal(keyAuth({ ...base, expiresAt: 1767225600000.5 }).expiresAt, 1767225600000);
++  assert.equal(keyAuth({ ...base, expiresAt: 0.5 }).expiresAt, -1, 'expired for any now, as in JS');
++  assert.equal(keyAuth({ ...base, expiresAt: 0 }).expiresAt, null);
++  // revokedAt is "revoked" whenever JS reads it as true.
++  assert.ok(keyAuth({ ...base, revokedAt: 'yes' }).revokedAt > 0);
++  assert.equal(keyAuth({ ...base, revokedAt: 0 }).revokedAt, null);
++  // allows() reads String(pattern): a number in models is that text.
++  assert.deepEqual(keyAuth({ ...base, models: ['oa/*', 123] }).models, ['oa/*', '123']);
++  assert.equal(keyAuth({ ...base, privateOnly: 1 }).privateOnly, true);
++  for (const bad of [
++    { scopes: 'llm' },
++    { models: 'oa/*' },
++    { agents: { a: 1 } },
++    { rpm: '5' },
++    { rpm: -1 },
++    { rpm: Infinity },
++    { expiresAt: '2026-01-01' },
++    { budgetUSD: 'ten' },
++  ])
++    assert.equal(keyAuth({ ...base, ...bad }), null, JSON.stringify(bad));
++  assert.equal(sha('x').length, 64);
++});
++
++// P4b review m5: a credential written into a base URL (user:password@, or a query) never travels in config.push. Such a
++// provider goes to the gateway disabled, with only its origin and path, so the gateway hands its calls to the server,
++// which calls it as before (fetch refuses a URL with user:password, so those calls already fail there).
++test('configPush: a base URL with user info or a query is cut to its origin and path, and the provider disabled', () => {
++  const body = configPush({
++    gateway: {
++      providers: [
++        { id: 'u', preset: 'custom', baseUrl: 'https://me:s3cret@llm.example/v1' },
++        { id: 'q', preset: 'custom', baseUrl: 'https://llm.example/v1?key=s3cret' },
++        { id: 'ok', preset: 'custom', baseUrl: 'https://llm.example/v1' },
++        { id: 'bad', preset: 'custom', baseUrl: 'not a url' },
++      ],
++    },
++    keys: [],
++    pricing: {},
++  });
++  assert.ok(!JSON.stringify(body).includes('s3cret'));
++  const [u, q, ok, bad] = body.gateway.providers;
++  assert.deepEqual([u.baseUrl, u.enabled], ['https://llm.example/v1', false]);
++  assert.deepEqual([q.baseUrl, q.enabled], ['https://llm.example/v1', false]);
++  assert.deepEqual([ok.baseUrl, ok.enabled], ['https://llm.example/v1', undefined]);
++  assert.deepEqual([bad.baseUrl, bad.enabled], ['', false]);
++});
+diff --git a/test/front.test.js b/test/front.test.js
+index b37a273..f101972 100644
+--- a/test/front.test.js
++++ b/test/front.test.js
+@@ -274,3 +274,15 @@ test('T5-N4: stop() cancels a retry still waiting in the queue', async (t) => {
+   assert.equal(await retry, false);
+   assert.equal(f.sups.length, 1, 'no gateway started after stop()');
+ });
++
++test('m1: a save the gateway did not confirm in time is logged', async (t) => {
++  const lines = [];
++  const f = await frontWithFakes(t, { log: (l) => lines.push(l) });
++  f.sups[0].synced = async () => false;
++  assert.equal(await f.front.synced(50), false);
++  assert.match(lines.join('\n'), /the gateway did not confirm the new configuration within 0\.05 s/);
++  f.sups[0].synced = async () => true;
++  lines.length = 0;
++  assert.equal(await f.front.synced(50), true);
++  assert.deepEqual(lines, []);
++});
+PATCH
+```
+
+- [ ] **Step 3: Run them to see them fail**
+
+Run: `deno task typecheck; GOTOOLCHAIN=local go -C gw test -count=1 ./...; node --test test/front-push.test.js test/front.test.js test/gateway-store.test.js`
+Expected: 73 type errors; FAIL in `TestRequestTargetIsForwardedAsSent`, `TestKeysFixtures` (27 code units fold differently) and `TestHealthNeverNamesAGenerationWithoutItsSecrets`; FAIL in the keyAuth, base-URL, policy, m1 and store tests.
+
+- [ ] **Step 4: Implement**
+
+Apply (from the repository root):
+
+```bash
+git apply <<'PATCH'
+diff --git a/gw/cmd/zaafpulse-gw/main.go b/gw/cmd/zaafpulse-gw/main.go
+index 6f9f63d..9bb20eb 100644
+--- a/gw/cmd/zaafpulse-gw/main.go
++++ b/gw/cmd/zaafpulse-gw/main.go
+@@ -433,7 +433,8 @@ func (g *gateway) sendHealth() {
+ 		g.mu.Unlock()
+ 		return
+ 	}
+-	h := ipc.Health{OutboxDepth: g.box.Depth(), UptimeMs: time.Since(g.started).Milliseconds(), Gen: g.cfgGen}
++	// The generation in force: its config and its secrets both applied (P4b review m2).
++	h := ipc.Health{OutboxDepth: g.box.Depth(), UptimeMs: time.Since(g.started).Milliseconds(), Gen: min(g.cfgGen, g.secGen)}
+ 	if g.front != nil {
+ 		h.Inflight = g.front.Inflight()
+ 	}
+diff --git a/gw/engine/keys.go b/gw/engine/keys.go
+index 33cb723..d60226b 100644
+--- a/gw/engine/keys.go
++++ b/gw/engine/keys.go
+@@ -146,14 +146,26 @@ func canon(u uint16) uint16 {
+ 	return uint16(up)
+ }
+ 
+-// specialUpper are the code units whose JavaScript toUpperCase is more than one character (SpecialCasing.txt), so
+-// Canonicalize leaves them as they are, though Go's simple mapping has an upper case for some.
+-var specialUpper = map[rune]bool{0x0149: true, 0x01f0: true, 0x0390: true, 0x03b0: true, 0x0587: true,
+-	0x1e96: true, 0x1e97: true, 0x1e98: true, 0x1e99: true, 0x1e9a: true, 0x1f50: true, 0x1f52: true, 0x1f54: true,
+-	0x1f56: true, 0x1fb6: true, 0x1fc6: true, 0x1fd2: true, 0x1fd3: true, 0x1fd6: true, 0x1fd7: true, 0x1fe2: true,
+-	0x1fe3: true, 0x1fe4: true, 0x1fe6: true, 0x1fe7: true, 0x1ff6: true, 0xfb00: true, 0xfb01: true, 0xfb02: true,
+-	0xfb03: true, 0xfb04: true, 0xfb05: true, 0xfb06: true, 0xfb13: true, 0xfb14: true, 0xfb15: true, 0xfb16: true,
+-	0xfb17: true, 0x00df: true}
++// specialUpper are the BMP code units whose JavaScript toUpperCase is more than one unit (SpecialCasing.txt: the 102 the
++// keys fixture lists through gen-keys.js "canonicalize"), so Canonicalize leaves them as they are, though Go's simple
++// mapping folds some of them (U+1F80 to U+1F88, P4b review I3).
++var specialUpper = map[rune]bool{
++	0xdf: true, 0x149: true, 0x1f0: true, 0x390: true, 0x3b0: true, 0x587: true, 0x1e96: true, 0x1e97: true,
++	0x1e98: true, 0x1e99: true, 0x1e9a: true, 0x1f50: true, 0x1f52: true, 0x1f54: true, 0x1f56: true,
++	0x1f80: true, 0x1f81: true, 0x1f82: true, 0x1f83: true, 0x1f84: true, 0x1f85: true, 0x1f86: true,
++	0x1f87: true, 0x1f88: true, 0x1f89: true, 0x1f8a: true, 0x1f8b: true, 0x1f8c: true, 0x1f8d: true,
++	0x1f8e: true, 0x1f8f: true, 0x1f90: true, 0x1f91: true, 0x1f92: true, 0x1f93: true, 0x1f94: true,
++	0x1f95: true, 0x1f96: true, 0x1f97: true, 0x1f98: true, 0x1f99: true, 0x1f9a: true, 0x1f9b: true,
++	0x1f9c: true, 0x1f9d: true, 0x1f9e: true, 0x1f9f: true, 0x1fa0: true, 0x1fa1: true, 0x1fa2: true,
++	0x1fa3: true, 0x1fa4: true, 0x1fa5: true, 0x1fa6: true, 0x1fa7: true, 0x1fa8: true, 0x1fa9: true,
++	0x1faa: true, 0x1fab: true, 0x1fac: true, 0x1fad: true, 0x1fae: true, 0x1faf: true, 0x1fb2: true,
++	0x1fb3: true, 0x1fb4: true, 0x1fb6: true, 0x1fb7: true, 0x1fbc: true, 0x1fc2: true, 0x1fc3: true,
++	0x1fc4: true, 0x1fc6: true, 0x1fc7: true, 0x1fcc: true, 0x1fd2: true, 0x1fd3: true, 0x1fd6: true,
++	0x1fd7: true, 0x1fe2: true, 0x1fe3: true, 0x1fe4: true, 0x1fe6: true, 0x1fe7: true, 0x1ff2: true,
++	0x1ff3: true, 0x1ff4: true, 0x1ff6: true, 0x1ff7: true, 0x1ffc: true, 0xfb00: true, 0xfb01: true,
++	0xfb02: true, 0xfb03: true, 0xfb04: true, 0xfb05: true, 0xfb06: true, 0xfb13: true, 0xfb14: true,
++	0xfb15: true, 0xfb16: true, 0xfb17: true,
++}
+ 
+ // RequestSecret is lib/gateway/keys.js requestSecret over Go's view of a request: the header values as Node joins
+ // them (", " between repeats; Authorization keeps its first) and the raw path and query. ok is false when there is none.
+diff --git a/gw/front/front.go b/gw/front/front.go
+index 42f481e..97e11ea 100644
+--- a/gw/front/front.go
++++ b/gw/front/front.go
+@@ -99,6 +99,11 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
+ 	s.proxy = &httputil.ReverseProxy{
+ 		Rewrite: func(pr *httputil.ProxyRequest) {
+ 			pr.SetURL(target)
++			// The request target exactly as the client sent it (P4b review I2): net/http re-escapes a path it decoded
++			// ("\" and "|" become %5C and %7C) and drops query pairs it cannot parse (";"), so the control plane would
++			// route another text than in js mode. Opaque is written as it is; RawQuery is kept whole.
++			pr.Out.URL.Opaque = RawPath(pr.In.RequestURI)
++			pr.Out.URL.RawQuery = pr.In.URL.RawQuery
+ 			// The client's Host. Without one (HTTP/1.0) Go's transport would write the internal 127.0.0.1:<port>, so
+ 			// the request is flagged and the internal listener removes that Host: the host check sees none, as in js
+ 			// mode (P4a final review I1). Set and Del replace any copy of the flag the client sent.
+diff --git a/lib/front/index.js b/lib/front/index.js
+index b254125..173c14e 100644
+--- a/lib/front/index.js
++++ b/lib/front/index.js
+@@ -287,10 +287,12 @@ function createFront({
+      * passed. A save answers after it, so a revoked key is refused by the gateway as soon as the save has answered.
+      * @param {number} [timeoutMs]
+      */
+-    synced(timeoutMs = 2000) {
+-      return mode === 'front' && sup && typeof sup.synced === 'function'
+-        ? sup.synced(timeoutMs)
+-        : Promise.resolve(false);
++    async synced(timeoutMs = 2000) {
++      if (!(mode === 'front' && sup && typeof sup.synced === 'function')) return false;
++      const ok = await sup.synced(timeoutMs);
++      // The save is answered anyway; the gateway gets the change with its next push (P4b review m1).
++      if (!ok) log(`gateway: the gateway did not confirm the new configuration within ${timeoutMs / 1000} s`);
++      return ok;
+     },
+     /** Stops the gateway (shutdown, then a kill after graceMs + its kill delay) and the internal listener. */
+     async stop(graceMs = 2000) {
+diff --git a/lib/front/push.js b/lib/front/push.js
+index 1089257..499d3c2 100644
+--- a/lib/front/push.js
++++ b/lib/front/push.js
+@@ -11,7 +11,6 @@
+ // Pure apart from the resolver and the budget service it is handed. Providers with OAuth2 or a Google service account
+ // get no token here: provider auth in Go is P4g (stream C builds the library, stage 2 wires it).
+ const { toNano } = require('../money');
+-const { resolvePolicy } = require('../gateway/guardrails');
+ 
+ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+ const str = (v) => (typeof v === 'string' ? v : '');
+@@ -23,13 +22,37 @@ const MODES = {
+ };
+ const int = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : null);
+ 
++// lib/gateway/guardrails.js resolvePolicy(cfg, null), kept here so that this file does not pull the whole guardrails
++// module into the type check of lib/front (test/front-push.test.js checks that both give the same policy).
++const POLICY_DEFAULTS = { scope: 'external', secrets: 'redact', pii: 'off', injection: 'log' };
++function globalPolicy(cfg) {
++  const c = isObj(cfg) ? cfg : {};
++  const out = { scope: c.scope === 'external' || c.scope === 'all' ? c.scope : POLICY_DEFAULTS.scope };
++  for (const k of Object.keys(MODES)) out[k] = MODES[k].includes(c[k]) ? c[k] : POLICY_DEFAULTS[k];
++  return out;
++}
++
+ /** A provider as config.push carries it: no apiKey reference; auth { type: 'key' } when it has one. */
+ function provider(p) {
+   const out = { id: str(p.id), preset: str(p.preset), baseUrl: str(p.baseUrl) };
++  // A credential in the base URL (user:password@, a query) stays out of config.push (P4b review m5): the provider goes
++  // disabled, with its origin and path only, so the gateway hands its calls to the server, which calls it as before.
++  let unsafe = false;
++  try {
++    const u = new URL(out.baseUrl);
++    if (u.username || u.password || u.search || u.hash) {
++      out.baseUrl = `${u.origin}${u.pathname}`.replace(/\/+$/, '');
++      unsafe = true;
++    }
++  } catch {
++    out.baseUrl = '';
++    unsafe = true;
++  }
+   if (Array.isArray(p.models)) out.models = strings(p.models);
+   if (isObj(p.aliases))
+     out.aliases = Object.fromEntries(Object.entries(p.aliases).filter(([, v]) => typeof v === 'string'));
+   for (const k of ['enabled', 'approved', 'responses', 'reasoning']) if (typeof p[k] === 'boolean') out[k] = p[k];
++  if (unsafe) out.enabled = false;
+   if (p.tier === 'private' || p.tier === 'external') out.tier = p.tier;
+   if (p.format === 'openai' || p.format === 'anthropic') out.format = p.format;
+   if (p.tokenParam === 'max_tokens' || p.tokenParam === 'max_completion_tokens') out.tokenParam = p.tokenParam;
+@@ -49,9 +72,32 @@ function route(r) {
+   return out;
+ }
+ 
+-/** A keys.json key as the gateway enforces it (ipc/v1 config.push keys[]), or null when it has no valid hash. */
++/**
++ * A keys.json key as the gateway enforces it (ipc/v1 config.push keys[]), read the way lib/gateway/keys.js reads it, or
++ * null when a field would not mean the same to the gateway: the gateway then does not know the key and hands its calls
++ * to the server, which decides as it always has (P4b review I3: the gateway is never more permissive than JS).
++ *   scopes, models, agents: arrays (allows() reads String(pattern); a missing list allows everything);
++ *   rpm: falsy is 60 (`k.rpm || 60`), a fraction is rounded up (`w.length >= 2.5` is `>= 3`);
++ *   expiresAt: falsy never expires, a fraction is rounded down (`now > x.5` is `now > x`), 0.x is -1;
++ *   revokedAt: revoked whenever it reads as true; budgetUSD: a number or null; privateOnly: truthy.
++ */
+ function keyAuth(k) {
+   if (!isObj(k) || typeof k.id !== 'string' || !k.id || !/^[0-9a-f]{64}$/.test(k.hash || '')) return null;
++  const list = (v) => (v == null ? [] : Array.isArray(v) ? v.map(String) : null);
++  const models = list(k.models);
++  const agents = list(k.agents);
++  if (!Array.isArray(k.scopes) || !models || !agents) return null;
++  let rpm = 0;
++  if (k.rpm) {
++    if (typeof k.rpm !== 'number' || !Number.isFinite(k.rpm) || k.rpm < 0) return null;
++    rpm = Math.ceil(k.rpm);
++  }
++  let expiresAt = null;
++  if (k.expiresAt) {
++    if (typeof k.expiresAt !== 'number' || !Number.isFinite(k.expiresAt)) return null;
++    expiresAt = Math.floor(k.expiresAt) || -1;
++  }
++  if (k.budgetUSD != null && !Number.isFinite(k.budgetUSD)) return null;
+   const guardrails = {};
+   if (isObj(k.guardrails)) {
+     if (k.guardrails.scope === 'external' || k.guardrails.scope === 'all') guardrails.scope = k.guardrails.scope;
+@@ -61,14 +107,14 @@ function keyAuth(k) {
+     id: k.id,
+     name: str(k.name),
+     scopes: strings(k.scopes),
+-    models: strings(k.models),
+-    agents: strings(k.agents),
++    models,
++    agents,
+     knowledge: strings(k.knowledge),
+-    budgetUSD: Number.isFinite(k.budgetUSD) ? k.budgetUSD : null,
+-    rpm: int(k.rpm) ?? 0,
+-    privateOnly: k.privateOnly === true,
+-    expiresAt: int(k.expiresAt),
+-    revokedAt: int(k.revokedAt),
++    budgetUSD: k.budgetUSD == null ? null : k.budgetUSD,
++    rpm,
++    privateOnly: !!k.privateOnly,
++    expiresAt,
++    revokedAt: k.revokedAt ? Math.max(1, Math.floor(Number(k.revokedAt)) || 1) : null,
+     guardrails,
+     prefix: str(k.prefix),
+     approveOwnRuns: k.approveOwnRuns === true,
+@@ -106,7 +152,7 @@ function configPush({ gateway, keys, pricing }) {
+     gateway: {
+       providers: (Array.isArray(g.providers) ? g.providers : []).filter(isObj).map(provider),
+       routes: (Array.isArray(g.routes) ? g.routes : []).filter(isObj).map(route),
+-      guardrails: resolvePolicy(g.guardrails, null),
++      guardrails: globalPolicy(g.guardrails),
+       defaults: { model: str(d.model), plannerModel: str(d.plannerModel), codeModel: str(d.codeModel) },
+       tokenSaver: g.tokenSaver !== false,
+       modelMap: (Array.isArray(g.modelMap) ? g.modelMap : [])
+diff --git a/lib/gateway/index.js b/lib/gateway/index.js
+index 2c508d0..1c3b8cc 100644
+--- a/lib/gateway/index.js
++++ b/lib/gateway/index.js
+@@ -169,7 +169,8 @@ function createGateway({
+   }
+   const providers = createProviders({ getConfig, secrets, ...(fetchImpl ? { fetchImpl } : {}) });
+   // Every model call ends in usage.record; with OpenTelemetry export on, each one also becomes a span.
+-  const usage = createUsage({ file: path.join(dataDir, 'gateway-usage.jsonl'), getPricing, now });
++  // Typed loosely, as the wrapped object it becomes (its records carry routedTo, guard, client and the other fields).
++  const usage = /** @type {any} */ (createUsage({ file: path.join(dataDir, 'gateway-usage.jsonl'), getPricing, now }));
+   // The unwrapped writer, kept before the wrappers below replace usage.record: the IPC ingest stores the Go engine's
+   // lines through it (ingestUsage), so they land in this log's in-memory spend and recent list too (P4b entry
+   // condition 1). It is the only writer of gateway-usage.jsonl in the process.
+diff --git a/lib/gateway/keys.js b/lib/gateway/keys.js
+index 1e2e2eb..86ff1fd 100644
+--- a/lib/gateway/keys.js
++++ b/lib/gateway/keys.js
+@@ -27,13 +27,16 @@ const allows = (patterns, value) => !patterns || !patterns.length || patterns.so
+  * @returns {string | undefined}
+  */
+ function requestSecret(headers, url) {
+-  const header = headers.authorization || '';
++  const header = typeof headers.authorization === 'string' ? headers.authorization : '';
+   if (header.startsWith('Bearer ')) return header.slice(7).trim();
+-  return (
++  // Node gives these headers as one string (repeats joined with ", ").
++  return /** @type {string | undefined} */ (
+     headers['x-api-key'] ||
+-    headers['x-goog-api-key'] ||
+-    (/^\/v1beta\//.test(new URL(url, 'http://x').pathname) ? new URL(url, 'http://x').searchParams.get('key') : null) ||
+-    undefined
++      headers['x-goog-api-key'] ||
++      (/^\/v1beta\//.test(new URL(url, 'http://x').pathname)
++        ? new URL(url, 'http://x').searchParams.get('key')
++        : null) ||
++      undefined
+   );
+ }
+ 
+diff --git a/lib/gateway/store.js b/lib/gateway/store.js
+index 9984494..4a546fd 100644
+--- a/lib/gateway/store.js
++++ b/lib/gateway/store.js
+@@ -4,9 +4,16 @@
+ const fs = require('fs');
+ const path = require('path');
+ 
+-function jsonStore(file, fallback) {
++// log: where a debounced save that failed is reported (once per store); it never throws from its timer.
++/**
++ * @param {string} file
++ * @param {any} fallback
++ * @param {{ log?: (line: string) => void }} [opts]
++ */
++function jsonStore(file, fallback, { log = console.error } = {}) {
+   let value;
+   let timer = null;
++  let warned = false;
+   try {
+     value = JSON.parse(fs.readFileSync(file, 'utf8'));
+   } catch {
+@@ -29,7 +36,16 @@ function jsonStore(file, fallback) {
+       if (now) {
+         clearTimeout(timer);
+         flush();
+-      } else if (!timer) timer = setTimeout(flush, 1000);
++      } else if (!timer)
++        timer = setTimeout(() => {
++          try {
++            flush();
++          } catch (err) {
++            // A save from a timer has no caller to tell (P4b review m7); the next save tries again.
++            if (!warned) log(`store: ${path.basename(file)} could not be saved: ${err.code || err.message}`);
++            warned = true;
++          }
++        }, 1000);
+     },
+     flush() {
+       if (timer) {
+PATCH
+```
+
+- [ ] **Step 5: Generate the fixtures from the JS code**
+
+Run: `node scripts/fixtures/gen-keys.js`
+Expected: `gen-keys: 55 cases in gw/testdata/keys`.
+
+- [ ] **Step 6: Run the tests and the task gate**
+
+Run:
+
+```bash
+export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
+node --test test/*.test.js
+deno test -q --no-check --no-prompt -P=test test/*.test.js
+npm run test:contract
+```
+
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+`pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
+
+- [ ] **Step 7: Commit and push**
+
+```bash
+git add -A -- gw lib scripts test
+git status --short   # nothing outside this task's files, nothing under .superpowers/
+git commit -m "P4b review 1 fixes: typecheck clean, the front forwards the request target as sent, key fields and /i folding never more permissive in Go, Windows test cleanup, health names a generation only with its secrets, unconfirmed saves logged, no credential from a base URL in config.push, a failed debounced save is logged"
+git push origin migrate/p4b-passthrough
+```
 
 ---
 
@@ -6060,14 +6746,15 @@ Decisions 3, 4 and 10: with `gateway.shadow: ["chat"]` and chat on js, the front
 
 **Files:**
 - Create: `gw/engine/shadow.go`, `gw/engine/shadow_test.go`, `ipc/v1/fixtures/config.push/invalid-front-shadow-class.json`, `ipc/v1/fixtures/config.push/valid-front-shadow.json`, `lib/front/shadow-log.js`, `lib/gateway/shadow.js`, `test/front-shadow.test.js`
-- Modify: `gw/cmd/zaafpulse-gw/front.go`, `gw/front/front.go`, `gw/front/route_test.go`, `gw/ipc/messages.go`, `ipc/v1/config.push.schema.json`, `lib/front/index.js`, `lib/front/internal.js`, `lib/gateway/index.js`, `lib/gateway/providers.js`, `server.js`, `test/contract/formats.test.js`, `test/contract/go-chat.test.js`, `test/contract/harness.js`
+- Modify: `gw/cmd/zaafpulse-gw/front.go`, `gw/front/front.go`, `gw/front/route_test.go`, `gw/ipc/messages.go`, `ipc/v1/config.push.schema.json`, `lib/front/index.js`, `lib/front/internal.js`, `lib/gateway/index.js`, `lib/gateway/providers.js`, `server.js`, `test/contract/formats.test.js`, `test/contract/go-chat.test.js`, `test/contract/harness.js`, `tsconfig.json`
 
 
 **Interfaces:**
 - Consumes: Tasks 4, 7, 8 (`PlanChat`, `Respond`, `ReadRequest`, `createInternalListener`, `createFront`).
 - Produces:
   - Go: `(*State).Compare(class string, p *Plan, c *Capture) ShadowLine`; `type Capture`, `type ShadowLine { Class, Outcome, Reason string; Status int; Diffs []Diff }`, `type Diff { Field string; JS, Go any }`; `(*Engine).Shadow(class, w, r, rawPath, js, own)`; `NewShadowID()`; `front.ShadowHeader = "X-Zp-Shadow"`, `front.OwnHeader = "X-Zp-Own"` (removed from every client request); `(*Server).SetShadow(classes []string)`; `ipc.FrontShadow{ Classes []ipc.RouteClass }`.
-  - JS: `lib/gateway/shadow.js` (`withShadow(id, fn)`, `noteProviderRequest(url, headers, body)`, `noteAnswer(providerResponse, client, usage)`, `takeCapture(id)`, `SHADOW_ID`); `lib/front/shadow-log.js` (`createShadowLog({ file, now?, maxBytes? })` with `append`, `stats`, `gate(class, days)`; `shadowEndpoints({ shadowLog })`); `createInternalListener({ ..., own })`; `lib/front` `routing(gateway, { gate, otel }) -> { engines, notes }`, `shadowOf(gateway, engines)`, `createFront({ ..., shadow, own })`; `GET /api/gateway/status` gains `notes` and `shadow`.
+  - The switch rule (owner, 2026-11-12): `createShadowLog(...).gate(class, { days = 1, min = 20 })`, `routing()` reading `gateway.shadowDays` and `gateway.shadowMinCompares`; `tsconfig.json` includes `lib/front`.
+  - JS: `lib/gateway/shadow.js` (`withShadow(id, fn, res)`, `noteProviderRequest(url, headers, body)`, `noteAnswer(providerResponse, client, usage)`, `takeCapture(id)`, `SHADOW_ID`); `lib/front/shadow-log.js` (`createShadowLog({ file, now?, maxBytes? })` with `append`, `stats`, `gate(class, days)`; `shadowEndpoints({ shadowLog })`); `createInternalListener({ ..., own })`; `lib/front` `routing(gateway, { gate, otel }) -> { engines, notes }`, `shadowOf(gateway, engines)`, `createFront({ ..., shadow, own })`; `GET /api/gateway/status` gains `notes` and `shadow`.
   - Contract: `ZP_ENGINE=shadow` (front, `shadow: ['chat']`); the harness's `stop()` throws on a diff line.
 
 - [ ] **Step 1: Check the starting point**
@@ -6225,31 +6912,40 @@ test('a capture exists only for a marked request, and is handed out once', async
   });
 });
 
-test('the shadow log: counts per class, and the switch rule (3 clean days by default, a diff restarts it)', (t) => {
+test('the shadow log: counts per class, and the switch rule (owner: 1 clean day and 20 compares; a diff restarts it)', (t) => {
   const dir = tmpDir(t, 'shadow-log');
   let now = 1_000_000_000_000;
   const log = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
-  assert.match(log.gate('chat').reason, /compared no chat call/);
-  assert.equal(log.append({ class: 'chat', outcome: 'same' }), true);
+  assert.match(log.gate('chat').reason, /0 of 20 chat calls compared/);
+  assert.match(log.gate('chat', { days: 1, min: 0 }).reason, /compared no chat call/);
   assert.equal(log.append({ class: 'chat', outcome: 'nonsense' }), false);
   assert.equal(log.append({ class: 'chat', outcome: 'handoff', reason: 'stream' }), true);
+  assert.equal(log.append({ class: 'chat', outcome: 'skipped', reason: 'the provider call failed' }), true);
+  for (let i = 0; i < 19; i++) log.append({ class: 'chat', outcome: 'same' });
   now += 2 * DAY;
-  assert.match(log.gate('chat').reason, /clean for 2\.00 of 3 days/);
-  now += DAY;
-  assert.deepEqual(log.gate('chat'), { ok: true });
+  assert.match(log.gate('chat').reason, /19 of 20 chat calls compared/, 'hand-offs and skips do not count');
+  log.append({ class: 'chat', outcome: 'same' });
+  assert.deepEqual(log.gate('chat'), { ok: true }, 'the defaults: 1 day, 20 compares');
   assert.equal(
     log.append({ class: 'chat', outcome: 'diff', diffs: [{ field: 'client.status', js: 200, go: 500 }] }),
     true,
   );
   assert.match(log.gate('chat').reason, /last chat compare differed/);
-  now += 4 * DAY;
-  log.append({ class: 'chat', outcome: 'same' });
-  assert.deepEqual(log.gate('chat'), { ok: true }, 'clean 4 days since the diff');
-  assert.deepEqual(log.gate('chat', 0), { ok: true });
+  for (let i = 0; i < 20; i++) log.append({ class: 'chat', outcome: 'same' });
+  assert.match(log.gate('chat').reason, /clean for 0\.00 of 1 days/, 'the wait starts again at the diff');
+  now += DAY;
+  assert.deepEqual(log.gate('chat'), { ok: true });
+  assert.match(log.gate('chat', { days: 3 }).reason, /clean for 1\.00 of 3 days/);
+  assert.match(log.gate('chat', { min: 25 }).reason, /20 of 25 chat calls compared/);
+  assert.deepEqual(log.gate('chat', { days: 0, min: 0 }), { ok: true });
+  assert.deepEqual(log.gate('messages', { days: 0, min: 0 }), { ok: true }, 'both 0 lift the rule');
+  assert.match(log.gate('messages', { days: 0, min: 1 }).reason, /0 of 1 messages calls compared/);
   const st = log.stats().chat;
-  assert.deepEqual([st.compared, st.diffs, st.handoffs], [3, 1, 1]);
-  // Read back after a restart: the same counts.
-  assert.deepEqual(createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now }).stats(), log.stats());
+  assert.deepEqual([st.compared, st.diffs, st.handoffs], [41, 1, 2]);
+  // Read back after a restart: the same counts and the same rule.
+  const again = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
+  assert.deepEqual(again.stats(), log.stats());
+  assert.deepEqual(again.gate('chat'), { ok: true });
   assert.ok(!fs.readFileSync(path.join(dir, 's.jsonl'), 'utf8').includes('undefined'));
 });
 
@@ -6259,9 +6955,13 @@ test('routing: go only when asked, the gate met and OTLP export off; shadow only
   const no = routing(gw, { gate: () => ({ ok: false, reason: 'not yet' }) });
   assert.deepEqual([no.engines.chat, no.notes.chat], ['js', 'not yet']);
   assert.match(routing(gw, { otel: true }).notes.chat, /OpenTelemetry/);
-  let days = null;
-  routing({ ...gw, shadowDays: 1 }, { gate: (c, d) => ((days = d), { ok: true }) });
-  assert.equal(days, 1);
+  let rule = null;
+  routing(gw, { gate: (c, r) => ((rule = r), { ok: true }) });
+  assert.deepEqual(rule, { days: 1, min: 20 }, 'the owner defaults');
+  routing({ ...gw, shadowDays: 0, shadowMinCompares: 5 }, { gate: (c, r) => ((rule = r), { ok: true }) });
+  assert.deepEqual(rule, { days: 0, min: 5 });
+  routing({ ...gw, shadowDays: -1, shadowMinCompares: 'x' }, { gate: (c, r) => ((rule = r), { ok: true }) });
+  assert.deepEqual(rule, { days: 1, min: 20 }, 'a value that is not a count of zero or more is the default');
   assert.deepEqual(shadowOf(gw, { chat: 'js' }), ['chat']);
   assert.deepEqual(shadowOf(gw, { chat: 'go' }), []);
 });
@@ -6320,11 +7020,11 @@ Apply (from the repository root):
 ```bash
 git apply <<'PATCH'
 diff --git a/gw/front/route_test.go b/gw/front/route_test.go
-index 7a25f09..efaa98e 100644
+index bfc7357..65b3078 100644
 --- a/gw/front/route_test.go
 +++ b/gw/front/route_test.go
-@@ -118,3 +118,22 @@ func TestQuietLoggerRateLimitsNoisyLines(t *testing.T) {
- 		t.Errorf("log %q, want %q", buf.String(), want)
+@@ -136,3 +136,22 @@ func TestRequestTargetIsForwardedAsSent(t *testing.T) {
+ 		}
  	}
  }
 +
@@ -6386,7 +7086,7 @@ index f7e1c03..d1c0fdb 100644
 +  },
 +);
 diff --git a/test/contract/harness.js b/test/contract/harness.js
-index ba25d73..49b0efb 100644
+index ba25d73..03d235f 100644
 --- a/test/contract/harness.js
 +++ b/test/contract/harness.js
 @@ -8,7 +8,9 @@
@@ -6400,17 +7100,19 @@ index ba25d73..49b0efb 100644
  // Nothing here reaches the network: the providers point at the fake upstream on 127.0.0.1, price sync is off, and
  // the judge ports, notifications and runtime polling are off (as test/helpers.js NO_JUDGE_PORTS).
  const fs = require('fs');
-@@ -36,7 +38,8 @@ const SEED_CONFIG = {
+@@ -36,7 +38,10 @@ const SEED_CONFIG = {
    pricingSync: { enabled: false },
    pricing: PRICES,
    ...(process.env.ZP_ENGINE === 'front' ? { gateway: { engine: 'front' } } : {}),
 -  ...(process.env.ZP_ENGINE === 'go' ? { gateway: { engine: 'front', engines: { chat: 'go' } } } : {}),
-+  ...(process.env.ZP_ENGINE === 'go' ? { gateway: { engine: 'front', engines: { chat: 'go' }, shadowDays: 0 } } : {}),
++  ...(process.env.ZP_ENGINE === 'go'
++    ? { gateway: { engine: 'front', engines: { chat: 'go' }, shadowDays: 0, shadowMinCompares: 0 } }
++    : {}),
 +  ...(process.env.ZP_ENGINE === 'shadow' ? { gateway: { engine: 'front', shadow: ['chat'] } } : {}),
  };
  
  // The environment a front-mode server needs: the gateway binary. Throws without Go: a front run is asked for.
-@@ -48,6 +51,17 @@ function gatewayEnv(config) {
+@@ -48,6 +53,17 @@ function gatewayEnv(config) {
  }
  const UPSTREAM_SECRET = { oa: 'sk-contract-oa', an: 'sk-contract-an', rs: 'sk-contract-rs' };
  
@@ -6428,7 +7130,7 @@ index ba25d73..49b0efb 100644
  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  
  function freePort() {
-@@ -164,8 +178,11 @@ async function startServer({
+@@ -164,8 +180,11 @@ async function startServer({
          clearTimeout(giveUp);
        }
        process.removeListener('exit', reap);
@@ -6440,7 +7142,7 @@ index ba25d73..49b0efb 100644
      };
      while (!exited && performance.now() - started < 30000) {
        try {
-@@ -304,8 +321,11 @@ async function start() {
+@@ -304,8 +323,11 @@ async function start() {
        upstream,
        server,
        stop: async () => {
@@ -6723,9 +7425,10 @@ Create `lib/front/shadow-log.js`:
 //   { ts, class, outcome: 'same' | 'diff' | 'handoff' | 'skipped', reason?, status?, diffs?: [{ field, js, go }] }
 // handoff: the engine would have handed the request to js; skipped: nothing to compare (the provider call failed, or
 // the control plane's own rate limit answered: the windows are per engine). Both count as not compared.
-// The switch rule (spec stream A item 3; program plan §5 P4): a class may run on go only when the shadow has compared at
-// least one of its calls and seen no diff for `days` days (config.json gateway.shadowDays, default 3; 0 lifts the
-// rule, for tests and for an owner who decides without it).
+// The switch rule (spec stream A item 3; owner answer 2026-11-12): a class may run on go only when the shadow has, since
+// its last diff, compared at least `min` of its calls (config.json gateway.shadowMinCompares, default 20) and seen no
+// diff for `days` days (gateway.shadowDays, default 1). 0 lifts either part; both 0 lift the rule (tests, or an owner
+// who decides without it).
 const { jsonlLog } = require('../gateway/store');
 const { takeCapture } = require('../gateway/shadow');
 
@@ -6736,10 +7439,11 @@ const MAX_LINE = 64 * 1024;
 /** @param {{ file: string, now?: () => number, maxBytes?: number }} opts */
 function createShadowLog({ file, now = Date.now, maxBytes }) {
   const log = jsonlLog(file, maxBytes);
-  /** @type {Map<string, { compared: number, diffs: number, handoffs: number, first: number | null, lastDiff: number | null, last: number | null }>} */
+  /** @type {Map<string, { compared: number, diffs: number, handoffs: number, first: number | null, lastDiff: number | null, last: number | null, sinceDiff: number }>} */
   const stats = new Map();
   const statOf = (c) => {
-    if (!stats.has(c)) stats.set(c, { compared: 0, diffs: 0, handoffs: 0, first: null, lastDiff: null, last: null });
+    if (!stats.has(c))
+      stats.set(c, { compared: 0, diffs: 0, handoffs: 0, first: null, lastDiff: null, last: null, sinceDiff: 0 });
     return stats.get(c);
   };
   const count = (e) => {
@@ -6753,7 +7457,8 @@ function createShadowLog({ file, now = Date.now, maxBytes }) {
       if (e.outcome === 'diff') {
         s.diffs++;
         s.lastDiff = e.ts;
-      }
+        s.sinceDiff = 0;
+      } else s.sinceDiff++;
     }
     return true;
   };
@@ -6780,17 +7485,22 @@ function createShadowLog({ file, now = Date.now, maxBytes }) {
       return out;
     },
     /**
-     * Whether class c may run on go after `days` clean days; reason says what is missing.
+     * Whether class c may run on go: `min` compares and `days` days without a diff since the last one; reason says what
+     * is missing.
+     * @param {string} c
+     * @param {{ days?: number, min?: number }} [rule]
      * @returns {{ ok: boolean, reason?: string }}
      */
-    gate(c, days = 3) {
-      if (days === 0) return { ok: true }; // the owner lifted the rule (config.json gateway.shadowDays: 0)
+    gate(c, { days = 1, min = 20 } = {}) {
+      if (days === 0 && min === 0) return { ok: true }; // the owner lifted the rule
       const s = stats.get(c);
+      if (s && s.lastDiff !== null && s.sinceDiff === 0) return { ok: false, reason: `the last ${c} compare differed` };
+      const n = s ? s.sinceDiff : 0;
+      if (n < min) return { ok: false, reason: `${n} of ${min} ${c} calls compared without a diff since the last one` };
+      if (days === 0) return { ok: true };
       if (!s || !s.compared) return { ok: false, reason: `the shadow has compared no ${c} call yet` };
       // A diff restarts the wait: from the diff on, the class needs `days` days with compares and no diff.
       const since = s.lastDiff !== null ? s.lastDiff : s.first;
-      if (s.lastDiff !== null && (s.last === null || s.last <= s.lastDiff))
-        return { ok: false, reason: `the last ${c} compare differed` };
       const clean = (now() - since) / DAY;
       if (clean < days)
         return { ok: false, reason: `the ${c} shadow is clean for ${clean.toFixed(2)} of ${days} days` };
@@ -6959,7 +7669,7 @@ index ed58994..48579cf 100644
  	if errors.Is(err, front.ErrAddrInUse) {
  		return exitWith(g.log, ipc.ExitPortInUse, "port %d on %s is in use", f.Listen.Port, f.Listen.Host)
 diff --git a/gw/front/front.go b/gw/front/front.go
-index 42f481e..a740e75 100644
+index 97e11ea..e9034ee 100644
 --- a/gw/front/front.go
 +++ b/gw/front/front.go
 @@ -5,10 +5,12 @@
@@ -7050,7 +7760,7 @@ index 42f481e..a740e75 100644
  	s.proxy = &httputil.ReverseProxy{
  		Rewrite: func(pr *httputil.ProxyRequest) {
  			pr.SetURL(target)
-@@ -217,11 +265,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+@@ -222,11 +270,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
  		w.WriteHeader(http.StatusMethodNotAllowed)
  		return
  	}
@@ -7133,10 +7843,10 @@ index d4c1870..ef842b3 100644
      }
    }
 diff --git a/lib/front/index.js b/lib/front/index.js
-index b254125..5ba76cd 100644
+index 173c14e..b469a97 100644
 --- a/lib/front/index.js
 +++ b/lib/front/index.js
-@@ -19,15 +19,38 @@ const allJs = () => Object.fromEntries(CLASSES.map((c) => [c, 'js']));
+@@ -19,15 +19,43 @@ const allJs = () => Object.fromEntries(CLASSES.map((c) => [c, 'js']));
  const GO_CLASSES = ['chat'];
  
  /**
@@ -7144,11 +7854,12 @@ index b254125..5ba76cd 100644
 - * the go engine has; anything else is js.
 + * The engine of each route class (P4b) and why a class asked for go stays on js. config.json `gateway.engines` asks
 + * (e.g. { "chat": "go" }); a class runs on go only when the go engine has it, the shadow gate lets it (`gate(class,
-+ * days)`, lib/front/shadow-log.js; `gateway.shadowDays`, default 3) and OTLP export is off (the go engine sends no spans
-+ * until P4f).
++ * { days, min })`, lib/front/shadow-log.js; `gateway.shadowDays`, default 1, and `gateway.shadowMinCompares`, default
++ * 20: the owner's rule of 2026-11-12) and OTLP export is off (the go engine sends no spans until P4f).
   * @param {any} gateway config.json's gateway section
-+ * @param {{ gate?: (c: string, days: number) => { ok: boolean, reason?: string }, otel?: boolean }} [opts]
-+ * @returns {{ engines: Record<string, 'js' | 'go'>, notes: Record<string, string> }}
++ * @param {{ gate?: (c: string, rule: { days: number, min: number }) => { ok: boolean, reason?: string },
++ *   otel?: boolean }} [opts]
++ * @returns {{ engines: Record<string, string>, notes: Record<string, string> }}
   */
 -function enginesOf(gateway) {
 +function routing(gateway, { gate = () => ({ ok: true }), otel = false } = {}) {
@@ -7156,12 +7867,16 @@ index b254125..5ba76cd 100644
 -  const out = allJs();
 -  for (const c of GO_CLASSES) if (asked[c] === 'go') out[c] = 'go';
 -  return out;
-+  const days = Number.isFinite(gateway && gateway.shadowDays) && gateway.shadowDays >= 0 ? gateway.shadowDays : 3;
++  // The owner's rule (2026-11-12): 1 clean day and 20 compared calls; a value that is not a count of zero or more is the
++  // default.
++  const count = (v, d) => (Number.isFinite(v) && v >= 0 ? v : d);
++  const rule = { days: count(gateway && gateway.shadowDays, 1), min: count(gateway && gateway.shadowMinCompares, 20) };
 +  const engines = allJs();
++  /** @type {Record<string, string>} */
 +  const notes = {};
 +  for (const c of GO_CLASSES) {
 +    if (asked[c] !== 'go') continue;
-+    const g = gate(c, days);
++    const g = gate(c, rule);
 +    if (otel) notes[c] = 'OpenTelemetry export is on: the go engine sends no spans yet (P4f)';
 +    else if (!g.ok) notes[c] = g.reason || 'the shadow gate is not met';
 +    else engines[c] = 'go';
@@ -7181,7 +7896,7 @@ index b254125..5ba76cd 100644
  }
  
  /** The mode config.json asks for: "front" or "js" (anything else is js). */
-@@ -37,7 +60,7 @@ function engineOf(config) {
+@@ -37,7 +65,7 @@ function engineOf(config) {
  }
  
  /** The config.push front section. go is refused for a class the go engine does not have (the gateway would exit 2). */
@@ -7190,7 +7905,7 @@ index b254125..5ba76cd 100644
    for (const [c, e] of Object.entries(engines))
      if (e !== 'js' && !(e === 'go' && GO_CLASSES.includes(c)))
        throw new Error(`gateway engine "${e}" for ${c} is not available: only ${GO_CLASSES.join(', ')} can run on go`);
-@@ -46,7 +69,7 @@ function frontSection({ host, port, tls = null, upstreamPort, engines = allJs()
+@@ -46,7 +74,7 @@ function frontSection({ host, port, tls = null, upstreamPort, engines = allJs()
      ...(tls ? { tls: { certPath: tls.certPath, keyPath: tls.keyPath } } : {}),
      upstream: { port: upstreamPort },
      engines,
@@ -7199,7 +7914,20 @@ index b254125..5ba76cd 100644
    };
  }
  
-@@ -105,8 +128,11 @@ function createFront({
+@@ -75,7 +103,11 @@ const newToken = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).t
+  *   env: Record<string, string>, cpVersion: string, ingest: { handle: Function, seed?: Function },
+  *   beforeAck?: (b: { stream: string, upTo: number }) => void, log?: (line: string) => void,
+  *   onServing?: (mode: string) => void, onListenError?: (err: Error) => void, waitPortMs?: number,
+- *   supervisor?: object, internal?: typeof createInternalListener, token?: string }} opts
++ *   supervisor?: object, internal?: typeof createInternalListener, token?: string,
++ *   createSupervisor?: typeof createSupervisor,
++ *   sources?: { config: () => object, secrets: () => object, snapshot: () => object },
++ *   engines?: () => Record<string, string>, shadow?: (engines: Record<string, string>) => string[],
++ *   own?: ((req: any, res: any) => void) | null }} opts
+  */
+ function createFront({
+   engine,
+@@ -105,8 +137,11 @@ function createFront({
    internal = createInternalListener,
    createSupervisor: makeSupervisor = createSupervisor,
    token = newToken(),
@@ -7212,7 +7940,7 @@ index b254125..5ba76cd 100644
  }) {
    let mode = engine === 'front' ? 'front' : 'js';
    let reason = null;
-@@ -181,12 +207,11 @@ function createFront({
+@@ -181,12 +216,11 @@ function createFront({
      // The server's own request handler answers the internal port; the main port stays the gateway's.
      // A connection may wait for its first request as long as Go keeps an idle pooled connection (120 s): the front's
      // spare connections must never be closed under it.
@@ -7226,7 +7954,7 @@ index b254125..5ba76cd 100644
      const mine = makeSupervisor({
        bin,
        env,
-@@ -195,10 +220,10 @@ function createFront({
+@@ -195,10 +229,10 @@ function createFront({
        beforeAck,
        log,
        sources: {
@@ -7241,7 +7969,7 @@ index b254125..5ba76cd 100644
          secrets: () => ({ ...sources.secrets(), frontToken: token }),
          snapshot: () => sources.snapshot(),
        },
-@@ -329,4 +354,4 @@ function createFront({
+@@ -331,4 +365,4 @@ function createFront({
    };
  }
  
@@ -7313,7 +8041,7 @@ index c928331..a174589 100644
 -module.exports = { createInternalListener, FIRST_REQUEST_MS, NO_HOST_HEADER };
 +module.exports = { createInternalListener, FIRST_REQUEST_MS, NO_HOST_HEADER, SHADOW_HEADER, OWN_HEADER };
 diff --git a/lib/gateway/index.js b/lib/gateway/index.js
-index 2c508d0..c3ac995 100644
+index 1c3b8cc..05d6d4d 100644
 --- a/lib/gateway/index.js
 +++ b/lib/gateway/index.js
 @@ -28,6 +28,7 @@ const { safeFetch } = require('../net');
@@ -7324,7 +8052,7 @@ index 2c508d0..c3ac995 100644
  const tr = require('./translate');
  const { saveTokens } = require('./rtk');
  const { createProviders, cleanProvider, cleanRoute, PRESETS } = require('./providers');
-@@ -1025,7 +1026,7 @@ function createGateway({
+@@ -1026,7 +1027,7 @@ function createGateway({
          /* not JSON */
        }
        const u = j ? usageOf(j) : { input: 0, output: 0, cached: 0 };
@@ -7333,7 +8061,7 @@ index 2c508d0..c3ac995 100644
          ...base,
          status: r.status,
          ms: now() - started,
-@@ -1033,8 +1034,11 @@ function createGateway({
+@@ -1034,8 +1035,11 @@ function createGateway({
          error: r.ok ? undefined : secrets.mask(((j && j.error && j.error.message) || text).slice(0, 200)),
        });
        if (j && r.ok) j.model = body.model;
@@ -7346,7 +8074,7 @@ index 2c508d0..c3ac995 100644
      }
      // Stream: pass each line on as it arrives, reading usage and time to first token on the way. Chunks get
      // the requested model name, as the whole answer does. Usage is always asked of the provider (billing),
-@@ -1607,7 +1611,11 @@ function createGateway({
+@@ -1608,7 +1612,11 @@ function createGateway({
    }
  
    // true when the request was a gateway request (handled here), false to let the dashboard handle it.
@@ -7386,7 +8114,7 @@ index dfd5904..6ad19b1 100644
          });
          noteResponse(p, r);
 diff --git a/server.js b/server.js
-index 3d3abd4..0eb12fc 100644
+index 3d3abd4..178d3b4 100644
 --- a/server.js
 +++ b/server.js
 @@ -79,7 +79,8 @@ const { recoverMarks } = require('./lib/ipc/marks');
@@ -7418,7 +8146,7 @@ index 3d3abd4..0eb12fc 100644
 +// Which class runs on which engine, and why one asked for go stays on js (lib/front routing).
 +const frontRouting = () =>
 +  routing(rawConfig().gateway, {
-+    gate: (c, days) => shadowLog.gate(c, days),
++    gate: (c, rule) => shadowLog.gate(c, rule),
 +    otel: ((rawConfig() || {}).otel || {}).enabled === true,
 +  });
 +// A class whose shadow gate is met (or broken) switches at the next push: looked at once a minute.
@@ -7442,6 +8170,17 @@ index 3d3abd4..0eb12fc 100644
    // Each generation, from the state the JS gateway reads (P4b): config.json, keys.json, the effective prices, the
    // provider credentials, the blocking budgets and the keys' cost centers.
    sources: {
+diff --git a/tsconfig.json b/tsconfig.json
+index 3dd6a58..bc4c88a 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -6,5 +6,5 @@
+     "noImplicitAny": false,
+     "noEmit": true
+   },
+-  "include": ["lib/gateway", "lib/cost", "lib/governance", "lib/money.js", "lib/types.js"]
++  "include": ["lib/front", "lib/gateway", "lib/cost", "lib/governance", "lib/money.js", "lib/types.js"]
+ }
 PATCH
 ```
 
@@ -7451,13 +8190,14 @@ Run:
 
 ```bash
 export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
-test -z "$(gofmt -l gw)" && go -C gw vet ./... && go -C gw test -race -count=1 ./...
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
 node --test test/*.test.js
 deno test -q --no-check --no-prompt -P=test test/*.test.js
 npm run test:contract
 ```
 
-Expected: no gofmt output, `ok` for every Go package, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
 `pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
 
 - [ ] **Step 6: Run the contract suite with chat shadowed, on both runtimes**
@@ -7474,7 +8214,7 @@ Expected: `pass 180` on Node (`fail 0`; the shadow case runs) and `180 passed` o
 - [ ] **Step 7: Commit and push**
 
 ```bash
-git add -A -- gw ipc lib server.js test
+git add -A -- gw ipc lib server.js test tsconfig.json
 git status --short   # nothing outside this task's files, nothing under .superpowers/
 git commit -m "P4b T9: the shadow compare of chat calls and the rule that switches a class to go after clean days"
 git push origin migrate/p4b-passthrough
@@ -7482,122 +8222,597 @@ git push origin migrate/p4b-passthrough
 
 ---
 
-### Task 10: CI: the contract suite shadowed and on go, the fixtures regenerated
+### Fix round 2 (re-review 1): a // target in origin form, Winsock error names, out-of-range key values, a dropped key takes its hash along
 
-Both contract modes run in the Node and Deno jobs, and the `go` job regenerates every stream's fixtures and fails on a diff (deviation 9).
+Re-review 1 (N1–N4), applied after Task 9. Each item got its failing test first.
 
 **Files:**
-- Modify: `.github/workflows/ci.yml`
+- Modify: `gw/engine/upstream.go`, `gw/engine/upstream_test.go`, `gw/front/front.go`, `gw/front/route_test.go`, `lib/front/push.js`, `test/front-push.test.js`
 
 
 **Interfaces:**
-- Consumes: Tasks 1–9.
-- Produces: CI steps `Gateway contract suite, chat shadowed by the go engine`, `Gateway contract suite, chat on the go engine` (test job), `Gateway contract suite on the Deno server, chat shadowed and on the go engine` (deno job), `Regenerate the fixtures and compare` (go job, ubuntu).
+- Produces: a raw path starting with `//` goes through `URL.Path`/`RawPath` (Opaque would be written `http://...`); `ErrorCode` names Winsock codes 10061, 10054, 10060, 10065, 10051 and 10053 as Node does; `keyAuth` clamps `rpm` and `expiresAt` to ±MAX_SAFE_INTEGER and reads an Infinity `revokedAt` as revoked; `configPush` drops every key that shares the hash of a dropped one (`pushedKeys`).
+
+- [ ] **Step 1: Check the starting point**
+
+Run: `git log --oneline -1`
+Expected: Task 9's commit.
+
+- [ ] **Step 2: Write the failing tests**
+
+Apply (from the repository root):
+
+```bash
+git apply <<'PATCH'
+diff --git a/gw/engine/upstream_test.go b/gw/engine/upstream_test.go
+index 146f98a..27b4339 100644
+--- a/gw/engine/upstream_test.go
++++ b/gw/engine/upstream_test.go
+@@ -10,6 +10,7 @@ import (
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
++	"syscall"
+ 	"testing"
+ 	"time"
+ )
+@@ -130,3 +131,15 @@ func TestUpstreamExtraCA(t *testing.T) {
+ 		}
+ 	}
+ }
++
++// Windows names a refused or reset connection by its Winsock code; the engine names them as Node does on Windows
++// (re-review N4), on every OS this test runs on.
++func TestWindowsSocketErrorsHaveNodeNames(t *testing.T) {
++	for code, want := range map[syscall.Errno]string{10061: "ECONNREFUSED", 10054: "ECONNRESET", 10060: "ETIMEDOUT",
++		10065: "EHOSTUNREACH", 10051: "ENETUNREACH"} {
++		err := &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connectex", code)}
++		if got := ErrorCode(err); got != want {
++			t.Errorf("errno %d: %q, want %q", code, got, want)
++		}
++	}
++}
+diff --git a/gw/front/route_test.go b/gw/front/route_test.go
+index 65b3078..87c53e6 100644
+--- a/gw/front/route_test.go
++++ b/gw/front/route_test.go
+@@ -125,7 +125,8 @@ func TestRequestTargetIsForwardedAsSent(t *testing.T) {
+ 	got := make(chan string, 8)
+ 	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { got <- r.RequestURI })
+ 	s := startFront(t, up.port(), nil)
+-	for _, target := range []string{`/v1\chat/completions`, "/v1/a|b", "/api/x?q=a;b&c=1", "/v1/a^b?x=%zz&y=\\", "/v1/chat%2Fcompletions?a=%2F"} {
++	for _, target := range []string{`/v1\chat/completions`, "/v1/a|b", "/api/x?q=a;b&c=1", "/v1/a^b?x=%zz&y=\\",
++		"/v1/chat%2Fcompletions?a=%2F", "//v1/chat/completions", "///a", "//v1/x?q=a;b", "//host/x%2Fy"} {
+ 		out, _ := rawRequest(t, s.Addr().String(), "GET "+target+" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+ 		if !strings.Contains(out, "200 OK") {
+ 			t.Errorf("%s: %q", target, out)
+diff --git a/test/front-push.test.js b/test/front-push.test.js
+index 9c6cb86..1bbed30 100644
+--- a/test/front-push.test.js
++++ b/test/front-push.test.js
+@@ -247,3 +247,33 @@ test('configPush: a base URL with user info or a query is cut to its origin and
+   assert.deepEqual([ok.baseUrl, ok.enabled], ['https://llm.example/v1', undefined]);
+   assert.deepEqual([bad.baseUrl, bad.enabled], ['', false]);
+ });
++
++// Re-review N2 and N3: values only a hand-edited keys.json can hold.
++test('keyAuth: Infinity revoked is revoked; a time or limit past int64 is clamped, never an undecodable push', () => {
++  const base = { id: 'k', hash: 'c'.repeat(64), scopes: ['llm'], models: [], agents: [] };
++  const inf = JSON.parse('{"revokedAt": 1e400}').revokedAt;
++  assert.equal(inf, Infinity);
++  assert.equal(keyAuth({ ...base, revokedAt: inf }).revokedAt, 1);
++  assert.equal(keyAuth({ ...base, expiresAt: 1e300 }).expiresAt, Number.MAX_SAFE_INTEGER, 'never expires, as in JS');
++  assert.equal(keyAuth({ ...base, expiresAt: -1e300 }).expiresAt, -Number.MAX_SAFE_INTEGER, 'expired, as in JS');
++  assert.equal(keyAuth({ ...base, rpm: 1e300 }).rpm, Number.MAX_SAFE_INTEGER);
++  const body = configPush({
++    gateway: {},
++    keys: [{ ...base, expiresAt: 1e300, rpm: 1e300, revokedAt: inf }],
++    pricing: {},
++  });
++  assert.deepEqual(check(msg('config.push', body)), { errors: [], unknownType: false });
++  assert.ok(Number.isSafeInteger(body.keys[0].expiresAt) && Number.isSafeInteger(body.keys[0].rpm));
++});
++
++test('configPush: a key the push drops takes every key with its hash along (JS matches the first one)', () => {
++  const good = { id: 'b', hash: 'd'.repeat(64), scopes: ['llm'], models: [], agents: [] };
++  const keys = [{ ...good, id: 'a', scopes: 'llm' }, good, { ...good, id: 'c', hash: 'e'.repeat(64) }];
++  assert.deepEqual(
++    configPush({ gateway: {}, keys, pricing: {} }).keys.map((k) => k.id),
++    ['c'],
++  );
++  // An upper-case hash is the same key to JS (Buffer.from(hash, 'hex')).
++  const upper = [{ ...good, id: 'a', hash: 'D'.repeat(64) }, good];
++  assert.deepEqual(configPush({ gateway: {}, keys: upper, pricing: {} }).keys, []);
++});
+PATCH
+```
+
+- [ ] **Step 3: Run them to see them fail**
+
+Run: `GOTOOLCHAIN=local go -C gw test -count=1 ./front ./engine; node --test test/front-push.test.js`
+Expected: FAIL in `TestRequestTargetIsForwardedAsSent` (`http://v1/chat/completions`), `TestWindowsSocketErrorsHaveNodeNames`, and the two new push tests.
+
+- [ ] **Step 4: Implement**
+
+Apply (from the repository root):
+
+```bash
+git apply <<'PATCH'
+diff --git a/gw/engine/upstream.go b/gw/engine/upstream.go
+index ca2d9db..b5c2ef1 100644
+--- a/gw/engine/upstream.go
++++ b/gw/engine/upstream.go
+@@ -133,10 +133,20 @@ func origin(u *url.URL) string {
+ 	return u.Scheme + "://" + u.Hostname() + ":" + port
+ }
+ 
++var winsock = map[syscall.Errno]string{10061: "ECONNREFUSED", 10054: "ECONNRESET", 10060: "ETIMEDOUT",
++	10065: "EHOSTUNREACH", 10051: "ENETUNREACH", 10053: "ECONNABORTED"}
++
+ // ErrorCode is what the JS gateway names a failed fetch by (err.cause.code of Node's fetch, else its message): the
+ // common system and undici codes, else "fetch failed". Deno names some of these differently; a failed call has no
+ // provider answer, so the shadow compare never reads it.
+ func ErrorCode(err error) string {
++	// Winsock codes (Windows) by the names Node gives them there (re-review N4); no Unix errno is this large.
++	var errno syscall.Errno
++	if errors.As(err, &errno) {
++		if name, ok := winsock[errno]; ok {
++			return name
++		}
++	}
+ 	var dns *net.DNSError
+ 	var hn x509.HostnameError
+ 	var ua x509.UnknownAuthorityError
+diff --git a/gw/front/front.go b/gw/front/front.go
+index e9034ee..c01cf42 100644
+--- a/gw/front/front.go
++++ b/gw/front/front.go
+@@ -17,6 +17,7 @@ import (
+ 	"net/http/httputil"
+ 	"net/url"
+ 	"strconv"
++	"strings"
+ 	"sync/atomic"
+ 	"time"
+ )
+@@ -150,7 +151,13 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
+ 			// The request target exactly as the client sent it (P4b review I2): net/http re-escapes a path it decoded
+ 			// ("\" and "|" become %5C and %7C) and drops query pairs it cannot parse (";"), so the control plane would
+ 			// route another text than in js mode. Opaque is written as it is; RawQuery is kept whole.
+-			pr.Out.URL.Opaque = RawPath(pr.In.RequestURI)
++			// A target that starts with "//" cannot go in Opaque (net/url writes it as "http://..."): its path is set
++			// with RawPath, which is written as sent whenever it is a valid escaping of the path (re-review N1).
++			if raw := RawPath(pr.In.RequestURI); strings.HasPrefix(raw, "//") {
++				pr.Out.URL.Path, pr.Out.URL.RawPath = pr.In.URL.Path, raw
++			} else {
++				pr.Out.URL.Opaque = raw
++			}
+ 			pr.Out.URL.RawQuery = pr.In.URL.RawQuery
+ 			// The client's Host. Without one (HTTP/1.0) Go's transport would write the internal 127.0.0.1:<port>, so
+ 			// the request is flagged and the internal listener removes that Host: the host check sees none, as in js
+diff --git a/lib/front/push.js b/lib/front/push.js
+index 499d3c2..4dca0e8 100644
+--- a/lib/front/push.js
++++ b/lib/front/push.js
+@@ -90,12 +90,14 @@ function keyAuth(k) {
+   let rpm = 0;
+   if (k.rpm) {
+     if (typeof k.rpm !== 'number' || !Number.isFinite(k.rpm) || k.rpm < 0) return null;
+-    rpm = Math.ceil(k.rpm);
++    rpm = Math.min(Math.ceil(k.rpm), Number.MAX_SAFE_INTEGER); // past it, unlimited in both
+   }
+   let expiresAt = null;
+   if (k.expiresAt) {
+     if (typeof k.expiresAt !== 'number' || !Number.isFinite(k.expiresAt)) return null;
+-    expiresAt = Math.floor(k.expiresAt) || -1;
++    // Clamped to a safe integer, so config.push stays decodable: a later expiry than that never comes, an earlier one
++    // has passed (re-review N2).
++    expiresAt = Math.max(-Number.MAX_SAFE_INTEGER, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(k.expiresAt))) || -1;
+   }
+   if (k.budgetUSD != null && !Number.isFinite(k.budgetUSD)) return null;
+   const guardrails = {};
+@@ -114,7 +116,12 @@ function keyAuth(k) {
+     rpm,
+     privateOnly: !!k.privateOnly,
+     expiresAt,
+-    revokedAt: k.revokedAt ? Math.max(1, Math.floor(Number(k.revokedAt)) || 1) : null,
++    // Any value JS reads as true is a revocation, Infinity included (re-review N2).
++    revokedAt: k.revokedAt
++      ? Number.isSafeInteger(Math.floor(Number(k.revokedAt)))
++        ? Math.max(1, Math.floor(Number(k.revokedAt)))
++        : 1
++      : null,
+     guardrails,
+     prefix: str(k.prefix),
+     approveOwnRuns: k.approveOwnRuns === true,
+@@ -141,6 +148,15 @@ function price(e) {
+   return out;
+ }
+ 
++// The keys the gateway gets. A key the push drops takes every key with its hash along (re-review N3): JS matches the
++// first key with a hash (Buffer.from(hash, 'hex') reads upper case too), so a later one must not answer in its place.
++function pushedKeys(keys) {
++  const list = (Array.isArray(keys) ? keys : []).map((k) => [k, keyAuth(k)]);
++  const refused = new Set();
++  for (const [k, a] of list) if (!a && isObj(k) && typeof k.hash === 'string') refused.add(k.hash.toLowerCase());
++  return list.map(([, a]) => a).filter((a) => a && !refused.has(a.hash));
++}
++
+ /**
+  * The config.push body without gen and front (the supervisor adds gen, lib/front adds front).
+  * @param {{ gateway: any, keys: any[], pricing: Record<string, any> }} src
+@@ -159,7 +175,7 @@ function configPush({ gateway, keys, pricing }) {
+         .filter(isObj)
+         .map((m) => ({ match: str(m.match), to: str(m.to) })),
+     },
+-    keys: (Array.isArray(keys) ? keys : []).map(keyAuth).filter(Boolean),
++    keys: pushedKeys(keys),
+     pricing: Object.fromEntries(
+       Object.entries(isObj(pricing) ? pricing : {})
+         .filter(([, e]) => isObj(e))
+PATCH
+```
+
+- [ ] **Step 5: Run the tests and the task gate**
+
+Run:
+
+```bash
+export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
+node --test test/*.test.js
+deno test -q --no-check --no-prompt -P=test test/*.test.js
+npm run test:contract
+```
+
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+`pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
+
+- [ ] **Step 6: Commit and push**
+
+```bash
+git add -A -- gw lib test
+git status --short   # nothing outside this task's files, nothing under .superpowers/
+git commit -m "P4b re-review 1 fixes: a // target keeps origin form through the front, Winsock errors get Node's names, Infinity and out-of-range key values stay safe, a dropped key takes its hash along"
+git push origin migrate/p4b-passthrough
+```
+
+---
+
+### Task 10: The fixture generators under the CI fixtures job, and the Node/Deno differences pinned in Go
+
+Stream B owns the CI fixtures job, which runs every `scripts/fixtures/gen-*.js` on Node and on Deno with `--allow-read --allow-write=gw/testdata --deny-env --deny-net --deny-run --deny-sys` and requires the same bytes from both (coordinator's call: this stream does not edit `ci.yml`). `gen-chat.js` calls the gateway in process and `gen-pricing.js` writes nothing outside `gw/testdata`; the three cases where Node and Deno disagree leave the corpus and are pinned to Deno in Go tests.
+
+**Files:**
+- Modify: `.gitignore`, `gw/engine/keys.go`, `gw/engine/keys_test.go`, `gw/front/route_test.go`, `scripts/fixtures/gen-chat.js`, `scripts/fixtures/gen-keys.js`, `scripts/fixtures/gen-pricing.js`, `scripts/fixtures/gen-route.js`
+
+
+**Interfaces:**
+- Consumes: Tasks 1–9; stream B's fixtures job (its flags above).
+- Produces: generators that need no network, environment, subprocess or system access; `gw/testdata/.gen-*` git-ignored; `engine.divergentFold` (U+A7CF, U+A7D3, U+A7D5 not folded, as on Deno); `TestUnitsTheRuntimesFoldDifferently`, `TestCaretPathIsNotCanonical`.
 
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
 Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
-- [ ] **Step 2: Confirm that the committed fixtures are current**
-
-Run: `for f in scripts/fixtures/gen-*.js; do node "$f"; done; git status --porcelain -- gw/testdata`
-Expected: the five `gen-*` lines and no output from `git status` (the committed fixtures are current). This is the check the new CI step makes; it cannot fail before the step exists, so this step only confirms the starting point.
-
-- [ ] **Step 3: Add the CI steps**
+- [ ] **Step 2: Write the failing tests**
 
 Apply (from the repository root):
 
 ```bash
 git apply <<'PATCH'
-diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 7c99780..ef49065 100644
---- a/.github/workflows/ci.yml
-+++ b/.github/workflows/ci.yml
-@@ -70,6 +70,13 @@ jobs:
-       - name: Gateway contract suite through the Go front
-         shell: bash
-         run: ZP_ENGINE=front npm run test:contract
-+      # P4b: chat on js with the go engine shadowing it (any diff fails the run), then chat on the go engine.
-+      - name: Gateway contract suite, chat shadowed by the go engine
-+        shell: bash
-+        run: ZP_ENGINE=shadow npm run test:contract
-+      - name: Gateway contract suite, chat on the go engine
-+        shell: bash
-+        run: ZP_ENGINE=go npm run test:contract
-       - run: node bin/zaafpulse.js doctor
-   deno:
-     name: deno (${{ matrix.os }})
-@@ -146,6 +153,18 @@ jobs:
-           scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract-front.log" "contract suite under Deno, Go front (${{ matrix.os }})" \
-             | tee -a "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
-           exit $code
-+      - name: Gateway contract suite on the Deno server, chat shadowed and on the go engine
-+        if: ${{ !cancelled() }}
-+        shell: bash
-+        run: |
-+          set +e
-+          code=0
-+          for e in shadow go; do
-+            ZP_ENGINE=$e ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ > "$RUNNER_TEMP/deno-contract-$e.log" 2>&1 || code=1
-+            scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract-$e.log" "contract suite under Deno, chat $e (${{ matrix.os }})" \
-+              | tee -a "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
-+          done
-+          exit $code
-       - if: always()
-         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-         with:
-@@ -155,6 +174,8 @@ jobs:
-             ${{ runner.temp }}/deno-test.log
-             ${{ runner.temp }}/deno-contract.log
-             ${{ runner.temp }}/deno-contract-front.log
-+            ${{ runner.temp }}/deno-contract-shadow.log
-+            ${{ runner.temp }}/deno-contract-go.log
-           if-no-files-found: warn
+diff --git a/gw/engine/keys_test.go b/gw/engine/keys_test.go
+index 8f5ba2f..846022b 100644
+--- a/gw/engine/keys_test.go
++++ b/gw/engine/keys_test.go
+@@ -87,7 +87,7 @@ func TestKeysFixtures(t *testing.T) {
+ 			}
+ 			bad := 0
+ 			for u := 0; u < 0x10000; u++ {
+-				if u >= 0xd800 && u <= 0xdfff {
++				if (u >= 0xd800 && u <= 0xdfff) || divergentFold[rune(u)] {
+ 					continue
+ 				}
+ 				exp := uint16(u)
+@@ -135,3 +135,16 @@ func mustDecode(t *testing.T, c fixture, v any) {
+ 		t.Fatalf("%s: %v", c.Name, err)
+ 	}
+ }
++
++// Node and Deno upper-case three units differently (gen-keys.js leaves them out of the corpus): the v2 product runs on
++// Deno, which does not fold them, so neither does the engine.
++func TestUnitsTheRuntimesFoldDifferently(t *testing.T) {
++	for _, u := range []uint16{0xa7cf, 0xa7d3, 0xa7d5} {
++		if got := canon(u); got != u {
++			t.Errorf("canon(U+%04X) = U+%04X, Deno keeps it", u, got)
++		}
++	}
++	if Allows([]string{"oa/\ua7cf"}, "oa/\ua7ce") {
++		t.Error("U+A7CF matched U+A7CE")
++	}
++}
+diff --git a/gw/front/route_test.go b/gw/front/route_test.go
+index 87c53e6..a3df473 100644
+--- a/gw/front/route_test.go
++++ b/gw/front/route_test.go
+@@ -156,3 +156,11 @@ func TestClientShadowMarksAreRemoved(t *testing.T) {
+ 		t.Fatalf("forwarded %v", h)
+ 	}
+ }
++
++// Node and Deno disagree on /v1/a^b (Node's pathname is /v1/a%5Eb, Deno's /v1/a^b), so it is not in the route corpus:
++// the front never classifies it, and the control plane routes it whatever its runtime does.
++func TestCaretPathIsNotCanonical(t *testing.T) {
++	if Canonical("/v1/a^b") || Classify("/v1/a^b") != "" {
++		t.Fatal("/v1/a^b is classified")
++	}
++}
+diff --git a/scripts/fixtures/gen-chat.js b/scripts/fixtures/gen-chat.js
+index d9b121e..ec96dbf 100644
+--- a/scripts/fixtures/gen-chat.js
++++ b/scripts/fixtures/gen-chat.js
+@@ -1,15 +1,17 @@
+ // Fixtures for the go engine's chat route (P4b, slice S2): the real JS gateway (lib/gateway createGateway) answers each
+-// case over HTTP on 127.0.0.1, against a provider stubbed at fetch, and this records what it sent the provider, what
++// case in process (a request and a response object handed to gateway.handle, no socket), against a provider stubbed
++// at fetch, and this records what it sent the provider, what
+ // it answered the client and the usage line it wrote. gw/engine/chat_test.go plans and answers the same case from the
+ // config.push and secrets.handoff the control plane would send (lib/front/push.js) and must give the same bytes.
+ // Writes gw/testdata/chat/<n>-<name>.json as { fn: "chat", in: { config, secrets, request, provider }, out }.
+ // Only cases the engine serves are here (guardrails off, no budget, one OpenAI-format target, not streaming); the
+ // hand-offs are Go tests of their own.
+-// Run: node scripts/fixtures/gen-chat.js (CI runs every scripts/fixtures/gen-*.js and fails on a diff).
++// Run: node scripts/fixtures/gen-chat.js. It needs no network, environment, subprocess or system access, and writes
++// only under gw/testdata (its scratch data folder gw/testdata/.gen-chat-data is removed at the end and git-ignored), so
++// it runs under the CI fixtures job's Deno flags (--allow-read --allow-write=gw/testdata --deny-env --deny-net
++// --deny-run --deny-sys) and gives the same bytes on Node and Deno.
+ const fs = require('fs');
+-const os = require('os');
+ const path = require('path');
+-const http = require('http');
+ const { createGateway } = require('../../lib/gateway');
+ const { createSecrets } = require('../../lib/secrets');
+ const { configPush, secretsPush } = require('../../lib/front/push');
+@@ -181,8 +183,47 @@ const CASES = [
+   ['timed-out', {}, { model: 'oa/m1', messages: user }, { throw: 'timeout' }],
+ ];
  
-   typecheck:
-@@ -197,6 +218,21 @@ jobs:
-         run: test -z "$(gofmt -l gw)" || { gofmt -l gw; exit 1; }
-       - run: go -C gw vet ./...
-       - run: go -C gw test -count=1 ./...
-+      # The fixtures the Go tests replay are generated from the JS code (scripts/fixtures/gen-*.js, every stream's): run
-+      # them all again and fail when gw/testdata changes, so JS and Go cannot drift apart unseen (P4 stage 1 spec).
-+      - name: Node for the fixture generators
-+        if: matrix.os == 'ubuntu-latest'
-+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-+        with:
-+          node-version: 24.21.0
-+          package-manager-cache: false
-+      - name: Regenerate the fixtures and compare
-+        if: matrix.os == 'ubuntu-latest'
-+        shell: bash
-+        run: |
-+          for f in scripts/fixtures/gen-*.js; do node "$f"; done
-+          git status --porcelain -- gw/testdata
-+          test -z "$(git status --porcelain -- gw/testdata)"
- 
-   # Compiles the six single-file binaries with deno compile and the "cli" permission set (the binary's entry is the
-   # command line, so it holds the superset of the server set), and smoke-tests each one on a runner of its own OS and
++// A request as gateway.handle reads it: headers, the target, a loopback client, the body as one chunk.
++const requestOf = (headers, text) => ({
++  method: 'POST',
++  url: '/v1/chat/completions',
++  headers,
++  socket: { remoteAddress: '127.0.0.1', encrypted: false },
++  on() {},
++  once() {},
++  async *[Symbol.asyncIterator]() {
++    yield Buffer.from(text, 'utf8');
++  },
++});
++// A response that keeps what the gateway writes.
++function responseOf() {
++  const res = {
++    statusCode: 200,
++    headers: {},
++    body: '',
++    writableEnded: false,
++    writeHead(status, h = {}) {
++      res.statusCode = status;
++      for (const [k, v] of Object.entries(h)) res.headers[k.toLowerCase()] = String(v);
++      return res;
++    },
++    setHeader: (k, v) => (res.headers[k.toLowerCase()] = String(v)),
++    write: (c) => ((res.body += String(c)), true),
++    end(c) {
++      if (c !== undefined) res.body += String(c);
++      res.writableEnded = true;
++      return res;
++    },
++    on() {},
++    once() {},
++  };
++  return res;
++}
++
+ async function main() {
+-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-gen-chat-'));
++  const dataDir = path.join(OUT, '..', '.gen-chat-data');
++  fs.rmSync(dataDir, { recursive: true, force: true });
++  fs.mkdirSync(dataDir, { recursive: true });
+   fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify({ keys: KEYS }));
+   let provider = null;
+   let sent = null;
+@@ -210,12 +251,8 @@ async function main() {
+     getPricing: () => PRICING,
+     getIntegrations: () => ({ listTools: async () => [], callTool: async () => ({}) }),
+     fetchImpl,
++    toolsHome: dataDir, // never the real home folder (and no sys access under the CI flags)
+   });
+-  const server = http.createServer(async (req, res) => {
+-    if (!(await gateway.handle(req, res, new URL(req.url, 'http://localhost')))) res.end();
+-  });
+-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+-  const base = `http://127.0.0.1:${server.address().port}`;
+   const config = configPush({ gateway: GATEWAY, keys: KEYS, pricing: PRICING });
+   const handoff = secretsPush({ gateway: GATEWAY, resolve: (ref, f) => secrets.resolve(ref, f) });
+   fs.rmSync(OUT, { recursive: true, force: true });
+@@ -243,16 +280,18 @@ async function main() {
+       ...(opt.headers || {}),
+     };
+     const text = typeof body === 'string' ? body : JSON.stringify(body);
+-    const r = await fetch(`${base}/v1/chat/completions`, { method: 'POST', headers, body: text });
++    const res = responseOf();
++    const req = requestOf(headers, text);
++    await gateway.handle(req, res, new URL(req.url, 'http://localhost'));
+     const client = {
+-      status: r.status,
++      status: res.statusCode,
+       headers: Object.fromEntries(
+         ['content-type', 'cache-control', 'access-control-allow-origin', 'retry-after'].map((h) => [
+           h,
+-          r.headers.get(h),
++          h in res.headers ? res.headers[h] : null,
+         ]),
+       ),
+-      body: await r.text(),
++      body: res.body,
+     };
+     const { ts: _ts, ms: _ms, cost, ...usage } = gateway.usage.recent(1)[0];
+     const out = {
+@@ -266,7 +305,6 @@ async function main() {
+       `${JSON.stringify({ fn: 'chat', in: input, out })}\n`,
+     );
+   }
+-  server.close();
+   gateway.flush();
+   fs.rmSync(dataDir, { recursive: true, force: true });
+   console.log(`gen-chat: ${n} cases in ${path.relative(process.cwd(), OUT)}`);
+diff --git a/scripts/fixtures/gen-keys.js b/scripts/fixtures/gen-keys.js
+index bc156df..d2e51e5 100644
+--- a/scripts/fixtures/gen-keys.js
++++ b/scripts/fixtures/gen-keys.js
+@@ -148,9 +148,13 @@ for (const [name, rpm, times] of [
+ // Canonicalize (ECMAScript 22.2.2.7.3, a regular expression with i and without u), the folding allows() relies on: for
+ // every BMP code unit whose canonical unit is another one, that unit. Computed with this runtime's own toUpperCase,
+ // which is what the JS gateway's /i globs use (P4b review I3).
++// Three units Node 24 upper-cases and Deno 2.9.8 does not (U+A7CF, U+A7D3, U+A7D5, Unicode 17 letters its ICU data
++// lacks) are left out: the corpus holds only what both runtimes agree on, and Go keeps Deno's answer (no folding),
++// pinned by gw/engine/keys_test.go TestUnitsTheRuntimesFoldDifferently.
++const DIVERGENT = new Set([0xa7cf, 0xa7d3, 0xa7d5]);
+ const canonical = {};
+ for (let u = 0; u < 0x10000; u++) {
+-  if (u >= 0xd800 && u <= 0xdfff) continue;
++  if ((u >= 0xd800 && u <= 0xdfff) || DIVERGENT.has(u)) continue;
+   const up = String.fromCharCode(u).toUpperCase();
+   if (up.length !== 1) continue;
+   const cu = up.charCodeAt(0);
+diff --git a/scripts/fixtures/gen-pricing.js b/scripts/fixtures/gen-pricing.js
+index 207c07a..291fd56 100644
+--- a/scripts/fixtures/gen-pricing.js
++++ b/scripts/fixtures/gen-pricing.js
+@@ -3,7 +3,6 @@
+ // <name>.json as { fn, in, out }.
+ // Run: node scripts/fixtures/gen-pricing.js (CI runs every scripts/fixtures/gen-*.js and fails on a diff).
+ const fs = require('fs');
+-const os = require('os');
+ const path = require('path');
+ const { normalizeModel, makePricer } = require('../../lib/pricing');
+ const { createUsage } = require('../../lib/gateway/usage');
+@@ -42,7 +41,8 @@ const cases = [];
+ for (const m of MODELS) cases.push({ fn: 'normalize', name: m, in: m, out: normalizeModel(m) });
+ const pricer = makePricer(TABLE);
+ for (const m of MODELS) cases.push({ fn: 'key', name: m, in: m, out: pricer.key(m) });
+-const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zp-gen-pricing-')), 'u.jsonl');
++// The usage log is never written (cost() only reads the price table): a path that does not exist, under gw/testdata.
++const file = path.join(OUT, '..', '.gen-pricing-unused.jsonl');
+ const usage = createUsage({ file, getPricing: () => TABLE });
+ for (const [m, u] of [
+   ['oa/m1', { input: 1000, output: 500 }],
+@@ -53,7 +53,6 @@ for (const [m, u] of [
+   ['unknown-model', { input: 10, output: 10 }],
+ ])
+   cases.push({ fn: 'cost', name: m, in: { model: m, ...u }, out: toNano(usage.cost(m, u)) });
+-fs.rmSync(path.dirname(file), { recursive: true, force: true });
+ fs.rmSync(OUT, { recursive: true, force: true });
+ fs.mkdirSync(OUT, { recursive: true });
+ const table = configPush({ gateway: {}, keys: [], pricing: TABLE }).pricing;
+diff --git a/scripts/fixtures/gen-route.js b/scripts/fixtures/gen-route.js
+index a051713..b26e3df 100644
+--- a/scripts/fixtures/gen-route.js
++++ b/scripts/fixtures/gen-route.js
+@@ -36,7 +36,8 @@ const RAW = [
+   '/v1/traces',
+   '/v1/a;b/c',
+   "/v1/a!$&'()*+,=:@~_-.x",
+-  '/v1/a^b',
++  // '/v1/a^b' is not here: Node escapes the ^ (/v1/a%5Eb), Deno keeps it, and the corpus holds only what both runtimes
++  // agree on (gw/front/route_test.go TestCaretPathIsNotCanonical pins it).
+   '/v1/a{b}',
+   '/v1/a|b',
+   '/v1/a[b]',
 PATCH
 ```
 
-- [ ] **Step 4: Run the tests and the task gate**
+- [ ] **Step 3: Run them to see them fail**
 
-Run: `ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml"); puts "yaml-ok"'` and the task gate of Task 9.
-Expected: `yaml-ok`, and the gate green.
+Run: `for g in scripts/fixtures/gen-*.js; do deno run -q --no-prompt --allow-read --allow-write=gw/testdata --deny-env --deny-net --deny-run --deny-sys "$g"; done; git status --short gw/testdata`
+Expected: `gen-chat.js` and `gen-pricing.js` fail with `NotCapable: Requires env access to "TMPDIR"`, and the others change `gw/testdata/keys/*canonicalize*` and `gw/testdata/route/29-*` (Deno's `toUpperCase` and URL parser differ from Node's there).
 
-- [ ] **Step 5: Commit and push**
+- [ ] **Step 4: Make the generators runtime-neutral and pin the differences**
+
+Apply (from the repository root):
 
 ```bash
-git add -A -- .github
-git status --short   # nothing outside this task's files, nothing under .superpowers/
-git commit -m "P4b T10: CI runs the contract suite shadowed and on go, and regenerates the fixtures from the JS code"
-git push origin migrate/p4b-passthrough
+git apply <<'PATCH'
+diff --git a/.gitignore b/.gitignore
+index e2ff4d3..af20dc0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -6,3 +6,6 @@ node_modules/
+ research_notes/
+ dist/
+ gw/bin/
++
++# Scratch folders of the fixture generators (scripts/fixtures/gen-*.js)
++gw/testdata/.gen-*
+diff --git a/gw/engine/keys.go b/gw/engine/keys.go
+index d60226b..818fcb3 100644
+--- a/gw/engine/keys.go
++++ b/gw/engine/keys.go
+@@ -137,7 +137,7 @@ func canon(u uint16) uint16 {
+ 	}
+ 	r := rune(u)
+ 	up := unicode.ToUpper(r)
+-	if up > 0xffff || specialUpper[r] {
++	if up > 0xffff || specialUpper[r] || divergentFold[r] {
+ 		return u
+ 	}
+ 	if r >= 128 && up < 128 {
+@@ -146,6 +146,10 @@ func canon(u uint16) uint16 {
+ 	return uint16(up)
+ }
+ 
++// divergentFold are the units Node 24 upper-cases and Deno 2.9.8 does not (Unicode 17 letters); the engine keeps
++// Deno's answer, the v2 runtime's.
++var divergentFold = map[rune]bool{0xa7cf: true, 0xa7d3: true, 0xa7d5: true}
++
+ // specialUpper are the BMP code units whose JavaScript toUpperCase is more than one unit (SpecialCasing.txt: the 102 the
+ // keys fixture lists through gen-keys.js "canonicalize"), so Canonicalize leaves them as they are, though Go's simple
+ // mapping folds some of them (U+1F80 to U+1F88, P4b review I3).
+PATCH
 ```
 
-- [ ] **Step 6: Start the full-matrix CI run and keep its id for the results**
+- [ ] **Step 5: Generate the fixtures from the JS code**
 
-As in Task 1. Expected: every job green, including the two new contract steps on four OS (Node) and two (Deno), and the fixture step on ubuntu.
+Run: `git checkout gw/testdata; for g in scripts/fixtures/gen-*.js; do node "$g"; done; cp -R gw/testdata /tmp/td-node; for g in scripts/fixtures/gen-*.js; do deno run -q --no-prompt --allow-read --allow-write=gw/testdata --deny-env --deny-net --deny-run --deny-sys "$g"; done; diff -r /tmp/td-node gw/testdata && echo IDENTICAL`
+Expected: every generator succeeds on both runtimes and `IDENTICAL`.
+
+- [ ] **Step 6: Run the tests and the task gate**
+
+Run:
+
+```bash
+export GOTOOLCHAIN=local ZAAFPULSE_DATA="$(mktemp -d)" HOME="$(mktemp -d)"
+test -z "$(gofmt -l gw)" && go -C gw vet ./... && GOOS=windows go -C gw vet ./... && go -C gw test -race -count=1 ./...
+deno task typecheck
+node --test test/*.test.js
+deno test -q --no-check --no-prompt -P=test test/*.test.js
+npm run test:contract
+```
+
+Expected: no gofmt output, `ok` for every Go package, `deno check` with no error, `fail 0` from Node, `0 failed` from Deno, and the contract suite
+`pass 172` (from Task 8 on, `pass 179`, with one case skipped outside shadow mode), `fail 0`.
+
+- [ ] **Step 7: Commit and push**
+
+```bash
+git add -A -- .gitignore gw scripts
+git status --short   # nothing outside this task's files, nothing under .superpowers/
+git commit -m "P4b T10: the fixture generators run under the CI fixtures job's Deno flags and give the same bytes on Node and Deno; the three Node/Deno differences are pinned in Go tests instead"
+git push origin migrate/p4b-passthrough
+```
 
 ---
 
@@ -7606,6 +8821,7 @@ As in Task 1. Expected: every job green, including the two new contract steps on
 The record of stage 1 stream A: what ships, the entry conditions with their tests, the measured runs, the deviations.
 
 **Files:**
+- Create: `docs/migration/2026-11-12-p4b-results.md`
 - Modify: `README.md`, `docs/migration/2026-11-10-deno-go-migration-plan.md`
 
 
@@ -7625,14 +8841,16 @@ Expected: `absent`.
 
 - [ ] **Step 3: Write the results and update the README and the program plan**
 
-Create `docs/migration/2026-11-12-p4b-results.md` with the text below. Fill the three run lines with the URLs of the
-dispatches of Tasks 1, 8 and 10 (`gh run list -R rifqifitriady/ZAAFPulse-deno-go --workflow ci.yml --branch migrate/p4b-passthrough --event workflow_dispatch --limit 3 --json url,headSha --jq '.[] | "\(.url) \(.headSha[:7])"'`), and the counts in "Measured" with what Tasks 8, 9 and 10 printed.
+The results document records the runs and the deviations found during the run; fill the run of the Task 11 dispatch once it has finished.
 
-````markdown
+Create `docs/migration/2026-11-12-p4b-results.md`:
+
+```markdown
 # P4b results: chat on the go engine behind the shadow (slices S2 and S4)
 
-Date: 2026-11-12. Branch `migrate/p4b-passthrough`. Spec `docs/superpowers/specs/2026-11-12-p4-stage1-design.md`
-(stream A), plan `docs/superpowers/plans/2026-11-12-p4b-passthrough.md`.
+Date: 2026-11-12. Branch `migrate/p4b-passthrough` (stream A of P4 stage 1), merged with `migrate/deno-go` at
+`8abb82c` (stream C) before Task 1. Spec `docs/superpowers/specs/2026-11-12-p4-stage1-design.md` (stream A), plan
+`docs/superpowers/plans/2026-11-12-p4b-passthrough.md`.
 
 ## What ships
 
@@ -7641,62 +8859,86 @@ Date: 2026-11-12. Branch `migrate/p4b-passthrough`. Spec `docs/superpowers/specs
   key, a client and Host on this machine, no guardrail check in scope, no blocking budget, no key budget, no route, no
   tool results for the token saver); it hands every other request, unchanged, to the server.
 - API keys in Go (`gw/engine/keys.go`): the key by its SHA-256, revoked and expired keys, the per-key model and agent
-  allow-lists, the requests-per-minute window; 53 fixture cases from `lib/gateway/keys.js`.
+  allow-lists with JavaScript's `/i` folding, the requests-per-minute window. The push (`lib/front/push.js keyAuth`)
+  reads every key field as `lib/gateway/keys.js` does and drops a key it cannot (with every key of its hash), so the
+  gateway is never more permissive than the server.
 - The shadow compare: `gateway.shadow: ["chat"]` with chat on js makes the gateway compare each chat call the server
   answers with the request it would have sent and the answer and usage line it would have given, from the same
   provider answer (`.data/gateway-shadow.jsonl`, no prompt or answer text). Chat moves to go only after the shadow has
   compared at least `gateway.shadowMinCompares` calls (default 20) and seen no difference for `gateway.shadowDays`
-  days (default 1) since its last diff, and while OpenTelemetry
-  export is off. `GET /api/gateway/status` shows the counts and why a class stays on js.
+  days (default 1) since its last diff (the owner's rule of 2026-11-12), and while OpenTelemetry export is off.
+  `GET /api/gateway/status` shows the counts and why a class stays on js.
+- The front forwards the request target exactly as the client sent it (raw path and query), so js and front mode route
+  the same text.
 - Every rule ported to Go is checked against fixtures generated from the JS code (`scripts/fixtures/gen-*.js`,
-  `gw/testdata/*`); CI regenerates them and fails on a difference.
+  `gw/testdata/*`); the generators give the same bytes on Node and on Deno under the CI fixtures job's flags.
 
 ## P4b entry conditions (from the P4a results)
 
 | # | Condition | Where | Test |
 |---|---|---|---|
 | 1 | One usage writer that feeds the spend | `lib/gateway/index.js ingestUsage`, `lib/ipc/server-sinks.js` | `test/ipc-server-sinks.test.js` |
-| 2 | Classify on the path form the server routes on | `gw/front/route.go` (`Classify`, `Canonical`, `RawPath`) | `gw/front/route_test.go` (35 fixtures) |
+| 2 | Classify on the path form the server routes on | `gw/front/route.go` (`Classify`, `Canonical`, `RawPath`), `gw/front/front.go` (raw target forwarded) | `gw/front/route_test.go` (34 fixtures, `TestRequestTargetIsForwardedAsSent`) |
 | 3 | The late front section and reload | `gw/cmd/zaafpulse-gw/front.go applyFront`, `lib/front/index.js` | `gw/cmd/zaafpulse-gw/reload_test.go` |
-| 4 | P4f outbox and marks | stream C (merged first, Decision 12 of the plan) | stream C's tests |
+| 4 | P4f outbox and marks | stream C, merged first (`8abb82c`) | stream C's tests |
 | 5 | Proxy and CA variables | `lib/ipc/env.js`, `gw/engine/upstream.go` | `test/ipc-hardening.test.js`, `TestUpstreamExtraCA` |
 | 6 | Header limit and log noise | `gw/front/front.go` (`MaxHeaderBytes`), `gw/front/quiet.go` | `TestOversizedHeadersAre431`, `TestQuietLoggerRateLimitsNoisyLines` |
 | 8 | Restart needed after a crash loop | `lib/front/index.js status`, `public/topologyview.js` | `test/front.test.js`, `test/topology-ui.test.js` |
 
 ## Measured
 
-- Contract suite (172 cases plus 7 in `test/contract/go-chat.test.js`, plus 1 shadow case): js, front, shadow and go
-  modes on Node and Deno, green.
+- Contract suite (172 cases, plus 7 in `test/contract/go-chat.test.js`, plus 1 shadow case): js, front, shadow and go
+  modes on Node and Deno, green on macOS arm64.
 - Shadow on the contract corpus: every server of the `ZP_ENGINE=shadow` run stopped with no diff line.
 
 | Run | What it shows |
 |---|---|
-| Task 1 dispatch | full matrix after the front parity changes |
-| Task 8 dispatch | full matrix with chat on go |
-| Task 10 dispatch | full matrix with the shadow and go contract steps and the fixture check |
+| [43243797803](https://github.com/rifqifitriady/ZAAFPulse-deno-go/actions/runs/43243797803) | Tasks 1–5 (`99c6280`): red on typecheck and go on both Windows runners (review 1, I1 and I4) |
+| [43248009523](https://github.com/rifqifitriady/ZAAFPulse-deno-go/actions/runs/43248009523) | review 1 fixes (`cac226a`): red only on go on Windows (re-review N4), typecheck green |
+| [43249555363](https://github.com/rifqifitriady/ZAAFPulse-deno-go/actions/runs/43249555363) | re-review 1 fixes (`10bd72b`) |
 
-## Differences from the spec
+The full-matrix run on the Task 11 tree is added below once it has finished.
 
-See the plan's "Spec deviations" 1–10; none was added during the run unless listed here.
+## Differences from the spec and the plan
+
+The plan's "Spec deviations" 1–10 hold, with these changes made during the run:
+
+1. **Owner's switch rule:** 1 clean day and 20 compared calls (`gateway.shadowDays` 1, `gateway.shadowMinCompares`
+   20; 0 lifts either), not 3 days.
+2. **No CI change by this stream.** The contract runs in shadow and go mode and the fixture regeneration are not added
+   to `ci.yml` (coordinator's call): stream B's fixtures job regenerates every `gen-*.js` on Node and Deno, and the
+   shadow and go contract modes run locally until a CI step is added after stream B merges.
+3. **Node/Deno differences, kept out of the corpus and pinned to Deno in Go:** U+A7CF, U+A7D3 and U+A7D5, which Node
+   24's `toUpperCase` maps to U+A7CE, U+A7D2 and U+A7D4 and Deno 2.9.8's does not (`TestUnitsTheRuntimesFoldDifferently`:
+   the engine does not fold them); and the path `/v1/a^b`, whose pathname is `/v1/a%5Eb` on Node and `/v1/a^b` on Deno
+   (`TestCaretPathIsNotCanonical`: the front never classifies it).
+4. **A `//` request target** is forwarded through `URL.RawPath`, not `Opaque` (which net/url writes as `http://...`); it
+   is exact unless the path after `//` also holds a character net/url escapes (`\`, `|`).
+5. **Windows error names:** Winsock codes are named as Node names them on Windows (`ECONNREFUSED`, `ECONNRESET`,
+   `ETIMEDOUT`, `EHOSTUNREACH`, `ENETUNREACH`, `ECONNABORTED`).
+6. **A base URL holding a credential** (user:password, a query or a fragment) is pushed with origin and path only and
+   the provider disabled, so its calls go to the server, which calls it as before.
+7. **Node 24's fetch ignores `HTTPS_PROXY`** unless `NODE_USE_ENV_PROXY=1`, while the engine always uses it (Deno's
+   fetch does too): under Node, a go-served call may go through a proxy the JS gateway never used.
 
 ## Follow-ups
 
+- CI steps for the contract suite in shadow and go mode (after stream B merges).
 - The reverse shadow (js building from go's provider answer) and streaming chat: P4c.
 - Guardrails and budgets in the engine: P4e; translation: P4d; OAuth2 and service accounts: P4g.
 - The server's access checks in Go (remote clients), per-engine rate-limit windows and provider quota readings: G3.
-````
-
-Then apply the README and program plan changes:
+- Review minors m3 (secret extraction on non-canonical paths, trimming), m4 (a held quiet-log count), m6 (item 7).
+```
 
 Apply (from the repository root):
 
 ````bash
 git apply <<'PATCH'
 diff --git a/README.md b/README.md
-index 0db1124..fc89e53 100644
+index 0db1124..dab9188 100644
 --- a/README.md
 +++ b/README.md
-@@ -592,6 +592,13 @@ the only writer of the usage log, the cost ledger and the audit chain. With `"ga
+@@ -592,6 +592,14 @@ the only writer of the usage log, the cost ledger and the audit chain. With `"ga
  them (build it with `npm run gw:build`, or point `ZAAFPULSE_GW_BIN` at a binary); if it cannot run, the server serves
  the port itself and the Overview shows it. The default, `"js"`, starts no Go process.
  
@@ -7704,7 +8946,8 @@ index 0db1124..fc89e53 100644
 +OpenAI-format provider with a plain API key, from a client on this machine, when no guardrail check and no blocking
 +budget applies; it hands every other call to the server. Before it switches, `"shadow": ["chat"]` has it compare each
 +chat call the server answers with what it would have sent and answered (`.data/gateway-shadow.jsonl`, no prompt text);
-+chat moves to Go only after 3 days without a difference (`"shadowDays"`), and while OpenTelemetry export is off.
++chat moves to Go only after 20 compared calls and 1 day without a difference (`"shadowMinCompares"`,
++`"shadowDays"`), and while OpenTelemetry export is off.
 +`GET /api/gateway/status` shows the counts and why a class stays on the server.
 +
  ### Run it on login (macOS, from source)
@@ -7742,6 +8985,10 @@ git status --short   # nothing outside this task's files, nothing under .superpo
 git commit -m "P4b T11: results, README and program plan"
 git push origin migrate/p4b-passthrough
 ```
+
+- [ ] **Step 6: Start the full-matrix CI run and record it**
+
+As after Task 5. Expected: every job green; add the run to the results document's table.
 
 ---
 
