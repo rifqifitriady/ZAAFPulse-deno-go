@@ -80,8 +80,27 @@ type FrontUpstream struct {
 	Port int64 `json:"port" ipc:"min=1,max=65535"`
 }
 
-// FrontShadow is reserved for the shadow compare (P4b): empty in P4a.
-type FrontShadow struct{}
+// FrontShadow names the route classes on js whose requests the gateway compares with the go engine (P4b; empty in
+// P4a).
+type FrontShadow struct {
+	Classes []RouteClass `json:"classes,omitzero"`
+}
+
+// RouteClass is one of the gateway's route classes (gw/front Classes).
+type RouteClass string
+
+func (c *RouteClass) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("route class %s is not a string", b)
+	}
+	switch s {
+	case "chat", "messages", "responses", "embeddings", "models", "gemini", "mcp", "a2a", "skills", "agents":
+		*c = RouteClass(s)
+		return nil
+	}
+	return fmt.Errorf("route class %q is not one of the gateway's", s)
+}
 
 // Engine is "js" or "go".
 type Engine string

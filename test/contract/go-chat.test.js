@@ -159,3 +159,21 @@ const CASES = [
 ];
 
 for (const c of CASES) test(`go chat: ${c.name}`, c.run);
+
+// ZP_ENGINE=shadow: the gateway compared the calls above with the go engine and found them the same (the harness's
+// stop() fails on any diff line).
+test(
+  'go chat: the shadow compared the calls the engine would serve, with no diff',
+  { skip: process.env.ZP_ENGINE !== 'shadow' },
+  async () => {
+    const end = Date.now() + 5000;
+    let st;
+    for (;;) {
+      st = (await h.call('/api/gateway/status', { method: 'GET' })).json;
+      if ((st.shadow.chat && st.shadow.chat.compared >= 8) || Date.now() > end) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.ok(st.shadow.chat.compared >= 8, JSON.stringify(st.shadow));
+    assert.equal(st.shadow.chat.diffs, 0);
+  },
+);

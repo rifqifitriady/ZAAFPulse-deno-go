@@ -6,5 +6,5 @@
     "noImplicitAny": false,
     "noEmit": true
   },
-  "include": ["lib/gateway", "lib/cost", "lib/governance", "lib/money.js", "lib/types.js"]
+  "include": ["lib/front", "lib/gateway", "lib/cost", "lib/governance", "lib/money.js", "lib/types.js"]
 }
