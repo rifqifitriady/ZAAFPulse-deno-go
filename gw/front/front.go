@@ -41,6 +41,10 @@ const AbsoluteFormError = "absolute-form request targets are not accepted"
 var proxyHeaders = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port",
 	"Forwarded", "Via", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip"}
 
+// MaxHeaderBytes makes the public port refuse what Node refuses: Node's limit is 16 KiB of request line and headers,
+// and net/http reads MaxHeaderBytes plus 4096 bytes before it answers 431 (P4a final review m2, P4b entry condition 6).
+const MaxHeaderBytes = 16384 - 4096
+
 // ErrAddrInUse: another process holds the main port. The gateway exits 4.
 var ErrAddrInUse = errors.New("front: the main port is in use")
 
@@ -77,6 +81,7 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, ln: ln}
 	s.SetEngines(cfg.Engines)
+	quiet := QuietLogger(logger, time.Now)
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.Upstream))}
 	s.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -109,12 +114,12 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 			IdleConnTimeout: 120 * time.Second,
 		},
 		FlushInterval: -1, // SSE and chunked bodies pass through at once
-		ErrorLog:      logger,
+		ErrorLog:      quiet,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if r.Context().Err() != nil {
 				return // the client is gone
 			}
-			logger.Printf("front: %s %s: %v", r.Method, r.URL.Path, err)
+			quiet.Printf("front: %s %s: %v", r.Method, RawPath(r.RequestURI), err)
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "2")
 			w.WriteHeader(http.StatusBadGateway)
@@ -125,7 +130,8 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 		Handler:           s,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		ErrorLog:          logger,
+		MaxHeaderBytes:    MaxHeaderBytes,
+		ErrorLog:          quiet,
 	}
 	return s, nil
 }
@@ -187,7 +193,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"error":"` + AbsoluteFormError + `"}`))
 		return
 	}
-	if s.engine(Classify(r.URL.Path)) != "js" {
+	if r.Method == http.MethodConnect {
+		// Node has no "connect" listener and closes the socket without an answer (P4a re-review r1).
+		if hj, ok := w.(http.Hijacker); ok {
+			if c, _, err := hj.Hijack(); err == nil {
+				_ = c.Close()
+				return
+			}
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.engine(Classify(RawPath(r.RequestURI))) != "js" {
 		// Unreachable in P4a: config.push refuses a go engine. P4b answers here.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotImplemented)
