@@ -70,7 +70,7 @@ const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
 const platform = require('./lib/platform');
-const { createAuth, isLoopback, originAllowed } = require('./lib/auth');
+const { createAuth, isLoopback, originAllowed, peerMayConnect } = require('./lib/auth');
 const otel = require('./lib/otel');
 const { createTraceStore } = require('./lib/trace/store');
 const { createIngest } = require('./lib/ipc/ingest');
@@ -78,6 +78,9 @@ const { localPaths } = require('./lib/ipc/local');
 const { recoverMarks } = require('./lib/ipc/marks');
 const { createMarkFile } = require('./lib/ipc/markfile');
 const { serverSinks } = require('./lib/ipc/server-sinks');
+const { gwEnv } = require('./lib/ipc/env');
+const { createFront, engineOf } = require('./lib/front');
+const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
 const { createReceiver } = require('./lib/trace/otlp');
 const { isTraceCaller } = require('./lib/gateway/client');
@@ -231,6 +234,8 @@ function loadConfig() {
   };
 }
 let config = loadConfig();
+// The Go gateway in front, or the server alone (lib/front, gateway.engine): set where the server starts listening.
+let front = null;
 
 const indexer = DEMO
   ? {
@@ -333,6 +338,9 @@ function govRecord(entry) {
 // config.change entry with its field-level changes, secrets masked (lib/governance/diff.js). A write that changed
 // nothing is no entry.
 function configChanged(before, after) {
+  // The gateway section changed: a new config generation for the gateway in front, or front again after a fallback.
+  if (front && JSON.stringify((before || {}).gateway) !== JSON.stringify((after || {}).gateway))
+    front.reload().catch((err) => console.error(`gateway: ${err.message}`));
   try {
     const d = govDiff(before, after);
     if (!d.changes.length) return;
@@ -1456,6 +1464,8 @@ const handler = async (req, res) => {
   // Names other than loopback are accepted only when sign-in is on (server mode or behind a proxy).
   if (!isLoopback(host) && !(auth.mode === 'password' && (!ALLOWED_HOSTS.length || ALLOWED_HOSTS.includes(host))))
     return send(res, 403, { error: 'forbidden' });
+  // Without sign-in only this machine may connect: through the Go front the peer is the client Go named (P4a H1).
+  if (!peerMayConnect(req, auth.mode)) return send(res, 403, { error: 'forbidden' });
   // In every mode, a browser page from another site is refused (DNS rebinding, and MCP's Origin rule).
   if (
     !originAllowed(req, {
@@ -1598,6 +1608,9 @@ const handler = async (req, res) => {
     // A reviewer or a viewer gets the redacted view: no prompt, note, title, task or secret reference.
     if (url.pathname === '/api/gateway' && req.method === 'GET')
       return send(res, 200, redactGateway(await gateway.admin('', 'GET'), role));
+    // The gateway process (P4a D6): mode, state, restarts. Before the admin routes, whose pattern it matches; owner only
+    // (it is no viewer read, so the role check above refuses anyone else).
+    if (url.pathname === '/api/gateway/status' && req.method === 'GET') return send(res, 200, front.status());
     const gwAdmin = url.pathname.match(/^\/api\/gateway\/([a-z]+)$/);
     if (gwAdmin) {
       // Only the request log is read with GET. Every other admin route writes (defaults, settings), spends tokens
@@ -2126,16 +2139,23 @@ const handler = async (req, res) => {
 // otel continues an incoming traceparent on gateway requests.
 const traced = otel.wrapHandler((req, res) => govContext.runAs(null, () => handler(req, res)));
 const server = TLS ? https.createServer(TLS, traced) : http.createServer(traced);
+// Errors once listening end the server, as before P4a; an error while the listen starts is front.start()'s to report.
 server.on('error', (err) => {
+  if (!server.listening) return;
+  console.error(err.message);
+  process.exit(1);
+});
+const portTaken = (err) => {
   console.error(
     err.code === 'EADDRINUSE'
       ? `Port ${PORT} is already in use: is ZAAFPulse running? (zaafpulse status)`
       : err.message,
   );
   process.exit(1);
-});
+};
 
-server.listen(PORT, HOST, () => {
+// The main port first answers: the banner, then the passes that run while the server is up (once, in any mode).
+function serving() {
   console.log(
     `ZAAFPulse${DEMO ? ' (demo data)' : ''} → ${TLS ? 'https' : 'http'}://${SERVER_MODE ? HOST : 'localhost'}:${PORT}${SERVER_MODE ? `  (server mode: sign-in required; apps use ${BASE_URL})` : ''}`,
   );
@@ -2206,7 +2226,35 @@ server.listen(PORT, HOST, () => {
       .finally(() => {
         demoReady = true;
       });
+}
+
+// gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
+const ENGINE = DEMO ? 'js' : engineOf(rawConfig());
+const askedEngine = (rawConfig().gateway || {}).engine;
+if (!DEMO && askedEngine !== undefined && !['js', 'front'].includes(askedEngine))
+  console.error(`config.json gateway.engine ${JSON.stringify(askedEngine)} is not "js" or "front": serving on Deno`);
+const fi = ENGINE === 'front' ? frontIngest() : null;
+front = createFront({
+  engine: ENGINE,
+  host: HOST, // the public listen host: the auth mode and the host checks keep reading HOST, never 127.0.0.1
+  port: PORT,
+  tls: TLS
+    ? { certPath: path.resolve(process.env.ZAAFPULSE_TLS_CERT), keyPath: path.resolve(process.env.ZAAFPULSE_TLS_KEY) }
+    : null,
+  mainServer: server,
+  bin: gwBinary(),
+  env: gwEnv(process.env, DIR),
+  cpVersion: require('./package.json').version,
+  ingest: fi && fi.ingest,
+  beforeAck: fi ? fi.beforeAck : undefined,
+  log: (line) => console.error(line),
+  onServing: (mode) => {
+    serving();
+    if (mode === 'front') console.log(`Gateway: Go in front (zaafpulse-gw pid ${front.status().pid})`);
+  },
+  onListenError: portTaken,
 });
+front.start().catch(portTaken);
 
 // Sessions are written within a second; flush them when launchd, Ctrl-C or a closed terminal stops the server.
 for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'])
@@ -2217,7 +2265,11 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'])
       recorder.flush();
       if (traceStore) traceStore.snapshot();
     } finally {
-      // Queued spans get up to 2 seconds to reach the OTLP endpoint.
-      otel.shutdown(2000).finally(() => process.exit(0));
+      // The gateway gets 1 second to stop (it exits on its own too, once this process is gone); queued spans get up
+      // to 2 seconds to reach the OTLP endpoint.
+      front
+        .stop(1000)
+        .catch(() => {})
+        .finally(() => otel.shutdown(2000).finally(() => process.exit(0)));
     }
   });
