@@ -36,13 +36,14 @@ func secretsLine(seq, gen int) string {
 		seq, gen, frontToken)
 }
 
-func drive(t *testing.T) *gwRun {
+func drive(t *testing.T, extra ...string) *gwRun {
 	t.Helper()
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	r := &gwRun{code: make(chan int, 1), stderr: &syncBuffer{}, lines: make(chan string, 64)}
+	dir := t.TempDir() // before the cleanup below, so it is removed after the gateway has exited
 	go func() {
-		r.code <- run([]string{"--outbox", t.TempDir(), "--health-ms", "60000"}, inR, outW, r.stderr)
+		r.code <- run(append([]string{"--outbox", dir, "--health-ms", "60000"}, extra...), inR, outW, r.stderr)
 		_ = outW.Close()
 		_ = inR.Close()
 	}()
@@ -66,7 +67,17 @@ func drive(t *testing.T) *gwRun {
 		}
 	}()
 	r.send = func(l string) { writes <- l }
-	t.Cleanup(func() { close(writes); _ = inW.Close() })
+	// Closing stdin ends the gateway; wait for it before t.TempDir's cleanup removes the outbox, whose lock file it holds
+	// open (Windows refuses to remove an open file: P4b review I4).
+	t.Cleanup(func() {
+		close(writes)
+		_ = inW.Close()
+		select {
+		case <-r.code:
+		case <-time.After(10 * time.Second):
+			t.Error("the gateway did not exit within 10 s of stdin closing")
+		}
+	})
 	return r
 }
 
@@ -131,4 +142,20 @@ func TestALateFrontSectionAppliesAfterARestart(t *testing.T) {
 
 func dialQuick(port int) (io.Closer, error) {
 	return net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 300*time.Millisecond)
+}
+
+// A health between a generation's config.push and its secrets.handoff names the generation before it (P4b review m2):
+// synced() must not resolve before the gateway has the new credentials too.
+func TestHealthNeverNamesAGenerationWithoutItsSecrets(t *testing.T) {
+	r := drive(t, "--health-on-snapshot")
+	r.ready(t, "")
+	r.send(configLine(5, 2, ""))
+	r.send(`{"v":1,"type":"budget.snapshot","seq":6,"ts":0,"body":{"at":0,"budgets":[],"keyCenter":{}}}`)
+	if h := r.next(t, "health"); !strings.Contains(h, `"gen":1`) {
+		t.Fatalf("health before the secrets: %s", h)
+	}
+	r.send(secretsLine(7, 2))
+	if h := r.next(t, "health"); !strings.Contains(h, `"gen":2`) {
+		t.Fatalf("health after the secrets: %s", h)
+	}
 }

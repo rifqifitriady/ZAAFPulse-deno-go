@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -78,11 +79,37 @@ func TestKeysFixtures(t *testing.T) {
 				got = append(got, r.Take("k", in.RPM, 1767225600000+dt))
 			}
 			sameJSON(t, c.Name, got, c.Out)
+		case "canonicalize":
+			// Every BMP code unit folds as JavaScript's /i folds it (the fixture lists the ones that change).
+			var want map[string]string
+			if err := json.Unmarshal(c.Out, &want); err != nil {
+				t.Fatal(err)
+			}
+			bad := 0
+			for u := 0; u < 0x10000; u++ {
+				if u >= 0xd800 && u <= 0xdfff {
+					continue
+				}
+				exp := uint16(u)
+				if v, ok := want[strconv.FormatInt(int64(u), 16)]; ok {
+					n, _ := strconv.ParseUint(v, 16, 16)
+					exp = uint16(n)
+				}
+				if got := canon(uint16(u)); got != exp {
+					bad++
+					if bad <= 10 {
+						t.Errorf("canon(U+%04X) = U+%04X, JS U+%04X", u, got, exp)
+					}
+				}
+			}
+			if bad > 0 {
+				t.Errorf("%d code units fold differently", bad)
+			}
 		default:
 			t.Errorf("%s: unknown fn %q", c.Name, c.Fn)
 		}
 	}
-	for _, fn := range []string{"secret", "allows", "authenticate", "authorize", "rateLimit"} {
+	for _, fn := range []string{"secret", "allows", "authenticate", "authorize", "rateLimit", "canonicalize"} {
 		if seen[fn] == 0 {
 			t.Errorf("no %s fixtures", fn)
 		}

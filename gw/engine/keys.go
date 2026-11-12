@@ -146,14 +146,26 @@ func canon(u uint16) uint16 {
 	return uint16(up)
 }
 
-// specialUpper are the code units whose JavaScript toUpperCase is more than one character (SpecialCasing.txt), so
-// Canonicalize leaves them as they are, though Go's simple mapping has an upper case for some.
-var specialUpper = map[rune]bool{0x0149: true, 0x01f0: true, 0x0390: true, 0x03b0: true, 0x0587: true,
-	0x1e96: true, 0x1e97: true, 0x1e98: true, 0x1e99: true, 0x1e9a: true, 0x1f50: true, 0x1f52: true, 0x1f54: true,
-	0x1f56: true, 0x1fb6: true, 0x1fc6: true, 0x1fd2: true, 0x1fd3: true, 0x1fd6: true, 0x1fd7: true, 0x1fe2: true,
-	0x1fe3: true, 0x1fe4: true, 0x1fe6: true, 0x1fe7: true, 0x1ff6: true, 0xfb00: true, 0xfb01: true, 0xfb02: true,
-	0xfb03: true, 0xfb04: true, 0xfb05: true, 0xfb06: true, 0xfb13: true, 0xfb14: true, 0xfb15: true, 0xfb16: true,
-	0xfb17: true, 0x00df: true}
+// specialUpper are the BMP code units whose JavaScript toUpperCase is more than one unit (SpecialCasing.txt: the 102 the
+// keys fixture lists through gen-keys.js "canonicalize"), so Canonicalize leaves them as they are, though Go's simple
+// mapping folds some of them (U+1F80 to U+1F88, P4b review I3).
+var specialUpper = map[rune]bool{
+	0xdf: true, 0x149: true, 0x1f0: true, 0x390: true, 0x3b0: true, 0x587: true, 0x1e96: true, 0x1e97: true,
+	0x1e98: true, 0x1e99: true, 0x1e9a: true, 0x1f50: true, 0x1f52: true, 0x1f54: true, 0x1f56: true,
+	0x1f80: true, 0x1f81: true, 0x1f82: true, 0x1f83: true, 0x1f84: true, 0x1f85: true, 0x1f86: true,
+	0x1f87: true, 0x1f88: true, 0x1f89: true, 0x1f8a: true, 0x1f8b: true, 0x1f8c: true, 0x1f8d: true,
+	0x1f8e: true, 0x1f8f: true, 0x1f90: true, 0x1f91: true, 0x1f92: true, 0x1f93: true, 0x1f94: true,
+	0x1f95: true, 0x1f96: true, 0x1f97: true, 0x1f98: true, 0x1f99: true, 0x1f9a: true, 0x1f9b: true,
+	0x1f9c: true, 0x1f9d: true, 0x1f9e: true, 0x1f9f: true, 0x1fa0: true, 0x1fa1: true, 0x1fa2: true,
+	0x1fa3: true, 0x1fa4: true, 0x1fa5: true, 0x1fa6: true, 0x1fa7: true, 0x1fa8: true, 0x1fa9: true,
+	0x1faa: true, 0x1fab: true, 0x1fac: true, 0x1fad: true, 0x1fae: true, 0x1faf: true, 0x1fb2: true,
+	0x1fb3: true, 0x1fb4: true, 0x1fb6: true, 0x1fb7: true, 0x1fbc: true, 0x1fc2: true, 0x1fc3: true,
+	0x1fc4: true, 0x1fc6: true, 0x1fc7: true, 0x1fcc: true, 0x1fd2: true, 0x1fd3: true, 0x1fd6: true,
+	0x1fd7: true, 0x1fe2: true, 0x1fe3: true, 0x1fe4: true, 0x1fe6: true, 0x1fe7: true, 0x1ff2: true,
+	0x1ff3: true, 0x1ff4: true, 0x1ff6: true, 0x1ff7: true, 0x1ffc: true, 0xfb00: true, 0xfb01: true,
+	0xfb02: true, 0xfb03: true, 0xfb04: true, 0xfb05: true, 0xfb06: true, 0xfb13: true, 0xfb14: true,
+	0xfb15: true, 0xfb16: true, 0xfb17: true,
+}
 
 // RequestSecret is lib/gateway/keys.js requestSecret over Go's view of a request: the header values as Node joins
 // them (", " between repeats; Authorization keeps its first) and the raw path and query. ok is false when there is none.

@@ -274,3 +274,15 @@ test('T5-N4: stop() cancels a retry still waiting in the queue', async (t) => {
   assert.equal(await retry, false);
   assert.equal(f.sups.length, 1, 'no gateway started after stop()');
 });
+
+test('m1: a save the gateway did not confirm in time is logged', async (t) => {
+  const lines = [];
+  const f = await frontWithFakes(t, { log: (l) => lines.push(l) });
+  f.sups[0].synced = async () => false;
+  assert.equal(await f.front.synced(50), false);
+  assert.match(lines.join('\n'), /the gateway did not confirm the new configuration within 0\.05 s/);
+  f.sups[0].synced = async () => true;
+  lines.length = 0;
+  assert.equal(await f.front.synced(50), true);
+  assert.deepEqual(lines, []);
+});
