@@ -247,3 +247,33 @@ test('configPush: a base URL with user info or a query is cut to its origin and 
   assert.deepEqual([ok.baseUrl, ok.enabled], ['https://llm.example/v1', undefined]);
   assert.deepEqual([bad.baseUrl, bad.enabled], ['', false]);
 });
+
+// Re-review N2 and N3: values only a hand-edited keys.json can hold.
+test('keyAuth: Infinity revoked is revoked; a time or limit past int64 is clamped, never an undecodable push', () => {
+  const base = { id: 'k', hash: 'c'.repeat(64), scopes: ['llm'], models: [], agents: [] };
+  const inf = JSON.parse('{"revokedAt": 1e400}').revokedAt;
+  assert.equal(inf, Infinity);
+  assert.equal(keyAuth({ ...base, revokedAt: inf }).revokedAt, 1);
+  assert.equal(keyAuth({ ...base, expiresAt: 1e300 }).expiresAt, Number.MAX_SAFE_INTEGER, 'never expires, as in JS');
+  assert.equal(keyAuth({ ...base, expiresAt: -1e300 }).expiresAt, -Number.MAX_SAFE_INTEGER, 'expired, as in JS');
+  assert.equal(keyAuth({ ...base, rpm: 1e300 }).rpm, Number.MAX_SAFE_INTEGER);
+  const body = configPush({
+    gateway: {},
+    keys: [{ ...base, expiresAt: 1e300, rpm: 1e300, revokedAt: inf }],
+    pricing: {},
+  });
+  assert.deepEqual(check(msg('config.push', body)), { errors: [], unknownType: false });
+  assert.ok(Number.isSafeInteger(body.keys[0].expiresAt) && Number.isSafeInteger(body.keys[0].rpm));
+});
+
+test('configPush: a key the push drops takes every key with its hash along (JS matches the first one)', () => {
+  const good = { id: 'b', hash: 'd'.repeat(64), scopes: ['llm'], models: [], agents: [] };
+  const keys = [{ ...good, id: 'a', scopes: 'llm' }, good, { ...good, id: 'c', hash: 'e'.repeat(64) }];
+  assert.deepEqual(
+    configPush({ gateway: {}, keys, pricing: {} }).keys.map((k) => k.id),
+    ['c'],
+  );
+  // An upper-case hash is the same key to JS (Buffer.from(hash, 'hex')).
+  const upper = [{ ...good, id: 'a', hash: 'D'.repeat(64) }, good];
+  assert.deepEqual(configPush({ gateway: {}, keys: upper, pricing: {} }).keys, []);
+});
