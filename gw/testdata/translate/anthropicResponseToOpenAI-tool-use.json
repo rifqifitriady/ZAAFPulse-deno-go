@@ -1,0 +1,80 @@
+{
+  "fn": "anthropicResponseToOpenAI",
+  "in": [
+    {
+      "id": "msg_1",
+      "content": [
+        {
+          "type": "text",
+          "text": "a"
+        },
+        {
+          "type": "tool_use",
+          "id": "tu",
+          "name": "f",
+          "input": {
+            "b": 2,
+            "a": 1
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "tv",
+          "name": "g"
+        },
+        {
+          "type": "thinking"
+        }
+      ],
+      "stop_reason": "tool_use",
+      "usage": {
+        "input_tokens": 7,
+        "output_tokens": 2,
+        "cache_creation_input_tokens": 1
+      }
+    },
+    "m"
+  ],
+  "out": {
+    "id": "msg_1",
+    "object": "chat.completion",
+    "created": 1767225600,
+    "model": "m",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "a",
+          "tool_calls": [
+            {
+              "id": "tu",
+              "type": "function",
+              "function": {
+                "name": "f",
+                "arguments": "{\"b\":2,\"a\":1}"
+              }
+            },
+            {
+              "id": "tv",
+              "type": "function",
+              "function": {
+                "name": "g",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 8,
+      "completion_tokens": 2,
+      "total_tokens": 10,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    }
+  }
+}

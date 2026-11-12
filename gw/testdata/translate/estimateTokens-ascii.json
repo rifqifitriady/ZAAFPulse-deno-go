@@ -1,0 +1,15 @@
+{
+  "fn": "estimateTokens",
+  "in": [
+    {
+      "model": "m",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hello world"
+        }
+      ]
+    }
+  ],
+  "out": 17
+}

@@ -1,0 +1,13 @@
+{
+  "fn": "geminiToOpenAI",
+  "in": [
+    {},
+    "gm",
+    null
+  ],
+  "out": {
+    "model": "gm",
+    "messages": [],
+    "stream": false
+  }
+}

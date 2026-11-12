@@ -1,0 +1,64 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {
+      "model": "r",
+      "input": [],
+      "tools": [
+        {
+          "type": "function",
+          "name": "f"
+        }
+      ],
+      "tool_choice": {
+        "type": "function",
+        "name": "f"
+      },
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "description": "desc",
+          "strict": false
+        }
+      }
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "r",
+      "messages": [],
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "output",
+          "schema": {},
+          "strict": false,
+          "description": "desc"
+        }
+      },
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "f",
+            "description": "",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        }
+      ],
+      "tool_choice": {
+        "type": "function",
+        "function": {
+          "name": "f"
+        }
+      },
+      "stream": false
+    },
+    "soft": null,
+    "dropped": [],
+    "custom": []
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "response_format": {
+        "type": "json_object"
+      }
+    }
+  ],
+  "throws": "response_format json_object is not supported by Anthropic providers; send a json_schema",
+  "status": 400
+}

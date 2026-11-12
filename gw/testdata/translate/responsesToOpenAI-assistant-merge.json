@@ -1,0 +1,285 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {
+      "model": "r",
+      "input": [
+        {
+          "role": "system",
+          "content": "s"
+        },
+        {
+          "role": "developer",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "d"
+            },
+            {
+              "type": "input_image",
+              "image_url": "https://x"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "look"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:x"
+            },
+            {
+              "type": "input_image"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_image",
+              "image_url": "u"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "a1"
+            },
+            {
+              "type": "refusal",
+              "refusal": "no"
+            },
+            {
+              "text": "raw"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "a2"
+        },
+        {
+          "type": "function_call",
+          "call_id": "c1",
+          "name": "f"
+        },
+        {
+          "type": "reasoning",
+          "summary": []
+        },
+        {
+          "type": "custom_tool_call_output",
+          "call_id": "c1",
+          "output": [
+            {
+              "type": "output_text",
+              "text": "x"
+            },
+            {
+              "text": "y"
+            },
+            {}
+          ]
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "c2",
+          "output": {
+            "ok": true
+          }
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "c3"
+        },
+        {
+          "type": "custom_tool_call",
+          "call_id": "c4",
+          "name": "patch"
+        },
+        {
+          "role": "user",
+          "content": null
+        }
+      ],
+      "max_output_tokens": 99,
+      "temperature": 0.4,
+      "top_p": 0.3,
+      "stream": true,
+      "reasoning": {
+        "effort": "nope"
+      },
+      "text": {
+        "format": {
+          "type": "json_object"
+        }
+      },
+      "tools": [
+        {
+          "type": "custom",
+          "name": "patch"
+        },
+        {
+          "type": "function",
+          "name": "f",
+          "description": "fd"
+        },
+        {
+          "type": "file_search"
+        }
+      ],
+      "tool_choice": "required",
+      "parallel_tool_calls": false
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "r",
+      "messages": [
+        {
+          "role": "system",
+          "content": "s"
+        },
+        {
+          "role": "system",
+          "content": "d"
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "look"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:x"
+              }
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": ""
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "u"
+              }
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "a1rawa2",
+          "tool_calls": [
+            {
+              "id": "c1",
+              "type": "function",
+              "function": {
+                "name": "f",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "c1",
+          "content": "x\ny\n"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "c2",
+          "content": "{\"ok\":true}"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "c3",
+          "content": "\"\""
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "c4",
+              "type": "function",
+              "function": {
+                "name": "patch",
+                "arguments": "{\"input\":\"\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": ""
+        }
+      ],
+      "max_tokens": 99,
+      "response_format": {
+        "type": "json_object"
+      },
+      "temperature": 0.4,
+      "top_p": 0.3,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "patch",
+            "description": "Put the whole raw input in the \"input\" string.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "input"
+              ]
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "f",
+            "description": "fd",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        }
+      ],
+      "tool_choice": "required",
+      "parallel_tool_calls": false,
+      "stream": true
+    },
+    "soft": null,
+    "dropped": [
+      "tool file_search"
+    ],
+    "custom": [
+      "patch"
+    ]
+  }
+}

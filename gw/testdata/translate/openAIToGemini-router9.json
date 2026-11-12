@@ -1,0 +1,49 @@
+{
+  "fn": "openAIToGemini",
+  "in": [
+    {
+      "id": "c1",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "yo"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "prompt_tokens_details": {
+          "cached_tokens": 40
+        }
+      }
+    },
+    "gem"
+  ],
+  "out": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "yo"
+            }
+          ]
+        },
+        "finishReason": "STOP",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 100,
+      "candidatesTokenCount": 20,
+      "totalTokenCount": 120,
+      "cachedContentTokenCount": 40
+    },
+    "modelVersion": "gem"
+  }
+}

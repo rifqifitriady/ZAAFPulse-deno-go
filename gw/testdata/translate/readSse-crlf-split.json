@@ -1,0 +1,21 @@
+{
+  "fn": "readSse",
+  "in": [
+    [
+      "event: a\r\nda",
+      "ta: 1\r\n\r",
+      "\ndata:2\ndata:  3\n\n: comment\n\nevent:  b \n\n",
+      "data: tail"
+    ]
+  ],
+  "out": [
+    [
+      "a",
+      "1"
+    ],
+    [
+      "message",
+      "2\n 3"
+    ]
+  ]
+}

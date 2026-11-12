@@ -1,0 +1,26 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "tools": [
+        {
+          "type": "web_search_20250305",
+          "name": "web_search"
+        }
+      ],
+      "tool_choice": {
+        "type": "tool",
+        "name": "web_search"
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "q"
+        }
+      ]
+    }
+  ],
+  "throws": "tool_choice names \"web_search\", a tool only Anthropic's own API can run",
+  "status": 400
+}
