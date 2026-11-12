@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "error (gateway to control plane): a protocol problem the gateway reports before it exits 3",
+  "type": "object",
+  "required": ["code", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "code": { "type": "string", "minLength": 1 },
+    "message": { "type": "string" }
+  }
+}

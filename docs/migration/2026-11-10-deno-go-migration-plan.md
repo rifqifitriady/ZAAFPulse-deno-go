@@ -65,13 +65,13 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 │  process control · supervisor of zaafpulse-gw      │
 │  permissions: write=data dir · net=localhost only  │
 └───────────────┬───────────────────────────────────┘
-                │ local IPC (unix socket / named pipe, token-auth, versioned JSON)
+                │ local IPC (the gateway's stdin/stdout, one JSON message per line, versioned)
                 │  config push · secret handoff · budget snapshot ⇄ usage
                 │  audit events → · trace spans → · health
 ┌───────────────▼───────────────────────────────────┐
 │ zaafpulse-gw — Go data plane                       │
 │  /v1/* gateway: key auth · guardrails · translate  │
-│  · routing · budget check (fail-closed) · stream   │
+│  · routing · budget check (fail-open) · stream     │
 │  egress proxy: providers, connectors, price sync   │
 │  (allow-list from config, every egress audited)    │
 └───────────────┬───────────────────────────────────┘
@@ -81,8 +81,10 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 **Fixed design rules:**
 
 1. **One audit writer.** Only the control plane appends to the HMAC chain. The gateway sends audit events over IPC.
-2. **Budgets fail closed.** The gateway enforces from a pushed budget snapshot. When the snapshot is older than
-   5 s, or IPC is down, it refuses metered requests.
+2. **Budgets fail open, as in v1 (owner decision 2026-11-11, §11.6).** The gateway enforces from a pushed budget
+   snapshot. When the snapshot is older than 5 s, or IPC is down, metered requests still pass: each one is marked
+   `budget_unchecked` in the usage report and the audit, and the dashboard raises an alert. A budget that the snapshot
+   says is spent is still refused. Fail-closed stays a later option behind a setting, not in this program.
 3. **Secrets are handed over, not read.** The control plane reads the OS keychain and hands provider secrets to the
    gateway at start and on change. The gateway never needs a keychain library.
 4. **One config.** `config.json` is owned by the control plane and pushed to the gateway on reload.
@@ -201,9 +203,9 @@ Config placement, following the `deno` skill:
 
 ### P3 — IPC contract (1 week)
 
-- Transport: HTTP/1.1 over a unix domain socket (named pipe on Windows), with a per-start random token. The fallback
-  is 127.0.0.1 TCP with the same token.
-  - Deno grants the socket exactly, with `--allow-net=unix:<data dir>/gw.sock`.
+- Transport (corrected 2026-11-11, P3 spec D1): the gateway's stdin and stdout, one JSON message per line. No socket,
+  port or token: only the parent holds the pipes. Deno needs no `net` grant, only `run` for the gateway binary. The
+  gateway exits when its stdin closes. The messages below, plus `hello`, `ready`, `ack` and `error` (P3 spec D3).
 - Messages, as versioned JSON schemas generated from the P0 JSDoc types:
   - `config.push`
   - `secrets.handoff`
@@ -216,10 +218,17 @@ Config placement, following the `deno` skill:
 - Contract tests run on both sides from the same fixtures.
 - The transport sits behind one interface on both sides (§11.2), so a network transport with mTLS can be added
   later without changing any message.
-- **Exit:**
-  - schemas frozen at v1;
-  - both sides pass the shared fixtures;
-  - a kill test: killing either process never corrupts the audit chain or the ledger.
+- **Exit** (met 2026-11-11, `docs/migration/2026-11-11-p3-results.md`):
+  - [x] schemas frozen at v1 (`ipc/v1`), with the additive-only rule written down;
+  - [x] both sides pass the shared fixtures, on Node and Go on 4 OS and on Deno on Ubuntu and macOS in CI (evidence:
+    the manual full-matrix runs 43039341557 on `b954107` and 43048746223 on `4627057`; the pull request's run will be
+    added);
+  - [x] a kill test: killing either process never corrupts the audit chain or the ledger, and loses or duplicates no
+    usage line;
+  - [x] no change in product behaviour: `server.js` does not start the gateway; by owner decision three writers
+    (`lib/audit.js`, `jsonlLog.append`, `usage.record`) gained an opt-in parameter that changes nothing by default and
+    that the product never passes; `lib/trace` is unchanged (see the results document, which also lists the P4 S1
+    entry conditions).
 
 ### P4 — Go data plane, strangler slices (5–8 weeks)
 
@@ -235,7 +244,7 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 | S4 | API-key auth, per-key allow-lists and modes | Contract cases green |
 | S5 | Translate (Anthropic, OpenAI, Gemini, routers, Ollama/local) | Fixtures from `translate` tests pass byte-for-byte |
 | S6 | Guardrails: secrets, PII and injection; block → 400 `guardrail_blocked` | Fixtures from the guardrail tests pass |
-| S7 | Budget guard, fail closed | Kill-IPC test refuses metered calls |
+| S7 | Budget guard, fail open (§11.6) | Kill-IPC test: metered calls pass, each marked `budget_unchecked` and alerted; a spent budget in the snapshot is still refused |
 | S8 | Usage, audit events and trace spans over IPC | Ledger and audit identical to JS for the same run |
 | S9 | `/mcp` `tools/call` path, gateway keys | Contract cases green |
 | S10 | Google service-account JWT (`createSign` RSA-SHA256) and other provider auth | Live provider smoke tests (owner keys, manual) |
@@ -361,7 +370,7 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    standalone team server in this program.
    - The P3 IPC contract must still be transport-agnostic:
      - the messages and schemas are independent of the transport;
-     - the transport sits behind one interface, unix socket or named pipe today, so a network transport with mTLS
+     - the transport sits behind one interface, the child's stdin and stdout today, so a network transport with mTLS
        can be added later without changing messages.
    - A standalone `zaafpulse-gw` is reconsidered only after G3, with measured numbers.
 3. **Target users are personal, so there is no Windows code-signing certificate** (and no Apple Developer ID). The
@@ -379,3 +388,6 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    - P6 drops the authenticated install and update: the install scripts and the update check read the public
      release, as in v1.x.
    - The public ZAAFPulse repo still carries v1.x; v1.x users are not moved to v2 automatically.
+6. **Budgets fail open for now (2026-11-11).** When the gateway cannot check a budget (stale snapshot, IPC down), the
+   request passes, as in v1.x, and is marked and alerted (design rule 2). A spent budget is still refused. Fail-closed
+   may come later as an opt-in setting.

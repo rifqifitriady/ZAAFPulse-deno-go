@@ -1,0 +1,1 @@
+{"v":1,"type":"secrets.handoff","seq":3,"ts":1767225600003,"body":{"gen":1,"providers":[{"id":"openai","value":"test-openai-key-0001"},{"id":"vertex","token":{"value":"test-vertex-token-0001","expiresAt":1767229200000}},{"id":"ollama"}],"mask":["test-openai-key-0001","test-vertex-token-0001"]}}

@@ -29,6 +29,8 @@ node bench/run.js              # the Node server: bench/results/<date>-node-<hos
 ZP_RUNTIME=deno node bench/run.js   # the same harness against server.js under Deno
 ```
 
+The IPC between the control plane and the Go gateway (P3) has its own measure: `node bench/ipc-latency.js` (round trip over the stdio pipes and event throughput; see docs/migration/2026-11-11-p3-results.md).
+
 Under Deno instead of Node:
 
 ```bash
