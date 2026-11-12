@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "<tool_use_error>InputValidationError: Bash failed due to the following issue:\nThe required parameter `command` is missing</tool_use_error>"
+  ],
+  "out": null
+}

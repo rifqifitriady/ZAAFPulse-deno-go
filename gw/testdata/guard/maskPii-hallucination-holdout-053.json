@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nERROR: Could not find a version that satisfies the requirement fastapi-magic-utils (from versions: none)\nERROR: No matching distribution found for fastapi-magic-utils"
+  ],
+  "out": {
+    "text": "Exit code 1\nERROR: Could not find a version that satisfies the requirement fastapi-magic-utils (from versions: none)\nERROR: No matching distribution found for fastapi-magic-utils",
+    "counts": {}
+  }
+}

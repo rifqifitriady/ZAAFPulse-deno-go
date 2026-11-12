@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "cat docs/runbook.md | grep -i 'drop table'"
+  ],
+  "out": null
+}

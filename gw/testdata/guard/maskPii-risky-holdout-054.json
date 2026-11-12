@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm -rf node_modules dist"
+  ],
+  "out": {
+    "text": "rm -rf node_modules dist",
+    "counts": {}
+  }
+}

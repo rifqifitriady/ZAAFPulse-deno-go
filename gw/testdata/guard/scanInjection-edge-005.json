@@ -1,0 +1,10 @@
+{
+  "secrets": [
+    "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQ=="
+  ],
+  "fn": "scanInjection",
+  "in": [
+    "<<ZPSECRET:0>>\nno end line, the key runs to the end"
+  ],
+  "out": null
+}

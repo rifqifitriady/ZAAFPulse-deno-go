@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "npm run build && npm test -- --coverage"
+  ],
+  "out": {
+    "text": "npm run build && npm test -- --coverage",
+    "counts": {}
+  }
+}

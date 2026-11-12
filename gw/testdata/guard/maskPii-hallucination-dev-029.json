@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nError: Cannot find module './foo'\nRequire stack:\n- /w/app/src/index.js"
+  ],
+  "out": {
+    "text": "Exit code 1\nError: Cannot find module './foo'\nRequire stack:\n- /w/app/src/index.js",
+    "counts": {}
+  }
+}

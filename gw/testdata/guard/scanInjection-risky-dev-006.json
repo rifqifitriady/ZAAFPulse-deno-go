@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rm -fr dist build"
+  ],
+  "out": null
+}

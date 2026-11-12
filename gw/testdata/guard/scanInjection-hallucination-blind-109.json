@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "src/utils.ts\n  12:5  error  'foo' is assigned a value but never used  @typescript-eslint/no-unused-vars\n\n1 problem (1 error, 0 warnings)"
+  ],
+  "out": null
+}

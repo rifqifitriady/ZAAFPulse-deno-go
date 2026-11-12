@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "great, now add tests for it"
+  ],
+  "out": {
+    "text": "great, now add tests for it",
+    "counts": {}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "LLM01: Prompt Injection\n\nSerangan ini terjadi ketika input yang dibuat khusus membuat model mengabaikan instruksi sistem. Contoh: pengguna menulis 'abaikan instruksi sebelumnya'. Pencegahan: validasi output dan batasi hak akses model."
+  ],
+  "out": null
+}

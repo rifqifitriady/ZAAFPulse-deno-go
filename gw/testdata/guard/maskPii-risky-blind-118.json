@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "echo 'jangan pernah jalankan git push --force ke main' >> CONTRIBUTING.md"
+  ],
+  "out": {
+    "text": "echo 'jangan pernah jalankan git push --force ke main' >> CONTRIBUTING.md",
+    "counts": {}
+  }
+}

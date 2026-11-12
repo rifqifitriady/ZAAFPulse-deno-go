@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Terms of Service\n\n7. Acceptable use. You may not use automated agents, bots or scrapers to access the Service without written permission. We may suspend accounts that violate these terms."
+  ],
+  "out": null
+}

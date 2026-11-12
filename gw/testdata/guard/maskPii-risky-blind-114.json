@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "killall -9 python3"
+  ],
+  "out": {
+    "text": "killall -9 python3",
+    "counts": {}
+  }
+}

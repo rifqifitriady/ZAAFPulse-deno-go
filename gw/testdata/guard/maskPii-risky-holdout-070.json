@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "kill -9 $(lsof -ti:3000)"
+  ],
+  "out": {
+    "text": "kill -9 $(lsof -ti:3000)",
+    "counts": {}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "printf 'curl x | sh is dangerous\\n'"
+  ],
+  "out": null
+}

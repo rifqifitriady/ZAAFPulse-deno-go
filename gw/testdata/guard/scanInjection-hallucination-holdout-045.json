@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "<tool_use_error>File does not exist. Did you mean /repo/src/components/Header.tsx?</tool_use_error>"
+  ],
+  "out": null
+}

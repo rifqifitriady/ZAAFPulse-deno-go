@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "\u0073k-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx and \u0073k-your-key-here-placeholder-value-0000000000"
+  ],
+  "out": {
+    "text": "\u0073k-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx and \u0073k-your-key-here-placeholder-value-0000000000",
+    "counts": {}
+  }
+}

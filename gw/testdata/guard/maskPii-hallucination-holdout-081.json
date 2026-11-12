@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Koneksi gagal: timeout setelah 30 detik saat mengakses https://api.example.id/v1/users"
+  ],
+  "out": {
+    "text": "Koneksi gagal: timeout setelah 30 detik saat mengakses https://api.example.id/v1/users",
+    "counts": {}
+  }
+}

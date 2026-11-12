@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "# do not run rm -rf / here"
+  ],
+  "out": null
+}

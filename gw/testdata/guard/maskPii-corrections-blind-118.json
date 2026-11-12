@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "kemarin kamu bikin salah di branch ini, tolong perbaiki"
+  ],
+  "out": {
+    "text": "kemarin kamu bikin salah di branch ini, tolong perbaiki",
+    "counts": {}
+  }
+}

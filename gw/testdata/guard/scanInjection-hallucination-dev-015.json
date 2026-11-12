@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\ngit: 'pushh' is not a git command. See 'git --help'."
+  ],
+  "out": null
+}

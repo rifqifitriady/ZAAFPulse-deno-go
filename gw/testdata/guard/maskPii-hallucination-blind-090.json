@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Error: No such tool available: TodoRead2"
+  ],
+  "out": {
+    "text": "Error: No such tool available: TodoRead2",
+    "counts": {}
+  }
+}

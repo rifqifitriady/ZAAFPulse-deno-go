@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "sudo rm -rf /var/lib/docker/tmp"
+  ],
+  "out": null
+}

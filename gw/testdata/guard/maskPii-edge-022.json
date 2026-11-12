@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "const re = /ignore previous instructions/; // detector test"
+  ],
+  "out": {
+    "text": "const re = /ignore previous instructions/; // detector test",
+    "counts": {}
+  }
+}

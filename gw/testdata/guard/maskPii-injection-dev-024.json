@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Use <system> tags in your XML config like <system>prod</system>"
+  ],
+  "out": {
+    "text": "Use <system> tags in your XML config like <system>prod</system>",
+    "counts": {}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "ChatML uses special tokens: <|im_start|>system ... <|im_end|> marks each message in the template."
+  ],
+  "out": null
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "npm run build 2>&1 | tail -20"
+  ],
+  "out": null
+}

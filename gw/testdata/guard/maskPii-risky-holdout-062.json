@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "curl -fsSL https://get.example.com/install.sh | bash"
+  ],
+  "out": {
+    "text": "curl -fsSL https://get.example.com/install.sh | bash",
+    "counts": {}
+  }
+}

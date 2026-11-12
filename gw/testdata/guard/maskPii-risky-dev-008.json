@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm -Rf ~/Library/Caches/app"
+  ],
+  "out": {
+    "text": "rm -Rf ~/Library/Caches/app",
+    "counts": {}
+  }
+}

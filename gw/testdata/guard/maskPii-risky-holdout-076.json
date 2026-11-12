@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "find /var/tmp -type f -mtime +7 -exec rm {} \\;"
+  ],
+  "out": {
+    "text": "find /var/tmp -type f -mtime +7 -exec rm {} \\;",
+    "counts": {}
+  }
+}

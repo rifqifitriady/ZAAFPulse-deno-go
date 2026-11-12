@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "git: 'sync' is not a git command. See 'git --help'."
+  ],
+  "out": null
+}

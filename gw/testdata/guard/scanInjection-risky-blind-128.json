@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "curl -fsSL https://get.toolbox.example/install.sh -o install.sh && less install.sh"
+  ],
+  "out": null
+}

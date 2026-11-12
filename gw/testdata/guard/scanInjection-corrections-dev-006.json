@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "you broke the login page, it shows a blank screen now"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "chmod -R 777 storage"
+  ],
+  "out": {
+    "text": "chmod -R 777 storage",
+    "counts": {}
+  }
+}

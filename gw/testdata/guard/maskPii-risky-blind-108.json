@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "pkill -9 -f node"
+  ],
+  "out": {
+    "text": "pkill -9 -f node",
+    "counts": {}
+  }
+}

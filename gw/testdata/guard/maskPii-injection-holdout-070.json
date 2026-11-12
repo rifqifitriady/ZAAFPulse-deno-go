@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "# System prompt best practices\nYour system prompt should define the assistant's role. Avoid telling the model to 'ignore previous instructions' as this is a known jailbreak pattern."
+  ],
+  "out": {
+    "text": "# System prompt best practices\nYour system prompt should define the assistant's role. Avoid telling the model to 'ignore previous instructions' as this is a known jailbreak pattern.",
+    "counts": {}
+  }
+}

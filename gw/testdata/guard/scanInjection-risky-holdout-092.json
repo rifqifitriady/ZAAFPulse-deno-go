@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "dd if=/dev/zero of=test.img bs=1M count=10"
+  ],
+  "out": null
+}

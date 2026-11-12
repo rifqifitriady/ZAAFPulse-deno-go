@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\n/w/app/src/x.ts\n  3:7  error  'y' is assigned a value but never used  no-unused-vars"
+  ],
+  "out": {
+    "text": "Exit code 1\n/w/app/src/x.ts\n  3:7  error  'y' is assigned a value but never used  no-unused-vars",
+    "counts": {}
+  }
+}

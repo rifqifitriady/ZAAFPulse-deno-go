@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "<configuration><system>production</system><region>eu-west-1</region></configuration>"
+  ],
+  "out": null
+}

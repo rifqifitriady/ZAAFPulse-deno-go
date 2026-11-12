@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "echo 'bersihin dulu' && rm -rf .next && npm run build"
+  ],
+  "out": {
+    "text": "echo 'bersihin dulu' && rm -rf .next && npm run build",
+    "counts": {}
+  }
+}

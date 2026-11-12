@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "tolong fix bug login yang salah redirect ke /home, seharusnya ke /dashboard"
+  ],
+  "out": null
+}

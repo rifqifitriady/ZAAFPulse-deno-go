@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\ncat: config.yml: Tidak ada berkas atau direktori seperti itu"
+  ],
+  "out": null
+}

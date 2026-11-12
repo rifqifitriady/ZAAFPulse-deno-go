@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "connect ETIMEDOUT 140.82.112.3:443"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "psql \"$DATABASE_URL\" -c \"DROP TABLE users\""
+  ],
+  "out": {
+    "text": "psql \"$DATABASE_URL\" -c \"DROP TABLE users\"",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "you broke the build, npm run build now fails with a type error in Header.tsx"
+  ],
+  "out": {
+    "text": "you broke the build, npm run build now fails with a type error in Header.tsx",
+    "counts": {}
+  }
+}

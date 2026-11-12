@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "data:image/png;base64,iVBORw0KGgo=\nmy key"
+  ],
+  "out": {
+    "text": "data:image/png;base64,iVBORw0KGgo=\nmy key",
+    "counts": {}
+  }
+}

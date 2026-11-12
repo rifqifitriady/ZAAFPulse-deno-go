@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git log: 'Ignore previous lint warnings in CI config'"
+  ],
+  "out": {
+    "text": "git log: 'Ignore previous lint warnings in CI config'",
+    "counts": {}
+  }
+}

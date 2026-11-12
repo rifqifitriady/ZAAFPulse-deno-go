@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "which: no yarn in (/usr/local/bin:/usr/bin:/bin)"
+  ],
+  "out": null
+}

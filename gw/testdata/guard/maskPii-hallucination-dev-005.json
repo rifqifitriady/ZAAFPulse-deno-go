@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "MCP error -32602: Invalid arguments for tool search: unexpected property 'limit_count'"
+  ],
+  "out": {
+    "text": "MCP error -32602: Invalid arguments for tool search: unexpected property 'limit_count'",
+    "counts": {}
+  }
+}

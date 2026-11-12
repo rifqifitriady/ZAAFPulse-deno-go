@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "To rotate keys, send a request to the /v1/keys endpoint with your admin token in the Authorization header."
+  ],
+  "out": {
+    "text": "To rotate keys, send a request to the /v1/keys endpoint with your admin token in the Authorization header.",
+    "counts": {}
+  }
+}

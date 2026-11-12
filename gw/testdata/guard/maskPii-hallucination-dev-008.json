@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 22\ncurl: (22) The requested URL returned error: 404"
+  ],
+  "out": {
+    "text": "Exit code 22\ncurl: (22) The requested URL returned error: 404",
+    "counts": {}
+  }
+}

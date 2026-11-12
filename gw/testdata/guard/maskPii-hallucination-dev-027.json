@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n1 !== 2"
+  ],
+  "out": {
+    "text": "Exit code 1\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n1 !== 2",
+    "counts": {}
+  }
+}

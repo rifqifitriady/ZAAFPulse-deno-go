@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "same error again: TypeError cannot read properties of undefined"
+  ],
+  "out": {
+    "text": "same error again: TypeError cannot read properties of undefined",
+    "counts": {}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 127\n/bin/bash: line 1: pnpx: command not found"
+  ],
+  "out": null
+}

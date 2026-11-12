@@ -1,0 +1,14 @@
+{
+  "secrets": [
+    "c2stcHJvai1acThMdzJOeDRWYjZNYzFLZDNGZzVIajdQcjlUczBVeUFiMTJDZDM0",
+    "QUtJQVE3VzJFOVI0VDZZMVUzSTg="
+  ],
+  "fn": "maskPii",
+  "in": [
+    "aws <<ZPSECRET:1>> and \u0041KIAIOSFODNN7EXAMPLE, openai <<ZPSECRET:0>>"
+  ],
+  "out": {
+    "text": "aws <<ZPSECRET:1>> and \u0041KIAIOSFODNN7EXAMPLE, openai <<ZPSECRET:0>>",
+    "counts": {}
+  }
+}

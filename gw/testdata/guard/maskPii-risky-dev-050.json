@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "find . -name '*.ts' -newer package.json"
+  ],
+  "out": {
+    "text": "find . -name '*.ts' -newer package.json",
+    "counts": {}
+  }
+}

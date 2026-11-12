@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "seharusnya endpoint ini pakai POST, tolong buatkan"
+  ],
+  "out": null
+}

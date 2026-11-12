@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "the regex you gave matches the empty string too, so every row passes. redo it"
+  ],
+  "out": null
+}

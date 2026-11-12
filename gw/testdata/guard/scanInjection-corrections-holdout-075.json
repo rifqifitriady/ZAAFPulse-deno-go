@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "ok good, continue with the next file"
+  ],
+  "out": null
+}
