@@ -73,6 +73,9 @@ func (c *Channel) Recv() (Message, error) {
 		return Message{}, err
 	}
 	msg, err := Decode(line, c.strict)
+	if msg.Type == TypeSecretsHandoff {
+		clear(line) // the line is the reader's own copy: no other reference to the secrets stays behind
+	}
 	if err != nil {
 		return Message{}, &ProtocolError{err}
 	}

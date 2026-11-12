@@ -163,7 +163,8 @@ type PriceTier struct {
 	CacheWrite1h *int64 `json:"cacheWrite1h,omitzero" ipc:"min=0"`
 }
 
-// SecretsHandoff carries resolved provider secrets. They live in memory only: String hides them from every log.
+// SecretsHandoff carries resolved provider secrets. They live in memory only: String and GoString hide them from every
+// log, and Decode zeroes the envelope's raw body (E6).
 type SecretsHandoff struct {
 	Gen       int64            `json:"gen" ipc:"min=1"`
 	Providers []ProviderSecret `json:"providers"`
@@ -174,6 +175,9 @@ func (s SecretsHandoff) String() string {
 	return fmt.Sprintf("SecretsHandoff{gen %d, %d providers, %d masked values}", s.Gen, len(s.Providers), len(s.Mask))
 }
 
+// GoString keeps %#v from printing the fields (Mask holds the secret values themselves).
+func (s SecretsHandoff) GoString() string { return s.String() }
+
 type ProviderSecret struct {
 	ID    string      `json:"id" ipc:"minlen=1"`
 	Value *string     `json:"value,omitzero"`
@@ -181,6 +185,8 @@ type ProviderSecret struct {
 }
 
 func (p ProviderSecret) String() string { return "ProviderSecret{" + p.ID + ", <redacted>}" }
+
+func (p ProviderSecret) GoString() string { return p.String() }
 
 type OAuthToken struct {
 	Value     string `json:"value" ipc:"minlen=1"`
@@ -190,6 +196,8 @@ type OAuthToken struct {
 func (t OAuthToken) String() string {
 	return fmt.Sprintf("OAuthToken{<redacted>, expires %d}", t.ExpiresAt)
 }
+
+func (t OAuthToken) GoString() string { return t.String() }
 
 // BudgetSnapshot is the budgets as the guard enforces them, with each key's cost center.
 type BudgetSnapshot struct {

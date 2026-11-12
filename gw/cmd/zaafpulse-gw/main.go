@@ -3,8 +3,10 @@
 // and serves no HTTP. It logs to stderr; the control plane forwards each line with a "gw: " prefix. When stdin reaches
 // end of file (the control plane is gone) it exits 0.
 //
-// Exit codes: 0 done (shutdown or end of input), 1 an I/O failure, 2 refused or a bad command line, 3 a protocol
-// error (after an "error" message) or --crash-after-ready-ms.
+// Exit codes (the constants in package ipc): 0 done (shutdown or end of input); 1 ExitDamaged, an I/O failure, a
+// damaged outbox or a stdin read error; 2 ExitRefused, refused or a bad command line; 3 ExitProtocol, a protocol error
+// (after an "error" message) or --crash-after-ready-ms; 5 ExitOutboxInUse, another gateway holds the outbox. 4
+// ExitPortInUse is the front proxy's (P4a T4).
 //
 // Test-only flags make it misbehave for the supervisor tests: --protocol, --hang-after-ready, --crash-after-ready-ms,
 // --bad-line and --ignore-shutdown; --emit N sends N rounds of synthetic events (ipc.Synthetic) for the ingest and
@@ -72,26 +74,30 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Int64Var(&o.staleMs, "stale-ms", ipc.StaleAfterMs, "test only: age at which a budget snapshot is stale, in ms")
 	fs.BoolVar(&o.healthOnSnapshot, "health-on-snapshot", false, "test only: send health after every budget snapshot")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return ipc.ExitRefused
 	}
 	dir := o.outbox
 	if dir == "" {
 		data := os.Getenv("ZAAFPULSE_DATA")
 		if data == "" {
 			logger.Print("no outbox folder: pass --outbox or set ZAAFPULSE_DATA")
-			return 2
+			return ipc.ExitRefused
 		}
 		dir = filepath.Join(data, ".data", "gw-outbox")
 	}
 	protocols, err := parseProtocols(o.protocol)
 	if err != nil {
 		logger.Print(err)
-		return 2
+		return ipc.ExitRefused
 	}
 	box, err := ipc.OpenOutbox(dir)
+	if errors.Is(err, ipc.ErrOutboxInUse) {
+		logger.Print(err)
+		return ipc.ExitOutboxInUse
+	}
 	if err != nil {
-		logger.Printf("outbox: %v", err)
-		return 1
+		logger.Print(err)
+		return ipc.ExitDamaged
 	}
 	defer box.Close()
 	box.SetPerSegment(o.segmentEvents)
@@ -128,7 +134,6 @@ type gateway struct {
 	done    chan struct{}
 	unknown map[string]bool
 
-	sendMu   sync.Mutex // an event's append and its send stay in seq order
 	stopEmit chan struct{}
 	emitDone chan struct{}
 
@@ -148,7 +153,7 @@ func (g *gateway) serve(protocols []int) int {
 	hello := ipc.Hello{Protocol: protocols, GwVersion: version, Stream: g.box.Stream(), OutboxFrom: g.box.Acked() + 1}
 	if err := g.ch.Send(ipc.TypeHello, hello, "h1", ""); err != nil {
 		g.log.Printf("hello: %v", err)
-		return 1
+		return ipc.ExitDamaged
 	}
 	handshaken := false
 	for {
@@ -157,8 +162,15 @@ func (g *gateway) serve(protocols []int) int {
 			g.drain()
 			return 0
 		}
-		if err != nil {
+		var perr *ipc.ProtocolError
+		if errors.As(err, &perr) {
 			return g.protocolError(err)
+		}
+		if err != nil {
+			// Reading stdin failed (E11): an I/O failure, not a protocol error, and nothing to report on the channel.
+			g.log.Printf("stdin: %v", err)
+			g.stopEmitter(time.Second)
+			return ipc.ExitDamaged
 		}
 		if msg.Unknown {
 			if !g.unknown[msg.Type] {
@@ -172,18 +184,18 @@ func (g *gateway) serve(protocols []int) int {
 			case *ipc.HelloOK:
 				if b.Protocol != ipc.Version {
 					g.log.Printf("the control plane chose protocol %d; this gateway speaks %d", b.Protocol, ipc.Version)
-					return 2
+					return ipc.ExitRefused
 				}
 				handshaken = true
-				// Everything not acknowledged goes out again, before any new event (D4).
+				// Everything not acknowledged goes out again, before any new event (D4), under the outbox's send lock.
 				if err := g.box.Replay(g.box.Acked()+1, g.ch.SendLine); err != nil {
 					g.log.Printf("outbox replay: %v", err)
-					return 1
+					return ipc.ExitDamaged
 				}
 				go g.healthLoop()
 			case *ipc.HelloRefused:
 				g.log.Printf("refused by the control plane: %s", b.Reason)
-				return 2
+				return ipc.ExitRefused
 			default:
 				return g.protocolError(fmt.Errorf("%s before the handshake", msg.Type))
 			}
@@ -244,7 +256,7 @@ func (g *gateway) handle(msg ipc.Message) int {
 func (g *gateway) protocolError(err error) int {
 	g.log.Print(err)
 	_ = g.ch.Send(ipc.TypeError, ipc.ErrorBody{Code: "protocol", Message: err.Error()}, "", "")
-	return 3
+	return ipc.ExitProtocol
 }
 
 // maybeReady sends ready once the first config, its secrets and a snapshot are applied.
@@ -274,7 +286,7 @@ func (g *gateway) afterReady() {
 	if g.o.crashAfterReadyMs > 0 {
 		time.AfterFunc(time.Duration(g.o.crashAfterReadyMs)*time.Millisecond, func() {
 			g.log.Print("crashing on purpose (--crash-after-ready-ms)")
-			os.Exit(3)
+			os.Exit(ipc.ExitProtocol)
 		})
 	}
 	if g.o.badLine {
@@ -338,15 +350,11 @@ func (g *gateway) checkBudget(body any) {
 	}
 }
 
-// appendAndSend writes an event to the outbox, then sends it (D4: never the other way round).
+// appendAndSend writes an event to the outbox, then sends it (D4: never the other way round), under the outbox's send
+// lock, which the replay holds too (E10).
 func (g *gateway) appendAndSend(typ string, body any) error {
-	g.sendMu.Lock()
-	defer g.sendMu.Unlock()
-	line, _, err := g.box.Append(typ, body, time.Now().UnixMilli())
-	if err != nil {
-		return err
-	}
-	return g.ch.SendLine(line)
+	_, err := g.box.AppendSend(typ, body, time.Now().UnixMilli(), g.ch.SendLine)
+	return err
 }
 
 func (g *gateway) stopEmitter(grace time.Duration) {
