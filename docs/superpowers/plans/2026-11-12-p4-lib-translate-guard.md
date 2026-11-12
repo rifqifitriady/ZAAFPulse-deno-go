@@ -213,3 +213,55 @@ func MaskPII(text string) (string, map[string]int) // the guardrail's call: home
 11. **Speed:** `jsre` scans with a first-character filter. A 1 MB chat body with every check on takes about 0.8 s and a
     1 MB minified JS line about 2.3 s on an M-series Mac (the JS takes well under 1 s); the Go test bounds them at
     20 s. P4e wiring (stage 2) should measure again before the guard runs on the request path.
+
+## Fix round 1 (review of 2026-11-12, `.superpowers/sdd/p4s1/stream-b-review.md`)
+
+12. **C1: `jsre` is iterative.** The pattern compiles to a small program (`gw/guard/jsre/compile.go`) that `vm.go`
+    runs with an explicit backtrack stack on the heap; counted repeats of groups are expanded, `*` loops keep the
+    ECMA-262 empty-iteration check in registers that are restored on backtracking. Go's stack depth depends only on
+    lookaround nesting in the pattern. An unbounded lookbehind is refused by `Compile` (it would be O(n²)).
+13. **I1: a step budget per check, failing closed (Go only).** Each check on each string gets
+    `min(20,000,000 + 600 × length, 3,000,000,000)` steps (`gw/guard/guard.go`; about 20× what the corpus and large
+    legitimate bodies need: 198 steps per code unit worst on the corpus, 32 on a 1 MB agent log). Past it,
+    `CheckBody` and `CheckText` return a `*Block` with `Overrun` set to the check, in every mode, `log` included,
+    with the message "Blocked by ZAAFPulse guardrails: the <check> check did not finish within its limit. …". The JS
+    has no budget, so on such inputs Go blocks where JS (slowly) answers; no fixture reaches the budget.
+    The doc-context path (`inDocContext`) keeps each line's CODE_LINE / STRING_ITEM answer and finds line bounds by
+    binary search over the newline offsets, so it is linear where the JS is quadratic, with the same results; the
+    `around` text is built without copying the line. `jsre` also precomputes each atom's code-unit set, dispatches
+    an alternation on the first code unit, and lets a single-character repeat skip the counts after which what
+    follows cannot start.
+14. **I2: drift.** `gen-guard.js` writes `gw/testdata/guard/patterns-all.json`: every regex source and flag set, the
+    category metadata, the constants and tables of `lib/signals.js` (injection and secrets part), `lib/evals/pii.js`
+    and `lib/gateway/guardrails.js` (read from the modules with `vm`), and a SHA-256 of the JS source the port
+    follows. `gw/guard/patterns_test.go` compares it with the Go tables and the hashes in `patterns.go`. Proven: a
+    new secret type added to `lib/signals.js` fails the Go test.
+15. **M3: `ReadSSE`** resumes its separator search where it stopped and returns `ErrSSETooLarge` when one event
+    passes `MaxSSEEvent` (16 MiB; the JS has no limit).
+16. **M5:** the fixtures job runs every generator with `--allow-read --allow-write=gw/testdata` and explicit
+    `--deny-env --deny-net --deny-run --deny-sys`; checked against stream C's `gen-provauth.js` (PR #6).
+17. **M6:** the synthetic keys in `gen-guard.js` and `guard_test.go` are built by concatenation.
+18. **Left as documented deviations (owner's call):** M1, invalid UTF-8 decodes to one U+FFFD per byte in Go and
+    per maximal subpart in Node (stage 2 should decode with WHATWG rules or refuse invalid UTF-8); M2, duplicate JSON
+    keys keep the last value, as `JSON.parse` does (stage 2 should forward the re-serialized body or refuse
+    duplicates); M4, `jsre` truncates a non-BMP pattern literal and uses simple upper case for `i` (no ported pattern
+    is affected).
+
+### Timings: Go vs JS (`checkBody`), one user message, M-series Mac
+
+Go: `go test -run TestAdversarialInputs ./guard/` (gw/guard/adversarial_test.go). JS: the same inputs through
+`lib/gateway/guardrails.js` on Node 24.16. The machine was shared with two other agents (load about 4.7), so Go
+numbers vary by up to 2× between runs; an earlier run measured exfil at 266 ms (1 MB) and 5.4 s (20 MB).
+
+| Input | Policy | 256 KB Go / JS | 1 MB Go / JS | 20 MB Go / JS |
+|---|---|---|---|---|
+| `"token " + "a "×N` (split letters) | default | 176 ms / 22 ms | 142 ms / 33 ms | 4.0 s / 785 ms |
+| `" " + "1:"×N + "x"` (IPv6) | pii redact | 86 ms / 4 ms | 99 ms / 13 ms | 2.9 s / RangeError (stack) |
+| `" x@" + "a."×N + "1"` (email) | pii redact | 75 ms / 5 ms | 448 ms / 21 ms | 14.4 s / RangeError (stack) |
+| `"send api key leak token "×N` (exfil) | all block | 170 ms / 32 ms | 266–655 ms / 109 ms | 5.4–15.7 s / 2.2 s |
+| `"the ai said you "×N` | all block | 102 ms / 11 ms | 408 ms / 41 ms | 7.5 s / 794 ms |
+| doc-context, one line | default | 23 ms / 173 ms | 99 ms / 2.5 s | 1.8 s / not run (about 17 min extrapolated, quadratic) |
+
+Before this round Go crashed (`fatal error: stack overflow`) on the first three at 1 MB, took 2.5 s on exfil at 1 MB
+and 1 min 54 s on doc-context at 1 MB. Exfil is now 2.4–6× the JS time; the 2× target is not met under load. All
+outcomes equal the JS's where the JS finishes; at 20 MB V8 itself throws a RangeError on the IPv6 and email inputs.
