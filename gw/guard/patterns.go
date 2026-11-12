@@ -5,6 +5,15 @@ import "github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard/jsre"
 // The pattern sources and flags below are copied verbatim (re.source, re.flags) from lib/signals.js and
 // lib/evals/pii.js, printed by Node; the fixtures in gw/testdata/guard check that they behave the same.
 
+// jsSources are the SHA-256 hashes of the JS source this port follows line by line (gen-guard.js writes the current
+// ones into gw/testdata/guard/patterns-all.json). When a hash changes, re-read that JS, port the change, and update
+// the hash here: patterns_test.go fails until then.
+var jsSources = map[string]string{
+	"lib/signals.js#injection-and-secrets": "b2cf6e0fbae128588c5129f8130e87f7bba0d0755750136aadd696f2bb2e8f65",
+	"lib/evals/pii.js":                     "4ba62a07014bf3c89a3742f62d91722f1eace03231807ae9b5a1aaaaaf4dfb7d",
+	"lib/gateway/guardrails.js":            "e2f7c481ea8627c971148188456c284482011bcf08369745a273236b1ada61b5",
+}
+
 type pattern struct{ src, flags string }
 
 func compile(p pattern) *jsre.Regexp { return jsre.MustCompile(p.src, p.flags) }

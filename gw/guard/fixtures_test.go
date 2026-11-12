@@ -40,6 +40,9 @@ var fixtureFns = map[string]fixtureFn{
 	},
 }
 
+// normalizeFixture adjusts a fixture's expected output before the comparison (per fn).
+var normalizeFixture = map[string]func(jsv.Value) jsv.Value{}
+
 func strArr(ss []string) *jsv.Array {
 	a := jsv.Arr()
 	for _, s := range ss {
@@ -64,6 +67,9 @@ func TestFixtures(t *testing.T) {
 			fn, ok := fixtureFns[fx.Fn]
 			if !ok {
 				t.Fatalf("no Go port registered for %s", fx.Fn)
+			}
+			if norm := normalizeFixture[fx.Fn]; norm != nil && fx.Out != jsv.Undefined {
+				fx.Out = norm(fx.Out)
 			}
 			got, err := fn(fx.In)
 			checkFixture(t, fx, got, err)

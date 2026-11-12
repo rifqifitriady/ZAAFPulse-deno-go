@@ -27,6 +27,7 @@ type parser struct {
 // Regexp is a compiled pattern.
 type Regexp struct {
 	src   string
+	flags string
 	root  *node
 	ncap  int
 	icase bool
@@ -36,6 +37,9 @@ type Regexp struct {
 
 // String is the pattern source.
 func (re *Regexp) String() string { return re.src }
+
+// Flags is the flag string the pattern was compiled with.
+func (re *Regexp) Flags() string { return re.flags }
 
 // NumCap is the number of capturing groups.
 func (re *Regexp) NumCap() int { return re.ncap }
@@ -56,7 +60,7 @@ func Compile(src, flags string) (*Regexp, error) {
 	if err != nil {
 		return nil, err
 	}
-	re := &Regexp{src: src, root: n, ncap: p.total, icase: p.icase}
+	re := &Regexp{src: src, flags: flags, root: n, ncap: p.total, icase: p.icase}
 	if progSize(n) > maxInsts {
 		return nil, fmt.Errorf("jsre: /%s/ is too large after expanding counted repeats", src)
 	}
