@@ -11,7 +11,10 @@ const { createProviders } = require('../../lib/gateway/providers');
 
 const DIR = path.join(__dirname, '..', '..', 'gw', 'testdata', 'provauth');
 
-// TEST ONLY: an RSA key generated for this corpus. It signs nothing outside the fixtures.
+// TEST-ONLY FIXTURE KEY, NOT A SECRET: an RSA key generated once for this corpus. It authenticates nothing and signs
+// nothing outside the fixtures. It is fixed (not generated per run) because the RS256 signature is deterministic and
+// the fixtures compare it byte for byte. Secret scanning skips this file and gw/testdata/provauth/
+// (.github/secret_scanning.yml).
 const TEST_KEY =
   [
     '-----BEGIN PRIVATE KEY-----',

@@ -50,9 +50,23 @@ decision, not a P4f one.
 ## Consequence
 
 On a power loss the chain is **at most once for the last moments** before the cut (the writes the OS had not flushed,
-typically a few seconds): those events can be lost. **No event is ever counted twice**: every hole above loses an
-event, none stores one again. The `js` engine loses the same window (its stores are not fsynced), so the `go` engine
-keeps parity with it.
+typically a few seconds): those events can be lost. **No event is counted twice, provided the stores' tails still
+hold the events the lost mark covered**: every hole above loses an event, none stores one again. The `js` engine loses
+the same window (its stores are not fsynced), so the `go` engine keeps parity with it.
+
+The condition matters in one improbable case. Recovery reads the mark from the mark file and from the last 4 MiB of
+each store (`lib/ipc/marks.js TAIL_BYTES`). If the power loss leaves the mark file empty or old (an unsynced
+rename-replace can leave a zero-length file, which reads as no marks) and `stream.json` rolled back to an older
+`acked`, while more than 4 MiB of other lines (the `js` engine's usage, the in-process MCP audit) were written after
+the replayed events' store lines and did reach the disk, then recovery finds no mark for the stream. A stream without
+a mark accepts any first seq, so the replay stores those events a second time. It needs more than 4 MiB of writes
+inside the OS's writeback window.
+
+A power loss can also cost availability. An unsynced `stream.json` can come back zero-length or garbled; the outbox
+then refuses to open (`ErrOutboxDamaged`: a new stream is never started over old events), the gateway exits 1 with a
+`fatal:` line, the supervisor enters `failed`, and the server serves the port itself (`fallback`). The `go` engine
+stays off until someone repairs or moves `.data/gw-outbox/` by hand and restarts ZAAFPulse. Requests are still served
+(by the `js` engine); the events left in the outbox are not sent until the repair.
 
 ## Reversing it
 

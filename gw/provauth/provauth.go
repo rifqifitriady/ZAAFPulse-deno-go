@@ -117,6 +117,13 @@ type Cached struct {
 	flight *flight
 }
 
+// String and GoString keep fmt (%v, %+v, %#v, %s) from printing the token, the refresh token or anything else the
+// source holds, as ipc.SecretsHandoff does.
+func (c *Cached) String() string { return "provauth.Cached{" + c.id + ", <redacted>}" }
+
+// GoString: see String.
+func (c *Cached) GoString() string { return c.String() }
+
 func newCached(form formFunc, hc *http.Client, clock Clock, opts []Option) *Cached {
 	var cp http.Client
 	if hc != nil {

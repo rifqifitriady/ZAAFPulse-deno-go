@@ -61,7 +61,9 @@ regenerates and compares (the drift check, on both runtimes).
   file); a re-read that throws is logged once and the session goes on with the marks in memory (they are never ahead
   of the stores, only possibly behind, and the outbox's `Acked` seed still applies).
 - **D3 Mark file shared by two servers.** `save` reads the file, keeps the larger mark per stream, then writes: a
-  server never lowers a mark another server wrote.
+  server never lowers a mark another server wrote, with one writer at a time (the outbox lock gives one acker per data
+  folder; the read, merge and rename are not atomic across processes). The temp file is named per process and per
+  save (`<file>.<pid>.<12 hex>.tmp`) and removed when the write fails (fix round 1, M3).
 - **D4 Power loss: documented, no fsync (spec: "the plan decides and says which").** The durability target since P3 D4
   is a killed process, not a power loss, and nothing in the chain is fsynced (Go outbox segments and `stream.json`,
   the four JS stores, the mark file; the `js` engine's own stores too). After a kill of either process the page cache
@@ -124,7 +126,13 @@ regenerates and compares (the drift check, on both runtimes).
      account's private_key is not an RSA private key in PEM";
    - a token body that is JSON `null`: JS throws a `TypeError` text, Go reports `token refresh failed (<status>)`;
    - an `expires_in` that is not a whole number of milliseconds or exceeds about 31 years: Go rounds to the
-     nanosecond / caps at 1e9 s.
+     nanosecond / caps at 1e9 s;
+   - a service account whose `client_email` holds an escaped lone surrogate (`"\ud800"`): `encoding/json` reads it as
+     U+FFFD, so the claim carries that replacement character where `JSON.stringify` writes `\ud800` (found in review, M8);
+   - a token answer larger than 1 MiB: Go reads the first 1 MiB, which is then not JSON, and reports `token refresh
+     failed (<status>)`, where the JS reads the whole body (M8);
+   - a caller's `http.Client.Timeout` below the 20 s refresh timeout: the client's own `url.Error` text is returned
+     instead of `<id>: token endpoint timed out` (M8).
    Network errors keep each runtime's own text (as `fetch` does in Node versus Deno).
 
 ## File structure
