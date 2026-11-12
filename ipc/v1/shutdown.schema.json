@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shutdown (control plane to gateway): stop taking requests, finish within graceMs, exit 0",
+  "type": "object",
+  "required": ["graceMs"],
+  "additionalProperties": false,
+  "properties": { "graceMs": { "type": "integer", "minimum": 0 } }
+}

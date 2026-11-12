@@ -1,0 +1,1 @@
+{"v":1,"type":"secrets.handoff","seq":3,"ts":1767225600003,"body":{"gen":1,"providers":[{"id":"openai","env":"OPENAI_API_KEY"}],"mask":[]}}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "trace.span (gateway to control plane): one finished span as the local trace store keeps it (microseconds, no content)",
+  "type": "object",
+  "required": ["span"],
+  "additionalProperties": false,
+  "properties": {
+    "span": {
+      "type": "object",
+      "required": ["t", "s", "p", "n", "k", "st", "d", "ok", "src", "svc", "a"],
+      "additionalProperties": false,
+      "properties": {
+        "t": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "s": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+        "p": { "type": ["string", "null"], "pattern": "^[0-9a-f]{16}$" },
+        "n": { "type": "string", "minLength": 1 },
+        "k": { "type": "string", "enum": ["internal", "server", "client"] },
+        "st": { "type": "integer", "minimum": 0 },
+        "d": { "type": "integer", "minimum": 0 },
+        "ok": { "type": "boolean" },
+        "err": { "type": "string" },
+        "src": { "type": "string" },
+        "svc": { "type": "string" },
+        "a": { "type": "object" }
+      }
+    }
+  }
+}

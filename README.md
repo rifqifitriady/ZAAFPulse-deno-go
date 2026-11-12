@@ -581,6 +581,15 @@ secret reference in `config.json`; a program outside the run list of `deno.json`
 of the presets, a Claude Code that is installed only inside an IDE extension folder) is refused with "Requires run
 access", and a build of your own can add it to the list.
 
+### The gateway process (v2 line, in progress)
+
+ZAAFPulse v2 moves the Agent Gateway's data plane into a Go process, `zaafpulse-gw`, started and supervised by the
+Deno control plane. The two talk over the gateway's stdin and stdout, one JSON message per line, as frozen in
+[`ipc/v1`](ipc/v1/README.md): config, resolved secrets and budget snapshots go in; usage, audit events and trace spans
+come out through a durable outbox, so killing either process loses or duplicates no record. The control plane stays
+the only writer of the usage log, the cost ledger and the audit chain. Today the Go process is a protocol stub used by
+the tests (`npm run test:go`, `npm run gw:dev`); the gateway in the server is still the JavaScript one.
+
 ### Run it on login (macOS, from source)
 
 ```bash

@@ -1,0 +1,16 @@
+{"v":1,"type":"config.push","seq":2,"ts":1767225600002,"body":{"gen":3,
+ "gateway":{
+  "providers":[
+   {"id":"openai","preset":"openai","baseUrl":"https://api.openai.com/v1","models":["gpt-6.1-sol"],"aliases":{"fast":"gpt-6.1-sol"},"enabled":true,"tier":"external","approved":true,"format":"openai","responses":true,"reasoning":false,"tokenParam":"max_completion_tokens"},
+   {"id":"vertex","preset":"vertex","baseUrl":"https://europe-west4-aiplatform.googleapis.com/v1","auth":{"type":"google-service-account","tokenUrl":"https://oauth2.googleapis.com/token","scope":"https://www.googleapis.com/auth/cloud-platform"}},
+   {"id":"ollama","preset":"ollama","baseUrl":"http://127.0.0.1:11434/v1","tier":"private","models":[]}],
+  "routes":[{"name":"router/fast","targets":["openai/gpt-6.1-sol","ollama/llama-5"],"strategy":"fallback","description":"cloud first, local when it fails"}],
+  "guardrails":{"scope":"all","secrets":"block","pii":"redact","injection":"block"},
+  "defaults":{"model":"openai/gpt-6.1-sol","plannerModel":"","codeModel":""},
+  "tokenSaver":true,
+  "modelMap":[{"match":"gpt-4o*","to":"openai/gpt-6.1-sol"}]},
+ "keys":[{"id":"k1","name":"ci","scopes":["llm"],"models":[],"agents":[],"knowledge":[],"budgetUSD":25,"rpm":60,"privateOnly":false,"expiresAt":null,"revokedAt":null,"guardrails":{"pii":"block"},"prefix":"zp_live_ab","approveOwnRuns":false,"createdAt":1767225000000,"lastUsedAt":null,"hash":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"}],
+ "pricing":{
+  "claude-opus-5-5":{"input":5000000000,"output":25000000000,"cacheRead":500000000,"cacheWrite5m":6250000000,"cacheWrite1h":10000000000,"webSearch":10000000},
+  "gemini-3-pro":{"input":2000000000,"output":12000000000,"tiers":[{"above":200000,"input":4000000000,"output":18000000000}]},
+  "gpt-6.1-sol":{"input":1250000000,"output":10000000000,"estimate":true}}}}

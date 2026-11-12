@@ -1,0 +1,1 @@
+{"v":1,"type":"audit.event","seq":44,"ts":1767225650000,"body":{"log":"governance","event":{"action":"key.update","target":{"type":"key","id":"k1","name":"ci"},"outcome":"ok","status":200,"changes":[{"path":"rpm","from":60,"to":120},{"path":"guardrails.pii","from":null,"to":"block"}],"actor":{"via":"apikey","keyId":"k1"}}}}

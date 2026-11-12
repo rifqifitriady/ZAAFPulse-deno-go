@@ -7,11 +7,14 @@
 # The deno job runs the same suite and the contract suite under the pinned Deno with the "test" permission set of
 # deno.json (never -A), and blocks like the Node job (P2 T4). The Node job keeps running until the cut-over (P7).
 # The build-deno job compiles and smoke-tests the six single-file binaries on native runners (P2 T6).
+# The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
+# the test job's OS matrix. The Node and Deno jobs set up the same Go, so the cross-language IPC tests build the stub
+# (gw/cmd/zaafpulse-gw) and never skip; the Deno job builds it once up front (ZP_GW_BIN). Go is pinned to 1.27.3.
 # Scope, to keep a private repo inside its Actions minutes (macOS minutes bill at 10x, Windows at 2x): a push to a work
 # branch (migrate/<anything> other than migrate/deno-go) runs the Ubuntu jobs only (Node suite, Deno suite,
-# typecheck). The full matrix (four OS for Node, ubuntu and macOS for Deno, the six build-deno targets) runs on pull
+# Go, typecheck). The full matrix (four OS for Node, ubuntu and macOS for Deno, the six build-deno targets) runs on pull
 # requests, on pushes to main and migrate/deno-go, on tags (through release.yml) and on a manual run
-# (workflow_dispatch). The condition is repeated in the three places that use it, because a matrix cannot read
+# (workflow_dispatch). The condition is repeated in the four places that use it, because a matrix cannot read
 # workflow env.
 name: CI
 on:
@@ -46,6 +49,10 @@ jobs:
         with:
           node-version: 24.21.0
           package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
       # No npm install: the app and its tests have no runtime dependencies.
       - name: Test suite
         shell: bash
@@ -83,6 +90,16 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.21.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      # The cross-language IPC tests use this build of the gateway stub instead of building it themselves.
+      - name: Build the gateway stub
+        shell: bash
+        run: |
+          go -C gw build -o "$RUNNER_TEMP/gw/zaafpulse-gw" ./cmd/zaafpulse-gw
+          echo "ZP_GW_BIN=$RUNNER_TEMP/gw/zaafpulse-gw" >> "$GITHUB_ENV"
       # Installs exactly what deno.lock pins; fails when the lockfile is stale.
       - run: deno ci
       - name: Test suite under Deno
@@ -136,6 +153,32 @@ jobs:
       - run: deno ci
       # lib/gateway, lib/cost and lib/governance with // @ts-check and tsconfig.json; @types/node is dev-only.
       - run: deno task typecheck
+
+  # The Go gateway module (P3): gofmt, go vet and go test, including every fixture of ipc/v1.
+  go:
+    name: go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest","macos-latest","windows-latest","windows-11-arm"]' || '["ubuntu-latest"]') }}
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: gofmt
+        shell: bash
+        run: test -z "$(gofmt -l gw)" || { gofmt -l gw; exit 1; }
+      - run: go -C gw vet ./...
+      - run: go -C gw test -count=1 ./...
 
   # Compiles the six single-file binaries with deno compile and the "cli" permission set (the binary's entry is the
   # command line, so it holds the superset of the server set), and smoke-tests each one on a runner of its own OS and
