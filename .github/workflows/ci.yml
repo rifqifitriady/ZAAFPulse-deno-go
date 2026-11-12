@@ -231,8 +231,11 @@ jobs:
       - name: Regenerate on Deno and diff
         shell: bash
         run: |
+          # One permission set for every generator: read anywhere, write only gw/testdata, nothing else (explicitly
+          # denied, so a generator that starts needing more fails here instead of prompting). Checked against
+          # gen-translate.js, gen-guard.js and stream C's gen-provauth.js (PR #6, writes gw/testdata/provauth).
           for g in scripts/fixtures/gen-*.js; do
-            deno run -q --no-prompt --allow-read --allow-write=gw/testdata "$g"
+            deno run -q --no-prompt --allow-read --allow-write=gw/testdata --deny-env --deny-net --deny-run --deny-sys "$g"
           done
           git add -N gw/testdata
           git diff --exit-code --stat gw/testdata || { echo "::error::fixtures differ from the JS output (Deno)"; exit 1; }
