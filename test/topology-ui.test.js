@@ -708,3 +708,30 @@ test('the gateway chip (P4a D6): none in js mode or without an answer; ready, re
   topoPaintGatewayChip(el, { mode: 'js' });
   assert.deepEqual([el.hidden, el.textContent], [true, '']);
 });
+
+test('the gateway chip asks for /api/gateway/status only as the owner (no 403 or audit entry for other roles)', async () => {
+  for (const owner of [false, true]) {
+    const b = fakeBrowser(fakeDoc({ icons: true }));
+    const chip = { hidden: true, className: '', textContent: '', title: '' };
+    b.install();
+    const pick = globalThis.document.querySelector;
+    globalThis.document.querySelector = (sel) => (sel === '[data-gw-chip]' ? chip : pick(sel));
+    globalThis.isOwner = () => owner;
+    try {
+      if (owner) b.answers.push({ mode: 'front', state: 'ready', restarts: 0 });
+      b.answers.push(DATA);
+      b.withTimers(() => topoMount());
+      await settle();
+      assert.deepEqual(
+        b.calls.api,
+        owner ? ['/api/gateway/status', '/api/topology'] : ['/api/topology'],
+        owner ? 'owner' : 'viewer',
+      );
+      assert.equal(chip.textContent, owner ? 'Gateway: Go (front) · ready' : '');
+      b.withTimers(() => b.calls.hooks.splice(0).forEach((fn) => fn()));
+    } finally {
+      delete globalThis.isOwner;
+      b.remove();
+    }
+  }
+});

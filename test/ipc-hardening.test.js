@@ -125,6 +125,7 @@ function fakeSupervisor(t, extra = {}) {
   const f = fakeStart();
   const logs = [];
   const failures = [];
+  const kinds = [];
   const sup = createSupervisor({
     bin: 'unused',
     cpVersion: 'test',
@@ -138,11 +139,11 @@ function fakeSupervisor(t, extra = {}) {
     healthTimeoutMs: 60000,
     backoff: { firstMs: 10, maxMs: 10, resetAfterMs: 60000 },
     start: f.start,
-    onFailed: (r) => failures.push(r),
+    onFailed: (r, info) => failures.push(r) && kinds.push(info && info.kind),
     ...extra,
   });
   t.after(() => sup.stop(0));
-  return { sup, f, logs, failures };
+  return { sup, f, logs, failures, kinds };
 }
 
 for (const [code, fatal] of [
@@ -152,11 +153,12 @@ for (const [code, fatal] of [
   [5, 'the outbox is in use by another gateway process'],
 ]) {
   test(`exit ${code} with a fatal line: the failed state with its reason, no restart (E8)`, async (t) => {
-    const { sup, f, failures } = fakeSupervisor(t);
+    const { sup, f, failures, kinds } = fakeSupervisor(t);
     sup.start();
     f.runs[0].end(code, fatal);
     await waitFor(() => sup.status().state === 'failed', 5000, 'failed');
     assert.deepEqual(failures, [fatal]);
+    assert.deepEqual(kinds, ['fatal'], 'a restart cannot help: lib/front may retry after a config change');
     assert.equal(sup.status().failed.code, code);
     assert.equal(sup.status().restarts, 0);
     await new Promise((r) => setTimeout(r, 50)); // past the back-off: still one run
@@ -173,7 +175,7 @@ test('exit 1 without a fatal line (a hard kill on Windows) is restarted', async 
 });
 
 test('maxRestarts: the exit after 5 restarts within the window is the failed state', async (t) => {
-  const { sup, f, failures } = fakeSupervisor(t, { maxRestarts: { count: 5, windowMs: 60000 } });
+  const { sup, f, failures, kinds } = fakeSupervisor(t, { maxRestarts: { count: 5, windowMs: 60000 } });
   sup.start();
   for (let i = 0; i < 6; i++) {
     await waitFor(() => f.runs.length === i + 1, 5000, `run ${i + 1}`);
@@ -182,6 +184,7 @@ test('maxRestarts: the exit after 5 restarts within the window is the failed sta
   await waitFor(() => sup.status().state === 'failed', 5000, 'failed');
   assert.equal(sup.status().restarts, 5);
   assert.deepEqual(failures, ['5 restarts within 60 s']);
+  assert.deepEqual(kinds, ['restarts'], 'a crash loop: lib/front retries only on a restart');
   sup.start(); // start() begins again
   await waitFor(() => f.runs.length === 7, 5000, 'a new run');
   assert.equal(sup.status().state, 'starting');

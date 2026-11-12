@@ -121,3 +121,73 @@ test('front mode: a gateway that cannot run (its outbox held) falls back to Deno
   assert.equal(st.alert, true);
   assert.equal(await answers(`${s.base}/login.html`), 200);
 });
+
+// A gateway holding the outbox of the server's data folder before the server starts; the server's own gateway exits 5.
+function holdOutbox(t, bin) {
+  const h = { proc: null, gone: null };
+  h.before = async (data) => {
+    h.proc = spawn(bin, ['--outbox', path.join(data, '.data', 'gw-outbox')], { stdio: ['pipe', 'pipe', 'ignore'] });
+    h.gone = new Promise((r) => h.proc.once('close', r));
+    await new Promise((r) => h.proc.stdout.once('data', r)); // its hello: the outbox is locked
+  };
+  h.release = async () => {
+    if (!h.proc || h.proc.exitCode !== null || h.proc.signalCode !== null) return h.gone;
+    h.proc.stdin.end();
+    killHard(h.proc.pid);
+    await h.gone;
+  };
+  return h;
+}
+
+test('fallback, then a gateway save: the save gets its answer, and front comes back once the outbox is free', async (t) => {
+  const bin = stubBin(t);
+  if (!bin) return;
+  const holder = holdOutbox(t, bin);
+  const s = await startServer({ runtime: RUNTIME, config: FRONT, before: holder.before });
+  t.after(async () => {
+    await holder.release();
+    await s.stop();
+  });
+  await until(async () => ((await status(s.base)) || {}).mode === 'fallback', 30000, 'the fallback');
+  await holder.release();
+  const c = clientFor(s.base);
+  const saved = await c.call('/api/gateway/defaults', { body: { model: 'a/b' } });
+  assert.equal(saved.status, 200, saved.text);
+  assert.ok(saved.json, 'a JSON answer, not a reset connection');
+  const st = await until(
+    async () => {
+      const x = await status(s.base);
+      return x && x.mode === 'front' && x.state === 'ready' ? x : null;
+    },
+    30000,
+    'front again',
+  );
+  assert.ok(st.pid > 0);
+  assert.equal(await answers(`${s.base}/login.html`), 200);
+});
+
+test('front mode: 5 restarts within 60 s fall back to Deno; a gateway save then does not try front again', async (t) => {
+  if (!stubBin(t)) return;
+  const s = await startServer({ runtime: RUNTIME, config: FRONT });
+  t.after(() => s.stop());
+  // Each gateway that comes up is killed hard (back-off 1, 2, 4, 8, 16 s between runs): the sixth exit is the limit.
+  let pid = 0;
+  const st = await until(
+    async () => {
+      const x = await status(s.base);
+      if (x && x.mode === 'fallback') return x;
+      if (x && x.state === 'ready' && x.pid !== pid) killHard((pid = x.pid));
+      return null;
+    },
+    90000,
+    'the fallback after the restart limit',
+  );
+  assert.match(st.reason, /5 restarts within 60 s/, JSON.stringify(st));
+  assert.equal(st.alert, true);
+  assert.equal(await answers(`${s.base}/login.html`), 200);
+  const saved = await clientFor(s.base).call('/api/gateway/defaults', { body: { model: 'a/b' } });
+  assert.equal(saved.status, 200, saved.text);
+  await new Promise((r) => setTimeout(r, 1500));
+  const after = await status(s.base);
+  assert.deepEqual([after.mode, after.state], ['fallback', 'failed'], 'no new gateway after a crash loop');
+});

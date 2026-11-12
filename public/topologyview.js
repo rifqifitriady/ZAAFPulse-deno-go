@@ -67,8 +67,6 @@ function topoAgo(ms) {
 const topoNum = (n) => (n >= 1e6 ? `${topoR(n / 1e6)}M` : n >= 1000 ? `${topoR(n / 1000)}k` : String(Math.round(n)));
 const topoMs = (ms) => (ms >= 1000 ? `${topoR(ms / 1000)} s` : `${Math.round(ms)} ms`);
 
-// The section head's meta line: "— N active · M error". The hub is always active (it is the dashboard), so it is
-// not counted.
 // The "Gateway: Go (front)" chip in the card's head (P4a D6), from GET /api/gateway/status: null (no chip) when the
 // gateway is not in front (js mode, no answer, or a role that may not read it); else its text, colour and tooltip.
 function topoGatewayChip(st) {
@@ -103,6 +101,8 @@ function topoPaintGatewayChip(el, st) {
   el.title = chip.title;
 }
 
+// The section head's meta line: "— N active · M error". The hub is always active (it is the dashboard), so it is
+// not counted.
 function topoMetaText(data) {
   const nodes = data && Array.isArray(data.nodes) ? data.nodes.filter((n) => n && n.kind !== 'hub') : [];
   const count = (s) => nodes.filter((n) => n.status === s).length;
@@ -657,8 +657,9 @@ function topoMount() {
   };
   const chipEl = document.querySelector('[data-gw-chip]');
   const load = async () => {
-    // The gateway chip has its own request: a refusal (not the owner) or an error only hides the chip.
-    if (chipEl)
+    // The gateway chip has its own request, made only as the owner: the route is owner-only, and another role's refusal
+    // would be a 403 and a governance audit entry on every poll. An error only hides the chip.
+    if (chipEl && typeof isOwner === 'function' && isOwner())
       api('/api/gateway/status').then(
         (st) => root.isConnected && topoPaintGatewayChip(chipEl, st),
         () => root.isConnected && topoPaintGatewayChip(chipEl, null),

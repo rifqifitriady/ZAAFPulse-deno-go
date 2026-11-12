@@ -55,3 +55,163 @@ test('runScope: a deno run launch is granted the gateway binary when it is there
   assert.ok(permissions.runScope({ set: 'cli', env }).includes(bin));
   assert.ok(!permissions.runScope({ set: 'mcp-stdio', env }).includes(bin));
 });
+
+test('bin.js keeps the rules of lib/platform.js: the source folder and the single-file check', () => {
+  const platform = require('../lib/platform');
+  const name = process.platform === 'win32' ? 'zaafpulse-gw.exe' : 'zaafpulse-gw';
+  assert.equal(gwBinary({ env: {} }), path.join(platform.APP_DIR, 'gw', 'bin', name));
+  assert.equal(
+    gwBinary({ env: {}, execPath: '/x/zaafpulse', os: 'linux' }),
+    platform.isSingleFile()
+      ? path.join('/x', 'zaafpulse-gw')
+      : path.join(platform.APP_DIR, 'gw', 'bin', 'zaafpulse-gw'),
+  );
+});
+
+// createFront with fakes: a supervisor that does nothing until the test calls its onFailed or onReady, and an internal
+// listener that only counts. The main server is real, on a free port.
+const http = require('http');
+const net = require('net');
+const { createFront } = require('../lib/front');
+
+const freePort = () =>
+  new Promise((resolve) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => resolve(port));
+    });
+  });
+
+async function frontWithFakes(t, over = {}) {
+  const port = await freePort();
+  const mainServer = http.createServer((req, res) => {
+    if (req.url === '/save') {
+      // A save of the gateway section: the retry is asked for while this request is still answering.
+      const done = new Promise((r) => res.once('close', r));
+      front.reload({ after: done }).catch(() => {});
+      setTimeout(() => res.end('saved'), 50);
+      return;
+    }
+    res.end('ok');
+  });
+  const sups = [];
+  const inners = [];
+  const errors = [];
+  const servings = [];
+  const front = createFront({
+    engine: 'front',
+    host: '127.0.0.1',
+    port,
+    mainServer,
+    bin: '/no/such/gateway',
+    env: {},
+    cpVersion: 'test',
+    ingest: { handle: () => true },
+    log: () => {},
+    waitPortMs: 2000,
+    onServing: (m) => servings.push(m),
+    onListenError: (err) => errors.push(err),
+    createSupervisor: (opts) => {
+      const sup = { opts, started: 0, stopped: 0, start: () => sup.started++, reload: () => true };
+      sup.status = () => ({ state: 'ready', pid: 1, gen: 1, restarts: 0, lastExit: null, lastHealth: null });
+      sup.stop = async () => sup.stopped++;
+      sups.push(sup);
+      return sup;
+    },
+    internal: () => {
+      const inner = { closed: 0, listen: async () => 1, close: async () => inner.closed++ };
+      inners.push(inner);
+      return inner;
+    },
+    ...over,
+  });
+  t.after(async () => {
+    await front.stop(0);
+    await new Promise((r) => mainServer.close(() => r()));
+    mainServer.closeAllConnections();
+  });
+  await front.start();
+  return { front, port, mainServer, sups, inners, errors, servings };
+}
+const until = async (fn, ms = 5000) => {
+  const end = Date.now() + ms;
+  while (!fn()) {
+    if (Date.now() > end) throw new Error('timed out');
+    await new Promise((r) => setTimeout(r, 10));
+  }
+};
+
+test('I1: two reloads in fallback start front once; a stale supervisor cannot fall back over the new one', async (t) => {
+  const f = await frontWithFakes(t);
+  f.sups[0].opts.onFailed('outbox in use', { kind: 'fatal' });
+  await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
+  const [a, b] = await Promise.all([f.front.reload(), f.front.reload()]);
+  assert.deepEqual([a, b], [true, true]);
+  assert.equal(f.sups.length, 2, 'one new supervisor, not two');
+  assert.equal(f.front.mode, 'front');
+  // The old supervisor reports a failure again: ignored, the new front keeps its internal listener.
+  f.sups[0].opts.onFailed('late', { kind: 'fatal' });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(f.front.mode, 'front');
+  assert.equal(f.inners[1].closed, 0);
+  assert.deepEqual(f.errors, []);
+});
+
+test('I1: a reload during the fallback port wait waits for it, then starts front once', async (t) => {
+  const port = await freePort();
+  // Something else (the old gateway, exiting) holds the port for 300 ms after the failure.
+  const holder = net.createServer().listen(port, '127.0.0.1');
+  await new Promise((r) => holder.once('listening', r));
+  const f = await frontWithFakes(t, { port });
+  f.sups[0].opts.onFailed('exit 4', { kind: 'fatal' });
+  const r = f.front.reload();
+  setTimeout(() => holder.close(), 300);
+  assert.equal(await r, true);
+  assert.equal(f.sups.length, 2);
+  assert.equal(f.front.mode, 'front');
+  assert.deepEqual(f.errors, []);
+});
+
+test('I2: the save that asks for the retry gets its answer; the retry waits for it', async (t) => {
+  const f = await frontWithFakes(t);
+  f.sups[0].opts.onFailed('outbox in use', { kind: 'fatal' });
+  await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
+  const r = await fetch(`http://127.0.0.1:${f.port}/save`, { method: 'POST', body: '{}' });
+  assert.equal(await r.text(), 'saved');
+  await until(() => f.sups.length === 2 && f.front.mode === 'front');
+});
+
+test('I2: after a crash-loop fallback a reload does not retry front (a restart does)', async (t) => {
+  const f = await frontWithFakes(t);
+  f.sups[0].opts.onFailed('5 restarts within 60 s', { kind: 'restarts' });
+  await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
+  assert.equal(await f.front.reload(), false);
+  assert.equal(f.sups.length, 1);
+  assert.equal(f.mainServer.listening, true);
+  assert.match(f.front.status().reason, /5 restarts/);
+});
+
+test('the fallback waits up to waitPortMs for the main port, then reports it taken', async (t) => {
+  for (const [holdMs, ok] of [
+    [400, true],
+    [5000, false],
+  ]) {
+    const port = await freePort();
+    const holder = net.createServer().listen(port, '127.0.0.1');
+    await new Promise((r) => holder.once('listening', r));
+    const f = await frontWithFakes(t, { port, waitPortMs: 1500 });
+    const released = new Promise((r) => setTimeout(() => holder.close(r), holdMs));
+    f.sups[0].opts.onFailed('exit 4', { kind: 'fatal' });
+    if (ok) {
+      await until(() => f.servings.includes('fallback'), 5000);
+      assert.equal(f.mainServer.listening, true);
+      assert.deepEqual(f.errors, []);
+    } else {
+      await until(() => f.errors.length === 1, 5000);
+      assert.equal(f.errors[0].code, 'EADDRINUSE');
+      assert.equal(f.mainServer.listening, false);
+    }
+    holder.close();
+    await released.catch(() => {});
+  }
+});
