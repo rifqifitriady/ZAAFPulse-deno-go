@@ -273,7 +273,7 @@ function viewOverview() {
   <div class="section-head"><h2>AI quality & safety</h2><span class="meta">— signals from your local logs · click a card for details</span><a class="link" href="#quality">Quality & safety ↗</a></div>
   ${qualityKpis()}
 
-  <div class="section-head"><h2>Provider topology</h2><span class="meta" data-topo-meta>— loading…</span></div>
+  <div class="section-head"><h2>Provider topology</h2><span class="meta" data-topo-meta>— loading…</span><span class="chip" data-gw-chip hidden></span></div>
   <div class="card topo" data-topo aria-busy="true"></div>
 
   <div class="section-head"><h2>AI Office</h2><span class="meta">— ${squad.total} detected · ${squad.running} running now</span><a class="link" href="#squad">View all ↗</a></div>

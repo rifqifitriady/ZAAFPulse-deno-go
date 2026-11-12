@@ -4,7 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { topoLayout, topoPaint, topoMetaText, topoAgo, topoMount } = require('../public/topologyview');
+const {
+  topoLayout,
+  topoPaint,
+  topoMetaText,
+  topoAgo,
+  topoMount,
+  topoGatewayChip,
+  topoPaintGatewayChip,
+} = require('../public/topologyview');
 
 const SRC = path.join(__dirname, '..', 'public', 'topologyview.js');
 const N = (id, layer, status = 'idle', over = {}) => ({
@@ -674,4 +682,29 @@ test('the Overview holds the section above AI Office and the page loads the scri
   for (const [, v] of css.matchAll(/(?:^|[;{\s])font:\s*([^;}]+)/g))
     if (/\binherit\b/.test(v)) assert.equal(v.trim(), 'inherit', `font: ${v}`);
   assert.match(css, /\.topo-zbtn \{[^}]*font-family: inherit;[^}]*\}/);
+});
+
+test('the gateway chip (P4a D6): none in js mode or without an answer; ready, restarting and fallback in front', () => {
+  assert.equal(topoGatewayChip(null), null);
+  assert.equal(topoGatewayChip({ mode: 'js', state: 'off' }), null);
+  assert.deepEqual(topoGatewayChip({ mode: 'front', state: 'ready', restarts: 2 }), {
+    text: 'Gateway: Go (front) · ready',
+    tone: 'green',
+    title: 'Restarts: 2',
+  });
+  assert.equal(
+    topoGatewayChip({ mode: 'front', state: 'restarting', restarts: 1 }).text,
+    'Gateway: Go (front) · restarting',
+  );
+  assert.equal(topoGatewayChip({ mode: 'front', state: 'starting' }).tone, 'amber');
+  const fb = topoGatewayChip({ mode: 'fallback', state: 'failed', reason: '<b>port 4777 is in use</b>' });
+  assert.equal(fb.text, 'Gateway: Go (front) · fallback');
+  assert.equal(fb.tone, 'red');
+  assert.match(fb.title, /port 4777 is in use/);
+  // Painted as text: the reason's markup stays text.
+  const el = { hidden: true, className: '', textContent: '', title: '' };
+  topoPaintGatewayChip(el, { mode: 'fallback', state: 'failed', reason: '<b>x</b>' });
+  assert.deepEqual([el.hidden, el.className, el.textContent], [false, 'chip red', 'Gateway: Go (front) · fallback']);
+  topoPaintGatewayChip(el, { mode: 'js' });
+  assert.deepEqual([el.hidden, el.textContent], [true, '']);
 });

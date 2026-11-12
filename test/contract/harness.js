@@ -5,6 +5,8 @@
 //   ZP_CONTRACT_URL        a running instance on this machine (sign-in off) instead of spawning one; it must have been
 //                          started with SEED_CONFIG in its config.json (prices are read at start, for budgets)
 //   ZP_CONTRACT_KEY        with ZP_CONTRACT_URL: the main key to use instead of creating one
+//   ZP_ENGINE=front        gateway.engine "front": the Go gateway (built by scripts/ipc/build-stub.js, or ZP_GW_BIN)
+//                          holds the port and forwards every case to the server (P4a T6)
 // Nothing here reaches the network: the providers point at the fake upstream on 127.0.0.1, price sync is off, and
 // the judge ports, notifications and runtime polling are off (as test/helpers.js NO_JUDGE_PORTS).
 const fs = require('fs');
@@ -14,6 +16,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { NO_JUDGE_PORTS } = require('../helpers');
 const { startUpstream } = require('./upstream');
+const { buildStub } = require('../../scripts/ipc/build-stub');
+const permissions = require('../../lib/permissions');
 
 const ROOT = path.join(__dirname, '..', '..');
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -24,8 +28,21 @@ const PRICES = {
   'claude-x': { input: 3, output: 15 },
   'gpt-5-codex': { input: 1, output: 2 },
 };
-// config.json of a spawned server: no price sync (no network), the contract prices.
-const SEED_CONFIG = { pricingSync: { enabled: false }, pricing: PRICES };
+// config.json of a spawned server: no price sync (no network), the contract prices; with ZP_ENGINE=front, the Go
+// gateway in front.
+const SEED_CONFIG = {
+  pricingSync: { enabled: false },
+  pricing: PRICES,
+  ...(process.env.ZP_ENGINE === 'front' ? { gateway: { engine: 'front' } } : {}),
+};
+
+// The environment a front-mode server needs: the gateway binary. Throws without Go: a front run is asked for.
+function gatewayEnv(config) {
+  if (!(config && config.gateway && config.gateway.engine === 'front')) return {};
+  const built = buildStub();
+  if (built.skip) throw new Error(`gateway.engine "front" needs the gateway binary: ${built.skip}`);
+  return { ZAAFPULSE_GW_BIN: built.bin };
+}
 const UPSTREAM_SECRET = { oa: 'sk-contract-oa', an: 'sk-contract-an', rs: 'sk-contract-rs' };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,7 +61,7 @@ function freePort() {
 // The command that runs server.js under a runtime. Under `deno test` process.execPath is deno, so node is found on
 // PATH; under `node --test` deno is found on PATH. Deno gets the "server" set of deno.json (never -A) with the write
 // scope of this data folder and the temp folder, as a real launch narrows it (lib/permissions.js); never a prompt.
-function command(runtime, data) {
+function command(runtime, data, env = {}) {
   const server = path.join(ROOT, 'server.js');
   const underDeno = !!(process.versions && process.versions.deno);
   if (runtime === 'node') return { bin: underDeno ? 'node' : process.execPath, args: [server] };
@@ -58,6 +75,10 @@ function command(runtime, data) {
         `--config=${path.join(ROOT, 'deno.json')}`,
         '-P=server',
         `--allow-write=${data},${os.tmpdir()}`,
+        // Front mode: the set's programs plus the gateway binary (lib/permissions.js runScope); else the set as it is.
+        ...(env.ZAAFPULSE_GW_BIN
+          ? [`--allow-run=${permissions.runScope({ set: 'server', env: { ...process.env, ...env } }).join(',')}`]
+          : []),
         server,
       ],
     };
@@ -68,14 +89,22 @@ function command(runtime, data) {
   throw new Error(`ZP_RUNTIME must be node, deno or binary, not "${runtime}"`);
 }
 
-// startServer({ runtime, config, env }) -> { base, data, pid, startupMs, stderr(), stop() }. Ready means the first 200
-// on /login.html (the benchmark's startup measure). A port taken in between is retried on another one.
-async function startServer({ runtime = process.env.ZP_RUNTIME || 'node', config = SEED_CONFIG, env = {} } = {}) {
+// startServer({ runtime, config, env, before }) -> { base, data, pid, startupMs, stderr(), stop() }. Ready means the
+// first 200 on /login.html (the benchmark's startup measure). A port taken in between is retried on another one.
+// before(data), when given, runs once the data folder is made and before the server starts.
+async function startServer({
+  runtime = process.env.ZP_RUNTIME || 'node',
+  config = SEED_CONFIG,
+  env = {},
+  before = async () => {},
+} = {}) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const data = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-contract-'));
     fs.writeFileSync(path.join(data, 'config.json'), JSON.stringify(config, null, 2));
+    await before(data);
     const port = await freePort();
-    const { bin, args } = command(runtime, data);
+    const gwEnv = gatewayEnv(config);
+    const { bin, args } = command(runtime, data, { ...env, ...gwEnv });
     const started = performance.now();
     const child = spawn(bin, args, {
       cwd: ROOT,
@@ -85,6 +114,7 @@ async function startServer({ runtime = process.env.ZP_RUNTIME || 'node', config 
         ZAAFPULSE_AUTH: 'none',
         ZAAFPULSE_CONTENT: '',
         DEMO: '',
+        ...gwEnv,
         ...env,
         ZAAFPULSE_PORT: String(port),
         ZAAFPULSE_HOST: '127.0.0.1',
