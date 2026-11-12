@@ -73,18 +73,31 @@ test('a control plane whose recovered mark is below the outbox start stores the 
   const bin = stubBin(t);
   if (!bin) return;
   const outbox = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-ipc-sup-ob-'));
-  t.after(() => fs.rmSync(outbox, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
+  // This hook runs before the ones supervise() adds, so it stops both gateways itself first: Windows cannot remove a
+  // folder whose files a running gateway holds open, and a failed hook would leave that gateway running.
+  const sups = [];
+  t.after(async () => {
+    try {
+      await Promise.all(sups.map((s) => s.stop(0)));
+    } finally {
+      fs.rmSync(outbox, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
+  });
   const sinks = { recordUsage: () => {}, recordGovernance: () => true, recordMcp: () => {}, writeSpans: () => {} };
   // Run 1: 9 events stored and acknowledged (the outbox is empty afterwards).
   const first = createIngest({ ...sinks, log: () => {} });
   const run1 = supervise(t, bin, ['--emit', '3', '--outbox', outbox], { ingest: first });
+  sups.push(run1.sup);
   run1.sup.start();
   await waitFor(() => run1.sup.status().state === 'ready', 5000, 'ready');
   await waitFor(
     () => first.stats().stored === 9 && !fs.readdirSync(outbox).some((f) => f.endsWith('.jsonl')),
     10000,
     'nine events stored and acknowledged',
-  );
+  ).catch((e) => {
+    const files = fs.readdirSync(outbox).join(',');
+    throw new Error(`${e.message}; stored ${first.stats().stored}, outbox [${files}], log ${run1.logs.join(' | ')}`);
+  });
   await run1.sup.stop(1000);
   const stream = JSON.parse(fs.readFileSync(path.join(outbox, 'stream.json'), 'utf8')).stream;
   assert.equal(first.mark(stream), 9);
@@ -93,8 +106,17 @@ test('a control plane whose recovered mark is below the outbox start stores the 
   const logs2 = [];
   const second = createIngest({ ...sinks, marks: new Map([[stream, 4]]), log: (l) => logs2.push(l) });
   const run2 = supervise(t, bin, ['--emit', '4', '--outbox', outbox], { ingest: second });
+  sups.push(run2.sup);
   run2.sup.start();
-  await waitFor(() => second.mark(stream) === 12 || run2.sup.status().restarts > 0, 5000, 'events 10..12 stored');
+  await waitFor(() => second.mark(stream) === 12 || run2.sup.status().restarts > 0, 5000, 'events 10..12 stored').catch(
+    (e) => {
+      const st = run2.sup.status();
+      throw new Error(
+        `${e.message}; mark ${second.mark(stream)}, state ${st.state}, restarts ${st.restarts}, ` +
+          `ingest log ${logs2.join(' | ')}, supervisor log ${run2.logs.join(' | ')}`,
+      );
+    },
+  );
   assert.deepEqual(logs2, [], 'no gap refused');
   assert.equal(run2.sup.status().restarts, 0, 'no restart');
   assert.equal(second.mark(stream), 12);
