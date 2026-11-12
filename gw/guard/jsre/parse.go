@@ -31,6 +31,7 @@ type Regexp struct {
 	ncap  int
 	icase bool
 	pre   prefilter
+	prog  lazyProg
 }
 
 // String is the pattern source.
@@ -55,7 +56,11 @@ func Compile(src, flags string) (*Regexp, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Regexp{src: src, root: n, ncap: p.total, icase: p.icase}, nil
+	re := &Regexp{src: src, root: n, ncap: p.total, icase: p.icase}
+	if progSize(n) > maxInsts {
+		return nil, fmt.Errorf("jsre: /%s/ is too large after expanding counted repeats", src)
+	}
+	return re, nil
 }
 
 // MustCompile is Compile for constant patterns.
@@ -178,6 +183,9 @@ func (p *parser) term() (*node, error) {
 				return nil, err
 			}
 			lo, hi := width(sub)
+			if hi < 0 {
+				return nil, p.fail("unbounded lookbehind at %d is not supported", start)
+			}
 			return &node{kind: kLookbehind, neg: neg, subs: []*node{sub}, min: lo, max: hi}, nil
 		}
 	}

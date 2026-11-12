@@ -36,10 +36,8 @@ func firstOf(n *node, icase bool) (*bitset, bool) {
 		}
 		return b, false
 	case kSet, kClass:
-		m := &machine{s: make([]uint16, 1), icase: icase}
 		for u := 0; u < 1<<16; u++ {
-			m.s[0] = uint16(u)
-			if m.charOK(n, 0) {
+			if charMatch(n, uint16(u), icase) {
 				b.add(uint16(u))
 			}
 		}
@@ -91,4 +89,22 @@ func (re *Regexp) filter() *prefilter {
 		re.pre.set = *f
 	})
 	return &re.pre
+}
+
+// firstCache memoises firstOf per node while one program is compiled (classes cost 65,536 tests each).
+type firstCache map[*node]struct {
+	set   *bitset
+	empty bool
+}
+
+func (c firstCache) of(n *node, icase bool) (*bitset, bool) {
+	if v, ok := c[n]; ok {
+		return v.set, v.empty
+	}
+	s, e := firstOf(n, icase)
+	c[n] = struct {
+		set   *bitset
+		empty bool
+	}{s, e}
+	return s, e
 }
