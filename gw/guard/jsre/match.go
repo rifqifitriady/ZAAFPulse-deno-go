@@ -328,7 +328,11 @@ func (re *Regexp) matchAt(m *machine, pos int) []int {
 // Exec is RegExp.prototype.exec with lastIndex = from: the first match at or after from, or nil.
 func (re *Regexp) Exec(s []uint16, from int) []int {
 	m := &machine{s: s, caps: make([]int, 2*(re.ncap+1)), icase: re.icase}
+	pre := re.filter()
 	for p := from; p <= len(s); p++ {
+		if pre.ok && (p == len(s) || !pre.set.has(s[p])) {
+			continue
+		}
 		if c := re.matchAt(m, p); c != nil {
 			return c
 		}

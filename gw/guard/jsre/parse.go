@@ -30,6 +30,7 @@ type Regexp struct {
 	root  *node
 	ncap  int
 	icase bool
+	pre   prefilter
 }
 
 // String is the pattern source.

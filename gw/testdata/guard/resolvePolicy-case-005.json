@@ -1,0 +1,18 @@
+{
+  "fn": "resolvePolicy",
+  "in": [
+    {
+      "scope": "all",
+      "secrets": "log",
+      "pii": "redact",
+      "injection": "off"
+    },
+    "key"
+  ],
+  "out": {
+    "scope": "all",
+    "secrets": "log",
+    "pii": "redact",
+    "injection": "off"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkBody",
+  "in": [
+    [
+      "<<ZPSECRET:0>>",
+      {
+        "type": "<<ZPSECRET:0>>",
+        "text": "a@b.com"
+      },
+      5,
+      null
+    ],
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "redact",
+      "injection": "log"
+    },
+    "embeddings"
+  ],
+  "out": {
+    "body": [
+      "‹secret: Anthropic API key›",
+      {
+        "type": "<<ZPSECRET:0>>",
+        "text": "‹email›"
+      },
+      5,
+      null
+    ],
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 1
+      },
+      {
+        "check": "pii",
+        "label": "email",
+        "count": 1
+      }
+    ],
+    "error": false
+  }
+}
