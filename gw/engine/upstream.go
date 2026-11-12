@@ -133,10 +133,20 @@ func origin(u *url.URL) string {
 	return u.Scheme + "://" + u.Hostname() + ":" + port
 }
 
+var winsock = map[syscall.Errno]string{10061: "ECONNREFUSED", 10054: "ECONNRESET", 10060: "ETIMEDOUT",
+	10065: "EHOSTUNREACH", 10051: "ENETUNREACH", 10053: "ECONNABORTED"}
+
 // ErrorCode is what the JS gateway names a failed fetch by (err.cause.code of Node's fetch, else its message): the
 // common system and undici codes, else "fetch failed". Deno names some of these differently; a failed call has no
 // provider answer, so the shadow compare never reads it.
 func ErrorCode(err error) string {
+	// Winsock codes (Windows) by the names Node gives them there (re-review N4); no Unix errno is this large.
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		if name, ok := winsock[errno]; ok {
+			return name
+		}
+	}
 	var dns *net.DNSError
 	var hn x509.HostnameError
 	var ua x509.UnknownAuthorityError

@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -150,7 +151,13 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 			// The request target exactly as the client sent it (P4b review I2): net/http re-escapes a path it decoded
 			// ("\" and "|" become %5C and %7C) and drops query pairs it cannot parse (";"), so the control plane would
 			// route another text than in js mode. Opaque is written as it is; RawQuery is kept whole.
-			pr.Out.URL.Opaque = RawPath(pr.In.RequestURI)
+			// A target that starts with "//" cannot go in Opaque (net/url writes it as "http://..."): its path is set
+			// with RawPath, which is written as sent whenever it is a valid escaping of the path (re-review N1).
+			if raw := RawPath(pr.In.RequestURI); strings.HasPrefix(raw, "//") {
+				pr.Out.URL.Path, pr.Out.URL.RawPath = pr.In.URL.Path, raw
+			} else {
+				pr.Out.URL.Opaque = raw
+			}
 			pr.Out.URL.RawQuery = pr.In.URL.RawQuery
 			// The client's Host. Without one (HTTP/1.0) Go's transport would write the internal 127.0.0.1:<port>, so
 			// the request is flagged and the internal listener removes that Host: the host check sees none, as in js

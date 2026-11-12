@@ -125,7 +125,8 @@ func TestRequestTargetIsForwardedAsSent(t *testing.T) {
 	got := make(chan string, 8)
 	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { got <- r.RequestURI })
 	s := startFront(t, up.port(), nil)
-	for _, target := range []string{`/v1\chat/completions`, "/v1/a|b", "/api/x?q=a;b&c=1", "/v1/a^b?x=%zz&y=\\", "/v1/chat%2Fcompletions?a=%2F"} {
+	for _, target := range []string{`/v1\chat/completions`, "/v1/a|b", "/api/x?q=a;b&c=1", "/v1/a^b?x=%zz&y=\\",
+		"/v1/chat%2Fcompletions?a=%2F", "//v1/chat/completions", "///a", "//v1/x?q=a;b", "//host/x%2Fy"} {
 		out, _ := rawRequest(t, s.Addr().String(), "GET "+target+" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
 		if !strings.Contains(out, "200 OK") {
 			t.Errorf("%s: %q", target, out)

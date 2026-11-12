@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -127,6 +128,18 @@ func TestUpstreamExtraCA(t *testing.T) {
 		}
 		if res := NewUpstream(env).Call(context.Background(), planTo(srv.URL)); res.Why != "" || string(res.Body) != "ok" {
 			t.Errorf("%s: %+v", name, res)
+		}
+	}
+}
+
+// Windows names a refused or reset connection by its Winsock code; the engine names them as Node does on Windows
+// (re-review N4), on every OS this test runs on.
+func TestWindowsSocketErrorsHaveNodeNames(t *testing.T) {
+	for code, want := range map[syscall.Errno]string{10061: "ECONNREFUSED", 10054: "ECONNRESET", 10060: "ETIMEDOUT",
+		10065: "EHOSTUNREACH", 10051: "ENETUNREACH"} {
+		err := &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connectex", code)}
+		if got := ErrorCode(err); got != want {
+			t.Errorf("errno %d: %q, want %q", code, got, want)
 		}
 	}
 }
