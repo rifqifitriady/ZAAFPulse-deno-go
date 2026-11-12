@@ -208,7 +208,8 @@ test('reload() while starting is queued and sent once ready; onReady runs on eac
 test('a refused handshake fails at once and arms no hello timer: one run, the reason kept (stub)', async (t) => {
   const bin = stubBin(t);
   if (!bin) return;
-  const root = tmpDir(t, 'refused');
+  const stops = [];
+  const root = tmpDir(t, 'refused', stops);
   const failures = [];
   const sup = createSupervisor({
     bin,
@@ -224,7 +225,7 @@ test('a refused handshake fails at once and arms no hello timer: one run, the re
     backoff: { firstMs: 10, maxMs: 10 },
     onFailed: (r) => failures.push(r),
   });
-  t.after(() => sup.stop(0));
+  stops.push(() => sup.stop(0));
   sup.start();
   await waitFor(() => sup.status().state === 'failed', 10000, 'failed');
   assert.match(failures[0], /refused/);
@@ -235,15 +236,16 @@ test('a refused handshake fails at once and arms no hello timer: one run, the re
 test('a second gateway on a held outbox fails with exit 5 (stub)', async (t) => {
   const bin = stubBin(t);
   if (!bin) return;
-  const root = tmpDir(t, 'held');
+  const stops = [];
+  const root = tmpDir(t, 'held', stops);
   const outbox = path.join(root, 'gw-outbox');
   // The holder: a stub that has the outbox open and waits on its stdin.
   const holder = spawn(bin, ['--outbox', outbox], { stdio: ['pipe', 'pipe', 'ignore'] });
   const holderGone = new Promise((r) => holder.once('close', r));
-  t.after(async () => {
+  stops.push(async () => {
     holder.stdin.end();
     killHard(holder.pid);
-    await holderGone; // gone before tmpDir removes the folder (registered before, so it runs after this)
+    await holderGone; // gone before tmpDir removes the folder
   });
   await new Promise((r) => holder.stdout.once('data', r)); // its hello: the lock is held
   const failures = [];
@@ -261,7 +263,7 @@ test('a second gateway on a held outbox fails with exit 5 (stub)', async (t) => 
     backoff: { firstMs: 10, maxMs: 10 },
     onFailed: (r) => failures.push(r),
   });
-  t.after(() => sup.stop(0));
+  stops.push(() => sup.stop(0));
   sup.start();
   await waitFor(() => sup.status().state === 'failed', 10000, 'failed');
   assert.equal(sup.status().lastExit.code, 5);
@@ -271,7 +273,8 @@ test('a second gateway on a held outbox fails with exit 5 (stub)', async (t) => 
 test('a damaged outbox (segments, no stream.json) fails with exit 1 (stub)', async (t) => {
   const bin = stubBin(t);
   if (!bin) return;
-  const root = tmpDir(t, 'damaged');
+  const stops = [];
+  const root = tmpDir(t, 'damaged', stops);
   const outbox = path.join(root, 'gw-outbox');
   fs.mkdirSync(outbox, { recursive: true });
   fs.writeFileSync(path.join(outbox, '00000000000000000001.jsonl'), '');
@@ -288,7 +291,7 @@ test('a damaged outbox (segments, no stream.json) fails with exit 1 (stub)', asy
     log: () => {},
     backoff: { firstMs: 10, maxMs: 10 },
   });
-  t.after(() => sup.stop(0));
+  stops.push(() => sup.stop(0));
   sup.start();
   await waitFor(() => sup.status().state === 'failed', 10000, 'failed');
   assert.equal(sup.status().lastExit.code, 1);
@@ -298,7 +301,8 @@ test('a damaged outbox (segments, no stream.json) fails with exit 1 (stub)', asy
 test('acks go out only after the mark file holds them, and never ahead of the store (stub, E4)', async (t) => {
   const bin = stubBin(t);
   if (!bin) return;
-  const root = tmpDir(t, 'ackmarks');
+  const stops = [];
+  const root = tmpDir(t, 'ackmarks', stops);
   const stores = openLocalStores({ root });
   const ingest = createIngest({ ...stores.sinks, marks: recoverMarks(stores.files) });
   const markFile = createMarkFile(stores.files.marksFile);
@@ -320,7 +324,7 @@ test('acks go out only after the mark file holds them, and never ahead of the st
       seen.push(upTo);
     },
   });
-  t.after(() => sup.stop(0));
+  stops.push(() => sup.stop(0));
   sup.start();
   await waitFor(
     () =>

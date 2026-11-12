@@ -123,9 +123,16 @@ async function waitFor(fn, ms = 10000, what = 'a condition') {
   }
 }
 
-function tmpDir(t, name) {
+// A temp folder removed after the test. node:test runs a test's t.after hooks in the order they were added and skips
+// the rest after one throws, so a process that holds files in the folder is stopped by this hook, before the removal
+// (Windows cannot remove a folder a running process holds files in): push its stop to `stops` (run last-pushed-first).
+function tmpDir(t, name, stops = []) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), `zp-ipc-${name}-`));
-  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  t.after(async () => {
+    for (const stop of stops.splice(0).reverse()) await stop();
+    // Windows releases a dead process's file handles a moment after it exits: retry as test/contract/harness.js does.
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
   return d;
 }
 
