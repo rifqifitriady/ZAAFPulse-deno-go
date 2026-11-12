@@ -18,7 +18,7 @@
     "test:contract": "node --test --test-concurrency=1 test/contract/*.test.js",
     "test:go": "go -C gw vet ./... && go -C gw test -count=1 ./...",
     "gw:dev": "node scripts/gw-dev.js",
-    "typecheck": "deno check --sloppy-imports lib/gateway lib/cost lib/governance lib/money.js lib/types.js",
+    "typecheck": "deno check --sloppy-imports lib/front lib/gateway lib/cost lib/governance lib/money.js lib/types.js",
     "build": "deno run -q --no-prompt --allow-read --allow-write=dist --allow-run=git,tar,deno --allow-env=PATH --ignore-env scripts/build-deno.js",
     "media": "node scripts/capture-media.js"
   },
