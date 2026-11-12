@@ -79,7 +79,8 @@ const { recoverMarks } = require('./lib/ipc/marks');
 const { createMarkFile } = require('./lib/ipc/markfile');
 const { serverSinks } = require('./lib/ipc/server-sinks');
 const { gwEnv } = require('./lib/ipc/env');
-const { createFront, engineOf, enginesOf } = require('./lib/front');
+const { createFront, engineOf, routing, shadowOf } = require('./lib/front');
+const { createShadowLog, shadowEndpoints } = require('./lib/front/shadow-log');
 const { configPush, secretsPush, snapshotPush } = require('./lib/front/push');
 const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
@@ -1628,7 +1629,8 @@ const handler = async (req, res) => {
       return send(res, 200, redactGateway(await gateway.admin('', 'GET'), role));
     // The gateway process (P4a D6): mode, state, restarts. Before the admin routes, whose pattern it matches; owner only
     // (it is no viewer read, so the role check above refuses anyone else).
-    if (url.pathname === '/api/gateway/status' && req.method === 'GET') return send(res, 200, front.status());
+    if (url.pathname === '/api/gateway/status' && req.method === 'GET')
+      return send(res, 200, { ...front.status(), notes: frontRouting().notes, shadow: shadowLog.stats() });
     const gwAdmin = url.pathname.match(/^\/api\/gateway\/([a-z]+)$/);
     if (gwAdmin) {
       // Only the request log is read with GET. Every other admin route writes (defaults, settings), spends tokens
@@ -2250,6 +2252,21 @@ function serving() {
       });
 }
 
+// The shadow compare's log (P4b): the gateway posts a line per shadowed chat call; the switch of a class to go reads it.
+const shadowLog = createShadowLog({ file: path.join(DIR, '.data', 'gateway-shadow.jsonl') });
+// Which class runs on which engine, and why one asked for go stays on js (lib/front routing).
+const frontRouting = () =>
+  routing(rawConfig().gateway, {
+    gate: (c, rule) => shadowLog.gate(c, rule),
+    otel: ((rawConfig() || {}).otel || {}).enabled === true,
+  });
+// A class whose shadow gate is met (or broken) switches at the next push: looked at once a minute.
+let lastRouting = '';
+setInterval(() => {
+  const now = JSON.stringify(frontRouting().engines);
+  if (now !== lastRouting && lastRouting && front) front.push();
+  lastRouting = now;
+}, 60000).unref();
 // gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
 const ENGINE = DEMO ? 'js' : engineOf(rawConfig());
 const askedEngine = (rawConfig().gateway || {}).engine;
@@ -2268,7 +2285,9 @@ front = createFront({
   env: gwEnv(process.env, DIR),
   cpVersion: require('./package.json').version,
   ingest: fi && fi.ingest,
-  engines: () => enginesOf(rawConfig().gateway),
+  engines: () => frontRouting().engines,
+  shadow: (engines) => shadowOf(rawConfig().gateway, engines),
+  own: shadowEndpoints({ shadowLog }),
   // Each generation, from the state the JS gateway reads (P4b): config.json, keys.json, the effective prices, the
   // provider credentials, the blocking budgets and the keys' cost centers.
   sources: {

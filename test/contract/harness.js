@@ -8,7 +8,9 @@
 //   ZP_ENGINE=front        gateway.engine "front": the Go gateway (built by scripts/ipc/build-stub.js, or ZP_GW_BIN)
 //                          holds the port and forwards every case to the server (P4a T6)
 //   ZP_ENGINE=go           front, with chat on the go engine (P4b): the gateway serves the chat calls it can itself
-//                          and hands the others to the server
+//                          and hands the others to the server (gateway.shadowDays 0: no shadow gate)
+//   ZP_ENGINE=shadow       front, chat on js and shadowed (P4b): the gateway compares each chat call with the go
+//                          engine; stop() fails when the server's .data/gateway-shadow.jsonl holds a diff
 // Nothing here reaches the network: the providers point at the fake upstream on 127.0.0.1, price sync is off, and
 // the judge ports, notifications and runtime polling are off (as test/helpers.js NO_JUDGE_PORTS).
 const fs = require('fs');
@@ -36,7 +38,10 @@ const SEED_CONFIG = {
   pricingSync: { enabled: false },
   pricing: PRICES,
   ...(process.env.ZP_ENGINE === 'front' ? { gateway: { engine: 'front' } } : {}),
-  ...(process.env.ZP_ENGINE === 'go' ? { gateway: { engine: 'front', engines: { chat: 'go' } } } : {}),
+  ...(process.env.ZP_ENGINE === 'go'
+    ? { gateway: { engine: 'front', engines: { chat: 'go' }, shadowDays: 0, shadowMinCompares: 0 } }
+    : {}),
+  ...(process.env.ZP_ENGINE === 'shadow' ? { gateway: { engine: 'front', shadow: ['chat'] } } : {}),
 };
 
 // The environment a front-mode server needs: the gateway binary. Throws without Go: a front run is asked for.
@@ -47,6 +52,17 @@ function gatewayEnv(config) {
   return { ZAAFPULSE_GW_BIN: built.bin };
 }
 const UPSTREAM_SECRET = { oa: 'sk-contract-oa', an: 'sk-contract-an', rs: 'sk-contract-rs' };
+
+// The diff lines of a server's shadow log (none when there is no log).
+function shadowDiffs(data) {
+  let text = '';
+  try {
+    text = fs.readFileSync(path.join(data, '.data', 'gateway-shadow.jsonl'), 'utf8');
+  } catch {
+    return [];
+  }
+  return text.split('\n').filter((l) => l.includes('"outcome":"diff"'));
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -164,8 +180,11 @@ async function startServer({
         clearTimeout(giveUp);
       }
       process.removeListener('exit', reap);
+      // ZP_ENGINE=shadow: every compare of this server's run must have been the same (P4b gate: diff 0).
+      const diffs = shadowDiffs(data);
       // Retries: on Windows the folder can stay busy for a moment after the child exits.
       fs.rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      if (diffs.length) throw new Error(`the shadow compare found ${diffs.length} diff(s):\n${diffs.join('\n')}`);
     };
     while (!exited && performance.now() - started < 30000) {
       try {
@@ -304,8 +323,11 @@ async function start() {
       upstream,
       server,
       stop: async () => {
-        await server.stop();
-        await upstream.close();
+        try {
+          await server.stop();
+        } finally {
+          await upstream.close(); // also when the server's stop throws (a shadow diff), or the test process hangs
+        }
       },
     };
   } catch (err) {

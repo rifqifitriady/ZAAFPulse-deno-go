@@ -29,8 +29,13 @@ func (g *gateway) applyFront(f *ipc.FrontConfig) int {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	shadow := make([]string, 0, len(f.Shadow.Classes))
+	for _, c := range f.Shadow.Classes {
+		shadow = append(shadow, string(c))
+	}
 	if g.front != nil {
 		g.front.SetEngines(engines)
+		g.front.SetShadow(shadow)
 		if f.Listen != g.frontCfg.Listen || !sameTLS(f.TLS, g.frontCfg.TLS) || f.Upstream != g.frontCfg.Upstream {
 			g.log.Print("config.push: a new listen, tls or upstream applies after a restart")
 		}
@@ -68,6 +73,11 @@ func (g *gateway) openFront(f *ipc.FrontConfig, token string) int {
 	srv, err := front.Listen(cfg, g.log)
 	if err == nil {
 		srv.SetGoEngine(g.engine)
+		shadow := make([]string, 0, len(f.Shadow.Classes))
+		for _, c := range f.Shadow.Classes {
+			shadow = append(shadow, string(c))
+		}
+		srv.SetShadow(shadow)
 	}
 	if errors.Is(err, front.ErrAddrInUse) {
 		return exitWith(g.log, ipc.ExitPortInUse, "port %d on %s is in use", f.Listen.Port, f.Listen.Host)

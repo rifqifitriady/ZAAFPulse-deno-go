@@ -5,10 +5,12 @@
 package front
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -49,10 +51,20 @@ const MaxHeaderBytes = 16384 - 4096
 // class's requests to js itself). A config.push that puts another class on go is refused.
 var GoClasses = map[string]bool{"chat": true}
 
-// GoEngine serves a request of a class on the go engine, or hands it to js (gw/engine Engine).
+// GoEngine serves a request of a class on the go engine, or hands it to js; Shadow forwards a request of a class on js
+// marked for the compare (gw/engine Engine).
 type GoEngine interface {
 	Serve(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler)
+	Shadow(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler,
+		own func(method, path string, body []byte) (int, []byte, error))
 }
+
+// The gateway's marks for the control plane (lib/front/internal.js): a request it shadows, and a request of its own.
+// A client's copy of either is removed from every request.
+const (
+	ShadowHeader = "X-Zp-Shadow"
+	OwnHeader    = "X-Zp-Own"
+)
 
 // ErrAddrInUse: another process holds the main port. The gateway exits 4.
 var ErrAddrInUse = errors.New("front: the main port is in use")
@@ -66,6 +78,40 @@ type Server struct {
 	engines  atomic.Pointer[map[string]string]
 	inflight atomic.Int64
 	goEngine GoEngine
+	shadow   atomic.Pointer[map[string]bool]
+	upstream *url.URL
+}
+
+// SetShadow replaces the route classes whose js requests are compared with the go engine (config.push front.shadow).
+func (s *Server) SetShadow(classes []string) {
+	m := make(map[string]bool, len(classes))
+	for _, c := range classes {
+		m[c] = true
+	}
+	s.shadow.Store(&m)
+}
+
+// own calls the control plane's internal port as the gateway itself (the shadow endpoints under /_zp/).
+func (s *Server) own(method, path string, body []byte) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, s.upstream.String()+path, bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	// The gateway names itself: loopback, at its own main port (the control plane accepts no port 0).
+	req.Header.Set(ClientHeader, ClientValue(s.cfg.Token, s.ln.Addr().String(), false))
+	req.Header.Set(OwnHeader, "1")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.proxy.Transport.RoundTrip(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	return resp.StatusCode, b, err
 }
 
 // SetGoEngine installs the go engine before Serve (without one, a class on go is answered 501).
@@ -94,8 +140,10 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, ln: ln}
 	s.SetEngines(cfg.Engines)
+	s.SetShadow(nil)
 	quiet := QuietLogger(logger, time.Now)
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.Upstream))}
+	s.upstream = target
 	s.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
@@ -222,11 +270,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	r.Header.Del(ShadowHeader)
+	r.Header.Del(OwnHeader)
 	raw := RawPath(r.RequestURI)
-	if class := Classify(raw); s.engine(class) == "go" && GoClasses[class] && s.goEngine != nil {
+	class := Classify(raw)
+	if s.engine(class) == "go" && GoClasses[class] && s.goEngine != nil {
 		s.goEngine.Serve(class, w, r, raw, s.proxy)
 		return
-	} else if s.engine(class) != "js" {
+	}
+	if s.engine(class) == "js" && (*s.shadow.Load())[class] && GoClasses[class] && s.goEngine != nil {
+		s.goEngine.Shadow(class, w, r, raw, s.proxy, s.own)
+		return
+	}
+	if s.engine(class) != "js" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotImplemented)
 		_, _ = w.Write([]byte(`{"error":"the go engine is not available in this gateway"}`))

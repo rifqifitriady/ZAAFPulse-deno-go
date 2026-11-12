@@ -136,3 +136,22 @@ func TestRequestTargetIsForwardedAsSent(t *testing.T) {
 		}
 	}
 }
+
+// A client's own X-Zp-Shadow or X-Zp-Own never reaches the control plane: only the gateway marks a request.
+func TestClientShadowMarksAreRemoved(t *testing.T) {
+	got := make(chan http.Header, 1)
+	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { got <- r.Header.Clone() })
+	s := startFront(t, up.port(), nil)
+	req, _ := http.NewRequest("POST", frontURL(s)+"/v1/chat/completions", strings.NewReader("{}"))
+	req.Header.Set(ShadowHeader, "0123456789abcdef")
+	req.Header.Set(OwnHeader, "1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	h := <-got
+	if h.Get(ShadowHeader) != "" || h.Get(OwnHeader) != "" {
+		t.Fatalf("forwarded %v", h)
+	}
+}
