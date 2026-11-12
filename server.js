@@ -236,6 +236,8 @@ function loadConfig() {
 let config = loadConfig();
 // The Go gateway in front, or the server alone (lib/front, gateway.engine): set where the server starts listening.
 let front = null;
+// The response of the request being handled, so a save that asks the front to retry is answered first (P4a review I2).
+const currentResponse = new (require('async_hooks').AsyncLocalStorage)();
 
 const indexer = DEMO
   ? {
@@ -339,8 +341,12 @@ function govRecord(entry) {
 // nothing is no entry.
 function configChanged(before, after) {
   // The gateway section changed: a new config generation for the gateway in front, or front again after a fallback.
-  if (front && JSON.stringify((before || {}).gateway) !== JSON.stringify((after || {}).gateway))
-    front.reload().catch((err) => console.error(`gateway: ${err.message}`));
+  if (front && JSON.stringify((before || {}).gateway) !== JSON.stringify((after || {}).gateway)) {
+    // From a request: the main port goes back to the gateway only once that request's answer is sent.
+    const res = currentResponse.getStore();
+    const sent = res && !res.writableFinished ? new Promise((r) => res.once('close', r)) : null;
+    front.reload({ after: sent }).catch((err) => console.error(`gateway: ${err.message}`));
+  }
   try {
     const d = govDiff(before, after);
     if (!d.changes.length) return;
@@ -2137,7 +2143,9 @@ const handler = async (req, res) => {
 };
 // Each request runs with its own actor slot for the governance audit log (filled after sign-in or the key check);
 // otel continues an incoming traceparent on gateway requests.
-const traced = otel.wrapHandler((req, res) => govContext.runAs(null, () => handler(req, res)));
+const traced = otel.wrapHandler((req, res) =>
+  currentResponse.run(res, () => govContext.runAs(null, () => handler(req, res))),
+);
 const server = TLS ? https.createServer(TLS, traced) : http.createServer(traced);
 // Errors once listening end the server, as before P4a; an error while the listen starts is front.start()'s to report.
 server.on('error', (err) => {
