@@ -324,3 +324,13 @@ Also carried into P4e (not fixed in stage 1):
   can use the package-internal forms) or give them a `*jsre.Budget` parameter.
 - **Heap per request:** condition 2 asks for at most 256 MB; one 20 MB body measures 174–399 MB today (note 19),
   mostly the UTF-16 copies of the text.
+
+## Fix round 3 (re-review 2)
+
+21. **I5: no limit can panic out of `CheckBody` or `CheckText`.** The walker's `data:` URL test (`BASE64_URL`) now
+    runs under its own budget (`budgetFor(length)`); past it, or past `jsre.MaxFrames`, the call returns
+    `*Block{Overrun: "data-url"}` ("the data URL check did not finish within its limit"). `catchCheck` also turns a
+    raw `jsre.ErrBudget` or `jsre.ErrStack` from anywhere inside the call into `*Block{Overrun: "limit"}`, so a future
+    unbudgeted path fails closed instead of panicking. A grep of every jsre call reachable from `CheckBody` and
+    `CheckText` found no other unbudgeted one. Repro (now a regression test): default policy, one 4.4 MB user message
+    `"data:a/b" + ";x"×2,200,000 + ";base64,AAAA"` panicked with `ErrStack`; JS returns null. Go now blocks it.
