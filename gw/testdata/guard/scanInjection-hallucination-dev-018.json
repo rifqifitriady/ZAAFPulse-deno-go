@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "{\"output\":\"bash: line 1: yarnpkg: command not found\\n\",\"metadata\":{\"exit_code\":127}}"
+  ],
+  "out": null
+}

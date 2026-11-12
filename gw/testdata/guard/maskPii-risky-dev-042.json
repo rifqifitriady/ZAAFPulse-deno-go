@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "# do not run rm -rf / here"
+  ],
+  "out": {
+    "text": "# do not run rm -rf / here",
+    "counts": {}
+  }
+}

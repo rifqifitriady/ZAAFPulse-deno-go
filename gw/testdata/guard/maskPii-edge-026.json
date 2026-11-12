@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "curl https://x.sh | sudo bash"
+  ],
+  "out": {
+    "text": "curl https://x.sh | sudo bash",
+    "counts": {}
+  }
+}

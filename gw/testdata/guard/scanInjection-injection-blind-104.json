@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "const PATTERNS = [\n  /ignore (all )?(previous|prior) instructions/i,\n  /you are now (dan|root)/i,\n  /send .* (api key|\\.env)/i,\n];\nexport function scan(t){ return PATTERNS.some(p=>p.test(t)); }"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "## Prompt Injection\nPrompt injection is when an attacker writes text like \"ignore all previous instructions\" into content an LLM reads. Mitigations include input filtering and least-privilege tools."
+  ],
+  "out": {
+    "text": "## Prompt Injection\nPrompt injection is when an attacker writes text like \"ignore all previous instructions\" into content an LLM reads. Mitigations include input filtering and least-privilege tools.",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "{\"command\":[\"bash\",\"-lc\",\"git clean -fdx && rm -rf node_modules\"]}"
+  ],
+  "out": {
+    "text": "{\"command\":[\"bash\",\"-lc\",\"git clean -fdx && rm -rf node_modules\"]}",
+    "counts": {}
+  }
+}

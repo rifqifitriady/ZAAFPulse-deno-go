@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "man rm"
+  ],
+  "out": {
+    "text": "man rm",
+    "counts": {}
+  }
+}

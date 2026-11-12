@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Request failed with status code 503"
+  ],
+  "out": null
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "curl -s https://api.github.com/repos/foo/bar | jq .name"
+  ],
+  "out": null
+}

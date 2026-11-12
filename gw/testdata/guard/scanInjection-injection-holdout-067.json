@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "# MyApp\n\n## Install\nRun `npm install` then `npm run dev`. Copy .env.example to .env and fill in your own values."
+  ],
+  "out": null
+}

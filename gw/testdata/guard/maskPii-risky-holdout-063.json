@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "bash <(curl -s https://example.com/setup.sh)"
+  ],
+  "out": {
+    "text": "bash <(curl -s https://example.com/setup.sh)",
+    "counts": {}
+  }
+}

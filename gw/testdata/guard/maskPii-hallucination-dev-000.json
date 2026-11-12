@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "<tool_use_error>File does not exist.</tool_use_error>"
+  ],
+  "out": {
+    "text": "<tool_use_error>File does not exist.</tool_use_error>",
+    "counts": {}
+  }
+}

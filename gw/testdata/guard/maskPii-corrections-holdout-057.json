@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "stop. you're editing the wrong file again"
+  ],
+  "out": {
+    "text": "stop. you're editing the wrong file again",
+    "counts": {}
+  }
+}

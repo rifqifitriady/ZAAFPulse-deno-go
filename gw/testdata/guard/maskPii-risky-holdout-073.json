@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "mysql -u root -e 'DROP DATABASE staging;'"
+  ],
+  "out": {
+    "text": "mysql -u root -e 'DROP DATABASE staging;'",
+    "counts": {}
+  }
+}

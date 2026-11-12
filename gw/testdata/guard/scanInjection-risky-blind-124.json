@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "ps aux | grep node | grep -v grep"
+  ],
+  "out": null
+}

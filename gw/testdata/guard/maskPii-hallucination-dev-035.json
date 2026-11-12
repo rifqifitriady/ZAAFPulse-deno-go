@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\n[ -d node_modules ] || echo missing"
+  ],
+  "out": {
+    "text": "Exit code 1\n[ -d node_modules ] || echo missing",
+    "counts": {}
+  }
+}

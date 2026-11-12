@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rm file.txt"
+  ],
+  "out": null
+}

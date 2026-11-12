@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Prompt injection adalah serangan di mana penyerang menyisipkan kalimat seperti \"abaikan semua instruksi sebelumnya\" ke dalam konten yang dibaca model. Cara mencegahnya: validasi input dan batasi izin tool."
+  ],
+  "out": {
+    "text": "Prompt injection adalah serangan di mana penyerang menyisipkan kalimat seperti \"abaikan semua instruksi sebelumnya\" ke dalam konten yang dibaca model. Cara mencegahnya: validasi input dan batasi izin tool.",
+    "counts": {}
+  }
+}

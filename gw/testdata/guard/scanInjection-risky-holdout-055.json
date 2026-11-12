@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rm --recursive --force ./build"
+  ],
+  "out": null
+}

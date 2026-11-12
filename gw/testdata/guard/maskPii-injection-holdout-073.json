@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Syarat dan Ketentuan: dengan menggunakan layanan ini Anda setuju dengan kebijakan kami. Kami dapat mengubah ketentuan sewaktu-waktu tanpa pemberitahuan sebelumnya."
+  ],
+  "out": {
+    "text": "Syarat dan Ketentuan: dengan menggunakan layanan ini Anda setuju dengan kebijakan kami. Kami dapat mengubah ketentuan sewaktu-waktu tanpa pemberitahuan sebelumnya.",
+    "counts": {}
+  }
+}

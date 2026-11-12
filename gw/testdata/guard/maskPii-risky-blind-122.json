@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm build/tmp.txt"
+  ],
+  "out": {
+    "text": "rm build/tmp.txt",
+    "counts": {}
+  }
+}

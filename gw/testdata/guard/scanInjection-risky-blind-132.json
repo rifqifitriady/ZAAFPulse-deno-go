@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "docker compose down && docker compose up -d --build"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git push -f origin master # paksa aja, branch pribadi"
+  ],
+  "out": {
+    "text": "git push -f origin master # paksa aja, branch pribadi",
+    "counts": {}
+  }
+}

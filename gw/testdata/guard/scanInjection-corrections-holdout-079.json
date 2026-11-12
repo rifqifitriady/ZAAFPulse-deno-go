@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "wrong approach in the old code, it should use a transaction. refactor OrderService accordingly"
+  ],
+  "out": null
+}

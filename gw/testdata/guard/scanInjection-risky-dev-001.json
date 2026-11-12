@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rm --recursive --force /tmp/x"
+  ],
+  "out": null
+}

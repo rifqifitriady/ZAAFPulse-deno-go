@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "postgres 15, deployed on fly.io"
+  ],
+  "out": {
+    "text": "postgres 15, deployed on fly.io",
+    "counts": {}
+  }
+}

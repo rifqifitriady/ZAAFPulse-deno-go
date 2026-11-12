@@ -1,0 +1,12 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "version 2026-10-21 and 1.2.3, icon@2x.png, user@host.tiff, x@y.co.uk., me@site.org.1, 1.2.3.4.5, 256.1.1.1"
+  ],
+  "out": {
+    "text": "version 2026-10-21 and 1.2.3, icon@2x.png, user@host.tiff, ‹email›., me@site.org.1, 1.2.3.4.5, 256.1.1.1",
+    "counts": {
+      "email": 1
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "docker compose down && docker compose up -d --build"
+  ],
+  "out": {
+    "text": "docker compose down && docker compose up -d --build",
+    "counts": {}
+  }
+}

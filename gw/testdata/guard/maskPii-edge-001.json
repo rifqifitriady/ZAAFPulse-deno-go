@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "short"
+  ],
+  "out": {
+    "text": "short",
+    "counts": {}
+  }
+}

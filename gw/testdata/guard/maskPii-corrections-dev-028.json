@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "itu salah, endpointnya harus POST"
+  ],
+  "out": {
+    "text": "itu salah, endpointnya harus POST",
+    "counts": {}
+  }
+}

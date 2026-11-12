@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "sqlite3 data.db 'drop table sessions'"
+  ],
+  "out": {
+    "text": "sqlite3 data.db 'drop table sessions'",
+    "counts": {}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "nggak, jangan pakai axios. aku kan bilang pakai fetch aja. ulangi"
+  ],
+  "out": null
+}

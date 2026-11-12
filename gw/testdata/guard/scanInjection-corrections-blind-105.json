@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "tadi kamu install lodash padahal aku bilang jangan nambah dependency baru, tolong uninstall"
+  ],
+  "out": null
+}

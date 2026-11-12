@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "# CLAUDE.md\n\n- Always ask before running destructive commands.\n- Never commit .env files.\n- Prefer small diffs and explain what you changed."
+  ],
+  "out": {
+    "text": "# CLAUDE.md\n\n- Always ask before running destructive commands.\n- Never commit .env files.\n- Prefer small diffs and explain what you changed.",
+    "counts": {}
+  }
+}

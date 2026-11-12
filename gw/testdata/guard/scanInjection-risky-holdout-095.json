@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "git clean -n"
+  ],
+  "out": null
+}

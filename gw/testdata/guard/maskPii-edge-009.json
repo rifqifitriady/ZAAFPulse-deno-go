@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "postgres://user:password@db:5432/x mysql://u:${DB_PASS}@h/x redis://:***@h mongodb+srv://a:<pw>@c.net"
+  ],
+  "out": {
+    "text": "postgres://user:password@db:5432/x mysql://u:${DB_PASS}@h/x redis://:***@h mongodb+srv://a:<pw>@c.net",
+    "counts": {}
+  }
+}

@@ -17,17 +17,23 @@ Date.now = () => FIXED_NOW;
 
 const ROOT = path.join(__dirname, '..', '..');
 
+// Secret scanners match on prefixes; the corpus itself writes such placeholders with the first letter escaped
+// ("\u0073k_live_xxx"). The fixtures do the same for every prefix below: JSON reads it back unchanged.
+const SCANNED = /(sk_|rk_|pk_|sk-|AKIA|ASIA|gh[pousr]_|github_pat_|xox[abposr]-|AIza|hf_|eyJ|-----BEGIN)/g;
+const escapePrefixes = (text) =>
+  text.replace(SCANNED, (m) => `\\u${m.charCodeAt(0).toString(16).padStart(4, '0')}${m.slice(1)}`);
+
 // Every value in `secrets` that occurs in the file text (JSON-escaped) is replaced, longest first.
 function encodeSecrets(fixture, secrets) {
   const values = [...secrets].sort((a, b) => b.length - a.length || (a < b ? -1 : 1));
   let text = JSON.stringify(fixture, null, 2);
   const used = values.filter((v) => text.includes(JSON.stringify(v).slice(1, -1)));
-  if (!used.length) return `${text}\n`;
+  if (!used.length) return `${escapePrefixes(text)}\n`;
   text = JSON.stringify({ secrets: used.map((v) => Buffer.from(v).toString('base64')), ...fixture }, null, 2);
   used.forEach((v, i) => {
     text = text.split(JSON.stringify(v).slice(1, -1)).join(`<<ZPSECRET:${i}>>`);
   });
-  return `${text}\n`;
+  return `${escapePrefixes(text)}\n`;
 }
 
 // cases: [{ name, fn, args, call(args) }]. `call` gets a JSON copy of args, so JS and Go see the same input; it may

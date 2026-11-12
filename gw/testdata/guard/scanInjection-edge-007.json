@@ -1,0 +1,11 @@
+{
+  "secrets": [
+    "ZXlKaGJHY2lPaUpJVXpJMU5pSjkuZXlKemRXSWlPaUoxYzJWeU1USXpORFVpZlEuWGsydjlRcDRMbTdSdDFXejhZYjNOYzZIZDBHZjVKcw==",
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "scanInjection",
+  "in": [
+    "tail <<ZPSECRET:0>> after <<ZPSECRET:1>><<ZPSECRET:0>>"
+  ],
+  "out": null
+}

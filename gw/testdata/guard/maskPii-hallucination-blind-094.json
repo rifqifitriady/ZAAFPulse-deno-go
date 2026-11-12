@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "ENOENT: no such file or directory, open '/Users/rifqi/proyek/tokoku/laporan/ringkasan_q3.md'"
+  ],
+  "out": {
+    "text": "ENOENT: no such file or directory, open '/Users/rifqi/proyek/tokoku/laporan/ringkasan_q3.md'",
+    "counts": {}
+  }
+}

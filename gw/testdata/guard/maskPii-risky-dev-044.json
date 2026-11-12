@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rg -n 'sudo ' scripts/"
+  ],
+  "out": {
+    "text": "rg -n 'sudo ' scripts/",
+    "counts": {}
+  }
+}

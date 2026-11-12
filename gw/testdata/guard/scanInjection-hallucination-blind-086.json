@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Invalid Options:\n- Unknown options: fix-all\n- You're using eslint.config.js, some command line flags are no longer available."
+  ],
+  "out": null
+}
