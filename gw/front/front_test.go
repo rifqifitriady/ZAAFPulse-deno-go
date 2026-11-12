@@ -111,6 +111,9 @@ func TestClassify(t *testing.T) {
 		"/api/gateway/status":          "",
 		"/":                            "",
 		"/mcp/extra":                   "",
+		"/v1/chat%2Fcompletions":       "",
+		"/v1/./chat/completions":       "",
+		"//v1/chat/completions":        "",
 	} {
 		if got := Classify(p); got != want {
 			t.Errorf("Classify(%q) = %q, want %q", p, got, want)
