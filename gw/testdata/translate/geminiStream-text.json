@@ -1,0 +1,147 @@
+{
+  "fn": "geminiStream",
+  "in": [
+    "m",
+    [
+      [
+        "push",
+        {
+          "id": "x",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "role": "assistant",
+                "content": ""
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "Hel"
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "lo é😀"
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "function": {
+                      "name": "f",
+                      "arguments": "{\"a\""
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "id": "late",
+                    "function": {
+                      "arguments": ":1}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "after"
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "length"
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [],
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 7,
+            "prompt_tokens_details": {
+              "cached_tokens": 2
+            }
+          }
+        }
+      ],
+      [
+        "finish"
+      ],
+      [
+        "error",
+        "oops"
+      ]
+    ]
+  ],
+  "out": [
+    "",
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hel\"}]},\"index\":0}],\"modelVersion\":\"m\"}\n\n",
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"lo é😀\"}]},\"index\":0}],\"modelVersion\":\"m\"}\n\n",
+    "",
+    "",
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"after\"}]},\"index\":0}],\"modelVersion\":\"m\"}\n\n",
+    "",
+    "",
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"f\",\"args\":{\"a\":1}}}]},\"finishReason\":\"MAX_TOKENS\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":12,\"candidatesTokenCount\":7,\"totalTokenCount\":19,\"cachedContentTokenCount\":2},\"modelVersion\":\"m\"}\n\n",
+    "data: {\"error\":{\"code\":502,\"message\":\"oops\",\"status\":\"UNAVAILABLE\"}}\n\n"
+  ]
+}

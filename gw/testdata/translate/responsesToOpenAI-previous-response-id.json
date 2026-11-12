@@ -1,0 +1,12 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "previous_response_id": "resp_1",
+      "input": "hi"
+    }
+  ],
+  "throws": "previous_response_id needs a provider with the native Responses API; send the full input instead",
+  "status": 400
+}

@@ -1,0 +1,20 @@
+{
+  "fn": "openAIToAnthropic",
+  "in": [
+    {
+      "choices": [
+        {
+          "message": {
+            "tool_calls": [
+              {
+                "id": "a"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "m"
+  ],
+  "throws": "Cannot read properties of undefined (reading 'name')"
+}

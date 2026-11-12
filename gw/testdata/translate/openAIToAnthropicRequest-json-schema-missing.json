@@ -1,0 +1,20 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {}
+      }
+    }
+  ],
+  "throws": "response_format json_schema needs json_schema.schema",
+  "status": 400
+}

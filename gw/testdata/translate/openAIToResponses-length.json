@@ -1,0 +1,60 @@
+{
+  "fn": "openAIToResponses",
+  "in": [
+    {
+      "choices": [
+        {
+          "message": {
+            "content": "cut"
+          },
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 3,
+        "completion_tokens": 9,
+        "completion_tokens_details": {
+          "reasoning_tokens": 4
+        }
+      }
+    },
+    "r"
+  ],
+  "out": {
+    "id": "resp_020202020202020202020202",
+    "object": "response",
+    "created_at": 1767225600,
+    "status": "incomplete",
+    "incomplete_details": {
+      "reason": "max_output_tokens"
+    },
+    "model": "r",
+    "output": [
+      {
+        "type": "message",
+        "id": "msg_010101010101010101010101",
+        "status": "completed",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "cut",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "output_text": "cut",
+    "usage": {
+      "input_tokens": 3,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 9,
+      "output_tokens_details": {
+        "reasoning_tokens": 4
+      },
+      "total_tokens": 12
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "messages": [],
+      "output_config": {
+        "effort": "ultra"
+      },
+      "tool_choice": {
+        "type": "none"
+      }
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "x",
+      "messages": [],
+      "stream": false
+    },
+    "soft": null,
+    "dropped": []
+  }
+}
