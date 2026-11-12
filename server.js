@@ -79,7 +79,7 @@ const { recoverMarks } = require('./lib/ipc/marks');
 const { createMarkFile } = require('./lib/ipc/markfile');
 const { serverSinks } = require('./lib/ipc/server-sinks');
 const { gwEnv } = require('./lib/ipc/env');
-const { createFront, engineOf } = require('./lib/front');
+const { createFront, engineOf, enginesOf } = require('./lib/front');
 const { configPush, secretsPush, snapshotPush } = require('./lib/front/push');
 const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
@@ -2268,6 +2268,7 @@ front = createFront({
   env: gwEnv(process.env, DIR),
   cpVersion: require('./package.json').version,
   ingest: fi && fi.ingest,
+  engines: () => enginesOf(rawConfig().gateway),
   // Each generation, from the state the JS gateway reads (P4b): config.json, keys.json, the effective prices, the
   // provider credentials, the blocking budgets and the keys' cost centers.
   sources: {

@@ -22,7 +22,7 @@ func (g *gateway) applyFront(f *ipc.FrontConfig) int {
 	}
 	engines := make(map[string]string, len(f.Engines))
 	for class, e := range f.Engines {
-		if e != "js" {
+		if e != "js" && !(e == "go" && front.GoClasses[class]) {
 			return exitWith(g.log, ipc.ExitRefused, "config.push: route class %q is on engine %q, which this gateway does not have", class, e)
 		}
 		engines[class] = string(e)
@@ -66,6 +66,9 @@ func (g *gateway) openFront(f *ipc.FrontConfig, token string) int {
 		cfg.CertFile, cfg.KeyFile = f.TLS.CertPath, f.TLS.KeyPath
 	}
 	srv, err := front.Listen(cfg, g.log)
+	if err == nil {
+		srv.SetGoEngine(g.engine)
+	}
 	if errors.Is(err, front.ErrAddrInUse) {
 		return exitWith(g.log, ipc.ExitPortInUse, "port %d on %s is in use", f.Listen.Port, f.Listen.Host)
 	}
