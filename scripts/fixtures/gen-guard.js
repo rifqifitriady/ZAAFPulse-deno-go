@@ -4,8 +4,10 @@
 // and edge cases. Secret values never reach the files (lib.js encodes them).
 //   node scripts/fixtures/gen-guard.js
 //   deno run --allow-read --allow-write=gw/testdata scripts/fixtures/gen-guard.js
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { writeCases, ROOT } = require('./lib');
 const signals = require('../../lib/signals');
 const pii = require('../../lib/evals/pii');
@@ -384,6 +386,118 @@ text('input-block', `${ANT} ${INJ}`, policy({ secrets: 'block', injection: 'bloc
 text('null', null, policy());
 text('number', 12345, policy());
 text('unknown-part', `${ANT}`, policy(), 'other');
+
+/* ---------- everything the Go port copies from the JS, so a change cannot drift silently ---------- */
+// Every regex source and flag set, the category metadata, the constants and the tables of the three modules, read
+// from the modules themselves (vm: the module-level consts are not all exported), plus a SHA-256 of the source text
+// the Go port follows line by line (inline regexes and literal numbers live there). gw/guard/patterns_test.go
+// compares all of it with the Go tables and its own copy of the hashes.
+function moduleScope(file, names, extra = {}) {
+  const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+  const ctx = vm.createContext({ module: { exports: {} }, exports: {}, ...extra });
+  vm.runInContext(`${src}\n;globalThis.__zp = { ${names.join(', ')} };`, ctx);
+  return { src, scope: ctx.__zp };
+}
+const re = (r) => [r.source, r.flags];
+const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
+const sig = moduleScope('lib/signals.js', [
+  'INJECTION',
+  'INJ_CARRIES',
+  'INJ_ANCHOR',
+  'INJ_ANCHOR_MARK',
+  'WINDOW_BEFORE',
+  'WINDOW_AFTER',
+  'DOC_CONTEXT',
+  'CODE_LINE',
+  'STRING_ITEM',
+  'QUOTE_BEFORE',
+  'ZERO_WIDTH',
+  'SPLIT_LETTERS',
+  'HAS_ZERO_WIDTH',
+  'HAS_SPLIT',
+  'HAS_LEET',
+  'LEET',
+  'SECRETS',
+  'SECRET_HINT',
+  'PLACEHOLDER',
+  'PLACEHOLDER_PASSWORD',
+]);
+const piiScope = moduleScope('lib/evals/pii.js', ['EMAIL', 'IPV4', 'IPV6', 'PHONE', 'KEEP_IP']);
+const guardScope = moduleScope(
+  'lib/gateway/guardrails.js',
+  [
+    'STRUCTURAL',
+    'BINARY',
+    'OPAQUE',
+    'BASE64_URL',
+    'MODEL_ITEMS',
+    'WORD',
+    'PII_KINDS',
+    'CHECKS',
+    'MODES',
+    'SCOPES',
+    'DEFAULTS',
+    'FORMATS',
+  ],
+  { require: (m) => (m === '../signals' ? signals : m === '../evals/pii' ? pii : require(m)) },
+);
+const s = sig.scope;
+const named = {};
+for (const k of [
+  'INJ_CARRIES',
+  'INJ_ANCHOR',
+  'INJ_ANCHOR_MARK',
+  'DOC_CONTEXT',
+  'CODE_LINE',
+  'STRING_ITEM',
+  'QUOTE_BEFORE',
+  'ZERO_WIDTH',
+  'SPLIT_LETTERS',
+  'HAS_ZERO_WIDTH',
+  'HAS_SPLIT',
+  'HAS_LEET',
+  'SECRET_HINT',
+  'PLACEHOLDER',
+  'PLACEHOLDER_PASSWORD',
+])
+  named[k] = re(s[k]);
+for (const k of ['EMAIL', 'IPV4', 'IPV6', 'PHONE']) named[k] = re(piiScope.scope[k]);
+named.BASE64_URL = re(guardScope.scope.BASE64_URL);
+const g = guardScope.scope;
+const patterns = {
+  injection: s.INJECTION.map((p) => ({
+    id: p.id,
+    label: p.label,
+    carries: !!p.carries,
+    supporting: !!p.supporting,
+    res: p.res.map(re),
+  })),
+  secrets: s.SECRETS.map(([label, r]) => [label, ...re(r)]),
+  regex: named,
+  constants: {
+    WINDOW_BEFORE: s.WINDOW_BEFORE,
+    WINDOW_AFTER: s.WINDOW_AFTER,
+    LEET: s.LEET,
+    KEEP_IP: [...piiScope.scope.KEEP_IP],
+    STRUCTURAL: [...g.STRUCTURAL],
+    BINARY: [...g.BINARY],
+    OPAQUE: [...g.OPAQUE],
+    MODEL_ITEMS: [...g.MODEL_ITEMS],
+    WORD: g.WORD,
+    PII_KINDS: g.PII_KINDS,
+    CHECKS: g.CHECKS,
+    MODES: g.MODES,
+    SCOPES: g.SCOPES,
+    DEFAULTS: g.DEFAULTS,
+    FORMATS: g.FORMATS,
+  },
+  sources: {
+    'lib/signals.js#injection-and-secrets': sha(sig.src.slice(0, sig.src.indexOf('/* ---------- Risky commands'))),
+    'lib/evals/pii.js': sha(piiScope.src),
+    'lib/gateway/guardrails.js': sha(guardScope.src),
+  },
+};
+add('all', 'patterns', [], () => patterns);
 
 module.exports = { cases, secrets, add, ANT, GHP, DB, PEM, INJ, OAI, JWT };
 
