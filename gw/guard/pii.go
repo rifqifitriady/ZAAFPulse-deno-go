@@ -17,9 +17,9 @@ var (
 )
 
 // ipv6: a "::" form needs a digit and either three groups or one long group.
-func ipv6(m []uint16) []uint16 {
+func ipv6(m []uint16, b *jsre.Budget) []uint16 {
 	s := jsre.Str(m)
-	if keepIP[strings.ToLower(s)] || !reHasDigit.Test(m) {
+	if keepIP[strings.ToLower(s)] || !reHasDigit.TestB(m, b) {
 		return m
 	}
 	if !strings.Contains(s, "::") {
@@ -38,8 +38,8 @@ func ipv6(m []uint16) []uint16 {
 	return m
 }
 
-func phone(m []uint16) []uint16 {
-	if reDateHead.Test(m) {
+func phone(m []uint16, b *jsre.Budget) []uint16 {
+	if reDateHead.TestB(m, b) {
 		return m
 	}
 	n := 0
@@ -68,11 +68,11 @@ func equalU16(a, b []uint16) bool {
 
 // MaskPII masks emails, IP addresses and phone numbers and counts each kind masked (a kind appears once seen).
 func MaskPII(text string) (string, map[string]int) {
-	s, counts := maskPII(jsre.U16(text))
+	s, counts := maskPII(jsre.U16(text), nil)
 	return jsre.Str(s), counts
 }
 
-func maskPII(s []uint16) ([]uint16, map[string]int) {
+func maskPII(s []uint16, b *jsre.Budget) ([]uint16, map[string]int) {
 	counts := map[string]int{}
 	seen := func(kind string, f func(m []uint16) []uint16) func([]int) []uint16 {
 		return func(c []int) []uint16 {
@@ -86,14 +86,14 @@ func maskPII(s []uint16) ([]uint16, map[string]int) {
 	}
 	email := jsre.U16("‹email›")
 	ip := jsre.U16("‹ip›")
-	s = reEmail.ReplaceAll(s, seen("email", func([]uint16) []uint16 { return email }))
-	s = reIPV4.ReplaceAll(s, seen("ip", func(m []uint16) []uint16 {
+	s = reEmail.ReplaceAllB(s, seen("email", func([]uint16) []uint16 { return email }), b)
+	s = reIPV4.ReplaceAllB(s, seen("ip", func(m []uint16) []uint16 {
 		if keepIP[jsre.Str(m)] {
 			return m
 		}
 		return ip
-	}))
-	s = reIPV6.ReplaceAll(s, seen("ip", ipv6))
-	s = rePhone.ReplaceAll(s, seen("phone", phone))
+	}), b)
+	s = reIPV6.ReplaceAllB(s, seen("ip", func(m []uint16) []uint16 { return ipv6(m, b) }), b)
+	s = rePhone.ReplaceAllB(s, seen("phone", func(m []uint16) []uint16 { return phone(m, b) }), b)
 	return s, counts
 }

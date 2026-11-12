@@ -166,20 +166,46 @@ func BlockMessage(hits []Hit) string {
 	return "Blocked by ZAAFPulse guardrails: " + strings.Join(parts, "; ") + ". Remove it, or ask the owner to change the policy."
 }
 
-// Block is the GuardrailBlock error: a check in block mode found something. Hits are only those checks' hits.
-type Block struct{ Hits []Hit }
+// Block is the GuardrailBlock error: a check in block mode found something (Hits are only those checks' hits), or,
+// in Go only, a check ran past its step budget (Overrun names the check; Hits is empty). Either way nothing is sent.
+type Block struct {
+	Hits    []Hit
+	Overrun string
+}
 
-func (b *Block) Error() string { return BlockMessage(b.Hits) }
+func (b *Block) Error() string {
+	if b.Overrun != "" {
+		return "Blocked by ZAAFPulse guardrails: the " + word[b.Overrun] + " check did not finish within its limit. " +
+			"Send a shorter input, or ask the owner to change the policy."
+	}
+	return BlockMessage(b.Hits)
+}
 
 // Detectors, replaceable in tests to prove the fail-closed path.
 var (
 	detectSecrets   = secretSpans
 	detectPII       = maskPII
-	detectInjection = func(s []uint16) *Injection { return ScanInjection(jsre.Str(s)) }
+	detectInjection = scanInjection
 )
+
+// The step budget of one check on one string: a base plus a share per code unit, capped. A check past it fails the
+// call closed in every mode, log included (the JS has no budget: Go-only, spec deviation 12). Sized from the corpus
+// and the adversarial inputs of the review: about 20x the steps the heaviest legitimate text measured needs.
+var (
+	budgetBase    int64 = 20_000_000
+	budgetPerUnit int64 = 600
+	budgetCap     int64 = 3_000_000_000
+)
+
+func budgetFor(n int) *jsre.Budget {
+	return &jsre.Budget{Limit: min(budgetBase+budgetPerUnit*int64(n), budgetCap)}
+}
 
 // errCheck is a check that failed (a detector panicked): in redact or block mode the call fails closed.
 type errCheck struct{ err error }
+
+// errOverrun is a check past its step budget.
+type errOverrun struct{ check string }
 
 type run struct {
 	policy   Policy
@@ -206,6 +232,9 @@ func (r *run) add(check, label string, n int) {
 func (r *run) guarded(check string, f func() []uint16, fallback []uint16) (out []uint16) {
 	defer func() {
 		if p := recover(); p != nil {
+			if p == jsre.ErrBudget {
+				panic(errOverrun{check})
+			}
 			if r.policy.mode(check) != "log" {
 				panic(errCheck{fmt.Errorf("%v", p)})
 			}
@@ -216,15 +245,16 @@ func (r *run) guarded(check string, f func() []uint16, fallback []uint16) (out [
 	return f()
 }
 
-func privateKeyEnd(text []uint16, from int) int {
-	if m := rePEMEnd.Exec(text[from:], 0); m != nil {
+func privateKeyEnd(text []uint16, from int, b *jsre.Budget) int {
+	if m := rePEMEnd.ExecB(text[from:], 0, b); m != nil {
 		return from + m[1]
 	}
 	return len(text)
 }
 
 func (r *run) secretsIn(text []uint16) []uint16 {
-	spans := detectSecrets(text)
+	b := budgetFor(len(text))
+	spans := detectSecrets(text, b)
 	if len(spans) == 0 {
 		return text
 	}
@@ -238,7 +268,7 @@ func (r *run) secretsIn(text []uint16) []uint16 {
 		out = append(out, text[at:sp.Start]...)
 		out = append(out, jsre.U16("‹secret: "+sp.Label+"›")...)
 		if sp.Label == "Private key" {
-			at = privateKeyEnd(text, sp.End)
+			at = privateKeyEnd(text, sp.End, b)
 		} else {
 			at = sp.End
 		}
@@ -251,7 +281,7 @@ func (r *run) secretsIn(text []uint16) []uint16 {
 }
 
 func (r *run) piiIn(text []uint16) []uint16 {
-	masked, counts := detectPII(text)
+	masked, counts := detectPII(text, budgetFor(len(text)))
 	for _, kind := range piiKinds {
 		if counts[kind] > 0 {
 			r.add("pii", kind, counts[kind])
@@ -274,7 +304,7 @@ func (r *run) text(s []uint16, fresh bool) []uint16 {
 	}
 	if fresh && r.policy.Injection != "off" {
 		r.guarded("injection", func() []uint16 {
-			if res := detectInjection(s); res != nil {
+			if res := detectInjection(s, budgetFor(len(s))); res != nil {
 				for _, l := range res.Labels {
 					r.add("injection", l, 1)
 				}
@@ -404,11 +434,14 @@ type Result struct {
 // catchCheck turns a failed check into the returned error.
 func catchCheck(err *error) {
 	if p := recover(); p != nil {
-		e, ok := p.(errCheck)
-		if !ok {
+		switch e := p.(type) {
+		case errCheck:
+			*err = e.err
+		case errOverrun:
+			*err = &Block{Overrun: e.check}
+		default:
 			panic(p)
 		}
-		*err = e.err
 	}
 }
 

@@ -21,19 +21,19 @@ var (
 )
 
 // isLiveSecret: documentation placeholders and low-variety strings are not live keys.
-func isLiveSecret(label string, s []uint16, m []int) bool {
+func isLiveSecret(label string, s []uint16, m []int, b *jsre.Budget) bool {
 	if label == "Private key" {
 		return true
 	}
 	if label == "Database URL with password" {
 		pw := s[m[2]:m[3]]
-		return !rePlaceholderPassword.Test(pw) && !reMasked3.Test(pw)
+		return !rePlaceholderPassword.TestB(pw, b) && !reMasked3.TestB(pw, b)
 	}
 	v := s[m[0]:m[1]]
-	if rePlaceholder.Test(v) {
+	if rePlaceholder.TestB(v, b) {
 		return false
 	}
-	if label == "AWS access key" && reAWSExample.Test(v) {
+	if label == "AWS access key" && reAWSExample.TestB(v, b) {
 		return false
 	}
 	tail := v[min(8, max(0, len(v)-16)):]
@@ -45,21 +45,21 @@ func isLiveSecret(label string, s []uint16, m []int) bool {
 }
 
 // SecretSpans is lib/signals.js secretSpans: the live secrets in text, overlapping ones merged (first label kept).
-func SecretSpans(text string) []Span { return secretSpans(jsre.U16(text)) }
+func SecretSpans(text string) []Span { return secretSpans(jsre.U16(text), nil) }
 
-func secretSpans(s []uint16) []Span {
-	if !reSecretHint.Test(s) {
+func secretSpans(s []uint16, b *jsre.Budget) []Span {
+	if !reSecretHint.TestB(s, b) {
 		return nil
 	}
 	var found []Span
 	for _, p := range secretPatterns {
 		for last := 0; ; {
-			m := p.re.Exec(s, last)
+			m := p.re.ExecB(s, last, b)
 			if m == nil {
 				break
 			}
 			last = m[1]
-			if !isLiveSecret(p.label, s, m) {
+			if !isLiveSecret(p.label, s, m, b) {
 				continue
 			}
 			if p.label == "Database URL with password" {
