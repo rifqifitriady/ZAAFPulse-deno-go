@@ -6,7 +6,9 @@
 # Deno of its own, so a version changes here only.
 # The deno job runs the same suite and the contract suite under the pinned Deno with the "test" permission set of
 # deno.json (never -A), and blocks like the Node job (P2 T4). The Node job keeps running until the cut-over (P7).
-# The build-deno job compiles and smoke-tests the six single-file binaries on native runners (P2 T6).
+# The build-deno job compiles and smoke-tests the six single-file binaries on native runners (P2 T6), and starts and
+# stops the Go gateway in front of the server on each of them (P4a T6, scripts/smoke-front.js).
+# The Node and Deno jobs also run the contract suite with the Go gateway in front (ZP_ENGINE=front, P4a T6).
 # The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
 # the test job's OS matrix. The Node and Deno jobs set up the same Go, so the cross-language IPC tests build the stub
 # (gw/cmd/zaafpulse-gw) and never skip; the Deno job builds it once up front (ZP_GW_BIN). Go is pinned to 1.27.3.
@@ -64,6 +66,10 @@ jobs:
       - name: Gateway contract suite
         shell: bash
         run: npm run test:contract
+      # The same suite with gateway.engine "front": the Go gateway, built from gw/, holds the port (P4a).
+      - name: Gateway contract suite through the Go front
+        shell: bash
+        run: ZP_ENGINE=front npm run test:contract
       - run: node bin/zaafpulse.js doctor
   deno:
     name: deno (${{ matrix.os }})
@@ -129,6 +135,17 @@ jobs:
           scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract.log" "contract suite under Deno (${{ matrix.os }})" \
             | tee -a "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
           exit $code
+      - name: Gateway contract suite on the Deno server through the Go front
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set +e
+          ZP_ENGINE=front ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ > "$RUNNER_TEMP/deno-contract-front.log" 2>&1
+          code=$?
+          set -e
+          scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract-front.log" "contract suite under Deno, Go front (${{ matrix.os }})" \
+            | tee -a "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -137,6 +154,7 @@ jobs:
             ${{ runner.temp }}/deno-summary.md
             ${{ runner.temp }}/deno-test.log
             ${{ runner.temp }}/deno-contract.log
+            ${{ runner.temp }}/deno-contract-front.log
           if-no-files-found: warn
 
   typecheck:
@@ -226,6 +244,20 @@ jobs:
             --allow-env=PATH,SystemRoot,SYSTEMROOT,PATHEXT,TEMP,TMP,windir,ComSpec --ignore-env \
             scripts/smoke-binary.js "dist/$B" | tee "$RUNNER_TEMP/smoke.json"
           echo "| ${{ matrix.name }} | $(cat "$RUNNER_TEMP/smoke.json") |" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      # The Go gateway built natively, started in front of server.js (deno run, "server" set) and stopped with it.
+      - name: Smoke test of the Go front on this runner
+        shell: bash
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          go -C gw build -o "$RUNNER_TEMP/gw/" ./cmd/zaafpulse-gw
+          GW="$(ls "$RUNNER_TEMP"/gw/zaafpulse-gw*)"
+          deno run -q --no-prompt -P=test scripts/smoke-front.js "$GW" | tee "$RUNNER_TEMP/smoke-front.json"
+          echo "| ${{ matrix.name }} (Go front) | $(cat "$RUNNER_TEMP/smoke-front.json") |" >> "$GITHUB_STEP_SUMMARY"
       - run: mv dist/SHA256SUMS.txt dist/SHA256SUMS-${{ matrix.name }}.txt
         shell: bash
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

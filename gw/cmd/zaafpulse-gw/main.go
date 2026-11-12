@@ -1,10 +1,15 @@
-// Command zaafpulse-gw is the gateway process of ZAAFPulse v2. In P3 it is a stub: it speaks the whole v1 IPC protocol
-// with the control plane over stdin and stdout (ipc/v1; docs/superpowers/specs/2026-11-11-p3-ipc-contract-design.md)
-// and serves no HTTP. It logs to stderr; the control plane forwards each line with a "gw: " prefix. When stdin reaches
-// end of file (the control plane is gone) it exits 0.
+// Command zaafpulse-gw is the gateway process of ZAAFPulse v2. It speaks the whole v1 IPC protocol with the control
+// plane over stdin and stdout (ipc/v1; docs/superpowers/specs/2026-11-11-p3-ipc-contract-design.md). When config.push
+// carries a front section (P4a, docs/superpowers/specs/2026-11-12-p4a-go-front-design.md) it holds the main port and
+// forwards every request to the control plane (package front, front.go); without one it serves no HTTP, as in P3. It
+// logs to stderr; the control plane forwards each line with a "gw: " prefix. When stdin reaches end of file (the
+// control plane is gone) it exits 0.
 //
-// Exit codes: 0 done (shutdown or end of input), 1 an I/O failure, 2 refused or a bad command line, 3 a protocol
-// error (after an "error" message) or --crash-after-ready-ms.
+// Exit codes (the constants in package ipc): 0 done (shutdown or end of input); 1 ExitDamaged, an I/O failure, a
+// damaged outbox or a stdin read error; 2 ExitRefused, refused, a config it cannot apply, or a bad command line; 3
+// ExitProtocol, a protocol error (after an "error" message) or --crash-after-ready-ms; 4 ExitPortInUse, the main port
+// could not be opened (in use, refused, or its TLS files unreadable); 5 ExitOutboxInUse, another gateway holds the
+// outbox. Exits 1 (but a stdin read error), 2, 4 and 5 log a "fatal: " line first (exitWith, exit.go).
 //
 // Test-only flags make it misbehave for the supervisor tests: --protocol, --hang-after-ready, --crash-after-ready-ms,
 // --bad-line and --ignore-shutdown; --emit N sends N rounds of synthetic events (ipc.Synthetic) for the ingest and
@@ -26,10 +31,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/front"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
-const version = "0.3.0-stub"
+const version = "0.4.0-front"
 
 type options struct {
 	outbox            string
@@ -72,26 +78,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Int64Var(&o.staleMs, "stale-ms", ipc.StaleAfterMs, "test only: age at which a budget snapshot is stale, in ms")
 	fs.BoolVar(&o.healthOnSnapshot, "health-on-snapshot", false, "test only: send health after every budget snapshot")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return exitWith(logger, ipc.ExitRefused, "bad command line: %v", err)
 	}
 	dir := o.outbox
 	if dir == "" {
 		data := os.Getenv("ZAAFPULSE_DATA")
 		if data == "" {
-			logger.Print("no outbox folder: pass --outbox or set ZAAFPULSE_DATA")
-			return 2
+			return exitWith(logger, ipc.ExitRefused, "no outbox folder: pass --outbox or set ZAAFPULSE_DATA")
 		}
 		dir = filepath.Join(data, ".data", "gw-outbox")
 	}
 	protocols, err := parseProtocols(o.protocol)
 	if err != nil {
-		logger.Print(err)
-		return 2
+		return exitWith(logger, ipc.ExitRefused, "%v", err)
 	}
 	box, err := ipc.OpenOutbox(dir)
+	if errors.Is(err, ipc.ErrOutboxInUse) {
+		return exitWith(logger, ipc.ExitOutboxInUse, "%v", err)
+	}
 	if err != nil {
-		logger.Printf("outbox: %v", err)
-		return 1
+		return exitWith(logger, ipc.ExitDamaged, "%v", err)
 	}
 	defer box.Close()
 	box.SetPerSegment(o.segmentEvents)
@@ -128,7 +134,6 @@ type gateway struct {
 	done    chan struct{}
 	unknown map[string]bool
 
-	sendMu   sync.Mutex // an event's append and its send stay in seq order
 	stopEmit chan struct{}
 	emitDone chan struct{}
 
@@ -141,6 +146,10 @@ type gateway struct {
 	snapAt  time.Time
 	ready   bool
 	quiet   bool // --hang-after-ready
+
+	frontCfg   *ipc.FrontConfig // under mu: the first config.push's front section, opened on ready
+	frontToken string           // under mu: from secrets.handoff, never logged
+	front      *front.Server    // under mu: the main port, once open
 }
 
 func (g *gateway) serve(protocols []int) int {
@@ -148,7 +157,7 @@ func (g *gateway) serve(protocols []int) int {
 	hello := ipc.Hello{Protocol: protocols, GwVersion: version, Stream: g.box.Stream(), OutboxFrom: g.box.Acked() + 1}
 	if err := g.ch.Send(ipc.TypeHello, hello, "h1", ""); err != nil {
 		g.log.Printf("hello: %v", err)
-		return 1
+		return ipc.ExitDamaged
 	}
 	handshaken := false
 	for {
@@ -157,8 +166,15 @@ func (g *gateway) serve(protocols []int) int {
 			g.drain()
 			return 0
 		}
-		if err != nil {
+		var perr *ipc.ProtocolError
+		if errors.As(err, &perr) {
 			return g.protocolError(err)
+		}
+		if err != nil {
+			// Reading stdin failed (E11): an I/O failure, not a protocol error, and nothing to report on the channel.
+			g.log.Printf("stdin: %v", err)
+			g.stopEmitter(time.Second)
+			return ipc.ExitDamaged
 		}
 		if msg.Unknown {
 			if !g.unknown[msg.Type] {
@@ -171,19 +187,17 @@ func (g *gateway) serve(protocols []int) int {
 			switch b := msg.Body.(type) {
 			case *ipc.HelloOK:
 				if b.Protocol != ipc.Version {
-					g.log.Printf("the control plane chose protocol %d; this gateway speaks %d", b.Protocol, ipc.Version)
-					return 2
+					return exitWith(g.log, ipc.ExitRefused, "the control plane chose protocol %d; this gateway speaks %d",
+						b.Protocol, ipc.Version)
 				}
 				handshaken = true
-				// Everything not acknowledged goes out again, before any new event (D4).
+				// Everything not acknowledged goes out again, before any new event (D4), under the outbox's send lock.
 				if err := g.box.Replay(g.box.Acked()+1, g.ch.SendLine); err != nil {
-					g.log.Printf("outbox replay: %v", err)
-					return 1
+					return exitWith(g.log, ipc.ExitDamaged, "outbox replay: %v", err)
 				}
 				go g.healthLoop()
 			case *ipc.HelloRefused:
-				g.log.Printf("refused by the control plane: %s", b.Reason)
-				return 2
+				return exitWith(g.log, ipc.ExitRefused, "refused by the control plane: %s", b.Reason)
 			default:
 				return g.protocolError(fmt.Errorf("%s before the handshake", msg.Type))
 			}
@@ -199,19 +213,22 @@ func (g *gateway) serve(protocols []int) int {
 func (g *gateway) handle(msg ipc.Message) int {
 	switch b := msg.Body.(type) {
 	case *ipc.ConfigPush:
+		if code := g.applyFront(b.Front); code >= 0 {
+			return code
+		}
 		g.mu.Lock()
 		g.cfgGen = b.Gen
 		g.mu.Unlock()
-		g.maybeReady()
+		return g.maybeReady()
 	case *ipc.SecretsHandoff:
 		m := make(map[string]ipc.ProviderSecret, len(b.Providers))
 		for _, p := range b.Providers {
 			m[p.ID] = p
 		}
 		g.mu.Lock()
-		g.secGen, g.secrets, g.mask = b.Gen, m, b.Mask
+		g.secGen, g.secrets, g.mask, g.frontToken = b.Gen, m, b.Mask, b.FrontToken
 		g.mu.Unlock()
-		g.maybeReady()
+		return g.maybeReady()
 	case *ipc.BudgetSnapshot:
 		g.mu.Lock()
 		g.snap, g.snapAt = b, time.Now()
@@ -219,7 +236,7 @@ func (g *gateway) handle(msg ipc.Message) int {
 		if g.o.healthOnSnapshot {
 			g.sendHealth()
 		}
-		g.maybeReady()
+		return g.maybeReady()
 	case *ipc.Ack:
 		if b.Stream != g.box.Stream() {
 			g.log.Printf("ack for another stream %s, ignored", b.Stream)
@@ -244,25 +261,33 @@ func (g *gateway) handle(msg ipc.Message) int {
 func (g *gateway) protocolError(err error) int {
 	g.log.Print(err)
 	_ = g.ch.Send(ipc.TypeError, ipc.ErrorBody{Code: "protocol", Message: err.Error()}, "", "")
-	return 3
+	return ipc.ExitProtocol
 }
 
-// maybeReady sends ready once the first config, its secrets and a snapshot are applied.
-func (g *gateway) maybeReady() {
+// maybeReady sends ready once the first config, its secrets and a snapshot are applied, after opening the main port
+// when the config has a front section. It returns an exit code, or -1 to go on.
+func (g *gateway) maybeReady() int {
 	g.mu.Lock()
 	if g.ready || g.cfgGen == 0 || g.secGen != g.cfgGen || g.snap == nil {
 		g.mu.Unlock()
-		return
+		return -1
 	}
 	g.ready = true
 	gen := g.cfgGen
+	f, tok := g.frontCfg, g.frontToken
 	g.mu.Unlock()
+	if f != nil {
+		if code := g.openFront(f, tok); code >= 0 {
+			return code
+		}
+	}
 	if err := g.ch.Send(ipc.TypeReady, ipc.Ready{Gen: gen}, "", ""); err != nil {
 		g.log.Printf("ready: %v", err)
-		return
+		return -1
 	}
 	g.log.Printf("ready (config generation %d)", gen)
 	g.afterReady()
+	return -1
 }
 
 func (g *gateway) afterReady() {
@@ -274,7 +299,7 @@ func (g *gateway) afterReady() {
 	if g.o.crashAfterReadyMs > 0 {
 		time.AfterFunc(time.Duration(g.o.crashAfterReadyMs)*time.Millisecond, func() {
 			g.log.Print("crashing on purpose (--crash-after-ready-ms)")
-			os.Exit(3)
+			os.Exit(ipc.ExitProtocol)
 		})
 	}
 	if g.o.badLine {
@@ -338,15 +363,11 @@ func (g *gateway) checkBudget(body any) {
 	}
 }
 
-// appendAndSend writes an event to the outbox, then sends it (D4: never the other way round).
+// appendAndSend writes an event to the outbox, then sends it (D4: never the other way round), under the outbox's send
+// lock, which the replay holds too (E10).
 func (g *gateway) appendAndSend(typ string, body any) error {
-	g.sendMu.Lock()
-	defer g.sendMu.Unlock()
-	line, _, err := g.box.Append(typ, body, time.Now().UnixMilli())
-	if err != nil {
-		return err
-	}
-	return g.ch.SendLine(line)
+	_, err := g.box.AppendSend(typ, body, time.Now().UnixMilli(), g.ch.SendLine)
+	return err
 }
 
 func (g *gateway) stopEmitter(grace time.Duration) {
@@ -381,6 +402,9 @@ func (g *gateway) sendHealth() {
 		return
 	}
 	h := ipc.Health{OutboxDepth: g.box.Depth(), UptimeMs: time.Since(g.started).Milliseconds(), Gen: g.cfgGen}
+	if g.front != nil {
+		h.Inflight = g.front.Inflight()
+	}
 	if g.snap != nil {
 		age := time.Since(g.snapAt).Milliseconds()
 		h.SnapshotAgeMs = &age
@@ -394,10 +418,12 @@ func (g *gateway) sendHealth() {
 // drain: the control plane closed the channel.
 func (g *gateway) drain() {
 	g.log.Print("the control plane closed the channel: exiting")
+	g.closeFront(0) // nothing to forward to any more
 	g.stopEmitter(time.Second)
 }
 
 func (g *gateway) shutdown(grace time.Duration) {
 	g.log.Printf("shutting down (grace %s)", grace)
+	g.closeFront(grace)
 	g.stopEmitter(grace)
 }

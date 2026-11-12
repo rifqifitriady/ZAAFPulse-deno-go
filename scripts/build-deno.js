@@ -18,6 +18,12 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
+// The IPC v1 schemas, which lib/ipc/schema.js reads from disk (P4a E5). deno compile --include takes paths, not globs.
+const SCHEMAS = fs
+  .readdirSync(path.join(ROOT, 'ipc', 'v1'))
+  .filter((f) => f.endsWith('.schema.json'))
+  .sort()
+  .map((f) => `ipc/v1/${f}`);
 const INCLUDE = [
   'bin',
   'lib',
@@ -29,6 +35,7 @@ const INCLUDE = [
   'package.json',
   'config.example.json',
   'LICENSE',
+  ...SCHEMAS,
 ];
 // deno.json is in the source folder for -P=cli to find; it is not embedded.
 const ARCHIVE = [...INCLUDE, 'deno.json'];
@@ -145,4 +152,4 @@ if (require.main === module) {
     console.error(err.message);
     process.exit(1);
   }
-} else module.exports = { INCLUDE, ARCHIVE, TARGETS, hostTarget, outName, compileArgs, parseArgs };
+} else module.exports = { INCLUDE, ARCHIVE, SCHEMAS, TARGETS, hostTarget, outName, compileArgs, parseArgs };

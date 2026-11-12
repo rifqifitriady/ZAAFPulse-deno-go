@@ -70,11 +70,20 @@ const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
 const platform = require('./lib/platform');
-const { createAuth, isLoopback, originAllowed } = require('./lib/auth');
+const { createAuth, isLoopback, originAllowed, peerMayConnect } = require('./lib/auth');
 const otel = require('./lib/otel');
 const { createTraceStore } = require('./lib/trace/store');
+const { createIngest } = require('./lib/ipc/ingest');
+const { localPaths } = require('./lib/ipc/local');
+const { recoverMarks } = require('./lib/ipc/marks');
+const { createMarkFile } = require('./lib/ipc/markfile');
+const { serverSinks } = require('./lib/ipc/server-sinks');
+const { gwEnv } = require('./lib/ipc/env');
+const { createFront, engineOf } = require('./lib/front');
+const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
 const { createReceiver } = require('./lib/trace/otlp');
+const { isTraceCaller } = require('./lib/gateway/client');
 const govContext = require('./lib/governance/context');
 const { requestEntry, controlEntry } = require('./lib/governance/events');
 const { createGovernanceAudit, keySource } = require('./lib/governance/audit');
@@ -225,6 +234,10 @@ function loadConfig() {
   };
 }
 let config = loadConfig();
+// The Go gateway in front, or the server alone (lib/front, gateway.engine): set where the server starts listening.
+let front = null;
+// The response of the request being handled, so a save that asks the front to retry is answered first (P4a review I2).
+const currentResponse = new (require('async_hooks').AsyncLocalStorage)();
 
 const indexer = DEMO
   ? {
@@ -327,6 +340,13 @@ function govRecord(entry) {
 // config.change entry with its field-level changes, secrets masked (lib/governance/diff.js). A write that changed
 // nothing is no entry.
 function configChanged(before, after) {
+  // The gateway section changed: a new config generation for the gateway in front, or front again after a fallback.
+  if (front && JSON.stringify((before || {}).gateway) !== JSON.stringify((after || {}).gateway)) {
+    // From a request: the main port goes back to the gateway only once that request's answer is sent.
+    const res = currentResponse.getStore();
+    const sent = res && !res.writableFinished ? new Promise((r) => res.once('close', r)) : null;
+    front.reload({ after: sent }).catch((err) => console.error(`gateway: ${err.message}`));
+  }
   try {
     const d = govDiff(before, after);
     if (!d.changes.length) return;
@@ -554,6 +574,27 @@ const gateway = createGateway({
   budgetGuard,
   audit: (e) => govRecord(e), // key changes, run approvals and cancels
 });
+
+// The IPC ingest of the Go gateway (P4a E3, E4): strict writers of its own (lib/ipc/server-sinks.js), never the
+// wrapped ones (the gateway's usage.record, govRecord, the trace recorder), and the marks from the stores' tails and
+// .data/ipc-marks.json. Built when the gateway starts in front (gateway.engine "front").
+function frontIngest() {
+  const files = localPaths(DIR);
+  const sinks = serverSinks({
+    usageFile: files.usageFile,
+    getPricing: () => config.pricing,
+    budgetRecord: (entry) => budgetGuard.record(entry),
+    governance,
+    mcpAudit: audit,
+    traceStore,
+    traceDir: files.traceDir,
+  });
+  const markFile = createMarkFile(files.marksFile);
+  return {
+    ingest: createIngest({ ...sinks, marks: recoverMarks(files) }),
+    beforeAck: (b) => markFile.save(b.stream, b.upTo),
+  };
+}
 
 // Trace explorer: every log source behind opaque keys and ids. Content (prompts, replies, tool output) is off
 // when asked for, and by default in server mode, where other people may sign in. Demo reads no real files.
@@ -1420,18 +1461,11 @@ const MIME = {
   '.svg': 'image/svg+xml',
 };
 
-// Any of these on a request means it came through a proxy, even when the proxy runs on this machine.
-const TRACE_PROXY_HEADERS = [
-  'x-forwarded-for',
-  'x-forwarded-host',
-  'x-forwarded-proto',
-  'x-forwarded-port',
-  'forwarded',
-  'x-real-ip',
-  'via',
-];
-
 const handler = async (req, res) => {
+  // An absolute-form target ("GET http://host/ HTTP/1.1") is for proxies. Node checks its Host header, the Go front
+  // never sees that header (net/http drops it), so both modes refuse it, with the same answer (P4a final review I1).
+  if (/^[a-z][a-z0-9+.-]*:/i.test(req.url))
+    return send(res, 400, { error: 'absolute-form request targets are not accepted' });
   const url = new URL(req.url, 'http://localhost');
   // Reject requests addressed to other names (DNS rebinding / cross-origin writes).
   const host = String(req.headers.host || '')
@@ -1440,6 +1474,8 @@ const handler = async (req, res) => {
   // Names other than loopback are accepted only when sign-in is on (server mode or behind a proxy).
   if (!isLoopback(host) && !(auth.mode === 'password' && (!ALLOWED_HOSTS.length || ALLOWED_HOSTS.includes(host))))
     return send(res, 403, { error: 'forbidden' });
+  // Without sign-in only this machine may connect: through the Go front the peer is the client Go named (P4a H1).
+  if (!peerMayConnect(req, auth.mode)) return send(res, 403, { error: 'forbidden' });
   // In every mode, a browser page from another site is refused (DNS rebinding, and MCP's Origin rule).
   if (
     !originAllowed(req, {
@@ -1491,11 +1527,7 @@ const handler = async (req, res) => {
     // this ZAAFPulse sent out. From this machine only; bodies over 1 MB are cut off by readBody. A reverse proxy on
     // this host connects from loopback too, so a forwarding header or a public Host name is refused as well.
     if (url.pathname === '/v1/traces' && req.method === 'POST') {
-      if (
-        !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) ||
-        !isLoopback(host) ||
-        TRACE_PROXY_HEADERS.some((h) => req.headers[h] !== undefined)
-      )
+      if (!isTraceCaller(req) || !isLoopback(host))
         return send(res, 403, { error: 'the trace return channel accepts calls from this machine only' });
       if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] || ''))
         return send(res, 415, { error: 'send OTLP as JSON (content-type: application/json)' });
@@ -1586,6 +1618,9 @@ const handler = async (req, res) => {
     // A reviewer or a viewer gets the redacted view: no prompt, note, title, task or secret reference.
     if (url.pathname === '/api/gateway' && req.method === 'GET')
       return send(res, 200, redactGateway(await gateway.admin('', 'GET'), role));
+    // The gateway process (P4a D6): mode, state, restarts. Before the admin routes, whose pattern it matches; owner only
+    // (it is no viewer read, so the role check above refuses anyone else).
+    if (url.pathname === '/api/gateway/status' && req.method === 'GET') return send(res, 200, front.status());
     const gwAdmin = url.pathname.match(/^\/api\/gateway\/([a-z]+)$/);
     if (gwAdmin) {
       // Only the request log is read with GET. Every other admin route writes (defaults, settings), spends tokens
@@ -2112,18 +2147,27 @@ const handler = async (req, res) => {
 };
 // Each request runs with its own actor slot for the governance audit log (filled after sign-in or the key check);
 // otel continues an incoming traceparent on gateway requests.
-const traced = otel.wrapHandler((req, res) => govContext.runAs(null, () => handler(req, res)));
+const traced = otel.wrapHandler((req, res) =>
+  currentResponse.run(res, () => govContext.runAs(null, () => handler(req, res))),
+);
 const server = TLS ? https.createServer(TLS, traced) : http.createServer(traced);
+// Errors once listening end the server, as before P4a; an error while the listen starts is front.start()'s to report.
 server.on('error', (err) => {
+  if (!server.listening) return;
+  console.error(err.message);
+  process.exit(1);
+});
+const portTaken = (err) => {
   console.error(
     err.code === 'EADDRINUSE'
       ? `Port ${PORT} is already in use: is ZAAFPulse running? (zaafpulse status)`
       : err.message,
   );
   process.exit(1);
-});
+};
 
-server.listen(PORT, HOST, () => {
+// The main port first answers: the banner, then the passes that run while the server is up (once, in any mode).
+function serving() {
   console.log(
     `ZAAFPulse${DEMO ? ' (demo data)' : ''} → ${TLS ? 'https' : 'http'}://${SERVER_MODE ? HOST : 'localhost'}:${PORT}${SERVER_MODE ? `  (server mode: sign-in required; apps use ${BASE_URL})` : ''}`,
   );
@@ -2194,7 +2238,35 @@ server.listen(PORT, HOST, () => {
       .finally(() => {
         demoReady = true;
       });
+}
+
+// gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
+const ENGINE = DEMO ? 'js' : engineOf(rawConfig());
+const askedEngine = (rawConfig().gateway || {}).engine;
+if (!DEMO && askedEngine !== undefined && !['js', 'front'].includes(askedEngine))
+  console.error(`config.json gateway.engine ${JSON.stringify(askedEngine)} is not "js" or "front": serving on Deno`);
+const fi = ENGINE === 'front' ? frontIngest() : null;
+front = createFront({
+  engine: ENGINE,
+  host: HOST, // the public listen host: the auth mode and the host checks keep reading HOST, never 127.0.0.1
+  port: PORT,
+  tls: TLS
+    ? { certPath: path.resolve(process.env.ZAAFPULSE_TLS_CERT), keyPath: path.resolve(process.env.ZAAFPULSE_TLS_KEY) }
+    : null,
+  mainServer: server,
+  bin: gwBinary(),
+  env: gwEnv(process.env, DIR),
+  cpVersion: require('./package.json').version,
+  ingest: fi && fi.ingest,
+  beforeAck: fi ? fi.beforeAck : undefined,
+  log: (line) => console.error(line),
+  onServing: (mode) => {
+    serving();
+    if (mode === 'front') console.log(`Gateway: Go in front (zaafpulse-gw pid ${front.status().pid})`);
+  },
+  onListenError: portTaken,
 });
+front.start().catch(portTaken);
 
 // Sessions are written within a second; flush them when launchd, Ctrl-C or a closed terminal stops the server.
 for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'])
@@ -2205,7 +2277,11 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'])
       recorder.flush();
       if (traceStore) traceStore.snapshot();
     } finally {
-      // Queued spans get up to 2 seconds to reach the OTLP endpoint.
-      otel.shutdown(2000).finally(() => process.exit(0));
+      // The gateway gets 1 second to stop (it exits on its own too, once this process is gone); queued spans get up
+      // to 2 seconds to reach the OTLP endpoint.
+      front
+        .stop(1000)
+        .catch(() => {})
+        .finally(() => otel.shutdown(2000).finally(() => process.exit(0)));
     }
   });

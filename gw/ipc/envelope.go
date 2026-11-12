@@ -81,6 +81,20 @@ func Decode(line []byte, strict bool) (Message, error) {
 	if err := json.Unmarshal(line, &env); err != nil {
 		return Message{}, fmt.Errorf("envelope: %w", err)
 	}
+	if env.Type == TypeSecretsHandoff {
+		// E6: the raw body holds the secrets. It is decoded below, then zeroed, so no envelope that is logged,
+		// formatted or returned with an error carries them (the typed body's formatters redact them).
+		raw := env.Body
+		env.Body = nil
+		defer clear(raw)
+		if env.V == Version {
+			body := new(SecretsHandoff)
+			if err := decodeBody(raw, body, strict, "body"); err != nil {
+				return Message{Envelope: env}, fmt.Errorf("%s: %w", env.Type, err)
+			}
+			return Message{Envelope: env, Body: body}, nil
+		}
+	}
 	if env.V != Version {
 		return Message{Envelope: env}, fmt.Errorf("envelope.v: version %d is not %d", env.V, Version)
 	}

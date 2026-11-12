@@ -28,10 +28,16 @@ import (
 // no fragment is left in the middle of a segment; when that truncate fails too, the segment is closed and the next
 // Append starts a new one, which leaves the fragment at the end of a segment that is never written again (Replay
 // stops at a segment's last newline).
+//
+// The outbox has one writer: OpenOutbox takes an exclusive lock on <dir>/.lock and holds it until Close (P4a E1). Every
+// event is sent under one lock with its append and with the replay (E10), so the control plane receives the stream in
+// seq order with no gap: a replay never cuts into a run of new events, and no event is sent before an older one.
 type Outbox struct {
 	dir        string
 	perSegment int
-	mu         sync.Mutex
+	lock       io.Closer  // the .lock file; nil once released
+	sendMu     sync.Mutex // the event stream: Append, AppendSend and Replay, sends included
+	mu         sync.Mutex // the state below; never held across a send
 	state      streamState
 	segs       []int64 // first seq of each segment, ascending
 	cur        *os.File
@@ -48,21 +54,50 @@ type streamState struct {
 	Acked  int64  `json:"acked"`
 }
 
-const segmentExt = ".jsonl"
+const (
+	segmentExt = ".jsonl"
+	lockName   = ".lock"
+)
 
-// OpenOutbox opens (or creates) the outbox in dir.
-func OpenOutbox(dir string) (*Outbox, error) {
+var (
+	// ErrOutboxInUse: another process (or another Outbox in this one) holds the outbox lock. The gateway exits
+	// ExitOutboxInUse.
+	ErrOutboxInUse = errors.New("outbox: in use by another gateway")
+	// ErrOutboxDamaged: stream.json is unreadable, or missing while segments are present, or a segment holds a line
+	// without a seq. A new stream is never started over old events. The gateway exits ExitDamaged.
+	ErrOutboxDamaged = errors.New("outbox: damaged")
+)
+
+// OpenOutbox opens (or creates) the outbox in dir and locks it until Close. While another Outbox holds the lock it
+// returns an error that wraps ErrOutboxInUse.
+func OpenOutbox(dir string) (_ *Outbox, err error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	o := &Outbox{dir: dir, perSegment: 1000, remove: os.Remove, write: (*os.File).Write, truncate: truncateAndSeek}
+	lock, err := lockFile(filepath.Join(dir, lockName))
+	if err != nil {
+		return nil, err
+	}
+	o := &Outbox{dir: dir, perSegment: 1000, lock: lock, remove: os.Remove, write: (*os.File).Write, truncate: truncateAndSeek}
+	defer func() {
+		if err != nil {
+			o.release()
+		}
+	}()
 	data, err := os.ReadFile(filepath.Join(dir, "stream.json"))
 	switch {
 	case err == nil:
 		if err := json.Unmarshal(data, &o.state); err != nil || !patterns["hex32"].MatchString(o.state.Stream) {
-			return nil, fmt.Errorf("outbox: %s is damaged", filepath.Join(dir, "stream.json"))
+			return nil, fmt.Errorf("%w: %s is unreadable", ErrOutboxDamaged, filepath.Join(dir, "stream.json"))
 		}
 	case errors.Is(err, fs.ErrNotExist):
+		// A first start has no segments either. Segments without stream.json lost the stream id and the ack: a new
+		// stream would send their events again under seqs the control plane may already hold (T4-2).
+		if seg, err := anySegment(dir); err != nil {
+			return nil, err
+		} else if seg != "" {
+			return nil, fmt.Errorf("%w: %s holds %s and no stream.json", ErrOutboxDamaged, dir, seg)
+		}
 		b := make([]byte, 16)
 		if _, err := rand.Read(b); err != nil {
 			return nil, err
@@ -79,6 +114,31 @@ func OpenOutbox(dir string) (*Outbox, error) {
 		return nil, err
 	}
 	return o, o.prune()
+}
+
+func anySegment(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), segmentExt) {
+			return e.Name(), nil
+		}
+	}
+	return "", nil
+}
+
+// release closes the open segment and the lock file (which drops the lock).
+func (o *Outbox) release() {
+	if o.cur != nil {
+		_ = o.cur.Close()
+		o.cur = nil
+	}
+	if o.lock != nil {
+		_ = o.lock.Close()
+		o.lock = nil
+	}
 }
 
 // SetPerSegment sets how many events a segment holds before the next one starts (tests use a small number).
@@ -134,7 +194,7 @@ func (o *Outbox) loadSegments() error {
 		lines := bytes.Split(bytes.TrimSuffix(data, []byte{'\n'}), []byte{'\n'})
 		seq, err := seqOf(lines[len(lines)-1])
 		if err != nil {
-			return fmt.Errorf("outbox: %s: %w", path, err)
+			return fmt.Errorf("%w: %s: %w", ErrOutboxDamaged, path, err)
 		}
 		o.state.Next = max(o.state.Next, seq+1)
 		break
@@ -152,8 +212,28 @@ func seqOf(line []byte) (int64, error) {
 	return head.Seq, nil
 }
 
-// Append stores one event with the stream's next seq and returns its line (newline included), ready to send.
+// AppendSend stores one event with the stream's next seq, then sends its line (newline included), both under the
+// stream's send lock (D4: stored before sent, never the other way round; E10: one lock with the replay). A failed
+// send leaves the event stored: it goes out again on the next replay.
+func (o *Outbox) AppendSend(typ string, body any, ts int64, send func(line []byte) error) (int64, error) {
+	o.sendMu.Lock()
+	defer o.sendMu.Unlock()
+	line, seq, err := o.append(typ, body, ts)
+	if err != nil {
+		return 0, err
+	}
+	return seq, send(line)
+}
+
+// Append stores one event with the stream's next seq and returns its line (newline included). It does not send:
+// the gateway uses AppendSend, so that no other send comes between the two.
 func (o *Outbox) Append(typ string, body any, ts int64) ([]byte, int64, error) {
+	o.sendMu.Lock()
+	defer o.sendMu.Unlock()
+	return o.append(typ, body, ts)
+}
+
+func (o *Outbox) append(typ string, body any, ts int64) ([]byte, int64, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	seq := o.state.Next
@@ -212,15 +292,23 @@ func (o *Outbox) rotate(first int64) error {
 	return nil
 }
 
-// Replay calls send with every stored line whose seq is at least from, in order.
+// Replay calls send with every stored line whose seq is at least from, in order, under the stream's send lock: no
+// new event is stored or sent until the replay is done. The state lock is not held across a send, so an ack is
+// never kept waiting by a slow reader (P3 Task 4 minor).
 func (o *Outbox) Replay(from int64, send func(line []byte) error) error {
+	o.sendMu.Lock()
+	defer o.sendMu.Unlock()
 	o.mu.Lock()
-	defer o.mu.Unlock()
-	for i, first := range o.segs {
-		if i+1 < len(o.segs) && o.segs[i+1] <= from {
+	segs := slices.Clone(o.segs)
+	o.mu.Unlock()
+	for i, first := range segs {
+		if i+1 < len(segs) && segs[i+1] <= from {
 			continue
 		}
 		data, err := os.ReadFile(o.segPath(first))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // an ack pruned it during the replay: every event in it is stored by the control plane
+		}
 		if err != nil {
 			return err
 		}
@@ -334,7 +422,7 @@ func (o *Outbox) Segments() []int64 {
 	return slices.Clone(o.segs)
 }
 
-// Close writes stream.json and closes the open segment.
+// Close writes stream.json, closes the open segment and releases the lock. A second Close only writes stream.json.
 func (o *Outbox) Close() error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -342,5 +430,10 @@ func (o *Outbox) Close() error {
 		_ = o.cur.Close()
 		o.cur = nil
 	}
-	return o.save()
+	err := o.save()
+	if o.lock != nil {
+		_ = o.lock.Close()
+		o.lock = nil
+	}
+	return err
 }
