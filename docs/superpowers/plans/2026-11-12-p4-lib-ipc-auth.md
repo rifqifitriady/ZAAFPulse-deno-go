@@ -530,8 +530,8 @@ function recoverMarks(files, bytes = TAIL_BYTES) {
   `type formError string` (a message that gets the id prefix), `encodeForm`, `jsString`, `jsNumber`.
 
 - [ ] **Step 1: Write the failing tests.** `js_test.go`: `encodeForm` against the WHATWG values measured on Node and Deno
-  (`{a: "x y~*-._!'()é+&="}` → `a=x+y%7E*-._%21%27%28%29%C3%A9%2B%26%3D`); `jsString(" \u001f<>&é\"\\")` →
-  `" \u001f<>&é\"\\"` with the U+2028 raw and `\u001f` escaped; `jsNumber` over `" 60 "`→60, `"0x10"`→16,
+  (`{a: "x y~*-._!'()é+&="}` → `a=x+y%7E*-._%21%27%28%29%C3%A9%2B%26%3D`); `jsString("\u2028\u001f<>&é\"\\")` →
+  `"\u2028\u001f<>&é\"\\"` with the U+2028 raw and `\u001f` escaped; `jsNumber` over `" 60 "`→60, `"0x10"`→16,
   `"1e3"`→1000, `""`→0, `"60s"`→NaN, `"inf"`→NaN, `"Infinity"`→+Inf, `true`→1, `nil`→NaN, `3.5`→3.5.
   `oauth2_test.go` (httptest, `127.0.0.1` only):
   - client credentials: the POST has `content-type: application/x-www-form-urlencoded`, `accept: application/json`,
