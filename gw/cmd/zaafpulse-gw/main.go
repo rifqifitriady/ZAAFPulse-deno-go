@@ -74,30 +74,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Int64Var(&o.staleMs, "stale-ms", ipc.StaleAfterMs, "test only: age at which a budget snapshot is stale, in ms")
 	fs.BoolVar(&o.healthOnSnapshot, "health-on-snapshot", false, "test only: send health after every budget snapshot")
 	if err := fs.Parse(args); err != nil {
-		return ipc.ExitRefused
+		return exitWith(logger, ipc.ExitRefused, "bad command line: %v", err)
 	}
 	dir := o.outbox
 	if dir == "" {
 		data := os.Getenv("ZAAFPULSE_DATA")
 		if data == "" {
-			logger.Print("no outbox folder: pass --outbox or set ZAAFPULSE_DATA")
-			return ipc.ExitRefused
+			return exitWith(logger, ipc.ExitRefused, "no outbox folder: pass --outbox or set ZAAFPULSE_DATA")
 		}
 		dir = filepath.Join(data, ".data", "gw-outbox")
 	}
 	protocols, err := parseProtocols(o.protocol)
 	if err != nil {
-		logger.Print(err)
-		return ipc.ExitRefused
+		return exitWith(logger, ipc.ExitRefused, "%v", err)
 	}
 	box, err := ipc.OpenOutbox(dir)
 	if errors.Is(err, ipc.ErrOutboxInUse) {
-		logger.Print(err)
-		return ipc.ExitOutboxInUse
+		return exitWith(logger, ipc.ExitOutboxInUse, "%v", err)
 	}
 	if err != nil {
-		logger.Print(err)
-		return ipc.ExitDamaged
+		return exitWith(logger, ipc.ExitDamaged, "%v", err)
 	}
 	defer box.Close()
 	box.SetPerSegment(o.segmentEvents)
@@ -183,19 +179,17 @@ func (g *gateway) serve(protocols []int) int {
 			switch b := msg.Body.(type) {
 			case *ipc.HelloOK:
 				if b.Protocol != ipc.Version {
-					g.log.Printf("the control plane chose protocol %d; this gateway speaks %d", b.Protocol, ipc.Version)
-					return ipc.ExitRefused
+					return exitWith(g.log, ipc.ExitRefused, "the control plane chose protocol %d; this gateway speaks %d",
+						b.Protocol, ipc.Version)
 				}
 				handshaken = true
 				// Everything not acknowledged goes out again, before any new event (D4), under the outbox's send lock.
 				if err := g.box.Replay(g.box.Acked()+1, g.ch.SendLine); err != nil {
-					g.log.Printf("outbox replay: %v", err)
-					return ipc.ExitDamaged
+					return exitWith(g.log, ipc.ExitDamaged, "outbox replay: %v", err)
 				}
 				go g.healthLoop()
 			case *ipc.HelloRefused:
-				g.log.Printf("refused by the control plane: %s", b.Reason)
-				return ipc.ExitRefused
+				return exitWith(g.log, ipc.ExitRefused, "refused by the control plane: %s", b.Reason)
 			default:
 				return g.protocolError(fmt.Errorf("%s before the handshake", msg.Type))
 			}

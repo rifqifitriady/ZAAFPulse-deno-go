@@ -73,6 +73,11 @@ const platform = require('./lib/platform');
 const { createAuth, isLoopback, originAllowed } = require('./lib/auth');
 const otel = require('./lib/otel');
 const { createTraceStore } = require('./lib/trace/store');
+const { createIngest } = require('./lib/ipc/ingest');
+const { localPaths } = require('./lib/ipc/local');
+const { recoverMarks } = require('./lib/ipc/marks');
+const { createMarkFile } = require('./lib/ipc/markfile');
+const { serverSinks } = require('./lib/ipc/server-sinks');
 const { createRecorder } = require('./lib/trace/recorder');
 const { createReceiver } = require('./lib/trace/otlp');
 const { isTraceCaller } = require('./lib/gateway/client');
@@ -555,6 +560,27 @@ const gateway = createGateway({
   budgetGuard,
   audit: (e) => govRecord(e), // key changes, run approvals and cancels
 });
+
+// The IPC ingest of the Go gateway (P4a E3, E4): strict writers of its own (lib/ipc/server-sinks.js), never the
+// wrapped ones (the gateway's usage.record, govRecord, the trace recorder), and the marks from the stores' tails and
+// .data/ipc-marks.json. Built when the gateway starts in front (gateway.engine "front").
+function frontIngest() {
+  const files = localPaths(DIR);
+  const sinks = serverSinks({
+    usageFile: files.usageFile,
+    getPricing: () => config.pricing,
+    budgetRecord: (entry) => budgetGuard.record(entry),
+    governance,
+    mcpAudit: audit,
+    traceStore,
+    traceDir: files.traceDir,
+  });
+  const markFile = createMarkFile(files.marksFile);
+  return {
+    ingest: createIngest({ ...sinks, marks: recoverMarks(files) }),
+    beforeAck: (b) => markFile.save(b.stream, b.upTo),
+  };
+}
 
 // Trace explorer: every log source behind opaque keys and ids. Content (prompts, replies, tool output) is off
 // when asked for, and by default in server mode, where other people may sign in. Demo reads no real files.
