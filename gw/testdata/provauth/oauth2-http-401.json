@@ -1,0 +1,44 @@
+{
+  "fn": "accessToken",
+  "in": {
+    "id": "prov",
+    "auth": {
+      "type": "oauth2",
+      "tokenUrl": "https://login.example.test/tenant/oauth2/v2.0/token",
+      "clientId": "app-1",
+      "scope": "https://cognitiveservices.azure.com/.default",
+      "grant": "client_credentials"
+    },
+    "secret": "s3cret-value",
+    "mask": [],
+    "responses": [
+      {
+        "status": 401,
+        "body": "{\"error\":\"invalid_client\",\"error_description\":\"AADSTS7000215\"}"
+      }
+    ],
+    "steps": [
+      {
+        "now": 1767225600000
+      }
+    ]
+  },
+  "out": {
+    "requests": [
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s3cret-value&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      }
+    ],
+    "results": [
+      {
+        "throws": "prov: token refresh failed (401 invalid_client)"
+      }
+    ]
+  }
+}

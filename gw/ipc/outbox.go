@@ -32,6 +32,8 @@ import (
 // The outbox has one writer: OpenOutbox takes an exclusive lock on <dir>/.lock and holds it until Close (P4a E1). Every
 // event is sent under one lock with its append and with the replay (E10), so the control plane receives the stream in
 // seq order with no gap: a replay never cuts into a run of new events, and no event is sent before an older one.
+// Close is the last writer (P4f entry 4): it waits for a send in progress, writes stream.json only while it holds the
+// lock, and every call after it returns ErrOutboxClosed without touching a file.
 type Outbox struct {
 	dir        string
 	perSegment int
@@ -39,6 +41,7 @@ type Outbox struct {
 	sendMu     sync.Mutex // the event stream: Append, AppendSend and Replay, sends included
 	mu         sync.Mutex // the state below; never held across a send
 	state      streamState
+	closed     bool    // Close ran: nothing is written or sent any more
 	segs       []int64 // first seq of each segment, ascending
 	cur        *os.File
 	curCount   int
@@ -66,6 +69,8 @@ var (
 	// ErrOutboxDamaged: stream.json is unreadable, or missing while segments are present, or a segment holds a line
 	// without a seq. A new stream is never started over old events. The gateway exits ExitDamaged.
 	ErrOutboxDamaged = errors.New("outbox: damaged")
+	// ErrOutboxClosed: Close ran. Nothing is appended, sent, replayed or acknowledged after it, and no file is written.
+	ErrOutboxClosed = errors.New("outbox: closed")
 )
 
 // OpenOutbox opens (or creates) the outbox in dir and locks it until Close. While another Outbox holds the lock it
@@ -236,6 +241,9 @@ func (o *Outbox) Append(typ string, body any, ts int64) ([]byte, int64, error) {
 func (o *Outbox) append(typ string, body any, ts int64) ([]byte, int64, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.closed {
+		return nil, 0, ErrOutboxClosed
+	}
 	seq := o.state.Next
 	line, err := Encode(Envelope{V: Version, Type: typ, Seq: seq, Ts: ts}, body)
 	if err != nil {
@@ -299,6 +307,10 @@ func (o *Outbox) Replay(from int64, send func(line []byte) error) error {
 	o.sendMu.Lock()
 	defer o.sendMu.Unlock()
 	o.mu.Lock()
+	if o.closed {
+		o.mu.Unlock()
+		return ErrOutboxClosed
+	}
 	segs := slices.Clone(o.segs)
 	o.mu.Unlock()
 	for i, first := range segs {
@@ -338,6 +350,9 @@ func (o *Outbox) Replay(from int64, send func(line []byte) error) error {
 func (o *Outbox) Ack(upTo int64) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.closed {
+		return ErrOutboxClosed
+	}
 	upTo = min(upTo, o.state.Next-1)
 	if upTo <= o.state.Acked {
 		return nil
@@ -422,18 +437,23 @@ func (o *Outbox) Segments() []int64 {
 	return slices.Clone(o.segs)
 }
 
-// Close writes stream.json, closes the open segment and releases the lock. A second Close only writes stream.json.
+// Close writes stream.json, closes the open segment and releases the lock. It takes the send lock first, so a send in
+// progress finishes before it and nothing is appended or sent after it (P4f entry 4, T1-a). A second Close does
+// nothing (T1-b): stream.json is written only while this outbox still holds the lock, which another gateway may hold
+// by then.
 func (o *Outbox) Close() error {
+	o.sendMu.Lock()
+	defer o.sendMu.Unlock()
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.cur != nil {
-		_ = o.cur.Close()
-		o.cur = nil
+	if o.closed {
+		return nil
 	}
-	err := o.save()
+	o.closed = true
+	var err error
 	if o.lock != nil {
-		_ = o.lock.Close()
-		o.lock = nil
+		err = o.save()
 	}
+	o.release()
 	return err
 }
