@@ -238,7 +238,7 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 
 | Slice | Scope | Exit |
 |---|---|---|
-| S1 | Skeleton: health, config, secret handoff, supervisor start/stop | Starts and stops under the supervisor on 6 targets |
+| S1 | Skeleton: health, config, secret handoff, supervisor start/stop | Starts and stops under the supervisor on 6 targets: **met in P4a** (2026-11-12, `docs/migration/2026-11-12-p4a-results.md`) |
 | S2 | OpenAI-compatible pass-through, non-streaming | Contract cases green; M3 met |
 | S3 | Streaming SSE | M4 met at 500 streams |
 | S4 | API-key auth, per-key allow-lists and modes | Contract cases green |
