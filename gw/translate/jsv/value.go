@@ -7,6 +7,7 @@ package jsv
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
 	"strconv"
 )
@@ -134,10 +135,14 @@ func (e *TypeError) Error() string { return e.Message }
 // Throw panics with a TypeError; Catch turns it back into an error.
 func Throw(format string, args ...any) { panic(&TypeError{Message: fmt.Sprintf(format, args...)}) }
 
-// Catch runs f and returns the TypeError (or any error) it panicked with. Other panics propagate.
+// Catch runs f and returns the TypeError (or other error value) it panicked with. A Go runtime error and any
+// non-error panic propagate.
 func Catch(f func()) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			if _, bug := r.(runtime.Error); bug {
+				panic(r)
+			}
 			if e, ok := r.(error); ok {
 				err = e
 				return

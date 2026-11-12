@@ -1,0 +1,90 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:image/png;base64,AA\nBB"
+              }
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:a\nb;base64,QQ"
+              }
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:;base64,x"
+              }
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:a;b;base64,x"
+              }
+            },
+            {
+              "type": "image_url",
+              "image_url": "not an object"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "out": {
+    "model": "c",
+    "max_tokens": 8192,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": "data:image/png;base64,AA\nBB"
+            }
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "a\nb",
+              "data": "QQ"
+            }
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": "data:;base64,x"
+            }
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": "data:a;b;base64,x"
+            }
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": ""
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

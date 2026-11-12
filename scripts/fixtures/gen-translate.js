@@ -387,6 +387,21 @@ o2aReq('roles-merge', {
   tools: [...tools, { type: 'retrieval' }, { type: 'function', function: { name: 'g', description: 'd' } }],
   tool_choice: { type: 'function', function: { name: 'g' } },
 });
+o2aReq('data-urls', {
+  model: 'c',
+  messages: [
+    {
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AA\nBB' } },
+        { type: 'image_url', image_url: { url: 'data:a\nb;base64,QQ' } },
+        { type: 'image_url', image_url: { url: 'data:;base64,x' } },
+        { type: 'image_url', image_url: { url: 'data:a;b;base64,x' } },
+        { type: 'image_url', image_url: 'not an object' },
+      ],
+    },
+  ],
+});
 o2aReq('choice-none-parallel', { model: 'c', messages: m, tools, tool_choice: 'none', parallel_tool_calls: false });
 o2aReq('choice-auto', { model: 'c', messages: m, tools, tool_choice: 'auto', reasoning_effort: 'xhigh' });
 o2aReq('choice-unknown', { model: 'c', messages: m, tools, tool_choice: 'other', reasoning_effort: 'minimal' });
