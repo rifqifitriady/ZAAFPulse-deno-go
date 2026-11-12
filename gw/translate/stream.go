@@ -595,34 +595,60 @@ func WholeToChunks(j V) (out []V, err error) {
 	return
 }
 
-// eventEnd finds the first /\r?\n\r?\n/ in b: its start and length, or -1.
-func eventEnd(b []byte) (int, int) {
-	for i := range b {
-		for _, sep := range []string{"\r\n\r\n", "\r\n\n", "\n\r\n", "\n\n"} {
-			if bytes.HasPrefix(b[i:], []byte(sep)) {
-				return i, len(sep)
-			}
+// MaxSSEEvent is the most ReadSSE buffers while waiting for the end of one event. The JS readSse has no limit; this
+// one is stated here (P4c may lower it): 16 MiB, above any provider event the gateway has seen.
+const MaxSSEEvent = 16 << 20
+
+// ErrSSETooLarge is ReadSSE's error when one event exceeds MaxSSEEvent.
+var ErrSSETooLarge = errors.New("translate: SSE event larger than 16 MiB")
+
+// eventEnd finds the first /\r?\n\r?\n/ in b looking at newlines from `from` on: its start and length, or -1. Every
+// match holds a first newline at j and starts at j-1 (a \r) or j, so the newlines are visited in order.
+func eventEnd(b []byte, from int) (int, int) {
+	for j := from; ; {
+		k := bytes.IndexByte(b[j:], '\n')
+		if k < 0 {
+			return -1, 0
 		}
+		j += k
+		end := -1
+		switch {
+		case j+2 < len(b) && b[j+1] == '\r' && b[j+2] == '\n':
+			end = j + 3
+		case j+1 < len(b) && b[j+1] == '\n':
+			end = j + 2
+		}
+		if end >= 0 {
+			start := j
+			if j > 0 && b[j-1] == '\r' {
+				start = j - 1
+			}
+			return start, end - start
+		}
+		j++
 	}
-	return -1, 0
 }
 
 // ReadSSE reads an SSE byte stream and calls onEvent(event, data) for each complete event (the JS readSse): `event:`
 // is trimmed, one space after `data:` is dropped, data lines are joined by \n, an event without data is skipped and
-// a partial event at the end is dropped. An error from onEvent stops the read and is returned.
+// a partial event at the end is dropped. An error from onEvent stops the read and is returned; so does an event
+// longer than MaxSSEEvent (ErrSSETooLarge). Each byte is scanned a bounded number of times.
 func ReadSSE(r io.Reader, onEvent func(event, data string) error) error {
 	var buf []byte
+	scan := 0 // no event end starts before this offset's newline search
 	chunk := make([]byte, 32*1024)
 	for {
 		n, err := r.Read(chunk)
 		buf = append(buf, chunk[:n]...)
 		for {
-			i, l := eventEnd(buf)
+			i, l := eventEnd(buf, scan)
 			if i < 0 {
+				scan = max(0, len(buf)-2)
 				break
 			}
 			raw := string(buf[:i])
 			buf = buf[i+l:]
+			scan = 0
 			event := "message"
 			var data []string
 			for _, line := range strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n") {
@@ -638,6 +664,9 @@ func ReadSSE(r io.Reader, onEvent func(event, data string) error) error {
 					return cbErr
 				}
 			}
+		}
+		if len(buf) > MaxSSEEvent {
+			return ErrSSETooLarge
 		}
 		if errors.Is(err, io.EOF) {
 			return nil
