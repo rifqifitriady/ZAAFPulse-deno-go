@@ -43,6 +43,36 @@ test('gwEnv: the data folder, PATH and the home folder; on Windows also SystemRo
   });
 });
 
+test('gwEnv: the proxy and CA variables pass on an allow-list (P4b entry condition 5), nothing else', () => {
+  const env = {
+    PATH: '/usr/bin',
+    HOME: '/home/me',
+    HTTPS_PROXY: 'http://proxy:3128',
+    https_proxy: 'http://proxy:3128',
+    NO_PROXY: 'localhost,127.0.0.1',
+    SSL_CERT_FILE: '/etc/ca.pem',
+    NODE_EXTRA_CA_CERTS: '/etc/extra.pem',
+    DENO_CERT: '/etc/deno.pem',
+    ALL_PROXY: 'socks5://x',
+    OPENAI_API_KEY: 'sk-secret',
+    NODE_OPTIONS: '--inspect',
+  };
+  assert.deepEqual(gwEnv(env, '/data', 'darwin'), {
+    ZAAFPULSE_DATA: '/data',
+    PATH: '/usr/bin',
+    HOME: '/home/me',
+    HTTPS_PROXY: 'http://proxy:3128',
+    https_proxy: 'http://proxy:3128',
+    NO_PROXY: 'localhost,127.0.0.1',
+    SSL_CERT_FILE: '/etc/ca.pem',
+    NODE_EXTRA_CA_CERTS: '/etc/extra.pem',
+    DENO_CERT: '/etc/deno.pem',
+  });
+  // Windows: one variable whatever its case, passed under the upper-case name.
+  const win = gwEnv({ Path: 'C:\\bin', https_proxy: 'http://p:1', no_proxy: 'x' }, 'D:\\d', 'win32');
+  assert.deepEqual(win, { ZAAFPULSE_DATA: 'D:\\d', PATH: 'C:\\bin', HTTPS_PROXY: 'http://p:1', NO_PROXY: 'x' });
+});
+
 test('mark file: written with rename, raised only, read back; a bad file reads as no marks', (t) => {
   const dir = tmpDir(t, 'marks');
   const file = path.join(dir, '.data', 'ipc-marks.json');

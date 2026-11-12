@@ -215,3 +215,51 @@ test('the fallback waits up to waitPortMs for the main port, then reports it tak
     await released.catch(() => {});
   }
 });
+
+test('status: restartNeeded after a crash-loop fallback only (P4b entry condition 8)', async (t) => {
+  const f = await frontWithFakes(t);
+  assert.equal(f.front.status().restartNeeded, false);
+  f.sups[0].opts.onFailed('6 restarts within 60 s', { kind: 'restarts' });
+  await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
+  assert.equal(f.front.status().restartNeeded, true);
+  const g = await frontWithFakes(t);
+  g.sups[0].opts.onFailed('exit 4', { kind: 'fatal' });
+  await until(() => g.front.mode === 'fallback' && g.mainServer.listening);
+  assert.equal(g.front.status().restartNeeded, false);
+});
+
+test('m4: a retry whose internal listener cannot start falls back again at once', async (t) => {
+  let calls = 0;
+  const f = await frontWithFakes(t, {
+    internal: () => {
+      calls++;
+      return {
+        listen: async () => {
+          if (calls > 1) throw new Error('listen EMFILE');
+          return 1;
+        },
+        close: async () => {},
+      };
+    },
+  });
+  f.sups[0].opts.onFailed('exit 4', { kind: 'fatal' });
+  await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
+  assert.equal(await f.front.reload(), false);
+  assert.equal(f.front.mode, 'fallback');
+  assert.equal(f.mainServer.listening, true, 'the main port is served again');
+  assert.match(f.front.status().reason, /front could not start again: listen EMFILE/);
+  assert.equal(f.sups.length, 1, 'no supervisor was started');
+});
+
+test('T5-N4: stop() cancels a retry still waiting in the queue', async (t) => {
+  const f = await frontWithFakes(t);
+  f.sups[0].opts.onFailed('exit 4', { kind: 'fatal' });
+  await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
+  let release;
+  const held = new Promise((r) => (release = r));
+  const retry = f.front.reload({ after: held });
+  await f.front.stop(0);
+  release();
+  assert.equal(await retry, false);
+  assert.equal(f.sups.length, 1, 'no gateway started after stop()');
+});
