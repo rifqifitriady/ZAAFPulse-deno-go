@@ -9,7 +9,8 @@ const { startSession } = require('../lib/ipc/session');
 const { stubBin, initial, waitFor, tmpDir } = require('./ipc-stub');
 
 function start(t, bin, extraArgs = [], opts = {}) {
-  const root = tmpDir(t, 'session');
+  const stops = [];
+  const root = tmpDir(t, 'session', stops);
   const logs = [];
   const health = [];
   const s = startSession({
@@ -22,7 +23,11 @@ function start(t, bin, extraArgs = [], opts = {}) {
     log: (l) => logs.push(l),
     ...opts,
   });
-  t.after(() => s.kill());
+  // Stopped, and gone, before tmpDir removes the folder (node:test runs t.after hooks first-added-first).
+  stops.push(async () => {
+    s.kill();
+    await s.exited;
+  });
   return { s, logs, health };
 }
 
@@ -94,7 +99,11 @@ function fakeChild() {
     kill() {
       if (child.killed) return;
       child.killed = true;
-      setImmediate(() => child.emit('exit', null, 'SIGKILL'));
+      // As a real child: 'exit', then 'close' once its pipes are done.
+      setImmediate(() => {
+        child.emit('exit', null, 'SIGKILL');
+        child.emit('close', null, 'SIGKILL');
+      });
     },
   });
   return child;

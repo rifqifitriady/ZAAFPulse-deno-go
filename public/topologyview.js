@@ -67,6 +67,40 @@ function topoAgo(ms) {
 const topoNum = (n) => (n >= 1e6 ? `${topoR(n / 1e6)}M` : n >= 1000 ? `${topoR(n / 1000)}k` : String(Math.round(n)));
 const topoMs = (ms) => (ms >= 1000 ? `${topoR(ms / 1000)} s` : `${Math.round(ms)} ms`);
 
+// The "Gateway: Go (front)" chip in the card's head (P4a D6), from GET /api/gateway/status: null (no chip) when the
+// gateway is not in front (js mode, no answer, or a role that may not read it); else its text, colour and tooltip.
+function topoGatewayChip(st) {
+  if (!st || typeof st !== 'object' || (st.mode !== 'front' && st.mode !== 'fallback')) return null;
+  if (st.mode === 'fallback')
+    return {
+      text: 'Gateway: Go (front) · fallback',
+      tone: 'red',
+      title: `The Go gateway failed${st.reason ? `: ${String(st.reason).slice(0, 200)}` : ''}. ZAAFPulse serves on its own.`,
+    };
+  if (st.state === 'ready')
+    return { text: 'Gateway: Go (front) · ready', tone: 'green', title: `Restarts: ${Number(st.restarts) || 0}` };
+  return {
+    text: 'Gateway: Go (front) · restarting',
+    tone: 'amber',
+    title: `Restarts: ${Number(st.restarts) || 0}. The main port answers again once it is ready.`,
+  };
+}
+
+// Paints the chip into `el` (a span): text and attributes only, never HTML.
+function topoPaintGatewayChip(el, st) {
+  if (!el) return;
+  const chip = topoGatewayChip(st);
+  if (!chip) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  el.hidden = false;
+  el.className = `chip ${chip.tone}`;
+  el.textContent = chip.text;
+  el.title = chip.title;
+}
+
 // The section head's meta line: "— N active · M error". The hub is always active (it is the dashboard), so it is
 // not counted.
 function topoMetaText(data) {
@@ -621,7 +655,15 @@ function topoMount() {
       failed();
     }
   };
+  const chipEl = document.querySelector('[data-gw-chip]');
   const load = async () => {
+    // The gateway chip has its own request, made only as the owner: the route is owner-only, and another role's refusal
+    // would be a 403 and a governance audit entry on every poll. An error only hides the chip.
+    if (chipEl && typeof isOwner === 'function' && isOwner())
+      api('/api/gateway/status').then(
+        (st) => root.isConnected && topoPaintGatewayChip(chipEl, st),
+        () => root.isConnected && topoPaintGatewayChip(chipEl, null),
+      );
     try {
       TOPO.data = await api('/api/topology');
       TOPO.failed = false;
@@ -651,4 +693,5 @@ function topoMount() {
   });
 }
 
-if (typeof module !== 'undefined') module.exports = { topoLayout, topoPaint, topoMetaText, topoAgo, topoMount };
+if (typeof module !== 'undefined')
+  module.exports = { topoLayout, topoPaint, topoMetaText, topoAgo, topoMount, topoGatewayChip, topoPaintGatewayChip };

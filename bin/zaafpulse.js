@@ -229,6 +229,13 @@ const commands = {
       add('Node.js', process.versions.node, major >= 18);
     }
     add('Data folder', platform.dataDir());
+    // The gateway's IPC contract, read the way the server reads it (a single-file build carries the schemas: P4a E5).
+    try {
+      const ipc = require('../lib/ipc/schema');
+      add('Gateway IPC', `v${ipc.PROTOCOL}, ${Object.keys(ipc.schemas()).length} schemas`);
+    } catch (err) {
+      add('Gateway IPC', `the ipc/v1 schemas cannot be read: ${err.message}`, false);
+    }
     let store;
     try {
       store = defaultStore();

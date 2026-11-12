@@ -106,7 +106,7 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 | M10 | Egress coverage | n/a | 100% of outbound connections pass the Go proxy. A test proves Deno has no outbound net permission. |
 | M11 | Runtime dependencies | 0 | Deno 0 npm/jsr runtime imports; Go stdlib only, with any exception approved in §9 |
 | M12 | Data compatibility | v1.1.x `.data`, `config.json` | v2 opens a v1.1 data dir unchanged; rollback to v1.1.x leaves it readable |
-| M13 | Soak | n/a | 7 days on the owner's live dashboard: 0 crashes, 0 audit-chain breaks, 0 budget leaks |
+| M13 | Soak | n/a | ~~7 days on the owner's live dashboard~~ dropped (§11.7): the owner tests v2 in the browser instead |
 
 ## 5. Phases
 
@@ -238,7 +238,7 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 
 | Slice | Scope | Exit |
 |---|---|---|
-| S1 | Skeleton: health, config, secret handoff, supervisor start/stop | Starts and stops under the supervisor on 6 targets |
+| S1 | Skeleton: health, config, secret handoff, supervisor start/stop | Starts and stops under the supervisor on 6 targets: **met in P4a** (2026-11-12, `docs/migration/2026-11-12-p4a-results.md`) |
 | S2 | OpenAI-compatible pass-through, non-streaming | Contract cases green; M3 met |
 | S3 | Streaming SSE | M4 met at 500 streams |
 | S4 | API-key auth, per-key allow-lists and modes | Contract cases green |
@@ -281,17 +281,18 @@ like any client.
   attestation (§11.3).
 - **Exit:**
   - M6 and M8 are met;
-  - a clean install and an upgrade from v1.1.0 pass on all 6 targets, both with a token;
-  - without a token, install fails with a clear message.
+  - a clean install and an upgrade from v1.1.0 pass on all 6 targets, from the public release (no token, §11.5).
 
 ### P7 — Hardening and cut-over (1–2 weeks)
 
 - Security review of the IPC, the permission matrix and the egress proxy (security-expert agent), plus
   `govulncheck`.
-- 7-day soak on the owner's live dashboard (M13).
+- ~~7-day soak on the owner's live dashboard (M13)~~ dropped (§11.7). The owner tests in the browser on the preview
+  after each change; the cut-over keeps the rollback to the Node line one command away.
 - Docs: README, architecture diagram, `docs/governance.md` (the new controls), and a migration note.
 - Release **v2.0.0** from this repo (§11.1, public since 2026-11-11, §11.5), and remove the Node-only code paths.
-- **Exit (gate G4):** every metric M1–M13 is met and recorded in `bench/results/` and the release notes.
+- **Exit (gate G4):** every metric M1–M12 is met and recorded in `bench/results/` and the release notes (M13 dropped,
+  §11.7).
 
 ## 6. Decision gates
 
@@ -301,7 +302,7 @@ like any client.
 | G1 | P1 | Deno compatibility and win-arm64 proven, AsyncLocalStorage overhead acceptable | Fall back to **TypeScript (Node) + Go**: P2 is skipped, P3–P7 unchanged |
 | G2 | P2 | Control plane fully on Deno, CI green on every OS (the 48 h live run was dropped, §11 decision 4) | Stay on Node for the control plane; continue P3–P4 |
 | G3 | P4 | Gateway fully on Go, M3 and M4 met | Keep the JS gateway for the slices not met; ship hybrid |
-| G4 | P7 | All metrics met | No v2.0.0; the public v1.x line stays the only release |
+| G4 | P7 | All metrics met (M1–M12; M13 dropped, §11.7) | No v2.0.0; the public v1.x line stays the only release |
 
 Every gate leaves a shippable product. Upstream `main` (public) keeps releasing v1.x the whole time; v2.0.0 is released from this repo (§11.1; public since 2026-11-11, §11.5).
 
@@ -391,3 +392,6 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
 6. **Budgets fail open for now (2026-11-11).** When the gateway cannot check a budget (stale snapshot, IPC down), the
    request passes, as in v1.x, and is marked and alerted (design rule 2). A spent budget is still refused. Fail-closed
    may come later as an opt-in setting.
+7. **No 7-day soak before v2.0.0 (2026-11-12).** M13 is dropped. The owner tests in the browser on the preview
+   (port 4787) after each change, as for P2–P3. Long-running issues (launchd PATH, notifications, the owner's
+   runtimes) surface at the P7 cut-over, where the rollback to the Node line must stay one command away.
