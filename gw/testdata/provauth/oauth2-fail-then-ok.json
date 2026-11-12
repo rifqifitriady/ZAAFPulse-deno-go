@@ -1,0 +1,71 @@
+{
+  "fn": "accessToken",
+  "in": {
+    "id": "prov",
+    "auth": {
+      "type": "oauth2",
+      "tokenUrl": "https://login.example.test/tenant/oauth2/v2.0/token",
+      "clientId": "app-1",
+      "scope": "https://cognitiveservices.azure.com/.default",
+      "grant": "client_credentials"
+    },
+    "secret": "s",
+    "mask": [],
+    "responses": [
+      {
+        "status": 503,
+        "body": "{}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"after\",\"expires_in\":3600}"
+      }
+    ],
+    "steps": [
+      {
+        "now": 1767225600000
+      },
+      {
+        "now": 1767225601000
+      },
+      {
+        "now": 1767225602000
+      }
+    ]
+  },
+  "out": {
+    "requests": [
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=app-1&client_secret=s&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      }
+    ],
+    "results": [
+      {
+        "throws": "prov: token refresh failed (503)"
+      },
+      {
+        "token": "after",
+        "exp": 1767229201000
+      },
+      {
+        "token": "after",
+        "exp": 1767229201000
+      }
+    ]
+  }
+}
