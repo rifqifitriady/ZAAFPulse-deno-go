@@ -4,7 +4,7 @@
 
 **Goal:** Non-streaming `POST /v1/chat/completions` to OpenAI-format providers can run on the Go engine (`zaafpulse-gw`) with API keys checked in Go, behind a shadow compare that must show no difference before the switch, with the P4b entry conditions of the P4a results met first.
 
-**Architecture:** The Go front (P4a) gains a go engine (`gw/engine`, new) for the route class `chat`. For each request of that class the engine makes a side-effect-free plan from the generation the control plane pushed (`config.push` with providers, keys by hash and prices in nano-USD; `secrets.handoff` with the provider keys; `budget.snapshot`): it serves only the requests it can answer exactly as the JS gateway does (one OpenAI-format target with a plain key, a loopback client, no guardrail check, no blocking budget, not streaming) and hands every other request, unchanged, to the control plane. A served call goes to the provider with the JS gateway's timeouts and error names, the answer is written byte for byte as `JSON.stringify` writes it (`gw/engine/jsjson.go`), and the usage line goes through the outbox to the JS gateway's own writer, which also counts the per-key spend. While `chat` is on `js` and shadowed, the front marks the request, the control plane serves it and keeps a capture (`lib/gateway/shadow.js`), and the engine fetches the capture over the internal port, compares and posts a content-free line to `.data/gateway-shadow.jsonl`; `chat` switches to `go` only after 3 clean days (`gateway.shadowDays`). Every rule ported to Go is checked against fixtures generated from the JS code (`scripts/fixtures/gen-*.js` → `gw/testdata/*`).
+**Architecture:** The Go front (P4a) gains a go engine (`gw/engine`, new) for the route class `chat`. For each request of that class the engine makes a side-effect-free plan from the generation the control plane pushed (`config.push` with providers, keys by hash and prices in nano-USD; `secrets.handoff` with the provider keys; `budget.snapshot`): it serves only the requests it can answer exactly as the JS gateway does (one OpenAI-format target with a plain key, a loopback client, no guardrail check, no blocking budget, not streaming) and hands every other request, unchanged, to the control plane. A served call goes to the provider with the JS gateway's timeouts and error names, the answer is written byte for byte as `JSON.stringify` writes it (`gw/engine/jsjson.go`), and the usage line goes through the outbox to the JS gateway's own writer, which also counts the per-key spend. While `chat` is on `js` and shadowed, the front marks the request, the control plane serves it and keeps a capture (`lib/gateway/shadow.js`), and the engine fetches the capture over the internal port, compares and posts a content-free line to `.data/gateway-shadow.jsonl`; `chat` switches to `go` only after 1 clean day and 20 compared calls without a diff (`gateway.shadowDays`, `gateway.shadowMinCompares`). Every rule ported to Go is checked against fixtures generated from the JS code (`scripts/fixtures/gen-*.js` → `gw/testdata/*`).
 
 **Tech Stack:** Go 1.27.3 standard library only (`net/http`, `crypto/sha256`, `crypto/x509`, `unicode/utf16`), Deno 2.9.8 and Node 24 (CI 24.21.0), CommonJS, `node:test`, `AsyncLocalStorage`, IPC v1 (`ipc/v1`), GitHub Actions pinned by SHA, prettier 3 (printWidth 120) on clean JS files, `gofmt`.
 
@@ -36,17 +36,21 @@ Each one line, with the evidence that settled it.
 7. **Late front section: listen, TLS and upstream are fixed for a gateway's life (built once per start); each push carries the same ones plus the current engines and shadow classes; a front section arriving after the start, or a changed listen/TLS/upstream, is logged as "applies after a restart" and ignored.** Evidence: `gw/cmd/zaafpulse-gw/front.go applyFront` opens the port only on `ready`; a restart of ZAAFPulse already re-reads `gateway.engine`.
 8. **Proxy and CA: `lib/ipc/env.js` passes `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` (and their lower-case forms off Windows), `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NODE_EXTRA_CA_CERTS` and `DENO_CERT`; the engine uses `http.ProxyFromEnvironment` and trusts the system roots plus the PEM files of `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS` and `DENO_CERT`.** Evidence: Go reads `SSL_CERT_FILE`/`SSL_CERT_DIR` itself only on Unix other than macOS (`crypto/x509` docs); Node adds `NODE_EXTRA_CA_CERTS` and Deno `DENO_CERT` to their stores; `TestUpstreamExtraCA` passes on macOS with each of the three.
 9. **Upstream timeouts and errors: 120 s for the provider to start its answer and no limit on the body (`providers.js TIMEOUT_MS`, cleared once `fetch` resolves), 10 s to connect (undici's default), redirects only to the same origin (at most 5, same method and body, `lib/net.js fetchSameOrigin`); a failed call is `502 upstream_error` with `<provider id>: <code>` in Node's names (`ECONNREFUSED`, `UND_ERR_SOCKET`, `timed out`, ...) and a status-599 usage line; error texts in usage lines are cut at 200 UTF-16 units and masked with the handoff's mask set; upstream error bodies reach the client unmasked (P0 amendment, `test/contract/errors.test.js`).** Evidence: gen-chat cases `connection-refused`, `timed-out`, `error-names-the-secret`, `long-error-cut-at-200`; `TestUpstreamFailures`.
-10. **The 3-day rule is enforced in code: `routing()` keeps a class on js until the shadow log shows at least one compare and no diff for `gateway.shadowDays` days (default 3; `0` lifts the rule), and while OTLP export is on; it is re-read at each push and once a minute; `/api/gateway/status` shows the counts and why.** Evidence: spec item 3 ("only after ... the shadow diff is 0 for 3 days; the owner may shorten this"); a documented rule alone would let `engines.chat: "go"` switch at once.
+10. **The switch rule is enforced in code (owner answer 1, 2026-11-12): `routing()` keeps a class on js until the shadow log shows, since its last diff, at least `gateway.shadowMinCompares` compared calls (default 20) and `gateway.shadowDays` days (default 1) with no diff, and while OTLP export is on; `0` lifts each part, both `0` lift the rule; it is re-read at each push and once a minute; `/api/gateway/status` shows the counts and why.** Evidence: spec item 3 ("the owner may shorten this; ask"); the owner chose 1 day and 20 calls; a documented rule alone would let `engines.chat: "go"` switch at once.
 11. **A key, provider or route change is in force on the gateway when the save answers: a gateway admin POST waits (at most 2 s) for a health that names the new generation, which the gateway sends as soon as a generation's config and secrets are both applied.** Evidence: the contract case "a revoked key is refused as soon as the revoke has answered" fails without it (the gateway would still hold the key for one push).
 12. **Merge order: the engine emits real `usage.report` events through the outbox only when a class is on go, which needs stream C's P4f entry conditions (outbox `Close` under `sendMu`, fsync or a documented order, marks re-read per session); stream A's PR merges after stream C's, and the rebase onto it reruns the full matrix.** Evidence: P4a results, entry condition 4; with the default (`chat` on js, shadow only) the engine emits nothing.
 13. **Entry condition 6: the public port refuses headers past Node's limit with 431 (`MaxHeaderBytes` 12288, net/http adds 4096), CONNECT is closed without an answer, and the noisy log lines (TLS handshake errors, 502s) are written at most once a minute per kind with a count.** Evidence: Node and Deno both answer 431 between 16,340 and 16,400 bytes of one header (scratch probe); review minors m2, m3, r1.
-14. **Entry condition 8: the chip says "fallback, restart needed" after a crash-loop fallback (`status().restartNeeded`); the P4a default for owner question 1 stays (a gateway-section save in fallback retries front).** Evidence: P4a deviation 12; the question is still open (below).
+14. **Entry condition 8: the chip says "fallback, restart needed" after a crash-loop fallback (`status().restartNeeded`); a gateway-section save in fallback retries front, and after a crash-loop fallback only a restart does (owner answer 3, 2026-11-12, which confirms the P4a default).** Evidence: P4a deviation 12.
+15. **The two gaps until P4f are accepted (owner answer 2, 2026-11-12): a key's requests-per-minute window is counted per engine, and go-served chat writes no trace spans; go stays refused while OTLP export is on.**
+16. **Stream C is merged first (`8abb82c`, PR #6), so Decision 12 holds: the branch merges `origin/migrate/deno-go` before Task 1.**
 
-## Open questions for the owner
+## Owner answers (2026-11-12)
 
-1. **The 3-day rule.** Keep 3 clean days (the default, `gateway.shadowDays`), or shorten it? Should the rule also ask for a minimum number of compared calls (the plan asks for one)?
-2. **P4a question 1, still open.** In `fallback`, should a save of the `gateway` section retry `front` (a short port bounce; the plan keeps this), or only a restart?
-3. **Two gaps until P4f and G3.** While chat is on go: (a) a key's requests-per-minute limit is counted per engine, so a key may make up to its limit on go chat plus its limit on the other routes; (b) go-served chat calls write no trace spans (the local trace explorer shows the usage line but no span). The plan accepts both and refuses go while OTLP export is on. Accept, or keep chat on js while the local trace store is on?
+1. **The switch rule:** 1 clean day and at least 20 compared calls with no diff (`gateway.shadowDays` default 1, `gateway.shadowMinCompares` default 20; `0` lifts either). Decision 10.
+2. **The two gaps until P4f** (per-engine rate-limit windows; no trace spans for go chat): accepted; go stays refused while OTLP export is on. Decision 15.
+3. **Fallback:** a save of the gateway section retries front; after a crash-loop fallback only a restart does. Decision 14.
+
+No question is open.
 
 ## Spec deviations
 
@@ -113,7 +117,7 @@ Go classifies the raw request target the way the control plane does (entry 2), r
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -590,7 +594,7 @@ The gateway gets the proxy and CA variables on an allow-list (entry 5); the stat
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 Also run `npx --yes prettier@3 --check lib/front/index.js lib/ipc/env.js public/topologyview.js test/front.test.js test/ipc-hardening.test.js test/topology-ui.test.js` and expect `All matched files use Prettier code style!`.
 
 - [ ] **Step 2: Write the failing tests**
@@ -898,7 +902,7 @@ The IPC ingest stores the Go engine's usage lines through the JS gateway's own u
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -1163,7 +1167,7 @@ Each generation now carries the real gateway section, the keys by hash, the pric
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -2140,7 +2144,7 @@ The key check, the per-key model and agent allow-lists and the rate limit, porte
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -2838,7 +2842,7 @@ The engine sends the provider and the client bodies the JS gateway has parsed an
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -3558,7 +3562,7 @@ git push origin migrate/p4b-passthrough
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -4935,12 +4939,12 @@ The front hands a `chat` request on `go` to the engine, which serves it or forwa
   - `engine.New(up *Upstream, emit func(*ipc.UsageReport) error, logf func(string, ...any)) *Engine`; `SetState`, `State`, `Serve(class string, w, r, rawPath string, js http.Handler)`; `ReadRequest(r, rawPath) *Request` (re-attaches the whole body).
   - `front.GoClasses = {"chat": true}`; `front.GoEngine` interface (`Serve`); `(*Server).SetGoEngine(e GoEngine)`. A config.push with go for another class exits 2.
   - JS: `GO_CLASSES = ['chat']`, `enginesOf(gateway)` (exported from `lib/front`), `createFront({ ..., engines })`; `frontSection` accepts go for `chat`; `status().engines` is the pushed one in front mode.
-  - Contract: `ZP_ENGINE=go` (front, `engines: { chat: 'go' }`, `shadowDays: 0`); `test/contract/go-chat.test.js` (7 cases in every mode).
+  - Contract: `ZP_ENGINE=go` (front, `engines: { chat: 'go' }`, `shadowDays: 0`, `shadowMinCompares: 0`); `test/contract/go-chat.test.js` (7 cases in every mode).
 
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -6069,7 +6073,7 @@ Decisions 3, 4 and 10: with `gateway.shadow: ["chat"]` and chat on js, the front
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -7493,7 +7497,7 @@ Both contract modes run in the Node and Deno jobs, and the `go` job regenerates 
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Confirm that the committed fixtures are current**
 
@@ -7612,7 +7616,7 @@ The record of stage 1 stream A: what ships, the entry conditions with their test
 - [ ] **Step 1: Check the starting point**
 
 Run: `git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -1`
-Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `063d39f`).
+Expected: nothing listed, `migrate/p4b-passthrough`, and the previous task's commit on top (Task 1: `0ec1247`, the merge of `origin/migrate/deno-go` with stream C).
 
 - [ ] **Step 2: Confirm that the results document is new**
 
@@ -7641,7 +7645,8 @@ Date: 2026-11-12. Branch `migrate/p4b-passthrough`. Spec `docs/superpowers/specs
 - The shadow compare: `gateway.shadow: ["chat"]` with chat on js makes the gateway compare each chat call the server
   answers with the request it would have sent and the answer and usage line it would have given, from the same
   provider answer (`.data/gateway-shadow.jsonl`, no prompt or answer text). Chat moves to go only after the shadow has
-  compared at least one call and seen no difference for `gateway.shadowDays` days (default 3), and while OpenTelemetry
+  compared at least `gateway.shadowMinCompares` calls (default 20) and seen no difference for `gateway.shadowDays`
+  days (default 1) since its last diff, and while OpenTelemetry
   export is off. `GET /api/gateway/status` shows the counts and why a class stays on js.
 - Every rule ported to Go is checked against fixtures generated from the JS code (`scripts/fixtures/gen-*.js`,
   `gw/testdata/*`); CI regenerates them and fails on a difference.
@@ -7750,7 +7755,7 @@ git push origin migrate/p4b-passthrough
 
 ## Self-review (done while writing this plan)
 
-1. **Spec coverage.** Item 1 (first go route, chat non-streaming, OpenAI format, no translation): Tasks 7, 8. Item 2 (keys from the config.push hash, allow-lists and modes, fixtures from `keys.js`): Tasks 4, 5, 7 (the key's `privateOnly` and guardrail modes decide the hand-off). Item 3 (shadow, only the serving engine calls the provider, compare of provider request, client answer, usage and cost, `.data/gateway-shadow.jsonl`, 3 days): Task 9, Decisions 3, 4, 10, open question 1. Item 4 (entry conditions): Tasks 1–4, Decision 12, chip in Task 2. Item 5 (secrets from `secrets.handoff`, `baseUrl` and `tokenParam`, JS timeouts, masked errors): Tasks 4, 7, 8, Decision 9.
+1. **Spec coverage.** Item 1 (first go route, chat non-streaming, OpenAI format, no translation): Tasks 7, 8. Item 2 (keys from the config.push hash, allow-lists and modes, fixtures from `keys.js`): Tasks 4, 5, 7 (the key's `privateOnly` and guardrail modes decide the hand-off). Item 3 (shadow, only the serving engine calls the provider, compare of provider request, client answer, usage and cost, `.data/gateway-shadow.jsonl`, the switch rule): Task 9, Decisions 3, 4, 10, owner answer 1. Item 4 (entry conditions): Tasks 1–4, Decision 12, chip in Task 2. Item 5 (secrets from `secrets.handoff`, `baseUrl` and `tokenParam`, JS timeouts, masked errors): Tasks 4, 7, 8, Decision 9.
 2. **Placeholders.** None in code steps. Run-time values (dispatch URLs, the counts in the results) are filled by the commands Task 11 gives.
 3. **Names.** `Classify`/`Canonical`/`RawPath`, `QuietLogger`, `gwEnv`/`NETWORK`, `restartNeeded`, `ingestUsage`, `serverSinks({ recordUsage })`, `configPush`/`secretsPush`/`snapshotPush`, `push`/`synced`, `rawKeys`, `onKeysChange`, `requestSecret`, `NewKeys`/`Authenticate`/`Authorize`/`Allows`/`RequestSecret`/`RateLimiter`, `Parse`/`Value`, `NewState`/`PlanChat`/`Respond`/`Failed`/`RateLimited`, `NewUpstream`/`Call`/`ErrorCode`, `engine.New`/`Serve`/`Shadow`/`Compare`, `GoClasses`/`GoEngine`/`SetGoEngine`/`SetShadow`/`ShadowHeader`/`OwnHeader`, `GO_CLASSES`/`enginesOf`/`routing`/`shadowOf`, `withShadow`/`noteProviderRequest`/`noteAnswer`/`takeCapture`, `createShadowLog`/`shadowEndpoints`: each defined once and used with the same signature later.
 4. **Stream boundaries.** No import of `gw/translate`, `gw/guard`, `gw/provauth`; no edit of `gw/ipc/outbox.go`, the lock files, `lib/ipc/marks.js` or `lib/ipc/markfile.js` (deviation 1 names the two `gw/ipc` and `ipc/v1` files this stream does edit).
