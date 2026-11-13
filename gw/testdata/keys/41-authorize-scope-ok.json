@@ -1,0 +1,1 @@
+{"fn":"authorize","in":{"key":{"models":[],"agents":[],"scopes":["llm"]},"want":{"scope":"llm"}},"out":null}

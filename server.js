@@ -79,7 +79,9 @@ const { recoverMarks } = require('./lib/ipc/marks');
 const { createMarkFile } = require('./lib/ipc/markfile');
 const { serverSinks } = require('./lib/ipc/server-sinks');
 const { gwEnv } = require('./lib/ipc/env');
-const { createFront, engineOf } = require('./lib/front');
+const { createFront, engineOf, routing, shadowOf } = require('./lib/front');
+const { createShadowLog, shadowEndpoints } = require('./lib/front/shadow-log');
+const { configPush, secretsPush, snapshotPush } = require('./lib/front/push');
 const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
 const { createReceiver } = require('./lib/trace/otlp');
@@ -203,6 +205,7 @@ const priceSync = createPriceSync({
     config = loadConfig();
     memo.clear();
     insightMemo.clear();
+    if (front) front.push(); // new prices: the gateway in front prices its calls with them (P4b)
   },
 });
 
@@ -346,6 +349,11 @@ function configChanged(before, after) {
     const res = currentResponse.getStore();
     const sent = res && !res.writableFinished ? new Promise((r) => res.once('close', r)) : null;
     front.reload({ after: sent }).catch((err) => console.error(`gateway: ${err.message}`));
+  } else if (front && JSON.stringify((before || {}).pricing) !== JSON.stringify((after || {}).pricing)) {
+    config = loadConfig(); // the owner's prices are merged into config.pricing, which the push reads
+    front.push();
+  } else if (front && JSON.stringify((before || {}).otel) !== JSON.stringify((after || {}).otel)) {
+    front.push(); // OTLP export on or off moves chat between the engines (final review I2)
   }
   try {
     const d = govDiff(before, after);
@@ -544,6 +552,9 @@ otel.init({
   sink: recorder,
 });
 const gatewaySecret = secretResolver({ store: DEMO ? () => {} : keychainStore });
+// The gateway's secret resolver, shared with the push to the Go gateway (lib/front/push.js), so both know every
+// resolved credential and mask() hides the same values on both sides.
+const gwSecrets = createSecrets();
 // Cost Control budgets: the gateway asks the guard before each request and reports each call to the budget service.
 // Both are made with the ledger below, after the gateway; until then (startup, before the server listens) nothing is
 // refused.
@@ -560,7 +571,7 @@ const gateway = createGateway({
   ...(DEMO ? { fetchImpl: demoGw.createDemoFetch(), toolsHome: demoDir } : {}),
   getConfig: rawConfig,
   writeGatewayConfig: (g) => saveConfigSection('gateway', g),
-  secrets: createSecrets(),
+  secrets: gwSecrets,
   // Provider keys go to the Keychain as acc.gw-<provider id>, apart from integration keys.
   resolveSecret: (id, input, current) =>
     gatewaySecret(`gw-${id}`, { key: 'apiKey', label: 'API key', required: false }, input, current),
@@ -573,6 +584,7 @@ const gateway = createGateway({
   trustProxy: process.env.ZAAFPULSE_TRUST_PROXY === '1',
   budgetGuard,
   audit: (e) => govRecord(e), // key changes, run approvals and cancels
+  onKeysChange: () => front && front.push(), // the gateway in front enforces keys too (P4b)
 });
 
 // The IPC ingest of the Go gateway (P4a E3, E4): strict writers of its own (lib/ipc/server-sinks.js), never the
@@ -581,8 +593,7 @@ const gateway = createGateway({
 function frontIngest() {
   const files = localPaths(DIR);
   const sinks = serverSinks({
-    usageFile: files.usageFile,
-    getPricing: () => config.pricing,
+    recordUsage: (e) => gateway.ingestUsage(e),
     budgetRecord: (entry) => budgetGuard.record(entry),
     governance,
     mcpAudit: audit,
@@ -1620,7 +1631,8 @@ const handler = async (req, res) => {
       return send(res, 200, redactGateway(await gateway.admin('', 'GET'), role));
     // The gateway process (P4a D6): mode, state, restarts. Before the admin routes, whose pattern it matches; owner only
     // (it is no viewer read, so the role check above refuses anyone else).
-    if (url.pathname === '/api/gateway/status' && req.method === 'GET') return send(res, 200, front.status());
+    if (url.pathname === '/api/gateway/status' && req.method === 'GET')
+      return send(res, 200, { ...front.status(), notes: frontRouting().notes, shadow: shadowLog.stats() });
     const gwAdmin = url.pathname.match(/^\/api\/gateway\/([a-z]+)$/);
     if (gwAdmin) {
       // Only the request log is read with GET. Every other admin route writes (defaults, settings), spends tokens
@@ -1636,6 +1648,8 @@ const handler = async (req, res) => {
       try {
         // A refused guardrails setting (badRequest) is a 400; every other admin answer keeps its 200, errors included.
         const out = await gateway.admin(gwAdmin[1], 'POST', await jsonBody(req));
+        // A key, provider or route change is answered once the gateway in front enforces it too (P4b; 2 s at most).
+        await front.synced(2000);
         return send(res, out && out.badRequest === true ? 400 : 200, out);
       } catch (err) {
         return send(res, 200, { errors: [err.message] });
@@ -2240,6 +2254,20 @@ function serving() {
       });
 }
 
+// The shadow compare's log (P4b): the gateway posts a line per shadowed chat call; the switch of a class to go reads it.
+const shadowLog = createShadowLog({ file: path.join(DIR, '.data', 'gateway-shadow.jsonl') });
+// Which class runs on which engine, and why one asked for go stays on js (lib/front routing).
+const frontRouting = () =>
+  routing(rawConfig().gateway, {
+    gate: (c, rule) => shadowLog.gate(c, rule),
+    // As otel itself sees it: config.json, or an OTEL_EXPORTER_OTLP_* variable (final review I1).
+    otel: otel.status().enabled === true,
+  });
+// A class whose shadow gate is met (or broken) switches at the next push: looked at once a minute, against the engines
+// the gateway was last pushed (final review I2).
+setInterval(() => {
+  if (front) front.pushIfChanged(frontRouting().engines);
+}, 60000).unref();
 // gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
 const ENGINE = DEMO ? 'js' : engineOf(rawConfig());
 const askedEngine = (rawConfig().gateway || {}).engine;
@@ -2258,6 +2286,16 @@ front = createFront({
   env: gwEnv(process.env, DIR),
   cpVersion: require('./package.json').version,
   ingest: fi && fi.ingest,
+  engines: () => frontRouting().engines,
+  shadow: (engines) => shadowOf(rawConfig().gateway, engines),
+  own: shadowEndpoints({ shadowLog }),
+  // Each generation, from the state the JS gateway reads (P4b): config.json, keys.json, the effective prices, the
+  // provider credentials, the blocking budgets and the keys' cost centers.
+  sources: {
+    config: () => configPush({ gateway: rawConfig().gateway, keys: gateway.rawKeys(), pricing: config.pricing }),
+    secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
+    snapshot: () => snapshotPush({ service: costBudgets, keyIds: gateway.rawKeys().map((k) => k.id) }),
+  },
   beforeAck: fi ? fi.beforeAck : undefined,
   log: (line) => console.error(line),
   onServing: (mode) => {

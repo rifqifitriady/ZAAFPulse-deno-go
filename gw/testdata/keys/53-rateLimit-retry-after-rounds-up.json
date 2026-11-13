@@ -1,0 +1,1 @@
+{"fn":"rateLimit","in":{"rpm":1,"times":[0,100]},"out":[0,60]}

@@ -73,9 +73,11 @@ function topoGatewayChip(st) {
   if (!st || typeof st !== 'object' || (st.mode !== 'front' && st.mode !== 'fallback')) return null;
   if (st.mode === 'fallback')
     return {
-      text: 'Gateway: Go (front) · fallback',
+      text: st.restartNeeded ? 'Gateway: Go (front) · fallback, restart needed' : 'Gateway: Go (front) · fallback',
       tone: 'red',
-      title: `The Go gateway failed${st.reason ? `: ${String(st.reason).slice(0, 200)}` : ''}. ZAAFPulse serves on its own.`,
+      title:
+        `The Go gateway failed${st.reason ? `: ${String(st.reason).slice(0, 200)}` : ''}. ZAAFPulse serves on its own.` +
+        (st.restartNeeded ? ' Restart ZAAFPulse to try the gateway again.' : ''),
     };
   if (st.state === 'ready')
     return { text: 'Gateway: Go (front) · ready', tone: 'green', title: `Restarts: ${Number(st.restarts) || 0}` };

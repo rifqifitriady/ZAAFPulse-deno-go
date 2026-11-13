@@ -239,9 +239,9 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 | Slice | Scope | Exit |
 |---|---|---|
 | S1 | Skeleton: health, config, secret handoff, supervisor start/stop | Starts and stops under the supervisor on 6 targets: **met in P4a** (2026-11-12, `docs/migration/2026-11-12-p4a-results.md`) |
-| S2 | OpenAI-compatible pass-through, non-streaming | Contract cases green; M3 met |
+| S2 | OpenAI-compatible pass-through, non-streaming | Contract cases green; M3 met: **chat on go behind the shadow in P4b** (2026-11-12, `docs/migration/2026-11-12-p4b-results.md`); M3 is re-measured in P4c |
 | S3 | Streaming SSE | M4 met at 500 streams |
-| S4 | API-key auth, per-key allow-lists and modes | Contract cases green |
+| S4 | API-key auth, per-key allow-lists and modes | Contract cases green: **met in P4b** (2026-11-12, `docs/migration/2026-11-12-p4b-results.md`) |
 | S5 | Translate (Anthropic, OpenAI, Gemini, routers, Ollama/local) | Fixtures from `translate` tests pass byte-for-byte |
 | S6 | Guardrails: secrets, PII and injection; block → 400 `guardrail_blocked` | Fixtures from the guardrail tests pass |
 | S7 | Budget guard, fail open (§11.6) | Kill-IPC test: metered calls pass, each marked `budget_unchecked` and alerted; a spent budget in the snapshot is still refused |

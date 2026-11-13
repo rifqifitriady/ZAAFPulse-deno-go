@@ -69,6 +69,22 @@ test('start, ready, snapshots every interval, reload, stop: exit 0', async (t) =
   assert.equal(sup.status().restarts, 0);
 });
 
+test('synced(): a reload is in force once the health names its generation, long before the next tick', async (t) => {
+  const bin = stubBin(t);
+  if (!bin) return;
+  // Health every 60 s: only the health the gateway sends on applying a generation can answer in time.
+  const { sup } = supervise(t, bin, ['--health-ms', '60000']);
+  assert.equal(await sup.synced(100), false, 'no gateway yet');
+  sup.start();
+  await waitFor(() => sup.status().state === 'ready', 5000, 'ready');
+  assert.equal(sup.reload(), true);
+  const started = Date.now();
+  assert.equal(await sup.synced(5000), true);
+  assert.ok(Date.now() - started < 2000, 'answered by the health sent on apply');
+  assert.equal(sup.status().lastHealth.gen, 2);
+  assert.equal(await sup.synced(100), true, 'nothing newer to wait for');
+});
+
 test('a control plane whose recovered mark is below the outbox start stores the next event (no restart loop)', async (t) => {
   const bin = stubBin(t);
   if (!bin) return;

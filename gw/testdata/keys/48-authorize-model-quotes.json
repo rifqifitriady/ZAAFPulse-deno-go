@@ -1,0 +1,1 @@
+{"fn":"authorize","in":{"key":{"models":["x"],"agents":[],"scopes":["llm"]},"want":{"model":"say \"hi\""}},"out":"this key may not use model \"say \"hi\"\""}
