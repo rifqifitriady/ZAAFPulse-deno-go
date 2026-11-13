@@ -334,3 +334,55 @@ Also carried into P4e (not fixed in stage 1):
     unbudgeted path fails closed instead of panicking. A grep of every jsre call reachable from `CheckBody` and
     `CheckText` found no other unbudgeted one. Repro (now a regression test): default policy, one 4.4 MB user message
     `"data:a/b" + ";x"×2,200,000 + ";base64,AAAA"` panicked with `ErrStack`; JS returns null. Go now blocks it.
+
+## P4e guard readiness (plan `2026-11-13-p4e-guard-ready.md`, branch `migrate/p4e-guard-ready`)
+
+The library now meets the P4e entry conditions; it is still not wired into the request path (stage 2).
+
+22. **I4: one budget and a deadline per call.** `CheckBody` and `CheckText` hold one `jsre.Budget` for the whole call:
+    it starts at 20,000,000 steps and each check on a string adds `600 × length`, up to 3,000,000,000 for the call
+    (note 13's formula, now shared by every string, check and the data-URL test). The budget also carries a
+    wall-clock deadline of 2 s (`requestDeadline`); the matcher reads the clock every 65,536 steps
+    (`jsre.ErrDeadline`). Start positions the filters skip count as steps too, so a long text with no candidate still
+    meets the deadline. Past either limit the call returns `*Block{Overrun: <check>}` in every mode. M8 (note 20) now
+    applies per call; the real-text corpus uses 7–14 steps per code unit, under 5% of the call's limit at 20 MB.
+    Compiling the patterns (about 0.2–0.5 s, once) happens in `guard.Prepare`, before the first deadline starts;
+    stage 2 may call it at startup. The 20 MB, 1,000-string bodies of `TestOneBudgetPerCall` finish or block within
+    2.06 s of process CPU on the Ubuntu runner (17–18 s before).
+23. **M7: the exported scanners take a budget.** `ScanInjection(text, b)`, `SecretSpans(text, b)` and
+    `MaskPII(text, b)` run under `b` (nil: `NewBudget(len)`, with the deadline) and return a limit as
+    `jsre.ErrBudget`, `ErrStack` or `ErrDeadline`, never as a panic.
+24. **N1: failures in `log` mode are reported.** `Result.Failures` and `TextResult.Failures` list each check whose
+    detector failed in the call (`{Check, Count, Err}`); `Error` stays the JS boolean. Stage 2 should log or count
+    them.
+25. **Heap.** Peak extra heap for a 20 MB body is now 40–122 MB (bound 256 MB, asserted for the adversarial inputs,
+    the 1,000-string bodies and the 20 MB corpus). The cuts: `ReplaceAll` returns its input when nothing matched;
+    the PII passes alternate two buffers (and reuse the input once injection, which now runs first, has read it; its
+    hits are still added last, in the JS order); `Str` writes UTF-8 without a rune slice; `deobfuscate` keeps a bit
+    per dropped unit and rewrites leetspeak in place, only in runs that hold a digit; the backtrack stack grows in
+    chunks of 16,384 frames of 20 bytes (`MaxFrames` is now 40 MiB) instead of by doubling.
+26. **Speed.** Start positions are filtered by the first two code units, by word start for patterns that begin with
+    `\b`, by a leading negative lookbehind's single characters, and by a trie of literal prefixes; a pattern that is
+    a class run ended by a disjoint unit (the email pattern) is tried only before such a unit; a `^` pattern only at
+    0. The injection patterns, the two anchor patterns and the secret patterns each run in one scan of the text
+    (`jsre.Multi`), VMs are pooled. Every change is checked against the previous behaviour: `TestFiltersChangeNoMatch`
+    (every guard pattern, with and without the filters, on the fixture inputs and the corpus), `TestMultiMatchesExec`,
+    `TestMultiAllMatchesEach`, `TestMatchInjectionMatchesReference`, `TestDeobfuscateMatchesReference`, and the 1,923
+    fixtures, unchanged. The deadline is the only new behaviour: an adversarial body that ran past 2 s now blocks
+    (`"the ai said you "×N` at 20 MB, which JS answers in 0.8 s; a recorded overrun deviation like note 13).
+
+### Benchmark (CI job `guard-bench`, ubuntu-latest, run 43343102925)
+
+`scripts/bench-guard.js` times the JS `checkBody`, `TestGuardBench` the Go `CheckBody`, on the same slices of the
+corpus in `gw/guard/testdata/bench-corpus.txt` (guard corpus, `lib/` code, plans and specs, agent transcripts), one
+user message, secrets and pii `redact`, injection `log`.
+
+| Size | Go p50 | Go p99 | JS p50 | JS p99 | Go/JS p50 | Go/JS p99 | Target |
+|---|---|---|---|---|---|---|---|
+| 32 KB | 1.70 ms | 3.07 ms | 2.30 ms | 6.88 ms | 0.74x | 0.45x | p50 ≤ 5, p99 ≤ 15 ms: met |
+| 128 KB | 8.61 ms | 11.94 ms | 15.45 ms | 25.65 ms | 0.56x | 0.47x | p50 ≤ 30, p99 ≤ 60 ms: met |
+| 1 MB | 42.63 ms | 82.54 ms | 67.08 ms | 187.58 ms | 0.64x | 0.44x | p99 ≤ 300 ms: met |
+
+Before this work (M4 laptop): 32 KB 4.93 / 11.28 ms (2.8x the JS), 128 KB 26.2 / 42.7 ms, 1 MB 150 / 300 ms; the
+same code on the runner blocked the 20 MB corpus at the deadline. Now the corpus runs 71–154 ms at 2 MB, 160–173 ms
+at 5 MB and 656–669 ms at 20 MB on the runner, with no overrun.

@@ -83,55 +83,64 @@ func MaskPII(text string, b *jsre.Budget) (string, map[string]int, error)
 **Files:** create `gw/guard/benchcorpus_test.go`, `gw/guard/bench_test.go`, `gw/guard/testdata/bench-corpus.txt`,
 `scripts/bench-guard.js`.
 
-- [ ] Corpus loader (manifest of repository paths joined with `\n`), slices cut on UTF-8 boundaries, offsets spread
+- [x] Corpus loader (manifest of repository paths joined with `\n`), slices cut on UTF-8 boundaries, offsets spread
   evenly; the JS script builds the same bytes and slices.
-- [ ] `TestGuardBench` (runs only with `ZP_GUARD_BENCH=1`; JS numbers from `ZP_GUARD_BENCH_JS`): p50/p99 per size,
+- [x] `TestGuardBench` (runs only with `ZP_GUARD_BENCH=1`; JS numbers from `ZP_GUARD_BENCH_JS`): p50/p99 per size,
   three attempts, a Markdown table to the log and `$GITHUB_STEP_SUMMARY`.
-- [ ] `TestBenchCorpusNeverOverruns`: 2, 5 and 20 MB, three slices each, no `*Block{Overrun}` (skipped under `-race`).
-- [ ] Record the "before" numbers in the report. Commit.
+- [x] `TestBenchCorpusNeverOverruns`: 2, 5 and 20 MB, three slices each, no `*Block{Overrun}` (skipped under `-race`).
+- [x] Record the "before" numbers in the report. Commit.
 
 ### Task 2: One budget and a deadline per call (I4)
 
 **Files:** `gw/guard/jsre/vm.go`, `match.go`, `jsre/jsre_test.go`, `gw/guard/guard.go`, `adversarial_test.go`.
 
-- [ ] Failing tests: `jsre` — a budget with a past deadline stops a long run with `ErrDeadline` (an injected `Now`);
+- [x] Failing tests: `jsre` — a budget with a past deadline stops a long run with `ErrDeadline` (an injected `Now`);
   skipped start positions count as steps. `guard` — `TestOneBudgetPerCall`: a 20 MB body of 1,000 crafted strings
   (each adversarial unit) returns or blocks within 2.5 s wall and, on Unix, 2.5 s of process CPU;
   `TestDeadlineFailsClosedInEveryMode` (an injected clock).
-- [ ] `Budget` with `Deadline`/`Now`, `ErrDeadline`; `run` holds one budget; each check on a string adds its allowance
+- [x] `Budget` with `Deadline`/`Now`, `ErrDeadline`; `run` holds one budget; each check on a string adds its allowance
   (`600 × units`) to the limit up to the cap; the data-URL test uses the same budget.
-- [ ] Note in the plan that M8 now applies per call. Commit.
+- [x] Note in the plan that M8 now applies per call. Commit.
 
 ### Task 3: Budgeted exported scanners (M7)
 
-- [ ] Failing test: each exported scanner given the 10 MB inputs of `TestNoEntryPointPanicsPastALimit` returns an error
+- [x] Failing test: each exported scanner given the 10 MB inputs of `TestNoEntryPointPanicsPastALimit` returns an error
   wrapping a limit and never panics; with `nil` it still never panics.
-- [ ] New signatures (Interfaces); fixtures call them with `nil`. Commit.
+- [x] New signatures (Interfaces); fixtures call them with `nil`. Commit.
 
 ### Task 4: Detector failures in log mode (N1)
 
-- [ ] Failing test: a detector that panics in `log` mode yields `Result.Failures = [{secrets, 1, "boom"}]` (counted per
+- [x] Failing test: a detector that panics in `log` mode yields `Result.Failures = [{secrets, 1, "boom"}]` (counted per
   string) and `TextResult.Failures` likewise; fixtures unchanged (`error` stays the JS boolean).
-- [ ] Implement. Commit.
+- [x] Implement. Commit.
 
 ### Task 5: Peak heap ≤ 256 MB
 
-- [ ] Failing test: `maxHeapGrowth` lowered to 256 MB; also checked on the 1,000-string body and the 20 MB corpus.
-- [ ] `ReplaceAll` returns its input slice when nothing matched and sizes its output once; `Str` encodes UTF-8 directly;
+- [x] Failing test: `maxHeapGrowth` lowered to 256 MB; also checked on the 1,000-string body and the 20 MB corpus.
+- [x] `ReplaceAll` returns its input slice when nothing matched and sizes its output once; `Str` encodes UTF-8 directly;
   `deobfuscate` keeps a drop bitset and maps offsets with per-block counts, applies leetspeak in place on its own copy;
   `visitStr` compares without a second copy. Commit.
 
 ### Task 6: Faster start-position filter
 
-- [ ] Failing test first: an equivalence test running every guard pattern with and without the filter over the corpus
+- [x] Failing test first: an equivalence test running every guard pattern with and without the filter over the corpus
   and the fixture texts (identical matches), then the benchmark targets.
-- [ ] Two-code-unit filter (prefix pairs over ASCII plus one class for the rest); word-start filter for patterns whose
+- [x] Two-code-unit filter (prefix pairs over ASCII plus one class for the rest); word-start filter for patterns whose
   every branch begins with `\b` before a word character; one VM per `FindAll`; a VM is made only when a position
   passes the filter. Commit.
 
 ### Task 7: CI job and documentation
 
-- [ ] Job `guard-bench` (ubuntu-latest, own job): `node scripts/bench-guard.js --json`, then
+- [x] Job `guard-bench` (ubuntu-latest, own job): `node scripts/bench-guard.js --json`, then
   `ZP_GUARD_BENCH=1 go test -run 'TestGuardBench|TestBenchCorpusNeverOverruns'`; fails on a missed target.
-- [ ] Plan notes 22+ in `2026-11-12-p4-lib-translate-guard.md` with before/after tables; verification; dispatch the full
+- [x] Plan notes 22+ in `2026-11-12-p4-lib-translate-guard.md` with before/after tables; verification; dispatch the full
   matrix. Commit.
+
+## Outcome
+
+Done; results and the benchmark table are in notes 22–26 of `2026-11-12-p4-lib-translate-guard.md`. Deviations from
+the tasks above: the speed task also added a literal-prefix trie, a leading-lookbehind filter, a run-then-unit search
+(email), the one-scan `jsre.Multi` for the injection, anchor and secret patterns, and `guard.Prepare` (pattern
+compilation outside the deadline); injection now runs before secrets and pii inside a string (its hits are still added
+last). `TestBenchCorpusNeverOverruns` checks the step budget on every run and the 2 s deadline only in the
+`guard-bench` job, where the targets are set.
