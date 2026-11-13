@@ -48,6 +48,25 @@ A run takes about 3 minutes (at most 5). Knobs, all optional: `ZP_BENCH_REQUESTS
 `ZP_BENCH_STARTS` (5), `ZP_BENCH_OUT` (`bench/results`), `ZP_BENCH_HOST` (the host name). A result is only comparable
 with one taken with the same knobs; the file records them under `config`.
 
+## The Go gateway (P4c: metric M4, and M3 again)
+
+`ZP_ENGINE=front` or `ZP_ENGINE=go` runs the server with the Go gateway in front (`go`: chat and chat-stream served by
+the go engine). The go engine serves only calls no guardrail check applies to until P4e, so measure it with the bench
+provider on the private tier, `ZP_BENCH_TIER=private` (the default `external` keeps P0 runs comparable). With either
+engine set, the result also has `gatewayIdleRssMB` and `gatewayPeakRssMB`: the gateway's own process, from the pid in
+`/api/gateway/status`. The mock counts which engine called it (`servedBy`: `go` for Go's client, `js` for the server's
+fetch, per step); a `go` run stops with an error when the server answered any gateway call, so a number from a run that
+quietly handed off cannot be recorded. Runs of one session (spec P4c D6):
+
+```bash
+ulimit -n 8192
+ZP_BENCH_TIER=private caffeinate -dims node bench/run.js
+ZP_ENGINE=front ZP_BENCH_TIER=private caffeinate -dims node bench/run.js
+ZP_ENGINE=go ZP_BENCH_TIER=private caffeinate -dims node bench/run.js
+```
+
+The file name gets `-<engine>-<tier>` when either is not the default.
+
 ## Compare two runs
 
 ```bash
