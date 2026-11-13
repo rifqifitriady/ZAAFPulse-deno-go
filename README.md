@@ -600,6 +600,13 @@ chat moves to Go only after 20 compared calls and 1 day without a difference (`"
 `"shadowDays"`), and while OpenTelemetry export is off.
 `GET /api/gateway/status` shows the counts and why a class stays on the server.
 
+Streamed chat calls have a switch of their own, `"chat-stream"`: with `"engines": { "chat": "go", "chat-stream": "go" }`
+the Go process also answers `"stream": true` chat calls, passing the provider's events on as they arrive, byte for byte
+as the server writes them, with one usage line per call however it ends (the client leaving, the provider breaking
+off). `"shadow": ["chat-stream"]` compares the streams the server answers, from the one provider stream it read, and the
+same 20-call, 1-day rule applies to `chat-stream` on its own. `"chat-stream": "js"` (the default) puts streams back on
+the server. The Go process runs with a soft memory limit of 64 MiB (`"memLimitMB"`, 0 for none).
+
 ### Run it on login (macOS, from source)
 
 ```bash
