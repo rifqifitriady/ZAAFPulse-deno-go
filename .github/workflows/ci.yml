@@ -10,6 +10,7 @@
 # stops the Go gateway in front of the server on each of them (P4a T6, scripts/smoke-front.js).
 # The Node and Deno jobs also run the contract suite with the Go gateway in front (ZP_ENGINE=front, P4a T6).
 # The fixtures job regenerates the Go ports' fixtures from the JS on Node and Deno and fails on a diff (P4 stage 1).
+# The guard-bench job times the Go guard against its P4e targets and against the JS guard on the same runner.
 # The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
 # the test job's OS matrix. The Node and Deno jobs set up the same Go, so the cross-language IPC tests build the stub
 # (gw/cmd/zaafpulse-gw) and never skip; the Deno job builds it once up front (ZP_GW_BIN). Go is pinned to 1.27.3.
@@ -239,6 +240,39 @@ jobs:
           done
           git add -N gw/testdata
           git diff --exit-code --stat gw/testdata || { echo "::error::fixtures differ from the JS output (Deno)"; exit 1; }
+
+  # The guard benchmark (P4e entry conditions, docs/superpowers/plans/2026-11-13-p4e-guard-ready.md): one CheckBody pass
+  # of the Go guard (gw/guard) on real text at 32 KB, 128 KB and 1 MB, all three checks on, against the absolute
+  # targets and at most 3x the JS guard timed on the same slices on this runner (scripts/bench-guard.js); then the
+  # real-text corpus up to 20 MB under the real 2 s deadline, which must never block. A size that misses a target is
+  # measured again, up to three attempts. Ubuntu only: the targets are set for this runner. Its own job, so other
+  # jobs' steps never mix with it.
+  guard-bench:
+    name: guard benchmark (Go vs JS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Time the JS guard
+        run: node scripts/bench-guard.js --json "$RUNNER_TEMP/guard-js.json"
+      - name: Time the Go guard and check the targets
+        env:
+          ZP_GUARD_BENCH: '1'
+        run: |
+          ZP_GUARD_BENCH_JS="$RUNNER_TEMP/guard-js.json" go -C gw test -count=1 -timeout 10m -v \
+            -run 'TestGuardBench|TestBenchCorpusNeverOverruns|TestOneBudgetPerCall' ./guard/
 
   # Compiles the six single-file binaries with deno compile and the "cli" permission set (the binary's entry is the
   # command line, so it holds the superset of the server set), and smoke-tests each one on a runner of its own OS and

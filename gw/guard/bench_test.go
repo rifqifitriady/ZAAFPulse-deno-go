@@ -164,10 +164,17 @@ func TestGuardBench(t *testing.T) {
 }
 
 // TestBenchCorpusNeverOverruns is P4e entry condition 3: the real-text corpus never reaches a limit (step budget or
-// deadline) at any size up to MAX_BODY (20 MB), so the limits cause no false block.
+// deadline) at any size up to MAX_BODY (20 MB), so the limits cause no false block. The step budget does not depend on
+// the machine and is checked on every run; the 2 s deadline does, so it is checked only in the benchmark job
+// (ZP_GUARD_BENCH, the Ubuntu runner the targets are set on) and widened elsewhere.
 func TestBenchCorpusNeverOverruns(t *testing.T) {
 	if testing.Short() || raceEnabled {
 		t.Skip("20 MB inputs: not under -short or the race detector")
+	}
+	if os.Getenv("ZP_GUARD_BENCH") == "" {
+		saved := requestDeadline
+		t.Cleanup(func() { requestDeadline = saved })
+		requestDeadline = time.Hour
 	}
 	c := loadBenchCorpus(t)
 	for _, size := range []int{2 << 20, 5 << 20, 20 << 20} {
