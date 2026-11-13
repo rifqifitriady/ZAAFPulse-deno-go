@@ -13,9 +13,7 @@ import (
 // I4 (review), with the owner's decision of 2026-11-13: the step budget, shared by the whole call, is the primary
 // bound and must stop every adversarial input of the reviews by itself. The clock is taken out of play here (an hour),
 // so a call that ends was ended by its steps (or the backtrack stack cap), never by the deadline. Each input runs as
-// one 20 MB string and as a 20 MB body of 1,000 strings; each finishes or blocks within 2.5 s of process CPU on the
-// runner the targets are set on (guard-bench, ZP_GUARD_BENCH; idle), and within 30 s elsewhere. Steps, times and heap
-// are logged for the plan.
+// one 20 MB string and as a 20 MB body of 1,000 strings. Steps, CPU times and heap are logged for the plan.
 func TestOneBudgetPerCall(t *testing.T) {
 	if testing.Short() || raceEnabled {
 		t.Skip("20 MB inputs: not under -short or the race detector")
@@ -25,9 +23,12 @@ func TestOneBudgetPerCall(t *testing.T) {
 	requestDeadline = time.Hour
 	var steps int64
 	traceSteps = func(n int64) { steps = n }
+	// The outcome is asserted on steps: whatever ends a call here is its step budget or the stack cap (the clock is
+	// out of play), and a call that used the whole budget must have blocked. CPU time is logged and bounded loosely
+	// (B2 re-review 1, M6): 4 s on the guard-bench runner, well under the 10 s backstop; 30 s on the other runners.
 	bound := 30 * time.Second
 	if os.Getenv("ZP_GUARD_BENCH") != "" {
-		bound = 2500 * time.Millisecond
+		bound = 4 * time.Second
 	}
 	for _, a := range adversarialInputs {
 		for _, shape := range []string{"one string", "1,000 strings"} {
@@ -64,6 +65,9 @@ func TestOneBudgetPerCall(t *testing.T) {
 			}
 			t.Logf("%s, %s: %v wall, %v CPU, %.0fM steps, %d MB heap (%s)", a.name, shape, wall.Round(time.Millisecond),
 				cpu.Round(time.Millisecond), float64(steps)/1e6, peak>>20, outcome)
+			if steps >= budgetCap && b == nil {
+				t.Errorf("%s, %s: used the whole budget but did not block", a.name, shape)
+			}
 			if wall > bound {
 				t.Errorf("%s, %s: %v wall, bound %v", a.name, shape, wall, bound)
 			}

@@ -43,6 +43,36 @@ func codeCorpus(t *testing.T, n int) string {
 	return benchText([]byte(sb.String()), 0, n)
 }
 
+// securityText is n bytes of legitimate text dense in injection and secret terms, repeated from this repository's
+// guardrail tests (tests: true) and/or lib/signals.js (signals: true; the detectors' own patterns and examples).
+func securityText(t *testing.T, n int, tests, signals bool) string {
+	t.Helper()
+	var files []string
+	if tests {
+		fs, err := filepath.Glob("../../test/guardrails*.js")
+		if err != nil || len(fs) == 0 {
+			t.Fatalf("no guardrail tests: %v", err)
+		}
+		slices.Sort(fs)
+		files = fs
+	}
+	if signals {
+		files = append(files, "../../lib/signals.js")
+	}
+	var sb strings.Builder
+	for sb.Len() < n {
+		for _, f := range files {
+			b, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sb.Write(b)
+			sb.WriteByte('\n')
+		}
+	}
+	return benchText([]byte(sb.String()), 0, n)
+}
+
 // csvNumbers is n bytes of numeric CSV, the heaviest legitimate text measured (the pii patterns try most digits).
 func csvNumbers(n int) string {
 	var sb strings.Builder
@@ -53,8 +83,9 @@ func csvNumbers(n int) string {
 }
 
 // I1 (B2 review, owner's decision of 2026-11-13): the step budget is the primary bound and does not depend on load,
-// and the wall clock is a 10 s backstop. Legitimate 20 MB bodies (real code, the corpus, numeric CSV) checked two at
-// a time while GOMAXPROCS goroutines burn CPU next to them must never block. The step budget is checked on every
+// and the wall clock is a 10 s backstop. Legitimate 20 MB bodies (real code, the corpus, numeric CSV, and text dense in
+// security terms: the guardrail tests and lib/signals.js) checked two at a time while GOMAXPROCS goroutines burn CPU
+// next to them must never block. The step budget is checked on every
 // run; the 10 s backstop is in play only in the guard-bench job (ZP_GUARD_BENCH), widened elsewhere.
 func TestLegitimateBodiesUnderLoad(t *testing.T) {
 	if testing.Short() || raceEnabled {
@@ -67,10 +98,26 @@ func TestLegitimateBodiesUnderLoad(t *testing.T) {
 	}
 	c := loadBenchCorpus(t)
 	bodies := map[string]string{
-		"code":   codeCorpus(t, 20<<20),
-		"corpus": benchText(c, 0, 20<<20),
-		"csv":    csvNumbers(20 << 20),
+		"code":            codeCorpus(t, 20<<20),
+		"corpus":          benchText(c, 0, 20<<20),
+		"csv":             csvNumbers(20 << 20),
+		"security":        securityText(t, 20<<20, true, true),
+		"guardrail tests": securityText(t, 20<<20, true, false),
+		"signals.js":      securityText(t, 20<<20, false, true),
 	}
+	// Steps are deterministic: measured once, alone, with the headroom under the call's cap (B2 re-review 1, I2).
+	var steps int64
+	traceSteps = func(n int64) { steps = n }
+	for _, name := range []string{"corpus", "code", "csv", "security", "guardrail tests", "signals.js"} {
+		_, err := CheckBody(benchBody(bodies[name]), benchPolicy, "openai-chat")
+		var b *Block
+		if errors.As(err, &b) && b.Overrun != "" {
+			t.Errorf("%s: false block at %.0fM steps: %v", name, float64(steps)/1e6, err)
+		}
+		t.Logf("%s: %.0fM steps, headroom %.2fx under the %dM cap", name, float64(steps)/1e6,
+			float64(budgetCap)/float64(steps), budgetCap/1_000_000)
+	}
+	traceSteps = nil
 	var stop atomic.Bool
 	var burners sync.WaitGroup
 	for range runtime.GOMAXPROCS(0) {
