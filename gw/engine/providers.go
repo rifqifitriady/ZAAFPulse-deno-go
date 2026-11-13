@@ -14,17 +14,27 @@ type Preset struct {
 	Forwards            bool   `json:"forwards,omitzero"`
 	MaxCompletionTokens bool   `json:"maxCompletionTokens,omitzero"`
 	Format              string `json:"format,omitzero"`
+	StreamUsage         *bool  `json:"streamUsage,omitzero"` // false: the provider refuses stream_options
 }
 
 // Presets are the presets with a flag the engine reads; any other preset name has none.
 var Presets = map[string]Preset{
 	"ollama": {Local: true}, "lmstudio": {Local: true}, "vllm": {Local: true}, "tgi": {Local: true},
 	"llamacpp": {Local: true}, "jan": {Local: true}, "localai": {Local: true},
-	"litellm":      {Local: true, Forwards: true},
-	"9router":      {Local: true, Forwards: true},
-	"openai":       {MaxCompletionTokens: true},
-	"anthropic":    {Format: "anthropic"},
-	"azure-openai": {MaxCompletionTokens: true},
+	"litellm":          {Local: true, Forwards: true},
+	"9router":          {Local: true, Forwards: true},
+	"openai":           {MaxCompletionTokens: true},
+	"anthropic":        {Format: "anthropic"},
+	"azure-openai":     {MaxCompletionTokens: true},
+	"anthropic-openai": {StreamUsage: boolPtr(false)},
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+// StreamUsageOf is providers.js streamUsage: the preset does not say streamUsage: false and the format is not anthropic
+// (the gateway then asks the provider for a usage chunk at the end of a stream).
+func StreamUsageOf(p *ipc.ProviderConfig) bool {
+	return !isFalse(Presets[p.Preset].StreamUsage) && FormatOf(p) != "anthropic"
 }
 
 // Target is one provider and the model it is asked for (lib/gateway/providers.js resolve).

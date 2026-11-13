@@ -219,6 +219,9 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	}
 	req := ReadRequest(r, rawPath)
 	p := s.PlanChat(req, e.now())
+	if p.Handoff == "" && p.Stream {
+		p = handoff("stream: the chat-stream sub-class") // compared from P4c Task 5 on
+	}
 	select {
 	case shadowSlots <- struct{}{}:
 	default:

@@ -58,7 +58,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	req := ReadRequest(r, rawPath)
 	started := time.Now()
 	p := s.PlanChat(req, e.now())
-	if p.Handoff != "" {
+	if p.Handoff != "" || p.Stream { // streams: the chat-stream sub-class (P4c Task 2-3)
 		js.ServeHTTP(w, r)
 		return
 	}
