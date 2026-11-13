@@ -221,6 +221,14 @@ func NewBudget(units int) *jsre.Budget {
 	return b
 }
 
+// orBudget is b, or a budget for one check on n code units when b is nil.
+func orBudget(b *jsre.Budget, n int) *jsre.Budget {
+	if b == nil {
+		return NewBudget(n)
+	}
+	return b
+}
+
 // newCallBudget is the budget a call starts with: the base steps and the deadline from now.
 func newCallBudget() *jsre.Budget {
 	return &jsre.Budget{Limit: min(budgetBase, budgetCap), Deadline: now().Add(requestDeadline), Now: now}

@@ -66,10 +66,16 @@ func equalU16(a, b []uint16) bool {
 	return true
 }
 
-// MaskPII masks emails, IP addresses and phone numbers and counts each kind masked (a kind appears once seen).
-func MaskPII(text string) (string, map[string]int) {
-	s, counts := maskPII(jsre.U16(text), nil)
-	return jsre.Str(s), counts
+// MaskPII masks emails, IP addresses and phone numbers and counts each kind masked (a kind appears once seen). It runs
+// under b like ScanInjection.
+func MaskPII(text string, b *jsre.Budget) (masked string, counts map[string]int, err error) {
+	u := jsre.U16(text)
+	b = orBudget(b, len(u))
+	var s []uint16
+	if err = b.Run(func() { s, counts = maskPII(u, b) }); err != nil {
+		return "", nil, err
+	}
+	return jsre.Str(s), counts, nil
 }
 
 func maskPII(s []uint16, b *jsre.Budget) ([]uint16, map[string]int) {

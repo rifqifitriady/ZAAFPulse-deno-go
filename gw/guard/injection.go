@@ -292,8 +292,14 @@ func deobfuscate(text []uint16, windows [][2]int, b *jsre.Budget) ([]uint16, []i
 	return s, idx
 }
 
-// ScanInjection is lib/signals.js scanInjection: nil, or the categories that matched.
-func ScanInjection(text string) *Injection { return scanInjection(jsre.U16(text), nil) }
+// ScanInjection is lib/signals.js scanInjection: nil, or the categories that matched. It runs under b (nil: NewBudget
+// for the text, with the 2 s deadline); a limit comes back as jsre.ErrBudget, ErrStack or ErrDeadline, never a panic.
+func ScanInjection(text string, b *jsre.Budget) (r *Injection, err error) {
+	u := jsre.U16(text)
+	b = orBudget(b, len(u))
+	err = b.Run(func() { r = scanInjection(u, b) })
+	return r, err
+}
 
 func scanInjection(s []uint16, b *jsre.Budget) *Injection {
 	if len(s) < 8 {

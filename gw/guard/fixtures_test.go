@@ -15,7 +15,10 @@ type fixtureFn func(args []jsv.Value) (jsv.Value, error)
 
 var fixtureFns = map[string]fixtureFn{
 	"scanInjection": func(a []jsv.Value) (jsv.Value, error) {
-		r := ScanInjection(jsv.ToString(jsv.Arg(a, 0)))
+		r, err := ScanInjection(jsv.ToString(jsv.Arg(a, 0)), nil)
+		if err != nil {
+			return nil, err
+		}
 		if r == nil {
 			return nil, nil
 		}
@@ -23,15 +26,22 @@ var fixtureFns = map[string]fixtureFn{
 			Set("categories", strArr(r.Categories)).Set("labels", strArr(r.Labels)), nil
 	},
 	"secretSpans": func(a []jsv.Value) (jsv.Value, error) {
+		spans, err := SecretSpans(jsv.ToString(jsv.Arg(a, 0)), nil)
+		if err != nil {
+			return nil, err
+		}
 		out := jsv.Arr()
-		for _, s := range SecretSpans(jsv.ToString(jsv.Arg(a, 0))) {
+		for _, s := range spans {
 			out.Push(jsv.NewObject().Set("start", float64(s.Start)).Set("end", float64(s.End)).
 				Set("label", s.Label).Set("matchStart", float64(s.MatchStart)))
 		}
 		return out, nil
 	},
 	"maskPii": func(a []jsv.Value) (jsv.Value, error) {
-		text, counts := MaskPII(jsv.ToString(jsv.Arg(a, 0)))
+		text, counts, err := MaskPII(jsv.ToString(jsv.Arg(a, 0)), nil)
+		if err != nil {
+			return nil, err
+		}
 		c := jsv.NewObject()
 		for k, n := range counts {
 			c.Set(k, float64(n))
