@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "The user doesn't want to proceed with this tool use. The tool use was rejected."
+  ],
+  "out": null
+}

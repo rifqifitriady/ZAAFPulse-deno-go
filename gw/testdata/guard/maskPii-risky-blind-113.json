@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "sudo rm -rf /var/lib/docker/tmp"
+  ],
+  "out": {
+    "text": "sudo rm -rf /var/lib/docker/tmp",
+    "counts": {}
+  }
+}

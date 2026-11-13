@@ -1,0 +1,15 @@
+{
+  "fn": "responsesStream",
+  "in": [
+    "m",
+    null,
+    [
+      [
+        "finish"
+      ]
+    ]
+  ],
+  "out": [
+    "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_010101010101010101010101\",\"object\":\"response\",\"created_at\":1767225600,\"status\":\"in_progress\",\"model\":\"m\",\"output\":[]}}\n\nevent: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"sequence_number\":1,\"response\":{\"id\":\"resp_010101010101010101010101\",\"object\":\"response\",\"created_at\":1767225600,\"status\":\"in_progress\",\"model\":\"m\",\"output\":[]}}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":2,\"response\":{\"id\":\"resp_010101010101010101010101\",\"object\":\"response\",\"created_at\":1767225600,\"status\":\"completed\",\"model\":\"m\",\"output\":[],\"usage\":{\"input_tokens\":0,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":0}}}\n\n"
+  ]
+}

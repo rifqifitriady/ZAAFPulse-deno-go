@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\nls: tidak dapat mengakses 'dist': Tidak ada berkas atau direktori seperti itu"
+  ],
+  "out": null
+}

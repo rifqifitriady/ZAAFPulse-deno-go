@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Prompt injection is when an attacker hides text such as 'disregard all prior instructions' in content the model reads. Defend with input isolation."
+  ],
+  "out": {
+    "text": "Prompt injection is when an attacker hides text such as 'disregard all prior instructions' in content the model reads. Defend with input isolation.",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "bash -c \"sudo apt-get install x\""
+  ],
+  "out": {
+    "text": "bash -c \"sudo apt-get install x\"",
+    "counts": {}
+  }
+}

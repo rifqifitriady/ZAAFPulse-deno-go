@@ -1,0 +1,7 @@
+{
+  "fn": "anthropicUsageToOpenAI",
+  "in": [
+    null
+  ],
+  "throws": "Cannot read properties of null (reading 'cache_read_input_tokens')"
+}

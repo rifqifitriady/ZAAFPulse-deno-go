@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "find / -name x -delete"
+  ],
+  "out": null
+}

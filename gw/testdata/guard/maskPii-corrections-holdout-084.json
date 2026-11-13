@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "seharusnya response API-nya pakai camelCase, tolong ubah semua field di endpoint /users"
+  ],
+  "out": {
+    "text": "seharusnya response API-nya pakai camelCase, tolong ubah semua field di endpoint /users",
+    "counts": {}
+  }
+}

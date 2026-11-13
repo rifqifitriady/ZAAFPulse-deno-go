@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "duh kamu hapus file .env aku ya?? kan aku ga minta"
+  ],
+  "out": null
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "npm error Missing script: \"typecheck\"\nnpm error\nnpm error To see a list of scripts, run:\nnpm error   npm run"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\ncat: config.yml: Tidak ada berkas atau direktori seperti itu"
+  ],
+  "out": {
+    "text": "Exit code 1\ncat: config.yml: Tidak ada berkas atau direktori seperti itu",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nwget: unable to resolve host address 'cdn.contoh-palsu.id'"
+  ],
+  "out": {
+    "text": "Exit code 1\nwget: unable to resolve host address 'cdn.contoh-palsu.id'",
+    "counts": {}
+  }
+}

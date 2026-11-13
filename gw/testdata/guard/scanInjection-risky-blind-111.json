@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "find . -name '*.log' -mtime +7 -delete"
+  ],
+  "out": null
+}

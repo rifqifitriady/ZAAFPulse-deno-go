@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Chat templates: Llama 2 wraps user turns in [INST] ... [/INST], and ChatML uses <|im_start|>user ... <|im_end|>. Use tokenizer.apply_chat_template to render them."
+  ],
+  "out": null
+}

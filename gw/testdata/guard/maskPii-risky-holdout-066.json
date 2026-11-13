@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "cd /app && npm ci && sudo systemctl restart api"
+  ],
+  "out": {
+    "text": "cd /app && npm ci && sudo systemctl restart api",
+    "counts": {}
+  }
+}

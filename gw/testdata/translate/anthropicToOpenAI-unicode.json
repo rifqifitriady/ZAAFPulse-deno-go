@@ -1,0 +1,64 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "héllo 😀   \"quoted\" \\ back"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "u",
+              "name": "f",
+              "input": {
+                "1": true,
+                "2": "n",
+                "z": 1,
+                "a": [
+                  1,
+                  {
+                    "y": "é",
+                    "b": null
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "héllo 😀   \"quoted\" \\ back"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "u",
+              "type": "function",
+              "function": {
+                "name": "f",
+                "arguments": "{\"1\":true,\"2\":\"n\",\"z\":1,\"a\":[1,{\"y\":\"é\",\"b\":null}]}"
+              }
+            }
+          ]
+        }
+      ],
+      "stream": false
+    },
+    "soft": null,
+    "dropped": []
+  }
+}

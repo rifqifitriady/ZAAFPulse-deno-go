@@ -1,0 +1,202 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "system",
+          "content": "one"
+        },
+        {
+          "role": "developer",
+          "content": [
+            {
+              "type": "text",
+              "text": "two"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "a"
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "https://x/y.png"
+              }
+            },
+            {
+              "type": "image_url"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "b",
+          "tool_calls": [
+            {
+              "id": "t1",
+              "function": {
+                "name": "f",
+                "arguments": "{\"q\":1}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "t1",
+          "content": "r1"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "t2",
+          "content": [
+            {
+              "type": "text",
+              "text": "r2"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": ""
+        },
+        {
+          "role": "function",
+          "content": "odd role"
+        }
+      ],
+      "stop": "END",
+      "max_completion_tokens": 50,
+      "stream": true,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "read",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        },
+        {
+          "type": "retrieval"
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "g",
+            "description": "d"
+          }
+        }
+      ],
+      "tool_choice": {
+        "type": "function",
+        "function": {
+          "name": "g"
+        }
+      }
+    }
+  ],
+  "out": {
+    "model": "c",
+    "max_tokens": 50,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "a"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": "https://x/y.png"
+            }
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": ""
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "b"
+          },
+          {
+            "type": "tool_use",
+            "id": "t1",
+            "name": "f",
+            "input": {
+              "q": 1
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "t1",
+            "content": "r1"
+          },
+          {
+            "type": "tool_result",
+            "tool_use_id": "t2",
+            "content": "r2"
+          },
+          {
+            "type": "text",
+            "text": "odd role"
+          }
+        ]
+      }
+    ],
+    "system": "one\n\ntwo",
+    "stop_sequences": [
+      "END"
+    ],
+    "tools": [
+      {
+        "name": "read",
+        "description": "",
+        "input_schema": {
+          "type": "object"
+        }
+      },
+      {
+        "name": "g",
+        "description": "d",
+        "input_schema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "tool_choice": {
+      "type": "tool",
+      "name": "g"
+    },
+    "stream": true
+  }
+}

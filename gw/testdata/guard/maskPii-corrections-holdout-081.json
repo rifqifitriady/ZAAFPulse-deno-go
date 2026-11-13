@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "saya salah ketik tadi, maksudnya tabel orders bukan order_items"
+  ],
+  "out": {
+    "text": "saya salah ketik tadi, maksudnya tabel orders bukan order_items",
+    "counts": {}
+  }
+}

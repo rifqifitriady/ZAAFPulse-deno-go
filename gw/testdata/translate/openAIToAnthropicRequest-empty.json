@@ -1,0 +1,10 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {}
+  ],
+  "out": {
+    "max_tokens": 8192,
+    "messages": []
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "find / -name x -delete"
+  ],
+  "out": {
+    "text": "find / -name x -delete",
+    "counts": {}
+  }
+}

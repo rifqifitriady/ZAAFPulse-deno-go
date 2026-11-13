@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "dd if=/dev/zero of=/dev/sdb bs=1M count=100"
+  ],
+  "out": null
+}

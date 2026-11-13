@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "stop stop, jangan hapus file itu! kembalikan"
+  ],
+  "out": {
+    "text": "stop stop, jangan hapus file itu! kembalikan",
+    "counts": {}
+  }
+}

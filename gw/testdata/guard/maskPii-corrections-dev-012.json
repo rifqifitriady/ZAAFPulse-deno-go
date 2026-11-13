@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "roll back your changes to the config"
+  ],
+  "out": {
+    "text": "roll back your changes to the config",
+    "counts": {}
+  }
+}

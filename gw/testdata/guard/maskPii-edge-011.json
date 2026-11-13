@@ -1,0 +1,14 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "mail ana@example.com, call +62 812-3456-7890 from 10.0.0.7 in /Users/ana/app and C:\\Users\\ana\\x"
+  ],
+  "out": {
+    "text": "mail ‹email›, call ‹phone› from ‹ip› in /Users/ana/app and C:\\Users\\ana\\x",
+    "counts": {
+      "email": 1,
+      "ip": 1,
+      "phone": 1
+    }
+  }
+}

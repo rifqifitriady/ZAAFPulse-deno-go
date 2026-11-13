@@ -1,0 +1,68 @@
+{
+  "fn": "openAIToResponses",
+  "in": [
+    {
+      "id": "c1",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "p2",
+                "type": "function",
+                "function": {
+                  "name": "apply_patch",
+                  "arguments": "{\"input\":\"*** Begin Patch\\n\"}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "prompt_tokens_details": {
+          "cached_tokens": 40
+        }
+      }
+    },
+    "gpt-x",
+    [
+      "apply_patch"
+    ]
+  ],
+  "out": {
+    "id": "resp_020202020202020202020202",
+    "object": "response",
+    "created_at": 1767225600,
+    "status": "completed",
+    "model": "gpt-x",
+    "output": [
+      {
+        "type": "custom_tool_call",
+        "id": "ctc_010101010101010101010101",
+        "call_id": "p2",
+        "name": "apply_patch",
+        "input": "*** Begin Patch\n",
+        "status": "completed"
+      }
+    ],
+    "output_text": "",
+    "usage": {
+      "input_tokens": 100,
+      "input_tokens_details": {
+        "cached_tokens": 40
+      },
+      "output_tokens": 20,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 120
+    }
+  }
+}

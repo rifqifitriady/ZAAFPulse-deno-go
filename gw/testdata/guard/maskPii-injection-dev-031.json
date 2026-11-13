@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Terms of Service: You must not share your account credentials with any third party."
+  ],
+  "out": {
+    "text": "Terms of Service: You must not share your account credentials with any third party.",
+    "counts": {}
+  }
+}

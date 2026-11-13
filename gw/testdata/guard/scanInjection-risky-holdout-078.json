@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "echo 'bersihin dulu' && rm -rf .next && npm run build"
+  ],
+  "out": null
+}

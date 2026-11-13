@@ -1,0 +1,36 @@
+{
+  "fn": "openAIToGemini",
+  "in": [
+    {
+      "choices": [
+        {
+          "message": {},
+          "finish_reason": "content_filter"
+        }
+      ]
+    },
+    "g"
+  ],
+  "out": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        "finishReason": "SAFETY",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 0,
+      "candidatesTokenCount": 0,
+      "totalTokenCount": 0
+    },
+    "modelVersion": "g"
+  }
+}

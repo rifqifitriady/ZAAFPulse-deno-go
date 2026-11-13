@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "find /tmp -type f -name 'cache*' -exec rm -f {} +"
+  ],
+  "out": {
+    "text": "find /tmp -type f -name 'cache*' -exec rm -f {} +",
+    "counts": {}
+  }
+}

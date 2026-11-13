@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Mistral instruct template: <s>[INST] Instruction [/INST] Model answer</s>[INST] Follow-up [/INST]"
+  ],
+  "out": null
+}

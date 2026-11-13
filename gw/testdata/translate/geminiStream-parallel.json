@@ -1,0 +1,115 @@
+{
+  "fn": "geminiStream",
+  "in": [
+    "m",
+    [
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "id": "call_a",
+                    "function": {
+                      "name": "f",
+                      "arguments": ""
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"x\":1}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "id": "call_b",
+                    "function": {
+                      "name": "g",
+                      "arguments": ""
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"y\":2}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "tool_calls"
+            }
+          ]
+        }
+      ],
+      [
+        "finish"
+      ]
+    ]
+  ],
+  "out": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"f\",\"args\":{\"x\":1}}},{\"functionCall\":{\"name\":\"g\",\"args\":{\"y\":2}}}]},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"m\"}\n\n"
+  ]
+}

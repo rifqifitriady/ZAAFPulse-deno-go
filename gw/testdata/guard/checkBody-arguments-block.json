@@ -1,0 +1,30 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkBody",
+  "in": [
+    {
+      "data": {
+        "token": "<<ZPSECRET:0>>"
+      },
+      "image_url": "<<ZPSECRET:0>>",
+      "type": "<<ZPSECRET:0>>"
+    },
+    {
+      "scope": "external",
+      "secrets": "block",
+      "pii": "off",
+      "injection": "log"
+    },
+    "arguments"
+  ],
+  "throws": "Blocked by ZAAFPulse guardrails: secret (Anthropic API key). Remove it, or ask the owner to change the policy.",
+  "hits": [
+    {
+      "check": "secrets",
+      "label": "Anthropic API key",
+      "count": 3
+    }
+  ]
+}

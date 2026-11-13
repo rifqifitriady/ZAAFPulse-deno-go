@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "# don't use rm -rf here, it is dangerous\nls -la"
+  ],
+  "out": {
+    "text": "# don't use rm -rf here, it is dangerous\nls -la",
+    "counts": {}
+  }
+}

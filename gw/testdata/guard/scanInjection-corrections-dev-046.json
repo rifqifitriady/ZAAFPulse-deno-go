@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "debug why the cron job fails at midnight"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "kok malah dihapus semua filenya?"
+  ],
+  "out": {
+    "text": "kok malah dihapus semua filenya?",
+    "counts": {}
+  }
+}

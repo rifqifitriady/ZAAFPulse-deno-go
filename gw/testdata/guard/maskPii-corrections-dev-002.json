@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "nope, you used the wrong file again"
+  ],
+  "out": {
+    "text": "nope, you used the wrong file again",
+    "counts": {}
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "fn": "openAIToAnthropic",
+  "in": [
+    {
+      "id": "c1",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "c9",
+                "type": "function",
+                "function": {
+                  "name": "Bash",
+                  "arguments": "{\"command\":\"pwd\"}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "prompt_tokens_details": {
+          "cached_tokens": 40
+        }
+      }
+    },
+    "claude-x"
+  ],
+  "out": {
+    "id": "msg_010101010101010101010101",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-x",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "c9",
+        "name": "Bash",
+        "input": {
+          "command": "pwd"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 60,
+      "output_tokens": 20,
+      "cache_read_input_tokens": 40,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}

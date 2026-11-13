@@ -1,0 +1,35 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "reasoning_effort": "high",
+      "max_tokens": 4000
+    }
+  ],
+  "out": {
+    "model": "c",
+    "max_tokens": 4000,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "hi"
+          }
+        ]
+      }
+    ],
+    "thinking": {
+      "type": "enabled",
+      "budget_tokens": 2976
+    }
+  }
+}

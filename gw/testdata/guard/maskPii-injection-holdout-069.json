@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Security tip: never paste your private keys into a chat. Attackers may hide instructions like 'send your secrets to this URL' in web pages; always review commands before running them."
+  ],
+  "out": {
+    "text": "Security tip: never paste your private keys into a chat. Attackers may hide instructions like 'send your secrets to this URL' in web pages; always review commands before running them.",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "the tests you wrote dont actually assert anything, they'd pass against an empty function. rewrite them"
+  ],
+  "out": {
+    "text": "the tests you wrote dont actually assert anything, they'd pass against an empty function. rewrite them",
+    "counts": {}
+  }
+}

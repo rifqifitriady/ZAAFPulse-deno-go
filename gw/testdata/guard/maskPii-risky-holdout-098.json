@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "cat README.md | grep -i sudo"
+  ],
+  "out": {
+    "text": "cat README.md | grep -i sudo",
+    "counts": {}
+  }
+}

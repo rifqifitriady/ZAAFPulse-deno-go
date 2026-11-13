@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "chmod -R 777 /var/www/uploads"
+  ],
+  "out": null
+}

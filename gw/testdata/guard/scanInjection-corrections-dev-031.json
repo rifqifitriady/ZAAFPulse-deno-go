@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "the API returns the wrong status code for 404"
+  ],
+  "out": null
+}

@@ -1,0 +1,27 @@
+{
+  "fn": "wholeToChunks",
+  "in": [
+    {}
+  ],
+  "out": [
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant"
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ]
+    }
+  ]
+}

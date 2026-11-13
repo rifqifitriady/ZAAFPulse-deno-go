@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "npm run build 2>&1 | tail -20"
+  ],
+  "out": {
+    "text": "npm run build 2>&1 | tail -20",
+    "counts": {}
+  }
+}

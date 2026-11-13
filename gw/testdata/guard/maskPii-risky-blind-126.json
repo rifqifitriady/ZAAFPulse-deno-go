@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "# nanti: sudo apt install ffmpeg (belum dijalankan)\nls /usr/bin | grep ffmpeg"
+  ],
+  "out": {
+    "text": "# nanti: sudo apt install ffmpeg (belum dijalankan)\nls /usr/bin | grep ffmpeg",
+    "counts": {}
+  }
+}

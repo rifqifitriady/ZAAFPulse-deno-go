@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "yes use postgres, not mysql"
+  ],
+  "out": null
+}

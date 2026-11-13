@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "that's wrong, the endpoint should be POST not GET. redo it"
+  ],
+  "out": {
+    "text": "that's wrong, the endpoint should be POST not GET. redo it",
+    "counts": {}
+  }
+}

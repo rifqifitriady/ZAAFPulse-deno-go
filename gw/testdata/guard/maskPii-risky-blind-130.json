@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "cat docs/drop-table-guide.md"
+  ],
+  "out": {
+    "text": "cat docs/drop-table-guide.md",
+    "counts": {}
+  }
+}
