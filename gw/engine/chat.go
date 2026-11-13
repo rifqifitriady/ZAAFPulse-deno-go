@@ -410,7 +410,8 @@ func jsSlice(s string, n int) string {
 	return s
 }
 
-// decodeUTF8 is Response.text(): a leading byte order mark dropped, invalid bytes each a U+FFFD.
+// decodeUTF8 is Response.text() but for invalid bytes: a leading byte order mark dropped, each run of invalid bytes one
+// U+FFFD (WHATWG writes one per maximal subpart; results doc, difference 9).
 func decodeUTF8(b []byte) string {
 	b = bytes.TrimPrefix(b, []byte{0xef, 0xbb, 0xbf})
 	if utf8.Valid(b) {

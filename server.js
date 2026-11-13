@@ -352,6 +352,8 @@ function configChanged(before, after) {
   } else if (front && JSON.stringify((before || {}).pricing) !== JSON.stringify((after || {}).pricing)) {
     config = loadConfig(); // the owner's prices are merged into config.pricing, which the push reads
     front.push();
+  } else if (front && JSON.stringify((before || {}).otel) !== JSON.stringify((after || {}).otel)) {
+    front.push(); // OTLP export on or off moves chat between the engines (final review I2)
   }
   try {
     const d = govDiff(before, after);
@@ -2258,14 +2260,13 @@ const shadowLog = createShadowLog({ file: path.join(DIR, '.data', 'gateway-shado
 const frontRouting = () =>
   routing(rawConfig().gateway, {
     gate: (c, rule) => shadowLog.gate(c, rule),
-    otel: ((rawConfig() || {}).otel || {}).enabled === true,
+    // As otel itself sees it: config.json, or an OTEL_EXPORTER_OTLP_* variable (final review I1).
+    otel: otel.status().enabled === true,
   });
-// A class whose shadow gate is met (or broken) switches at the next push: looked at once a minute.
-let lastRouting = '';
+// A class whose shadow gate is met (or broken) switches at the next push: looked at once a minute, against the engines
+// the gateway was last pushed (final review I2).
 setInterval(() => {
-  const now = JSON.stringify(frontRouting().engines);
-  if (now !== lastRouting && lastRouting && front) front.push();
-  lastRouting = now;
+  if (front) front.pushIfChanged(frontRouting().engines);
 }, 60000).unref();
 // gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
 const ENGINE = DEMO ? 'js' : engineOf(rawConfig());

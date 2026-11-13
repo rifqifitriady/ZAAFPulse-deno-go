@@ -86,3 +86,14 @@ func TestShadowCompare(t *testing.T) {
 		t.Fatalf("only %d fixtures compared", n)
 	}
 }
+
+// Final review I3: when the engine would have answered 429 itself, the call compares nothing of the serving path. Both
+// sides at 429 is "skipped" (not one of the owner's 20 compares); the server answering anything else is a diff.
+func TestRateLimitedShadowLine(t *testing.T) {
+	if l := rateLimitedLine("chat", 429); l.Outcome != "skipped" || l.Reason == "" {
+		t.Errorf("429 both: %+v", l)
+	}
+	if l := rateLimitedLine("chat", 200); l.Outcome != "diff" || l.Diffs[0].Field != "rateLimit" {
+		t.Errorf("server 200: %+v", l)
+	}
+}

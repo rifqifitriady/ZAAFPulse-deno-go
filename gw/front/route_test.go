@@ -164,3 +164,30 @@ func TestCaretPathIsNotCanonical(t *testing.T) {
 		t.Fatal("/v1/a^b is classified")
 	}
 }
+
+// fakeShadow marks every chat request as the go engine does.
+type fakeShadow struct{}
+
+func (fakeShadow) Serve(string, http.ResponseWriter, *http.Request, string, http.Handler) {}
+func (fakeShadow) Shadow(_ string, w http.ResponseWriter, r *http.Request, _ string, js http.Handler,
+	_ func(string, string, []byte) (int, []byte, error)) {
+	js.ServeHTTP(w, WithShadowID(r, "0123456789abcdef"))
+}
+
+// Final review m9': the mark is set in the proxy's Rewrite, after the hop-by-hop headers are gone, so a client that
+// names X-Zp-Shadow in Connection cannot strip it.
+func TestShadowMarkSurvivesAConnectionHeader(t *testing.T) {
+	got := make(chan string, 1)
+	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { got <- r.Header.Get(ShadowHeader) })
+	s := startFront(t, up.port(), nil)
+	s.SetGoEngine(fakeShadow{})
+	s.SetShadow([]string{"chat"})
+	out, _ := rawRequest(t, s.Addr().String(), "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1\r\n"+
+		"Connection: close, X-Zp-Shadow\r\nContent-Length: 0\r\n\r\n")
+	if !strings.Contains(out, "200 OK") {
+		t.Fatalf("%q", out)
+	}
+	if id := <-got; id != "0123456789abcdef" {
+		t.Fatalf("mark %q", id)
+	}
+}

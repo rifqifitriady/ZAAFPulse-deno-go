@@ -139,3 +139,19 @@ test('the internal port answers the gateway own requests on /_zp/, and nothing e
   assert.equal((await ask('GET', '/login.html', { 'x-zp-own': '1' })).status, 404);
   assert.deepEqual(seen, ['/_zp/shadow/ffeeddccbbaa0099']);
 });
+
+// Final review m9': the captures held in memory are bounded in bytes too; the oldest go first.
+test('captures are bounded in bytes: the oldest is dropped first', async () => {
+  const { configureCaptures } = require('../lib/gateway/shadow');
+  configureCaptures({ maxBytes: 1000 });
+  try {
+    const big = 'x'.repeat(400);
+    for (const id of ['aaaaaaaaaaaaaaa1', 'aaaaaaaaaaaaaaa2', 'aaaaaaaaaaaaaaa3'])
+      await withShadow(id, async () => noteAnswer({ status: 200, body: big }, { status: 200, body: '' }, {}));
+    assert.equal(takeCapture('aaaaaaaaaaaaaaa1'), null, 'dropped: 1200 bytes do not fit in 1000');
+    assert.ok(takeCapture('aaaaaaaaaaaaaaa2'));
+    assert.ok(takeCapture('aaaaaaaaaaaaaaa3'));
+  } finally {
+    configureCaptures({});
+  }
+});

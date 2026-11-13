@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/front"
 )
 
 // Capture is what the control plane recorded of one request it served.
@@ -179,6 +181,18 @@ func hashPrefix(s string) string {
 	return hex.EncodeToString(sum[:6])
 }
 
+// rateLimitedLine is the line of a call the engine's own rate limit would have answered: nothing of the serving path
+// was compared, so both sides at 429 is "skipped", which the switch rule does not count (final review I3); the server
+// answering anything else is a diff.
+func rateLimitedLine(class string, status int) ShadowLine {
+	l := ShadowLine{Class: class, Outcome: "skipped", Reason: "rate limit: both engines answered 429", Status: status}
+	if status != http.StatusTooManyRequests {
+		l.Outcome, l.Reason = "diff", ""
+		l.Diffs = []Diff{{Field: "rateLimit", JS: status, Go: http.StatusTooManyRequests}}
+	}
+	return l
+}
+
 // NewShadowID is the id of one shadowed request.
 func NewShadowID() string {
 	var b [8]byte
@@ -189,14 +203,13 @@ func NewShadowID() string {
 // Own is the front's call to the control plane's internal port as the gateway itself (X-ZP-Own).
 type Own func(method, path string, body []byte) (int, []byte, error)
 
-// ShadowHeader marks a request the engine shadows.
-const ShadowHeader = "X-Zp-Shadow"
-
 // shadowSlots bounds the compares running at once; a request past it is not compared.
 var shadowSlots = make(chan struct{}, 8)
 
-// Shadow forwards a request of a class on js to the control plane marked for the compare, then compares in the
-// background once the client has its answer.
+// Shadow forwards a request of a class on js to the control plane, marked for the compare when the engine would serve
+// it and a compare slot is free, then compares in the background once the client has its answer. A request the engine
+// would hand off is not marked (the control plane keeps no capture for it) and gets a "handoff" line; a request past
+// the slots is forwarded unmarked and gets no line (final review m9': captures only for compares that run).
 func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler,
 	own func(method, path string, body []byte) (int, []byte, error)) {
 	s := e.state.Load()
@@ -206,35 +219,35 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	}
 	req := ReadRequest(r, rawPath)
 	p := s.PlanChat(req, e.now())
-	// The engine counts what it would serve, as when it serves (the control plane counts every request of the key).
-	var wait int64
-	if p.Handoff == "" {
-		wait = e.limits.Take(p.Key.ID, p.Key.RPM, e.now())
-	}
-	id := NewShadowID()
-	r.Header.Set(ShadowHeader, id)
-	js.ServeHTTP(w, r)
 	select {
 	case shadowSlots <- struct{}{}:
 	default:
+		js.ServeHTTP(w, r)
 		return
 	}
+	// The engine counts what it would serve, as when it serves (the control plane counts every request of the key).
+	var wait int64
+	id := ""
+	if p.Handoff == "" {
+		wait = e.limits.Take(p.Key.ID, p.Key.RPM, e.now())
+		id = NewShadowID()
+		r = front.WithShadowID(r, id) // set by the proxy's Rewrite, after the hop-by-hop headers are gone
+	}
+	js.ServeHTTP(w, r)
 	go func() {
 		defer func() { <-shadowSlots }()
 		var c *Capture
-		if code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil); err == nil && code == http.StatusOK {
-			c = &Capture{}
-			if json.Unmarshal(body, c) != nil {
-				c = nil
+		if id != "" {
+			if code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil); err == nil && code == http.StatusOK {
+				c = &Capture{}
+				if json.Unmarshal(body, c) != nil {
+					c = nil
+				}
 			}
 		}
 		l := s.Compare(class, &p, c)
 		if wait > 0 {
-			// The engine would have answered 429 itself.
-			l = ShadowLine{Class: class, Outcome: "same", Status: l.Status}
-			if l.Status != http.StatusTooManyRequests {
-				l.Outcome, l.Diffs = "diff", []Diff{{Field: "rateLimit", JS: l.Status, Go: http.StatusTooManyRequests}}
-			}
+			l = rateLimitedLine(class, l.Status) // the engine would have answered 429 itself
 		}
 		line, _ := json.Marshal(l)
 		if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
