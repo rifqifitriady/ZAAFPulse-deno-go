@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -247,5 +250,67 @@ func TestChatStreamSubClassDispatch(t *testing.T) {
 		if onGo != (c.engines["chat-stream"] == "go") || shadowed != (c.engines["chat-stream"] != "go" && slices.Contains(c.shadow, "chat-stream")) {
 			t.Errorf("%v %v: modes(chat-stream) = %v %v", c.engines, c.shadow, onGo, shadowed)
 		}
+	}
+}
+
+// P4c M4 root cause, front side: requests forwarded to the control plane that end together put their connections back
+// at once; past the proxy transport's idle limit they were closed and the next wave dialled the internal port again.
+// A second wave of 300 concurrent requests must reuse the first wave's connections.
+func TestForwardedWavesReuseUpstreamConnections(t *testing.T) {
+	const n = 300
+	var conns atomic.Int64
+	var release atomic.Pointer[chan struct{}]
+	first := make(chan struct{})
+	release.Store(&first)
+	up := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		<-*release.Load()
+		_, _ = io.WriteString(w, "done")
+	}))
+	up.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	up.Start()
+	t.Cleanup(up.Close)
+	s := startFront(t, up.Listener.Addr().(*net.TCPAddr).Port, nil)
+	tr := &http.Transport{MaxIdleConnsPerHost: n}
+	client := &http.Client{Transport: tr}
+	defer tr.CloseIdleConnections()
+	wave := func() {
+		errs := make(chan error, n)
+		started := make(chan struct{}, n)
+		for i := 0; i < n; i++ {
+			go func() {
+				resp, err := client.Get(frontURL(s) + "/api/x")
+				if err != nil {
+					errs <- err
+					return
+				}
+				started <- struct{}{}
+				_, err = io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				errs <- err
+			}()
+		}
+		for i := 0; i < n; i++ {
+			<-started
+		}
+		close(*release.Load())
+		for i := 0; i < n; i++ {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	wave()
+	opened := conns.Load()
+	second := make(chan struct{})
+	release.Store(&second)
+	wave()
+	if again := conns.Load() - opened; again > n/10 {
+		t.Fatalf("the second wave opened %d new upstream connections (first wave %d)", again, opened)
 	}
 }

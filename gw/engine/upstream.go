@@ -55,7 +55,11 @@ func NewUpstream(getenv func(string) string) *Upstream {
 		DialContext:         (&net.Dialer{Timeout: ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext,
 		TLSClientConfig:     &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout: ConnectTimeout,
-		MaxIdleConnsPerHost: 64,
+		// Every connection to a provider that frees up stays open for the next request (P4c M4 root cause): with 64,
+		// requests that ended together (streams paced alike) overflowed the idle pool, those connections were closed,
+		// and the next wave dialled them again: handshakes, TIME_WAIT and bursts past the listen backlog (1 s SYN
+		// retries). Idle connections still close after IdleConnTimeout.
+		MaxIdleConnsPerHost: 1024,
 		// The request is written once per call (a large body bypasses the buffer); a small write buffer keeps a held
 		// stream's connection light (P4c Decision 11). The read buffer stays at net/http's 4 KiB.
 		WriteBufferSize:    1 << 10,

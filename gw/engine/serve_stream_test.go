@@ -344,3 +344,72 @@ func TestStreamSubClassModes(t *testing.T) {
 		}
 	}
 }
+
+// P4c M4 root cause: streams that end together (a provider that paces every stream alike) put many connections back
+// in the idle pool at once; past the pool's per-host limit they were closed, and the next wave dialled them again
+// (handshakes, TIME_WAIT, bursts past the listen backlog: 1 s SYN retries). A second wave of 300 concurrent streams
+// must reuse the first wave's connections.
+func TestStreamWavesReuseProviderConnections(t *testing.T) {
+	const n = 300
+	var conns atomic.Int64
+	var release atomic.Pointer[chan struct{}]
+	first := make(chan struct{})
+	release.Store(&first)
+	up := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"x"}}]}`+"\n\n")
+		w.(http.Flusher).Flush()
+		<-*release.Load() // every stream of a wave ends at the same moment
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	up.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	up.Start()
+	t.Cleanup(up.Close)
+	g := newStreamRigAt(t, up.URL)
+	tr := &http.Transport{MaxIdleConnsPerHost: n}
+	client := &http.Client{Transport: tr}
+	defer tr.CloseIdleConnections()
+	wave := func() {
+		errs := make(chan error, n)
+		started := make(chan struct{}, n)
+		for i := 0; i < n; i++ {
+			go func() {
+				req, _ := http.NewRequest("POST", g.url, strings.NewReader(streamBody))
+				req.Header.Set("Authorization", g.key)
+				resp, err := client.Do(req)
+				if err != nil {
+					errs <- err
+					return
+				}
+				started <- struct{}{}
+				_, err = io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				errs <- err
+			}()
+		}
+		for i := 0; i < n; i++ {
+			<-started
+		}
+		close(*release.Load())
+		for i := 0; i < n; i++ {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+		for i := 0; i < n; i++ {
+			<-g.lines
+		}
+	}
+	wave()
+	opened := conns.Load()
+	second := make(chan struct{})
+	release.Store(&second)
+	wave()
+	if again := conns.Load() - opened; again > n/10 {
+		t.Fatalf("the second wave opened %d new provider connections (first wave %d)", again, opened)
+	}
+}

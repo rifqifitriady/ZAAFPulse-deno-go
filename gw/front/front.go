@@ -226,8 +226,12 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 			pr.Out.Header.Set(ClientHeader, ClientValue(cfg.Token, pr.In.RemoteAddr, pr.In.TLS != nil))
 		},
 		Transport: &http.Transport{
-			DisableCompression:  true, // never add Accept-Encoding: the client's headers go as sent
-			MaxIdleConnsPerHost: 64,
+			DisableCompression: true, // never add Accept-Encoding: the client's headers go as sent
+			// Every connection to the control plane that frees up stays open for the next request (P4c M4 root cause): with 64,
+			// requests that ended together (streams paced alike) overflowed the idle pool, those connections were closed,
+			// and the next wave dialled them again: handshakes, TIME_WAIT and bursts past the listen backlog (1 s SYN
+			// retries). Idle connections still close after IdleConnTimeout.
+			MaxIdleConnsPerHost: 1024,
 			// Shorter than the internal listener's keep-alive (130 s): the front always closes an idle connection first.
 			IdleConnTimeout: 120 * time.Second,
 		},
