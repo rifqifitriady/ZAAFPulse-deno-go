@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard/jsre"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate/jsv"
@@ -167,7 +168,8 @@ func BlockMessage(hits []Hit) string {
 }
 
 // Block is the GuardrailBlock error: a check in block mode found something (Hits are only those checks' hits), or,
-// in Go only, a check ran past its step budget (Overrun names the check; Hits is empty). Either way nothing is sent.
+// in Go only, the call ran past its step budget or its deadline (Overrun names the check that was running; Hits is
+// empty). Either way nothing is sent.
 type Block struct {
 	Hits    []Hit
 	Overrun string
@@ -195,17 +197,33 @@ var (
 	detectInjection = scanInjection
 )
 
-// The step budget of one check on one string: a base plus a share per code unit, capped. A check past it fails the
-// call closed in every mode, log included (the JS has no budget: Go-only, spec deviation 12). Sized from the corpus
-// and the adversarial inputs of the review: about 20x the steps the heaviest legitimate text measured needs.
+// The step budget of one call (CheckBody, CheckText), shared by every string and every check in it (I4): a base, plus
+// a share per code unit each time a check runs on a string, capped. With it runs a wall-clock deadline. A call past
+// either fails closed in every mode, log included (the JS has no limit: Go-only, spec deviation 12). The step budget is
+// sized from the corpus and the adversarial inputs of the review: about 20x the steps the heaviest legitimate text
+// measured needs; the deadline bounds the CPU of one call whatever the steps cost on the machine.
 var (
 	budgetBase    int64 = 20_000_000
 	budgetPerUnit int64 = 600
 	budgetCap     int64 = 3_000_000_000
 )
 
-func budgetFor(n int) *jsre.Budget {
-	return &jsre.Budget{Limit: min(budgetBase+budgetPerUnit*int64(n), budgetCap)}
+// requestDeadline bounds the wall-clock time of one call (P4e entry condition 2: at most 2 s).
+var requestDeadline = 2 * time.Second
+
+// now is the clock of the deadline (replaceable in tests).
+var now = time.Now
+
+// NewBudget is the budget of one call that checks units code units once: the step limit for them and the deadline.
+func NewBudget(units int) *jsre.Budget {
+	b := newCallBudget()
+	b.Extend(budgetPerUnit*int64(units), budgetCap)
+	return b
+}
+
+// newCallBudget is the budget a call starts with: the base steps and the deadline from now.
+func newCallBudget() *jsre.Budget {
+	return &jsre.Budget{Limit: min(budgetBase, budgetCap), Deadline: now().Add(requestDeadline), Now: now}
 }
 
 // errCheck is a check that failed (a detector panicked): in redact or block mode the call fails closed.
@@ -215,6 +233,7 @@ type errCheck struct{ err error }
 type errOverrun struct{ check string }
 
 type run struct {
+	b        *jsre.Budget // the call's budget and deadline
 	policy   Policy
 	hits     []*Hit
 	index    map[string]*Hit
@@ -222,7 +241,13 @@ type run struct {
 	failed   bool
 }
 
-func newRun(p Policy) *run { return &run{policy: p, index: map[string]*Hit{}} }
+func newRun(p Policy) *run { return &run{b: newCallBudget(), policy: p, index: map[string]*Hit{}} }
+
+// budget grants the call's budget the allowance of one check on n code units and returns it.
+func (r *run) budget(n int) *jsre.Budget {
+	r.b.Extend(budgetPerUnit*int64(n), budgetCap)
+	return r.b
+}
 
 func (r *run) add(check, label string, n int) {
 	k := check + "|" + label
@@ -239,7 +264,7 @@ func (r *run) add(check, label string, n int) {
 func (r *run) guarded(check string, f func() []uint16, fallback []uint16) (out []uint16) {
 	defer func() {
 		if p := recover(); p != nil {
-			if p == jsre.ErrBudget || p == jsre.ErrStack {
+			if jsre.IsLimit(p) {
 				panic(errOverrun{check})
 			}
 			if r.policy.mode(check) != "log" {
@@ -260,7 +285,7 @@ func privateKeyEnd(text []uint16, from int, b *jsre.Budget) int {
 }
 
 func (r *run) secretsIn(text []uint16) []uint16 {
-	b := budgetFor(len(text))
+	b := r.budget(len(text))
 	spans := detectSecrets(text, b)
 	if len(spans) == 0 {
 		return text
@@ -288,7 +313,7 @@ func (r *run) secretsIn(text []uint16) []uint16 {
 }
 
 func (r *run) piiIn(text []uint16) []uint16 {
-	masked, counts := detectPII(text, budgetFor(len(text)))
+	masked, counts := detectPII(text, r.budget(len(text)))
 	for _, kind := range piiKinds {
 		if counts[kind] > 0 {
 			r.add("pii", kind, counts[kind])
@@ -311,7 +336,7 @@ func (r *run) text(s []uint16, fresh bool) []uint16 {
 	}
 	if fresh && r.policy.Injection != "off" {
 		r.guarded("injection", func() []uint16 {
-			if res := detectInjection(s, budgetFor(len(s))); res != nil {
+			if res := detectInjection(s, r.budget(len(s))); res != nil {
 				for _, l := range res.Labels {
 					r.add("injection", l, 1)
 				}
@@ -355,10 +380,10 @@ func (r *run) finish() (action string, hits []Hit, err error) {
 	return action, hits, nil
 }
 
-// isBase64URL is BASE64_URL.test(s) under its own step budget; past it the call fails closed like a check.
-func isBase64URL(s string) bool {
+// isBase64URL is BASE64_URL.test(s) under the call's budget; past it the call fails closed like a check.
+func (r *run) isBase64URL(s string) bool {
 	u := jsre.U16(s)
-	b := budgetFor(len(u))
+	b := r.budget(len(u))
 	var ok bool
 	if err := b.Run(func() { ok = reBase64URL.TestB(u, b) }); err != nil {
 		panic(errOverrun{dataURLCheck})
@@ -378,7 +403,7 @@ func isStructuralKey(key string, hasKey bool) bool {
 func (r *run) walk(v jsv.Value, key string, hasKey bool, fresh, structural bool) (jsv.Value, bool) {
 	switch x := v.(type) {
 	case string:
-		if (structural && isStructuralKey(key, hasKey)) || isBase64URL(x) {
+		if (structural && isStructuralKey(key, hasKey)) || r.isBase64URL(x) {
 			return x, false
 		}
 		out := r.visitStr(x, fresh)
@@ -462,7 +487,7 @@ func catchCheck(err *error) {
 			*err = &Block{Overrun: e.check}
 		case error:
 			// A limit reached outside a check (no path is known to do so): still fail closed, never panic out.
-			if errors.Is(e, jsre.ErrBudget) || errors.Is(e, jsre.ErrStack) {
+			if errors.Is(e, jsre.ErrBudget) || errors.Is(e, jsre.ErrStack) || errors.Is(e, jsre.ErrDeadline) {
 				*err = &Block{Overrun: "limit"}
 				return
 			}
