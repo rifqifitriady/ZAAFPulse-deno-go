@@ -347,10 +347,10 @@ func TestStreamSubClassModes(t *testing.T) {
 
 // P4c M4 root cause: streams that end together (a provider that paces every stream alike) put many connections back
 // in the idle pool at once; past the pool's per-host limit they were closed, and the next wave dialled them again
-// (handshakes, TIME_WAIT, bursts past the listen backlog: 1 s SYN retries). A second wave of 300 concurrent streams
+// (handshakes, TIME_WAIT, bursts past the listen backlog: 1 s SYN retries). A second wave of 150 concurrent streams
 // must reuse the first wave's connections.
 func TestStreamWavesReuseProviderConnections(t *testing.T) {
-	const n = 300
+	const n = 150 // within Windows' accept backlog (about 200)
 	var conns atomic.Int64
 	var release atomic.Pointer[chan struct{}]
 	first := make(chan struct{})
@@ -375,30 +375,37 @@ func TestStreamWavesReuseProviderConnections(t *testing.T) {
 	defer tr.CloseIdleConnections()
 	wave := func() {
 		errs := make(chan error, n)
-		started := make(chan struct{}, n)
+		ready := make(chan error, n) // nil: the answer started; else why it did not
 		for i := 0; i < n; i++ {
 			go func() {
 				req, _ := http.NewRequest("POST", g.url, strings.NewReader(streamBody))
 				req.Header.Set("Authorization", g.key)
 				resp, err := client.Do(req)
 				if err != nil {
-					errs <- err
+					ready <- err
 					return
 				}
-				started <- struct{}{}
+				ready <- nil
 				_, err = io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				errs <- err
 			}()
 		}
+		failed := 0
 		for i := 0; i < n; i++ {
-			<-started
+			if err := <-ready; err != nil {
+				t.Error(err)
+				failed++
+			}
 		}
 		close(*release.Load())
-		for i := 0; i < n; i++ {
+		for i := 0; i < n-failed; i++ {
 			if err := <-errs; err != nil {
-				t.Fatal(err)
+				t.Error(err)
 			}
+		}
+		if failed > 0 {
+			t.FailNow()
 		}
 		for i := 0; i < n; i++ {
 			<-g.lines
