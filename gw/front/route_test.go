@@ -255,9 +255,9 @@ func TestChatStreamSubClassDispatch(t *testing.T) {
 
 // P4c M4 root cause, front side: requests forwarded to the control plane that end together put their connections back
 // at once; past the proxy transport's idle limit they were closed and the next wave dialled the internal port again.
-// A second wave of 300 concurrent requests must reuse the first wave's connections.
+// A second wave of 150 concurrent requests must reuse the first wave's connections.
 func TestForwardedWavesReuseUpstreamConnections(t *testing.T) {
-	const n = 300
+	const n = 150 // within Windows' accept backlog (about 200)
 	var conns atomic.Int64
 	var release atomic.Pointer[chan struct{}]
 	first := make(chan struct{})
@@ -281,28 +281,35 @@ func TestForwardedWavesReuseUpstreamConnections(t *testing.T) {
 	defer tr.CloseIdleConnections()
 	wave := func() {
 		errs := make(chan error, n)
-		started := make(chan struct{}, n)
+		ready := make(chan error, n) // nil: the answer started; else why it did not
 		for i := 0; i < n; i++ {
 			go func() {
 				resp, err := client.Get(frontURL(s) + "/api/x")
 				if err != nil {
-					errs <- err
+					ready <- err
 					return
 				}
-				started <- struct{}{}
+				ready <- nil
 				_, err = io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				errs <- err
 			}()
 		}
+		failed := 0
 		for i := 0; i < n; i++ {
-			<-started
+			if err := <-ready; err != nil {
+				t.Error(err)
+				failed++
+			}
 		}
 		close(*release.Load())
-		for i := 0; i < n; i++ {
+		for i := 0; i < n-failed; i++ {
 			if err := <-errs; err != nil {
-				t.Fatal(err)
+				t.Error(err)
 			}
+		}
+		if failed > 0 {
+			t.FailNow()
 		}
 	}
 	wave()

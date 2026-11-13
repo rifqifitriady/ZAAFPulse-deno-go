@@ -4,7 +4,7 @@
   "runtime": "node",
   "runtimeVersion": "v24.16.0",
   "git": {
-    "sha": "4d6183ed4c1b51a6fb559eb7b372c16c7903b323",
+    "sha": "1a62f2b469c18dccdfb902f0c639a823b4b7cf5b",
     "dirty": true
   },
   "host": {
@@ -34,37 +34,38 @@
   },
   "startup": {
     "ms": [
-      931.2,
-      508.6,
-      514.7,
-      531.8,
-      528.2
+      907.8,
+      494.6,
+      449.5,
+      494.5,
+      492.4
     ],
-    "p50": 528.2
+    "p50": 494.5
   },
-  "idleRssMB": 114.3,
+  "idleRssMB": 98.3,
   "nonStream": {
     "gateway": {
       "n": 2000,
-      "p50": 26.59,
-      "p95": 28.78,
-      "p99": 33.42
+      "p50": 26.29,
+      "p95": 27.94,
+      "p99": 28.6
     },
     "direct": {
       "n": 2000,
-      "p50": 22.56,
-      "p95": 23.4,
-      "p99": 24.37
+      "p50": 22.36,
+      "p95": 23.24,
+      "p99": 23.67
     },
     "overhead": {
       "n": 2000,
-      "p50": 3.94,
-      "p95": 6.14,
-      "p99": 10.48
+      "p50": 3.77,
+      "p95": 5.45,
+      "p99": 6.05
     },
     "servedBy": {
       "go": 0,
-      "js": 4000
+      "js": 4000,
+      "conns": 0
     }
   },
   "streams": [
@@ -72,77 +73,80 @@
       "level": 50,
       "seconds": 10,
       "gateway": {
-        "completed": 991,
+        "completed": 959,
         "errors": 0,
-        "ttfbP95": 78.06,
-        "durP50": 513.78,
-        "durP95": 560.58
+        "ttfbP95": 40.76,
+        "durP50": 530.61,
+        "durP95": 539.2
       },
       "direct": {
         "completed": 1000,
         "errors": 0,
-        "ttfbP95": 33.26,
-        "durP50": 514.33,
-        "durP95": 528.42
+        "ttfbP95": 37.24,
+        "durP50": 512.38,
+        "durP95": 541.85
       },
       "servedBy": {
         "go": 0,
-        "js": 991
+        "js": 959,
+        "conns": 49
       },
-      "overheadP95": 32.16,
-      "ttfbOverheadP95": 44.8
+      "overheadP95": -2.65,
+      "ttfbOverheadP95": 3.52
     },
     {
       "level": 200,
       "seconds": 10,
       "gateway": {
-        "completed": 3176,
+        "completed": 4000,
         "errors": 0,
-        "ttfbP95": 376.39,
-        "durP50": 636.59,
-        "durP95": 795
+        "ttfbP95": 43.04,
+        "durP50": 515.19,
+        "durP95": 526.85
       },
       "direct": {
         "completed": 4000,
         "errors": 0,
-        "ttfbP95": 54.26,
-        "durP50": 511.02,
-        "durP95": 562.5
+        "ttfbP95": 30.57,
+        "durP50": 512.36,
+        "durP95": 551.91
       },
       "servedBy": {
         "go": 0,
-        "js": 3176
+        "js": 4000,
+        "conns": 150
       },
-      "overheadP95": 232.5,
-      "ttfbOverheadP95": 322.13
+      "overheadP95": -25.06,
+      "ttfbOverheadP95": 12.47
     },
     {
       "level": 500,
       "seconds": 10,
       "gateway": {
-        "completed": 4363,
+        "completed": 9730,
         "errors": 0,
-        "ttfbP95": 1376.38,
-        "durP50": 830.35,
-        "durP95": 1829.94
+        "ttfbP95": 99.47,
+        "durP50": 517.82,
+        "durP95": 565.87
       },
       "direct": {
-        "completed": 9587,
+        "completed": 10000,
         "errors": 0,
-        "ttfbP95": 128.87,
-        "durP50": 516.24,
-        "durP95": 610.37
+        "ttfbP95": 34.1,
+        "durP50": 509.49,
+        "durP95": 547.45
       },
       "servedBy": {
         "go": 0,
-        "js": 4363
+        "js": 9730,
+        "conns": 300
       },
-      "overheadP95": 1219.57,
-      "ttfbOverheadP95": 1247.51
+      "overheadP95": 18.42,
+      "ttfbOverheadP95": 65.37
     }
   ],
-  "peakRssMB": 360.8,
-  "gatewayIdleRssMB": 19.9,
-  "gatewayPeakRssMB": 117.4,
-  "durationS": 175
+  "peakRssMB": 492.5,
+  "gatewayIdleRssMB": 20.5,
+  "gatewayPeakRssMB": 69.1,
+  "durationS": 172
 }
