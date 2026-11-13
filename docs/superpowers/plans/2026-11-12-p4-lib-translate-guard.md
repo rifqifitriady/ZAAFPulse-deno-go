@@ -322,6 +322,9 @@ the CPU was contended, so condition 2 now reads:
 - The wall-clock deadline is only a coarse backstop of 10 s per call, also failing closed.
 - Every adversarial input of the reviews is stopped by the step budget (or the backtrack stack cap), never by the
   clock; the 2.5 s CPU bound for any body up to 20 MB applies on an idle runner.
+- (Re-review 1, I2.) The owner's intent is no false blocks on legitimate text: the cap is 350M steps per call, sized
+  for text dense in security terms (the guardrail tests, `lib/signals.js`); the CPU an adversarial body may then
+  take on the runner is up to about 2.6 s, logged and bounded loosely (4 s) in `guard-bench`.
 - Condition 3 (no false blocks) is also checked with legitimate 20 MB bodies under concurrent CPU load.
 - The heap bound (256 MB) is the extra Go heap of one call, sampled `HeapAlloc`, not process RSS (B2 review M5).
 
@@ -352,13 +355,16 @@ The library now meets the P4e entry conditions; it is still not wired into the r
 
 22. **I4: one budget per call, the primary bound; a 10 s backstop (owner's decision, 2026-11-13).** `CheckBody`
     and `CheckText` hold one `jsre.Budget` for the whole call, shared by every string, check and the data-URL test:
-    20,000,000 steps, plus `600 × length` each time a check runs on a string, capped at 220,000,000 per call. Steps
+    20,000,000 steps, plus `600 × length` each time a check runs on a string, capped at 350,000,000 per call
+    (220M before B2 re-review 1, I2). Steps
     are weighted to cost about the same time whatever the input: a matcher instruction, a character a repeat
     consumes or an alternation choice is one step, a start attempt four, a start position the filters skip half of
     one, a visited string 16 (every string leaf, skipped ones too, so a body of tiny strings counts: B2 review M4).
-    One step costs 3–7 ns on an M-series Mac and 2–2.5 times that on the Ubuntu runner, so the cap bounds a call to
-    about 2 s of CPU there. Legitimate 20 MB bodies need 78M (the corpus), 112M (this repository's code) and 121M
-    steps (numeric CSV, the heaviest measured): at least 1.8× below the cap, at any machine load. The budget also
+    One step costs 2–8 ns on an M-series Mac and 2–2.5 times that on the Ubuntu runner, so the cap bounds a call to
+    about 2.6 s of CPU there (idle). Legitimate 20 MB bodies and their headroom under the cap, at any machine load:
+    the corpus 78M (4.5×), this repository's code 112M (3.1×), numeric CSV 121M (2.9×), `lib/signals.js` 156M
+    (2.2×), the guardrail tests plus `lib/signals.js` 264M (1.33×), the guardrail tests alone 293M (1.19×, the
+    densest legitimate text measured). The budget also
     carries a wall-clock backstop of 10 s (`requestDeadline`, read every 65,536 steps and at the first step of a
     call; `jsre.ErrDeadline`). Past either the call returns `*Block{Overrun: <check>}` in every mode. M8 (note 20)
     now applies per call. Compiling the patterns (about 0.2–0.5 s, once) happens in `guard.Prepare`, before the
@@ -387,9 +393,10 @@ The library now meets the P4e entry conditions; it is still not wired into the r
     previous behaviour: `TestFiltersChangeNoMatch` (every guard pattern, with and without the filters, on the fixture
     inputs and the corpus; a deliberately broken filter fails it), `TestMultiMatchesExec`, `TestMultiAllMatchesEach`,
     `TestMatchInjectionMatchesReference`, `TestDeobfuscateMatchesReference`, and the fixtures, unchanged. The step
-    cap is the only new behaviour on output: an adversarial body past 220M steps now blocks where the JS answers
-    slowly (`"the ai said you "×N` and the doc-context line at 20 MB, which JS answers in 0.8 s and 17 min; recorded
-    overrun deviations like note 13).
+    cap is the only new behaviour on output: an adversarial body past 350M steps now blocks where the JS answers
+    slowly (`"the ai said you "×N` at 20 MB, which JS answers in 0.8 s; a recorded overrun deviation like note 13;
+    the doc-context line, 260M steps, now finishes as in JS). `MASKED` is skipped where `around` holds no '@' or
+    "http" (it cannot match there).
 27. **C1 (B2 review): a redaction bypass, fixed.** The heap work let the PII passes write their result over the
     original buffer, and `text()` took "same buffer, same length" for "unchanged": with secrets and PII on `redact`,
     `"k " + <28-unit Anthropic key> + " m a@b.co"` (the key shrinks by one, the email grows by one) went upstream in
@@ -401,7 +408,8 @@ The library now meets the P4e entry conditions; it is still not wired into the r
     length-cancelling combinations of keys, emails, IPv4 addresses and phones; 16 of them failed before the fix.
 28. **B2 review minors.** M1: `TestGuardBench` measures each size three times and judges the median attempt (all
     three reported). M3: the 2.5 s bounds of `TestOneBudgetPerCall` apply only in `guard-bench` (Ubuntu); the 4-OS
-    `go` job keeps a 30 s bound. M4: see note 22 (a step per visited string). Left as notes: M2, the deobfuscation
+    `go` job keeps a 30 s bound; since re-review 1 (M6) the test asserts the outcome on steps (a call that used the
+    whole budget blocked; the clock is out of play) and bounds CPU only loosely, 4 s in `guard-bench`. M4: see note 22 (a step per visited string). Left as notes: M2, the deobfuscation
     path is now measured by `TestLegitimateBodiesUnderLoad` (code text) but not by the latency benchmark; M5, the
     heap bound is per call and `HeapAlloc`, not RSS (entry-condition text above).
 
@@ -410,29 +418,39 @@ The library now meets the P4e entry conditions; it is still not wired into the r
 `scripts/bench-guard.js` times the JS `checkBody`, `TestGuardBench` the Go `CheckBody`, on the same slices of the
 corpus in `gw/guard/testdata/bench-corpus.txt` (guard corpus, `lib/` code, plans and specs, agent transcripts), one
 user message, secrets and pii `redact`, injection `log`; each size judged on the median of three attempts. Run
-43351126229 (c65d391; the final cap of 220M steps changes nothing here, no benchmark body comes near it):
+43354090694 (eea740c, cap 350M):
 
 | Size | Go p50 | Go p99 | JS p50 | JS p99 | Go/JS p50 | Go/JS p99 | Target |
 |---|---|---|---|---|---|---|---|
-| 32 KB | 2.52 ms | 4.71 ms | 3.36 ms | 8.60 ms | 0.75x | 0.55x | p50 ≤ 5, p99 ≤ 15 ms: met |
-| 128 KB | 12.51 ms | 17.65 ms | 21.45 ms | 34.01 ms | 0.58x | 0.52x | p50 ≤ 30, p99 ≤ 60 ms: met |
-| 1 MB | 63.40 ms | 128.21 ms | 91.05 ms | 260.35 ms | 0.70x | 0.49x | p99 ≤ 300 ms: met |
+| 32 KB | 2.05 ms | 3.77 ms | 2.63 ms | 6.98 ms | 0.78x | 0.54x | p50 ≤ 5, p99 ≤ 15 ms: met |
+| 128 KB | 10.30 ms | 14.08 ms | 18.45 ms | 29.34 ms | 0.56x | 0.48x | p50 ≤ 30, p99 ≤ 60 ms: met |
+| 1 MB | 52.40 ms | 103.56 ms | 78.08 ms | 217.57 ms | 0.67x | 0.48x | p99 ≤ 300 ms: met |
 
-Runner speed varies between runs by up to 1.5x (an earlier run, 43343102925: 1.70/3.07, 8.61/11.94 and 42.6/82.5
-ms). Before this work (M4 laptop): 32 KB 4.93 / 11.28 ms (2.8x the JS), 128 KB 26.2 / 42.7 ms, 1 MB 150 / 300 ms.
-The corpus runs 106–247 ms at 2 MB, 229–241 ms at 5 MB and 925–945 ms at 20 MB on the runner, with no overrun.
+Runner speed varies between runs by up to 1.5x. Before this work (M4 laptop): 32 KB 4.93 / 11.28 ms (2.8x the JS),
+128 KB 26.2 / 42.7 ms, 1 MB 150 / 300 ms. The corpus runs 749–822 ms at 20 MB on the runner, with no overrun.
 
-Adversarial inputs, clock taken out of play (`TestOneBudgetPerCall`, same run, cap then 250M; at 220M the blocked
-ones stop about 12% sooner). Every input ends by its steps or the stack cap, well before the 10 s backstop:
+Adversarial inputs, clock out of play (`TestOneBudgetPerCall`, same run). Every input ends by its steps or the stack
+cap, well under the 10 s backstop:
 
 | Input (20 MB) | One string | 1,000 strings |
 |---|---|---|
-| `token `+`a `×N | 308 ms CPU, 40M steps, blocked (stack) | 947 ms, 90M, ok |
-| IPv6 | 400 ms, 63M, blocked (stack) | 1.28 s, 143M, ok |
-| email | 592 ms, 42M, blocked (stack) | 1.74 s, 215M, ok |
-| exfil | 2.10 s, budget, blocked | 1.99 s, budget, blocked |
-| `the ai said you `×N | 2.42 s, budget, blocked | 2.04 s, budget, blocked |
-| doc-context line | 1.65 s, budget, blocked | 1.60 s, budget, blocked |
+| `token `+`a `×N | 253 ms CPU, 40M steps, blocked (stack) | 746 ms, 90M, ok |
+| IPv6 | 308 ms, 63M, blocked (stack) | 1.01 s, 143M, ok |
+| email | 448 ms, 42M, blocked (stack) | 1.40 s, 215M, ok |
+| exfil | 2.21 s, 350M, blocked (budget) | 2.16 s, 350M, blocked (budget) |
+| `the ai said you `×N | 2.59 s, 350M, blocked (budget) | 2.29 s, 350M, blocked (budget) |
+| doc-context line | 1.33 s, 260M, ok | 1.33 s, 251M, ok |
 
-Legitimate 20 MB bodies under load (`TestLegitimateBodiesUnderLoad`, two at a time next to `GOMAXPROCS` burning
-goroutines): corpus 1.9–2.0 s, CSV 2.3 s, code 2.4–2.6 s wall, no block. Heap per call: 7–122 MB.
+Legitimate 20 MB bodies (`TestLegitimateBodiesUnderLoad`, same run): steps and headroom under the 350M cap, then
+wall time two at a time next to `GOMAXPROCS` CPU-burning goroutines; none blocks.
+
+| Body | Steps | Headroom | Under load |
+|---|---|---|---|
+| Corpus | 78M | 4.49x | 1.6 s |
+| This repository's code | 112M | 3.14x | 2.0–2.2 s |
+| Numeric CSV | 121M | 2.89x | 1.7–1.8 s |
+| `lib/signals.js` | 156M | 2.24x | 2.3–2.4 s |
+| Guardrail tests + `lib/signals.js` | 264M | 1.33x | 4.5–4.8 s |
+| Guardrail tests (`test/guardrails*.js`) | 293M | 1.19x | 4.6–4.8 s |
+
+Heap per call: 11–122 MB.
