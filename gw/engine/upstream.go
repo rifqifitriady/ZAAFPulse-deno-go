@@ -8,6 +8,7 @@ package engine
 // connect timeout). A redirect is followed (at most 5, same method and body) only to the same origin.
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -17,7 +18,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -92,12 +92,13 @@ func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) 
 	}
 	current := p.URL
 	for hop := 0; hop <= maxRedirects; hop++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, current, &onceBody{b: p.Body})
+		// An in-memory body (bytes.Reader): net/http then writes the headers and the body in one go. A body type it does
+		// not know makes it flush the headers first (two writes), which a provider that closes after its first read sees
+		// as a reset on Windows (P4c Task 3 CI); so the request keeps its bytes until the call ends.
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, current, bytes.NewReader(p.Body))
 		if err != nil {
 			return fail("fetch failed")
 		}
-		req.ContentLength = int64(len(p.Body))
-		req.GetBody = func() (io.ReadCloser, error) { return &onceBody{b: p.Body}, nil } // p.Body, read when called
 		req.Header = p.Header.Clone()
 		resp, err := u.client.Do(req)
 		if err != nil {
@@ -139,35 +140,6 @@ func (u *Upstream) Call(ctx context.Context, p *Plan) Result {
 		return Result{Status: resp.StatusCode, Body: body, Why: "client gone"}
 	}
 	return Result{Status: resp.StatusCode, Body: body}
-}
-
-// onceBody is a request body that lets go of its bytes once they are read or the request is done with it, so a long
-// stream does not keep its prompt alive (P4c Decision 11). Read and Close may run at once (net/http's rule).
-type onceBody struct {
-	mu sync.Mutex
-	b  []byte
-}
-
-func (o *onceBody) Read(p []byte) (int, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if len(o.b) == 0 {
-		o.b = nil
-		return 0, io.EOF
-	}
-	n := copy(p, o.b)
-	o.b = o.b[n:]
-	if len(o.b) == 0 {
-		o.b = nil
-	}
-	return n, nil
-}
-
-func (o *onceBody) Close() error {
-	o.mu.Lock()
-	o.b = nil
-	o.mu.Unlock()
-	return nil
 }
 
 // cancelBody ends the call when the answer's body is closed.

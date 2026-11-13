@@ -177,12 +177,3 @@ func TestUpstreamStart(t *testing.T) {
 		t.Fatal("closing the body did not end the call")
 	}
 }
-
-// The request body lets go of its bytes once read.
-func TestOnceBodyReleases(t *testing.T) {
-	b := &onceBody{b: []byte("abc")}
-	out, _ := io.ReadAll(b)
-	if string(out) != "abc" || b.b != nil {
-		t.Fatalf("%q %v", out, b.b)
-	}
-}
