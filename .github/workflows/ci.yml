@@ -10,6 +10,7 @@
 # stops the Go gateway in front of the server on each of them (P4a T6, scripts/smoke-front.js).
 # The Node and Deno jobs also run the contract suite with the Go gateway in front (ZP_ENGINE=front, P4a T6).
 # The contract-go-engine job runs the contract suite with chat shadowed by, and served by, the go engine (P4b).
+# The m4-bench job (P4c) runs the gateway benchmark in its three modes on Ubuntu, on manual runs only.
 # The fixtures job regenerates the Go ports' fixtures from the JS on Node and Deno and fails on a diff (P4 stage 1).
 # The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
 # the test job's OS matrix. The Node and Deno jobs set up the same Go, so the cross-language IPC tests build the stub
@@ -246,6 +247,48 @@ jobs:
             fi
           done
           exit $code
+
+  # M4 reference (P4c): the gateway benchmark (bench/run.js) on a quiet Ubuntu runner, in the three modes of one session
+  # (the JS gateway, the Go gateway in front, the go engine serving chat and chat-stream), with the bench provider on the
+  # private tier (the go engine serves only calls no guardrail check applies to until P4e). Manual runs only: it takes
+  # about 10 minutes and measures, it does not gate. A go run that hands calls to the server, or that opens a connection
+  # per stream to the provider, fails. The result files are an artifact; the summary prints each run's line.
+  m4-bench:
+    name: M4 bench (ubuntu)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: The three M4 runs (js, front, go), private tier
+        shell: bash
+        env:
+          ZP_BENCH_TIER: private
+          ZP_BENCH_HOST: gha-ubuntu
+        run: |
+          ulimit -n 8192
+          nproc; free -m; uptime
+          out="$RUNNER_TEMP/bench"
+          for e in js front go; do
+            if [ "$e" = js ]; then ZP_BENCH_OUT="$out" node bench/run.js; else ZP_ENGINE=$e ZP_BENCH_OUT="$out" node bench/run.js; fi | tee -a "$RUNNER_TEMP/bench.log"
+          done
+          { echo '```'; cat "$RUNNER_TEMP/bench.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: m4-bench
+          path: ${{ runner.temp }}/bench
 
   # The Go ports of the gateway's JS libraries (P4 stage 1) are proven by fixtures the JS writes
   # (scripts/fixtures/gen-*.js → gw/testdata/<lib>/); the go job replays them. This job runs the generators on Node and

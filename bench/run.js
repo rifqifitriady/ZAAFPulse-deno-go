@@ -204,10 +204,17 @@ async function main() {
     }
     // Which engine called the mock since the last look (and reset); a go run fails when the server answered any.
     const mockBase = mock.url.replace(/\/v1$/, '');
+    let reuseLimit = 0;
     const servedBy = async (what) => {
       const s = await (await fetch(`${mockBase}/_stats`)).json();
       if (CFG.engine === 'go' && s.js > 0)
         throw new Error(`the go engine handed ${s.js} calls to the server (${what})`);
+      // Connection reuse (P4c): a gateway that opened a connection per call would churn the provider (handshakes,
+      // TIME_WAIT); a stream step may open about one per worker, not one per stream.
+      if (CFG.engine === 'go' && reuseLimit && s.conns > reuseLimit)
+        throw new Error(
+          `the go engine opened ${s.conns} connections to the provider for ${what} (limit ${reuseLimit})`,
+        );
       return s;
     };
     await sleep(5000);
@@ -272,6 +279,7 @@ async function main() {
           const g = gwPid ? rssMB(gwPid) : null;
           if (g !== null && (gatewayPeakRssMB === null || g > gatewayPeakRssMB)) gatewayPeakRssMB = g;
         }, 250);
+      reuseLimit = 2 * level;
       const g = await streamStep(level, {
         url: gwUrl,
         headers: (i) => gwHeaders(1 + (i % (KEYS - 1))),

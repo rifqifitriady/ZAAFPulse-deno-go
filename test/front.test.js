@@ -350,3 +350,18 @@ test('m10: a config that cannot be built is pushed as no keys and every class on
     unknownType: false,
   });
 });
+
+test('gwArgs: the gateway gets --mem-limit-mb from gateway.memLimitMB (default 64; 0 turns it off) (P4c)', () => {
+  const { gwArgs, MEM_LIMIT_MB } = require('../lib/front');
+  assert.equal(MEM_LIMIT_MB, 64);
+  assert.deepEqual(gwArgs(undefined), ['--mem-limit-mb', '64']);
+  assert.deepEqual(gwArgs({ memLimitMB: 96 }), ['--mem-limit-mb', '96']);
+  assert.deepEqual(gwArgs({ memLimitMB: 0 }), []);
+  for (const bad of [-1, 1.5, '64', null, Infinity])
+    assert.deepEqual(gwArgs({ memLimitMB: bad }), ['--mem-limit-mb', '64']);
+});
+
+test('createFront hands its args to the supervisor (P4c: --mem-limit-mb)', async (t) => {
+  const { sups } = await frontWithFakes(t, { args: ['--mem-limit-mb', '64'] });
+  assert.deepEqual(sups[0].opts.args, ['--mem-limit-mb', '64']);
+});

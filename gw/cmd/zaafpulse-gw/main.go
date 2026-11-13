@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,7 @@ import (
 const version = "0.4.0-front"
 
 type options struct {
+	memLimitMB        int64
 	outbox            string
 	healthMs          int
 	protocol          string
@@ -60,6 +62,19 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
+// applyMemLimit sets the Go runtime's soft memory limit to mb MiB (P4c, M4: the gateway's RSS at 500 streams). It is a
+// command-line flag the control plane passes (config.json gateway.memLimitMB), not GOMEMLIMIT, because the gateway's
+// environment is an allow-list (P4a E7). 0 leaves the runtime's default (no limit).
+func applyMemLimit(mb int64) error {
+	switch {
+	case mb < 0:
+		return fmt.Errorf("--mem-limit-mb %d is negative", mb)
+	case mb > 0:
+		debug.SetMemoryLimit(mb << 20)
+	}
+	return nil
+}
+
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	logger := log.New(stderr, "", 0)
 	var o options
@@ -78,7 +93,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.segmentEvents, "segment-events", 0, "test only: events per outbox segment (default 1000)")
 	fs.Int64Var(&o.staleMs, "stale-ms", ipc.StaleAfterMs, "test only: age at which a budget snapshot is stale, in ms")
 	fs.BoolVar(&o.healthOnSnapshot, "health-on-snapshot", false, "test only: send health after every budget snapshot")
+	fs.Int64Var(&o.memLimitMB, "mem-limit-mb", 0, "the Go runtime's soft memory limit in MiB (0: none)")
 	if err := fs.Parse(args); err != nil {
+		return exitWith(logger, ipc.ExitRefused, "bad command line: %v", err)
+	}
+	if err := applyMemLimit(o.memLimitMB); err != nil {
 		return exitWith(logger, ipc.ExitRefused, "bad command line: %v", err)
 	}
 	dir := o.outbox

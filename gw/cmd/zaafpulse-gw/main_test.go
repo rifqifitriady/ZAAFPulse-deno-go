@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -93,5 +94,26 @@ func TestBadLineExits3(t *testing.T) {
 func TestBadCommandLineExits2(t *testing.T) {
 	if code, _ := runGw(t, strings.NewReader(""), "--protocol", "x", "--outbox", t.TempDir()); code != ipc.ExitRefused {
 		t.Fatalf("exit %d", code)
+	}
+}
+
+// --mem-limit-mb sets the Go runtime's soft memory limit (P4c: the gateway's RSS target of M4); it is a flag, not
+// GOMEMLIMIT, because the gateway's environment is an allow-list (P4a E7). 0 leaves the runtime's default.
+func TestMemLimitFlag(t *testing.T) {
+	old := debug.SetMemoryLimit(-1)
+	defer debug.SetMemoryLimit(old)
+	if err := applyMemLimit(48); err != nil || debug.SetMemoryLimit(-1) != 48<<20 {
+		t.Fatalf("%v %d", err, debug.SetMemoryLimit(-1))
+	}
+	debug.SetMemoryLimit(old)
+	if err := applyMemLimit(0); err != nil || debug.SetMemoryLimit(-1) != old {
+		t.Fatalf("0 changed the limit: %v %d", err, debug.SetMemoryLimit(-1))
+	}
+	if err := applyMemLimit(-1); err == nil {
+		t.Fatal("a negative limit was accepted")
+	}
+	if code, stderr := runGw(t, strings.NewReader(""), "--outbox", t.TempDir(), "--mem-limit-mb", "-5"); code != 2 ||
+		!strings.Contains(stderr, "mem-limit-mb") {
+		t.Fatalf("exit %d for a negative --mem-limit-mb: %s", code, stderr)
 	}
 }

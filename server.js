@@ -79,7 +79,7 @@ const { recoverMarks } = require('./lib/ipc/marks');
 const { createMarkFile } = require('./lib/ipc/markfile');
 const { serverSinks } = require('./lib/ipc/server-sinks');
 const { gwEnv } = require('./lib/ipc/env');
-const { createFront, engineOf, routing, shadowOf } = require('./lib/front');
+const { createFront, engineOf, routing, shadowOf, gwArgs } = require('./lib/front');
 const { createShadowLog, shadowEndpoints } = require('./lib/front/shadow-log');
 const { configPush, secretsPush, snapshotPush } = require('./lib/front/push');
 const { gwBinary } = require('./lib/front/bin');
@@ -2283,6 +2283,8 @@ front = createFront({
     : null,
   mainServer: server,
   bin: gwBinary(),
+  // The gateway's soft memory limit (P4c; config.json gateway.memLimitMB, default 64 MiB), read at start.
+  args: gwArgs(rawConfig().gateway),
   env: gwEnv(process.env, DIR),
   cpVersion: require('./package.json').version,
   ingest: fi && fi.ingest,
