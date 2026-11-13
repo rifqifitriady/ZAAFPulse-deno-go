@@ -183,6 +183,153 @@ const CASES = [
   ['timed-out', {}, { model: 'oa/m1', messages: user }, { throw: 'timeout' }],
 ];
 
+// Streamed chat (P4c): the provider's body arrives in these pieces. The engine must send the provider the same request
+// and write the client the same bytes, whatever the split.
+const sse = (...events) => events.map((e) => (typeof e === 'string' ? e : `data: ${JSON.stringify(e)}\n\n`));
+const chunk = (extra) => ({ id: 'c1', object: 'chat.completion.chunk', model: 'm1-upstream', ...extra });
+const delta = (d, extra = {}) => chunk({ choices: [{ index: 0, delta: d, ...extra }], usage: null });
+const USAGE_CHUNK = chunk({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 2 } });
+const streamed = (body) => ({ model: 'oa/m1', stream: true, messages: user, ...body });
+const STREAM_CASES = [
+  [
+    'stream-basic',
+    {},
+    streamed(),
+    {
+      status: 200,
+      chunks: sse(
+        ': keep-alive\n\n',
+        delta({ role: 'assistant', content: 'Hel' }),
+        delta({ content: 'lo' }, { finish_reason: 'stop' }),
+        USAGE_CHUNK,
+        'data: [DONE]\n\n',
+      ),
+    },
+  ],
+  [
+    'stream-include-usage',
+    {},
+    streamed({ stream_options: { include_usage: true } }),
+    { status: 200, chunks: sse(delta({ content: 'a' }), USAGE_CHUNK, 'data: [DONE]\n\n') },
+  ],
+  [
+    'stream-options-other-keys',
+    {},
+    streamed({ stream_options: { x: 1, include_usage: false } }),
+    { status: 200, chunks: sse(delta({ content: 'a' }), 'data: [DONE]\n\n') },
+  ],
+  [
+    'stream-options-null',
+    {},
+    streamed({ stream_options: null }),
+    { status: 200, chunks: sse(delta({ content: 'a' }), 'data: [DONE]\n\n') },
+  ],
+  // b64 pieces are exact bytes ('latin1' maps each \xNN of the literal to that byte): here "é" (C3 A9) is split.
+  [
+    'stream-crlf-and-split-char',
+    {},
+    streamed(),
+    {
+      status: 200,
+      b64: [
+        Buffer.from('data: {"model":"x","choices":[{"delta":{"content":"caf\xc3', 'latin1').toString('base64'),
+        Buffer.from('\xa9"}}]}\r\n\r\ndata: [DONE]\r\n\r\n', 'latin1').toString('base64'),
+      ],
+    },
+  ],
+  [
+    'stream-bom-split',
+    {},
+    streamed(),
+    {
+      status: 200,
+      b64: [
+        Buffer.from([0xef]).toString('base64'),
+        Buffer.from('\u00bb\u00bfdata: {"model":"x"}\n\n', 'latin1').toString('base64'),
+      ],
+    },
+  ],
+  [
+    'stream-incomplete-tail',
+    {},
+    streamed(),
+    {
+      status: 200,
+      b64: [Buffer.from('data: {"model":"x"}\n\nab').toString('base64'), Buffer.from([0xe2, 0x82]).toString('base64')],
+    },
+  ],
+  [
+    'stream-invalid-utf8',
+    {},
+    streamed(),
+    {
+      status: 200,
+      b64: [
+        Buffer.concat([Buffer.from('data: {"t":"'), Buffer.from([0xff, 0xfe]), Buffer.from('"}\n\n')]).toString(
+          'base64',
+        ),
+      ],
+    },
+  ],
+  [
+    'stream-final-line-no-newline',
+    {},
+    streamed(),
+    { status: 200, chunks: ['data: {"model":"x"}\n\n', 'data: {"model":"y"}'] },
+  ],
+  [
+    'stream-cut-mid-line',
+    {},
+    streamed(),
+    { status: 200, chunks: ['data: {"model":"x"}\n\n', 'data: {"mod'], cut: true },
+  ],
+  [
+    'stream-not-json-and-array',
+    {},
+    streamed(),
+    { status: 200, chunks: sse('data: not json\n\n', 'data: [1,2]\n\n', 'event: ping\n\n', 'data: [DONE]\n\n') },
+  ],
+  [
+    'stream-choices-object-and-tool-calls',
+    {},
+    streamed(),
+    { status: 200, chunks: sse({ choices: { 0: { delta: { tool_calls: [] } } }, model: 'z' }, 'data: [DONE]\n\n') },
+  ],
+  [
+    'stream-usage-with-error-kept',
+    {},
+    streamed(),
+    {
+      status: 200,
+      chunks: sse(chunk({ choices: [], usage: { prompt_tokens: 3 }, error: { message: 'x' } }), 'data: [DONE]\n\n'),
+    },
+  ],
+  [
+    'stream-cached-tokens',
+    {},
+    streamed(),
+    {
+      status: 200,
+      chunks: sse(
+        delta({ content: 'a' }),
+        chunk({
+          choices: [],
+          usage: { prompt_tokens: 50, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 20 } },
+        }),
+        'data: [DONE]\n\n',
+      ),
+    },
+  ],
+  ['stream-upstream-500', {}, streamed(), { status: 500, body: '{"error":{"message":"upstream exploded"}}' }],
+  ['stream-connection-refused', {}, streamed(), { throw: 'ECONNREFUSED' }],
+  [
+    'stream-private-alias',
+    { key: `${SECRET}2` },
+    { model: 'fast', stream: true, messages: user },
+    { status: 200, chunks: sse(delta({ content: 'a' }), 'data: [DONE]\n\n') },
+  ],
+];
+
 // A request as gateway.handle reads it: headers, the target, a loopback client, the body as one chunk.
 const requestOf = (headers, text) => ({
   method: 'POST',
@@ -231,6 +378,21 @@ async function main() {
     sent = { url, headers: init.headers, body: init.body };
     if (provider.throw === 'timeout') throw Object.assign(new Error('aborted'), { name: 'AbortError' });
     if (provider.throw) throw Object.assign(new TypeError('fetch failed'), { cause: { code: provider.throw } });
+    if (provider.chunks || provider.b64) {
+      const pieces = provider.b64
+        ? provider.b64.map((b) => Buffer.from(b, 'base64'))
+        : provider.chunks.map((c) => Buffer.from(c, 'utf8'));
+      // One piece per read; a cut errors only after every piece was read (an error in start() would drop the queue).
+      let i = 0;
+      const body = new ReadableStream({
+        pull(ctrl) {
+          if (i < pieces.length) ctrl.enqueue(new Uint8Array(pieces[i++]));
+          else if (provider.cut) ctrl.error(new Error('terminated'));
+          else ctrl.close();
+        },
+      });
+      return new Response(body, { status: provider.status, headers: { 'content-type': 'text/event-stream' } });
+    }
     return new Response(Buffer.from(provider.body, 'utf8'), {
       status: provider.status,
       headers: provider.headers || {},
@@ -265,6 +427,7 @@ async function main() {
       ...(p.forwards ? { forwards: true } : {}),
       ...(p.maxCompletionTokens ? { maxCompletionTokens: true } : {}),
       ...(p.format ? { format: p.format } : {}),
+      ...(p.streamUsage === false ? { streamUsage: false } : {}),
     };
     if (Object.keys(f).length) presets[id] = f;
   }
@@ -303,6 +466,37 @@ async function main() {
     fs.writeFileSync(
       path.join(OUT, `${String(++n).padStart(2, '0')}-${name}.json`),
       `${JSON.stringify({ fn: 'chat', in: input, out })}\n`,
+    );
+  }
+  for (const [name, opt, body, prov] of STREAM_CASES) {
+    provider = prov;
+    sent = null;
+    const key = opt.key || SECRET;
+    const headers = { 'content-type': 'application/json', authorization: `Bearer ${key}`, ...(opt.headers || {}) };
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
+    const res = responseOf();
+    const req = requestOf(headers, text);
+    await gateway.handle(req, res, new URL(req.url, 'http://localhost'));
+    const client = {
+      status: res.statusCode,
+      headers: Object.fromEntries(
+        ['content-type', 'cache-control', 'access-control-allow-origin'].map((h) => [
+          h,
+          h in res.headers ? res.headers[h] : null,
+        ]),
+      ),
+      body: res.body,
+    };
+    const { ts: _ts, ms: _ms, ttft, cost, ...usage } = gateway.usage.recent(1)[0];
+    const out = {
+      request: sent && { url: sent.url, headers: sent.headers, body: sent.body },
+      client,
+      usage: { ...usage, cost: toNano(cost), ttft: ttft === undefined ? 'absent' : ttft === null ? null : 'set' },
+    };
+    const input = { config, secrets: handoff, request: { headers, body: text }, provider: prov };
+    fs.writeFileSync(
+      path.join(OUT, `${String(++n).padStart(2, '0')}-${name}.json`),
+      `${JSON.stringify({ fn: 'chatStream', in: input, out })}\n`,
     );
   }
   gateway.flush();

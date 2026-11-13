@@ -86,6 +86,9 @@ type Plan struct {
 	Header  http.Header // the provider request's headers, with the credential
 	Body    []byte      // the provider request's body, as JSON.stringify writes it
 	Base    ipc.UsageRecord
+
+	Stream     bool // the client asked for a stream (body.stream truthy; P4c)
+	WantsUsage bool // the client's stream_options.include_usage is truthy
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }
@@ -131,9 +134,6 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	if strings.HasPrefix(model, "agent/") || strings.HasPrefix(model, "collab/") {
 		return handoff("model: an agent or a collaboration")
 	}
-	if body.Get("stream").Truthy() {
-		return handoff("stream: P4c")
-	}
 	if Authorize(key, "llm", model, "") != "" {
 		return handoff("key: not allowed")
 	}
@@ -174,7 +174,22 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 		hasToolMessage(body) {
 		return handoff("token saver: tool results")
 	}
+	stream := body.Get("stream").Truthy()
 	out := body.Clone()
+	if stream && StreamUsageOf(t.Provider) {
+		// proxyChat: { ...body, stream_options: { ...(body.stream_options || {}), include_usage: true } }. Spreading a
+		// non-empty string or array gives indexed keys, which the engine does not build: the control plane answers.
+		so := body.Get("stream_options")
+		merged := NewObject()
+		switch {
+		case so != nil && so.Kind == Object:
+			merged = so.Clone()
+		case so != nil && (so.Kind == String && so.S != "" || so.Kind == Array && len(so.A) > 0):
+			return handoff("stream: stream_options is not an object")
+		}
+		merged.Set("include_usage", &Value{Kind: Bool, B: true})
+		out.Set("stream_options", merged)
+	}
 	out.Set("model", Str(t.Model))
 	AdaptChat(t.Provider, t.Model, out)
 	h := http.Header{}
@@ -183,8 +198,34 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	if cred != "" {
 		h.Set("Authorization", "Bearer "+cred)
 	}
-	return Plan{Key: key, Target: t, Model: model, URL: t.Provider.BaseURL + "/chat/completions", Header: h,
-		Body: out.Stringify(), Base: s.base(key, t, model, r)}
+	so := body.Get("stream_options")
+	p := Plan{Key: key, Target: t, Model: model, URL: t.Provider.BaseURL + "/chat/completions", Header: h,
+		Body: out.Stringify(), Base: s.base(key, t, model, r), Stream: stream,
+		WantsUsage: so.Truthy() && so.Get("include_usage").Truthy()}
+	if stream {
+		v := true
+		p.Base.Stream = &v
+	}
+	return p
+}
+
+// StreamLine is chatCompletion's line after a stream: status 200, the tokens of the last usage chunk, the time to the
+// first token (null when none came), no error text, the cost of the routed model.
+func (s *State) StreamLine(p *Plan, cs *ChatStream, ms float64) ipc.UsageRecord {
+	rec := p.Base
+	rec.Status, rec.Ms = 200, ms
+	in, out, cached := cs.Input, cs.Output, cs.Cached
+	rec.Input, rec.Output, rec.Cached = &in, &out, &cached
+	rec.TTFT = ipc.Null[float64]()
+	if cs.TTFT != nil {
+		rec.TTFT = ipc.Some(*cs.TTFT)
+	}
+	model := rec.Model
+	if rec.RoutedTo != nil {
+		model = *rec.RoutedTo
+	}
+	rec.Cost = s.Pricer.Cost(model, float64(in), float64(out), float64(cached))
+	return rec
 }
 
 func hasToolMessage(body *Value) bool {

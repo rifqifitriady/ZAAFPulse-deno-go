@@ -68,6 +68,9 @@ func TestChatFixtures(t *testing.T) {
 			sameJSON(t, f.Name, Presets, f.Out)
 			continue
 		}
+		if f.Fn == "chatStream" {
+			continue // TestChatStreamFixtures
+		}
 		var c chatCase
 		var want chatOut
 		if err := json.Unmarshal(f.In, &c); err != nil {
@@ -149,7 +152,9 @@ func TestChatHandoffs(t *testing.T) {
 		{"empty body", "body:", func(s *State, r *Request) { r.Body = nil }},
 		{"no model", "model: missing", func(s *State, r *Request) { r.Body = []byte(`{"messages":[]}`) }},
 		{"agent", "model: an agent", func(s *State, r *Request) { r.Body = []byte(`{"model":"agent/auto"}`) }},
-		{"stream", "stream:", func(s *State, r *Request) { r.Body = []byte(`{"model":"oa/m1","stream":1}`) }},
+		{"stream_options a string", "stream: stream_options", func(s *State, r *Request) {
+			r.Body = []byte(`{"model":"oa/m1","stream":true,"stream_options":"x"}`)
+		}},
 		{"unknown model", "model: no usable", func(s *State, r *Request) { r.Body = []byte(`{"model":"zz/m1"}`) }},
 		{"route", "model: a route", func(s *State, r *Request) {
 			s.Gateway.Routes = []ipc.RouteConfig{{Name: "router/r", Targets: []string{"oa/m1"}}}
@@ -207,5 +212,95 @@ func TestRateLimitedAnswer(t *testing.T) {
 	if a.Status != 429 || a.Header.Get("Retry-After") != "7" ||
 		string(a.Body) != `{"error":{"message":"rate limit of 2 requests per minute reached","type":"rate_limit_error"}}` {
 		t.Fatalf("%d %v %s", a.Status, a.Header, a.Body)
+	}
+}
+
+type streamCase struct {
+	chatCase
+	Provider struct {
+		Status int      `json:"status"`
+		Body   string   `json:"body"`
+		Throw  string   `json:"throw"`
+		Chunks []string `json:"chunks"`
+		B64    [][]byte `json:"b64"` // encoding/json reads base64 into []byte
+		Cut    bool     `json:"cut"`
+	} `json:"provider"`
+}
+
+// Every streamed case of gw/testdata/chat (the JS chatCompletion's own output): the same provider request, the same
+// client bytes, the same usage line (ttft only as set or null).
+func TestChatStreamFixtures(t *testing.T) {
+	n := 0
+	for _, f := range loadFixtures(t, "chat") {
+		if f.Fn != "chatStream" {
+			continue
+		}
+		n++
+		var c streamCase
+		var want chatOut
+		if err := json.Unmarshal(f.In, &c); err != nil {
+			t.Fatalf("%s: %v", f.Name, err)
+		}
+		if err := json.Unmarshal(f.Out, &want); err != nil {
+			t.Fatalf("%s: %v", f.Name, err)
+		}
+		s := stateFor(t, c.chatCase)
+		p := s.PlanChat(requestFor(c.chatCase), fixtureNow)
+		if p.Handoff != "" || !p.Stream {
+			t.Errorf("%s: handed off (%s) or not a stream", f.Name, p.Handoff)
+			continue
+		}
+		if p.URL != want.Request.URL || string(p.Body) != want.Request.Body {
+			t.Errorf("%s: provider request\n got %s %s\nwant %s %s", f.Name, p.URL, p.Body, want.Request.URL, want.Request.Body)
+		}
+		var status int
+		var body string
+		var rec ipc.UsageRecord
+		switch {
+		case c.Provider.Throw != "":
+			a := s.Failed(&p, c.Provider.Throw, 1)
+			status, body, rec = a.Status, string(a.Body), a.Usage
+		case c.Provider.Status < 200 || c.Provider.Status > 299:
+			a := s.Respond(&p, c.Provider.Status, []byte(c.Provider.Body), 1)
+			status, body, rec = a.Status, string(a.Body), a.Usage
+		default:
+			pieces := c.Provider.B64
+			if pieces == nil {
+				for _, ch := range c.Provider.Chunks {
+					pieces = append(pieces, []byte(ch))
+				}
+			}
+			cs := NewChatStream(p.Model, p.WantsUsage, func() float64 { return 1 })
+			var out []byte
+			for _, pc := range pieces {
+				w, err := cs.Feed(pc)
+				if err != nil {
+					t.Fatalf("%s: %v", f.Name, err)
+				}
+				out = append(out, w...)
+			}
+			if !c.Provider.Cut {
+				out = append(out, cs.End()...)
+			}
+			status, body, rec = 200, string(out), s.StreamLine(&p, cs, 1)
+		}
+		if status != want.Client.Status || body != want.Client.Body {
+			t.Errorf("%s: client\n got %d %q\nwant %d %q", f.Name, status, body, want.Client.Status, want.Client.Body)
+		}
+		var got map[string]any
+		b, _ := json.Marshal(rec)
+		_ = json.Unmarshal(b, &got)
+		delete(got, "ts")
+		delete(got, "ms")
+		switch v, ok := got["ttft"]; {
+		case !ok:
+			got["ttft"] = "absent"
+		case v != nil:
+			got["ttft"] = "set"
+		}
+		sameJSON(t, f.Name+" usage", got, want.Usage)
+	}
+	if n < 15 {
+		t.Fatalf("only %d stream fixtures", n)
 	}
 }
