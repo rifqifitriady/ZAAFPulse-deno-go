@@ -13,26 +13,36 @@ import (
 )
 
 // applyFront checks a config.push front section: a route class on the go engine is refused (P4a has none: exit 2). The
-// first section is kept and opened on ready; a later one changes only the engines (listen, TLS and upstream apply after
-// a restart). It returns an exit code, or -1 to go on.
+// section of the first config.push is kept and opened on ready; a later one changes only the engines. Listen, TLS and
+// upstream, and a front section that first appears after the start, apply after a restart (P4b entry condition 3: the
+// control plane builds the section once per gateway start, lib/front/index.js). It returns an exit code, or -1 to go on.
 func (g *gateway) applyFront(f *ipc.FrontConfig) int {
 	if f == nil {
 		return -1
 	}
 	engines := make(map[string]string, len(f.Engines))
 	for class, e := range f.Engines {
-		if e != "js" {
+		if e != "js" && !(e == "go" && front.GoClasses[class]) {
 			return exitWith(g.log, ipc.ExitRefused, "config.push: route class %q is on engine %q, which this gateway does not have", class, e)
 		}
 		engines[class] = string(e)
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	shadow := make([]string, 0, len(f.Shadow.Classes))
+	for _, c := range f.Shadow.Classes {
+		shadow = append(shadow, string(c))
+	}
 	if g.front != nil {
 		g.front.SetEngines(engines)
+		g.front.SetShadow(shadow)
 		if f.Listen != g.frontCfg.Listen || !sameTLS(f.TLS, g.frontCfg.TLS) || f.Upstream != g.frontCfg.Upstream {
 			g.log.Print("config.push: a new listen, tls or upstream applies after a restart")
 		}
+		return -1
+	}
+	if g.ready {
+		g.log.Print("config.push: a front section after the start applies after a restart")
 		return -1
 	}
 	if g.frontCfg == nil {
@@ -61,6 +71,14 @@ func (g *gateway) openFront(f *ipc.FrontConfig, token string) int {
 		cfg.CertFile, cfg.KeyFile = f.TLS.CertPath, f.TLS.KeyPath
 	}
 	srv, err := front.Listen(cfg, g.log)
+	if err == nil {
+		srv.SetGoEngine(g.engine)
+		shadow := make([]string, 0, len(f.Shadow.Classes))
+		for _, c := range f.Shadow.Classes {
+			shadow = append(shadow, string(c))
+		}
+		srv.SetShadow(shadow)
+	}
 	if errors.Is(err, front.ErrAddrInUse) {
 		return exitWith(g.log, ipc.ExitPortInUse, "port %d on %s is in use", f.Listen.Port, f.Listen.Host)
 	}

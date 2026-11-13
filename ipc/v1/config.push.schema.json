@@ -195,7 +195,20 @@
           "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } }
         },
         "engines": { "type": "object", "additionalProperties": { "type": "string", "enum": ["js", "go"] } },
-        "shadow": { "type": "object", "additionalProperties": false }
+        "shadow": {
+          "description": "P4b: the route classes on js whose requests the gateway compares with the go engine",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "classes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["chat", "messages", "responses", "embeddings", "models", "gemini", "mcp", "a2a", "skills", "agents"]
+              }
+            }
+          }
+        }
       }
     }
   }

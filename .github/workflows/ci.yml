@@ -9,6 +9,7 @@
 # The build-deno job compiles and smoke-tests the six single-file binaries on native runners (P2 T6), and starts and
 # stops the Go gateway in front of the server on each of them (P4a T6, scripts/smoke-front.js).
 # The Node and Deno jobs also run the contract suite with the Go gateway in front (ZP_ENGINE=front, P4a T6).
+# The contract-go-engine job runs the contract suite with chat shadowed by, and served by, the go engine (P4b).
 # The fixtures job regenerates the Go ports' fixtures from the JS on Node and Deno and fails on a diff (P4 stage 1).
 # The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
 # the test job's OS matrix. The Node and Deno jobs set up the same Go, so the cross-language IPC tests build the stub
@@ -198,6 +199,53 @@ jobs:
         run: test -z "$(gofmt -l gw)" || { gofmt -l gw; exit 1; }
       - run: go -C gw vet ./...
       - run: go -C gw test -count=1 ./...
+
+  # The go engine (P4b): the contract suite with chat shadowed by the go engine (ZP_ENGINE=shadow: any diff line in a
+  # server's .data/gateway-shadow.jsonl fails the run) and with chat on the go engine (ZP_ENGINE=go). Node and Deno on
+  # Ubuntu on every run; Node on Windows too in the full scope (the Winsock error names), per the scope rule above.
+  contract-go-engine:
+    name: contract go engine (${{ matrix.runtime }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON((github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) && '[{"runtime":"node","os":"ubuntu-latest"},{"runtime":"deno","os":"ubuntu-latest"},{"runtime":"node","os":"windows-latest"}]' || '[{"runtime":"node","os":"ubuntu-latest"},{"runtime":"deno","os":"ubuntu-latest"}]') }}
+    env:
+      DENO_DIR: ${{ github.workspace }}/../deno-dir
+      NO_COLOR: '1'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      - if: matrix.runtime == 'deno'
+        run: deno ci
+      - name: Contract suite, chat shadowed by the go engine, then chat on the go engine
+        shell: bash
+        run: |
+          set +e
+          code=0
+          for e in shadow go; do
+            if [ "${{ matrix.runtime }}" = deno ]; then
+              ZP_ENGINE=$e ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ || code=1
+            else
+              ZP_ENGINE=$e npm run test:contract || code=1
+            fi
+          done
+          exit $code
 
   # The Go ports of the gateway's JS libraries (P4 stage 1) are proven by fixtures the JS writes
   # (scripts/fixtures/gen-*.js → gw/testdata/<lib>/); the go job replays them. This job runs the generators on Node and

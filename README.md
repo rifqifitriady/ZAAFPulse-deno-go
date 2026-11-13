@@ -592,6 +592,14 @@ the only writer of the usage log, the cost ledger and the audit chain. With `"ga
 them (build it with `npm run gw:build`, or point `ZAAFPULSE_GW_BIN` at a binary); if it cannot run, the server serves
 the port itself and the Overview shows it. The default, `"js"`, starts no Go process.
 
+In front mode the Go process can also answer non-streaming chat calls itself (`"engines": { "chat": "go" }`): to an
+OpenAI-format provider with a plain API key, from a client on this machine, when no guardrail check and no blocking
+budget applies; it hands every other call to the server. Before it switches, `"shadow": ["chat"]` has it compare each
+chat call the server answers with what it would have sent and answered (`.data/gateway-shadow.jsonl`, no prompt text);
+chat moves to Go only after 20 compared calls and 1 day without a difference (`"shadowMinCompares"`,
+`"shadowDays"`), and while OpenTelemetry export is off.
+`GET /api/gateway/status` shows the counts and why a class stays on the server.
+
 ### Run it on login (macOS, from source)
 
 ```bash

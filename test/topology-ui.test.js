@@ -709,6 +709,15 @@ test('the gateway chip (P4a D6): none in js mode or without an answer; ready, re
   assert.deepEqual([el.hidden, el.textContent], [true, '']);
 });
 
+test('the gateway chip says "restart needed" after a crash loop (P4b entry condition 8)', () => {
+  const st = { mode: 'fallback', state: 'failed', reason: '6 restarts within 60 s', restartNeeded: true };
+  const fb = topoGatewayChip(st);
+  assert.equal(fb.text, 'Gateway: Go (front) · fallback, restart needed');
+  assert.equal(fb.tone, 'red');
+  assert.match(fb.title, /Restart ZAAFPulse to try the gateway again\.$/);
+  assert.doesNotMatch(topoGatewayChip({ ...st, restartNeeded: false }).title, /Restart ZAAFPulse/);
+});
+
 test('the gateway chip asks for /api/gateway/status only as the owner (no 403 or audit entry for other roles)', async () => {
   for (const owner of [false, true]) {
     const b = fakeBrowser(fakeDoc({ icons: true }));

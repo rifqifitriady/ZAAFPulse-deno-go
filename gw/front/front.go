@@ -5,16 +5,19 @@
 package front
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -41,6 +44,29 @@ const AbsoluteFormError = "absolute-form request targets are not accepted"
 var proxyHeaders = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port",
 	"Forwarded", "Via", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip"}
 
+// MaxHeaderBytes makes the public port refuse what Node refuses: Node's limit is 16 KiB of request line and headers,
+// and net/http reads MaxHeaderBytes plus 4096 bytes before it answers 431 (P4a final review m2, P4b entry condition 6).
+const MaxHeaderBytes = 16384 - 4096
+
+// GoClasses are the route classes the go engine serves (P4b: chat, not streaming; the engine hands the rest of a
+// class's requests to js itself). A config.push that puts another class on go is refused.
+var GoClasses = map[string]bool{"chat": true}
+
+// GoEngine serves a request of a class on the go engine, or hands it to js; Shadow forwards a request of a class on js
+// marked for the compare (gw/engine Engine).
+type GoEngine interface {
+	Serve(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler)
+	Shadow(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler,
+		own func(method, path string, body []byte) (int, []byte, error))
+}
+
+// The gateway's marks for the control plane (lib/front/internal.js): a request it shadows, and a request of its own.
+// A client's copy of either is removed from every request.
+const (
+	ShadowHeader = "X-Zp-Shadow"
+	OwnHeader    = "X-Zp-Own"
+)
+
 // ErrAddrInUse: another process holds the main port. The gateway exits 4.
 var ErrAddrInUse = errors.New("front: the main port is in use")
 
@@ -52,7 +78,55 @@ type Server struct {
 	proxy    *httputil.ReverseProxy
 	engines  atomic.Pointer[map[string]string]
 	inflight atomic.Int64
+	goEngine GoEngine
+	shadow   atomic.Pointer[map[string]bool]
+	upstream *url.URL
 }
+
+// shadowKey carries a request's shadow id from the go engine to the proxy's Rewrite.
+type shadowKey struct{}
+
+// WithShadowID marks r for the compare: the proxy's Rewrite sets ShadowHeader on the forwarded request. Rewrite runs
+// after the hop-by-hop headers are removed, so a client that names the header in Connection cannot strip the mark
+// (final review m9').
+func WithShadowID(r *http.Request, id string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), shadowKey{}, id))
+}
+
+// SetShadow replaces the route classes whose js requests are compared with the go engine (config.push front.shadow).
+func (s *Server) SetShadow(classes []string) {
+	m := make(map[string]bool, len(classes))
+	for _, c := range classes {
+		m[c] = true
+	}
+	s.shadow.Store(&m)
+}
+
+// own calls the control plane's internal port as the gateway itself (the shadow endpoints under /_zp/).
+func (s *Server) own(method, path string, body []byte) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, s.upstream.String()+path, bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	// The gateway names itself: loopback, at its own main port (the control plane accepts no port 0).
+	req.Header.Set(ClientHeader, ClientValue(s.cfg.Token, s.ln.Addr().String(), false))
+	req.Header.Set(OwnHeader, "1")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.proxy.Transport.RoundTrip(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	return resp.StatusCode, b, err
+}
+
+// SetGoEngine installs the go engine before Serve (without one, a class on go is answered 501).
+func (s *Server) SetGoEngine(e GoEngine) { s.goEngine = e }
 
 // Listen loads the TLS files (when set) and opens the main port. ErrAddrInUse when the port is taken.
 func Listen(cfg Config, logger *log.Logger) (*Server, error) {
@@ -77,10 +151,24 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, ln: ln}
 	s.SetEngines(cfg.Engines)
+	s.SetShadow(nil)
+	quiet := QuietLogger(logger, time.Now)
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.Upstream))}
+	s.upstream = target
 	s.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
+			// The request target exactly as the client sent it (P4b review I2): net/http re-escapes a path it decoded
+			// ("\" and "|" become %5C and %7C) and drops query pairs it cannot parse (";"), so the control plane would
+			// route another text than in js mode. Opaque is written as it is; RawQuery is kept whole.
+			// A target that starts with "//" cannot go in Opaque (net/url writes it as "http://..."): its path is set
+			// with RawPath, which is written as sent whenever it is a valid escaping of the path (re-review N1).
+			if raw := RawPath(pr.In.RequestURI); strings.HasPrefix(raw, "//") {
+				pr.Out.URL.Path, pr.Out.URL.RawPath = pr.In.URL.Path, raw
+			} else {
+				pr.Out.URL.Opaque = raw
+			}
+			pr.Out.URL.RawQuery = pr.In.URL.RawQuery
 			// The client's Host. Without one (HTTP/1.0) Go's transport would write the internal 127.0.0.1:<port>, so
 			// the request is flagged and the internal listener removes that Host: the host check sees none, as in js
 			// mode (P4a final review I1). Set and Del replace any copy of the flag the client sent.
@@ -99,6 +187,9 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 					pr.Out.Header[h] = append([]string(nil), v...)
 				}
 			}
+			if id, ok := pr.In.Context().Value(shadowKey{}).(string); ok {
+				pr.Out.Header.Set(ShadowHeader, id)
+			}
 			// Set replaces any X-Zp-Client the client sent.
 			pr.Out.Header.Set(ClientHeader, ClientValue(cfg.Token, pr.In.RemoteAddr, pr.In.TLS != nil))
 		},
@@ -109,12 +200,12 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 			IdleConnTimeout: 120 * time.Second,
 		},
 		FlushInterval: -1, // SSE and chunked bodies pass through at once
-		ErrorLog:      logger,
+		ErrorLog:      quiet,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if r.Context().Err() != nil {
 				return // the client is gone
 			}
-			logger.Printf("front: %s %s: %v", r.Method, r.URL.Path, err)
+			quiet.Printf("front: %s %s: %v", r.Method, RawPath(r.RequestURI), err)
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "2")
 			w.WriteHeader(http.StatusBadGateway)
@@ -125,7 +216,8 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 		Handler:           s,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		ErrorLog:          logger,
+		MaxHeaderBytes:    MaxHeaderBytes,
+		ErrorLog:          quiet,
 	}
 	return s, nil
 }
@@ -187,8 +279,30 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"error":"` + AbsoluteFormError + `"}`))
 		return
 	}
-	if s.engine(Classify(r.URL.Path)) != "js" {
-		// Unreachable in P4a: config.push refuses a go engine. P4b answers here.
+	if r.Method == http.MethodConnect {
+		// Node has no "connect" listener and closes the socket without an answer (P4a re-review r1).
+		if hj, ok := w.(http.Hijacker); ok {
+			if c, _, err := hj.Hijack(); err == nil {
+				_ = c.Close()
+				return
+			}
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	r.Header.Del(ShadowHeader)
+	r.Header.Del(OwnHeader)
+	raw := RawPath(r.RequestURI)
+	class := Classify(raw)
+	if s.engine(class) == "go" && GoClasses[class] && s.goEngine != nil {
+		s.goEngine.Serve(class, w, r, raw, s.proxy)
+		return
+	}
+	if s.engine(class) == "js" && (*s.shadow.Load())[class] && GoClasses[class] && s.goEngine != nil {
+		s.goEngine.Shadow(class, w, r, raw, s.proxy, s.own)
+		return
+	}
+	if s.engine(class) != "js" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotImplemented)
 		_, _ = w.Write([]byte(`{"error":"the go engine is not available in this gateway"}`))
