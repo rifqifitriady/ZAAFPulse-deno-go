@@ -191,6 +191,9 @@ func (m *vm) step(n int) {
 	}
 }
 
+// attemptSteps is what one start attempt costs beyond its instructions, in steps.
+const attemptSteps = 4
+
 // push adds a backtrack frame; past MaxFrames the run stops with ErrStack.
 func (m *vm) push(f frame) {
 	if m.stack.n >= MaxFrames {
@@ -200,6 +203,7 @@ func (m *vm) push(f frame) {
 }
 
 func (m *vm) matchAt(pos int) []int {
+	m.step(attemptSteps) // the attempt's setup and the filters' checks before it (the trie, the required units)
 	for i := range m.caps {
 		m.caps[i] = -1
 	}
@@ -216,6 +220,7 @@ func (m *vm) wordAt(i int) bool { return i >= 0 && i < len(m.s) && isWord(m.s[i]
 
 // altFrom returns the first alternative at index >= k whose first character can match at pos, or -1.
 func (m *vm) altFrom(in *inst, k, pos int) int {
+	m.step(1) // choosing among the alternatives
 	var list []int
 	switch {
 	case pos >= len(m.s):

@@ -202,16 +202,17 @@ var (
 // The step budget of one call (CheckBody, CheckText), shared by every string and every check in it (I4), is the
 // primary bound (owner's decision, 2026-11-13): it does not depend on the machine or its load. A base, plus a share
 // per code unit each time a check runs on a string, capped per call. Steps are weighted to cost about the same time
-// whatever the input: a matcher instruction or a character a repeat consumes is one step, a start position the filters
-// skip half of one (jsre.skipWeight), a visited string stringSteps. One step then costs 3–8 ns on an M-series Mac and
-// about 2.5–3 times that on the Ubuntu runner, so the cap of 200M steps bounds a call to about 2 s of CPU there
-// (idle). Legitimate 20 MB bodies measured need 73M (the corpus), 86M (code) and 110M steps (numeric CSV, the
-// heaviest): at least 1.8x below the cap. A coarse wall-clock backstop (requestDeadline) runs with it. Past either
-// the call fails closed in every mode, log included (the JS has no limit: Go-only, spec deviation 12).
+// whatever the input: a matcher instruction, a character a repeat consumes or an alternation choice is one step, a
+// start attempt four (jsre.attemptSteps), a start position the filters skip half of one (jsre.skipWeight), a visited
+// string stringSteps. One step then costs 3–7 ns on an M-series Mac and about 2–2.5 times that on the Ubuntu runner,
+// so the cap of 250M steps bounds a call to about 2 s of CPU there (idle). Legitimate 20 MB bodies measured need 78M
+// (the corpus), 112M (code) and 121M steps (numeric CSV, the heaviest): at least 2x below the cap. A coarse
+// wall-clock backstop (requestDeadline) runs with it. Past either the call fails closed in every mode, log included
+// (the JS has no limit: Go-only, spec deviation 12).
 var (
 	budgetBase    int64 = 20_000_000
 	budgetPerUnit int64 = 600
-	budgetCap     int64 = 200_000_000
+	budgetCap     int64 = 250_000_000
 )
 
 // stringSteps is what visiting one string costs in steps beyond its matching (walking, conversions).
