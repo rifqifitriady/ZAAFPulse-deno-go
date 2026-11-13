@@ -205,14 +205,14 @@ var (
 // whatever the input: a matcher instruction, a character a repeat consumes or an alternation choice is one step, a
 // start attempt four (jsre.attemptSteps), a start position the filters skip half of one (jsre.skipWeight), a visited
 // string stringSteps. One step then costs 3–7 ns on an M-series Mac and about 2–2.5 times that on the Ubuntu runner,
-// so the cap of 250M steps bounds a call to about 2 s of CPU there (idle). Legitimate 20 MB bodies measured need 78M
-// (the corpus), 112M (code) and 121M steps (numeric CSV, the heaviest): at least 2x below the cap. A coarse
+// so the cap of 220M steps bounds a call to about 2 s of CPU there (idle). Legitimate 20 MB bodies measured need 78M
+// (the corpus), 112M (code) and 121M steps (numeric CSV, the heaviest): at least 1.8x below the cap. A coarse
 // wall-clock backstop (requestDeadline) runs with it. Past either the call fails closed in every mode, log included
 // (the JS has no limit: Go-only, spec deviation 12).
 var (
 	budgetBase    int64 = 20_000_000
 	budgetPerUnit int64 = 600
-	budgetCap     int64 = 250_000_000
+	budgetCap     int64 = 220_000_000
 )
 
 // stringSteps is what visiting one string costs in steps beyond its matching (walking, conversions).
