@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "   12\t  { id: 'override', re: /ignore (all )?previous instructions/i },"
+  ],
+  "out": {
+    "text": "   12\t  { id: 'override', re: /ignore (all )?previous instructions/i },",
+    "counts": {}
+  }
+}

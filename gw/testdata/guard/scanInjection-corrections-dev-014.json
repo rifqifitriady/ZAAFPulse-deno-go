@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "same error again: TypeError cannot read properties of undefined"
+  ],
+  "out": null
+}

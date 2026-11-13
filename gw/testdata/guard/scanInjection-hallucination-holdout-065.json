@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Error: read ECONNRESET"
+  ],
+  "out": null
+}

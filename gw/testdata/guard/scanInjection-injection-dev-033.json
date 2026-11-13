@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Cara instalasi: jalankan perintah npm install lalu npm start. Jangan lupa isi file .env."
+  ],
+  "out": null
+}

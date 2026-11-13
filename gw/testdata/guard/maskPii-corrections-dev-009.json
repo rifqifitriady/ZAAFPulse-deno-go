@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "you forgot to update the README"
+  ],
+  "out": {
+    "text": "you forgot to update the README",
+    "counts": {}
+  }
+}

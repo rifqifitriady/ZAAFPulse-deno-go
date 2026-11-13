@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "you broke the build, the deploy is red since your last commit"
+  ],
+  "out": {
+    "text": "you broke the build, the deploy is red since your last commit",
+    "counts": {}
+  }
+}

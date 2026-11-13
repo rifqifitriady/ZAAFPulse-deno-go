@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "sudo dd if=image.iso of=/dev/disk4 bs=4m"
+  ],
+  "out": null
+}

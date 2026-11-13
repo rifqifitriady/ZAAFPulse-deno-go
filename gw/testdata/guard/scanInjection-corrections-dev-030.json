@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "perbaiki bug login di halaman checkout"
+  ],
+  "out": null
+}

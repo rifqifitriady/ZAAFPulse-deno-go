@@ -1,0 +1,43 @@
+{
+  "fn": "wholeToChunks",
+  "in": [
+    {
+      "choices": [
+        {
+          "message": {
+            "content": [
+              {
+                "text": "a"
+              },
+              "b"
+            ]
+          },
+          "finish_reason": "length"
+        }
+      ],
+      "usage": null
+    }
+  ],
+  "out": [
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant",
+            "content": "ab"
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {},
+          "finish_reason": "length"
+        }
+      ]
+    }
+  ]
+}

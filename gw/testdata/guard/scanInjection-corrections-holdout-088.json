@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "no that's wrong, nothing works, why is the build broken?? please fix the failing CI"
+  ],
+  "out": null
+}

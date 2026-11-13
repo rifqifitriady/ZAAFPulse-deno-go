@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Error: getaddrinfo ENOTFOUND api.fakeservice-docs.io"
+  ],
+  "out": {
+    "text": "Error: getaddrinfo ENOTFOUND api.fakeservice-docs.io",
+    "counts": {}
+  }
+}

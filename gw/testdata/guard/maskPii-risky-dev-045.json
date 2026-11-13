@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "echo \"jangan pakai git push --force di main\""
+  ],
+  "out": {
+    "text": "echo \"jangan pakai git push --force di main\"",
+    "counts": {}
+  }
+}

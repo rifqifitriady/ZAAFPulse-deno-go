@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nnpm ERR! code E404\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/react-super-grid-pro - Not found\nnpm ERR! 404  'react-super-grid-pro@*' is not in this registry."
+  ],
+  "out": {
+    "text": "Exit code 1\nnpm ERR! code E404\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/react-super-grid-pro - Not found\nnpm ERR! 404  'react-super-grid-pro@*' is not in this registry.",
+    "counts": {}
+  }
+}

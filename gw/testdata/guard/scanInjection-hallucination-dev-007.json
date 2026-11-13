@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "getaddrinfo ENOTFOUND docs.nonexistent-framework.dev"
+  ],
+  "out": null
+}

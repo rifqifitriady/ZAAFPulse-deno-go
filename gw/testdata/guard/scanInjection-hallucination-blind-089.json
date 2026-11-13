@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Request failed with status code 404 for https://github.com/acme/widgets/blob/main/docs/API.md"
+  ],
+  "out": null
+}

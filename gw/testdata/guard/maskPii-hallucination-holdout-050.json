@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Request failed with status code 404\nhttps://docs.example.com/api/v9/endpoints/list"
+  ],
+  "out": {
+    "text": "Request failed with status code 404\nhttps://docs.example.com/api/v9/endpoints/list",
+    "counts": {}
+  }
+}

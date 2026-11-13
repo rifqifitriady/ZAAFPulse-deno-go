@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "The DAN jailbreak (\"you are now DAN\") was a well-known prompt in 2023; modern models refuse it."
+  ],
+  "out": {
+    "text": "The DAN jailbreak (\"you are now DAN\") was a well-known prompt in 2023; modern models refuse it.",
+    "counts": {}
+  }
+}

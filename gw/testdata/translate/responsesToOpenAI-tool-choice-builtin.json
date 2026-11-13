@@ -1,0 +1,14 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {
+      "model": "r",
+      "input": "x",
+      "tool_choice": {
+        "type": "web_search"
+      }
+    }
+  ],
+  "throws": "tool_choice web_search needs a provider with the native Responses API",
+  "status": 400
+}

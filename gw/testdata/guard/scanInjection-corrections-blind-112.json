@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "eh salah ketik, maksudku file config.yaml bukan config.yml"
+  ],
+  "out": null
+}

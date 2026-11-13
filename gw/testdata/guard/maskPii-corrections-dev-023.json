@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "kenapa kamu ubah file config?"
+  ],
+  "out": {
+    "text": "kenapa kamu ubah file config?",
+    "counts": {}
+  }
+}

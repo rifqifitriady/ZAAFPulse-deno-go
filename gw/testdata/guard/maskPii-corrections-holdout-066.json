@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "duh kamu hapus file .env aku ya?? kan aku ga minta"
+  ],
+  "out": {
+    "text": "duh kamu hapus file .env aku ya?? kan aku ga minta",
+    "counts": {}
+  }
+}

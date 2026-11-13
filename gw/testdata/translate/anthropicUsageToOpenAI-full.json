@@ -1,0 +1,19 @@
+{
+  "fn": "anthropicUsageToOpenAI",
+  "in": [
+    {
+      "input_tokens": 10,
+      "output_tokens": 3,
+      "cache_read_input_tokens": 4,
+      "cache_creation_input_tokens": 2
+    }
+  ],
+  "out": {
+    "prompt_tokens": 16,
+    "completion_tokens": 3,
+    "total_tokens": 19,
+    "prompt_tokens_details": {
+      "cached_tokens": 4
+    }
+  }
+}

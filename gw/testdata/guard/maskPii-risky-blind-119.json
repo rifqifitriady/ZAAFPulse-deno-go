@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git push --dry-run origin main"
+  ],
+  "out": {
+    "text": "git push --dry-run origin main",
+    "counts": {}
+  }
+}

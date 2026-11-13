@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "dd if=ubuntu.iso of=/dev/disk2 bs=4m"
+  ],
+  "out": {
+    "text": "dd if=ubuntu.iso of=/dev/disk2 bs=4m",
+    "counts": {}
+  }
+}

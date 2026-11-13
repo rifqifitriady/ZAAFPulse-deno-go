@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Terms of Service: You must not share your account credentials with any third party."
+  ],
+  "out": null
+}

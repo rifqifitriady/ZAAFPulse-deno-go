@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nfatal: not a git repository (or any of the parent directories): .git"
+  ],
+  "out": {
+    "text": "Exit code 1\nfatal: not a git repository (or any of the parent directories): .git",
+    "counts": {}
+  }
+}

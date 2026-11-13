@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "InputValidationError: Grep failed due to the following issue:\nAn unexpected parameter `glob_pattern` was provided"
+  ],
+  "out": {
+    "text": "InputValidationError: Grep failed due to the following issue:\nAn unexpected parameter `glob_pattern` was provided",
+    "counts": {}
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "fn": "cleanPolicy",
+  "in": [
+    {
+      "scope": "external",
+      "secrets": "off",
+      "pii": "log",
+      "injection": "block"
+    }
+  ],
+  "out": {
+    "scope": "external",
+    "secrets": "off",
+    "pii": "log",
+    "injection": "block"
+  }
+}

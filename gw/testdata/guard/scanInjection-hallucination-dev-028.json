@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 2\nsrc/api.ts(14,7): error TS2322: Type 'string' is not assignable to type 'number'."
+  ],
+  "out": null
+}

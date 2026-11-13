@@ -1,0 +1,36 @@
+{
+  "fn": "geminiStream",
+  "in": [
+    "m",
+    [
+      [
+        "push",
+        {
+          "choices": [
+            {
+              "delta": {
+                "tool_calls": [
+                  {
+                    "id": "a",
+                    "function": {
+                      "name": "f",
+                      "arguments": "{nope"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": "content_filter"
+            }
+          ]
+        }
+      ],
+      [
+        "finish"
+      ]
+    ]
+  ],
+  "out": [
+    "",
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"f\",\"args\":{}}}]},\"finishReason\":\"SAFETY\",\"index\":0}],\"modelVersion\":\"m\"}\n\n"
+  ]
+}

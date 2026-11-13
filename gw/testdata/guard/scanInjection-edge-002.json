@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "hello world, nothing to see here"
+  ],
+  "out": null
+}

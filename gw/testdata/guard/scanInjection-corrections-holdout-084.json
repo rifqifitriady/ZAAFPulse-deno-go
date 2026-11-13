@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "seharusnya response API-nya pakai camelCase, tolong ubah semua field di endpoint /users"
+  ],
+  "out": null
+}

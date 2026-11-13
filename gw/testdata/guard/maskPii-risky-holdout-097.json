@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "psql -c \"SELECT count(*) FROM users\" mydb"
+  ],
+  "out": {
+    "text": "psql -c \"SELECT count(*) FROM users\" mydb",
+    "counts": {}
+  }
+}

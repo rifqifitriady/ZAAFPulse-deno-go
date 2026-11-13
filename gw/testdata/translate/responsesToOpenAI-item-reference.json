@@ -1,0 +1,16 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {
+      "model": "r",
+      "input": [
+        {
+          "type": "item_reference",
+          "id": "i1"
+        }
+      ]
+    }
+  ],
+  "throws": "item_reference needs a provider with the native Responses API; send the item itself",
+  "status": 400
+}

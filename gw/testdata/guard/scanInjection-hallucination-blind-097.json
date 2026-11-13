@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "error: unrecognized subcommand 'deploy-all'\n\nUsage: cargo [+toolchain] [OPTIONS] [COMMAND]"
+  ],
+  "out": null
+}

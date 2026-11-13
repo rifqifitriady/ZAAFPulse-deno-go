@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Auto-merging src/app.ts\nCONFLICT (content): Merge conflict in src/app.ts\nAutomatic merge failed; fix conflicts and then commit the result."
+  ],
+  "out": {
+    "text": "Auto-merging src/app.ts\nCONFLICT (content): Merge conflict in src/app.ts\nAutomatic merge failed; fix conflicts and then commit the result.",
+    "counts": {}
+  }
+}

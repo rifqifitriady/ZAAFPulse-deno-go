@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "killall -9 python3"
+  ],
+  "out": null
+}

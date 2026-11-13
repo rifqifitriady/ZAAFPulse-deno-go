@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Abstract: We study indirect prompt injection against LLM-integrated applications, where adversarial instructions placed in retrieved documents hijack agent behavior. We evaluate 12 defenses and find that none fully prevents data exfiltration."
+  ],
+  "out": null
+}

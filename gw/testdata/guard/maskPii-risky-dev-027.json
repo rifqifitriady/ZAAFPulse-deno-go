@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "find . -name '*.log' -type f -delete"
+  ],
+  "out": {
+    "text": "find . -name '*.log' -type f -delete",
+    "counts": {}
+  }
+}

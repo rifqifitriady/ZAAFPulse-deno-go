@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "dd if=/dev/zero of=/dev/sdb bs=1M count=100"
+  ],
+  "out": {
+    "text": "dd if=/dev/zero of=/dev/sdb bs=1M count=100",
+    "counts": {}
+  }
+}

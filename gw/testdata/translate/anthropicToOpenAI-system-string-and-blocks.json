@@ -1,0 +1,179 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "system": [
+        "plain",
+        {
+          "type": "text",
+          "text": "two"
+        },
+        {
+          "type": "text"
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": []
+        },
+        {
+          "role": "assistant",
+          "content": ""
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "t"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "x1",
+              "name": "f"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "x1",
+              "is_error": true,
+              "content": "boom"
+            },
+            {
+              "type": "tool_result",
+              "tool_use_id": "x2"
+            },
+            {
+              "type": "tool_result",
+              "tool_use_id": "x3",
+              "content": [
+                {
+                  "type": "image",
+                  "source": {
+                    "type": "url",
+                    "url": "https://i/x.png"
+                  }
+                },
+                {
+                  "type": "other"
+                }
+              ]
+            },
+            {
+              "type": "document",
+              "source": {
+                "type": "text",
+                "data": "doc text"
+              }
+            },
+            {
+              "type": "document",
+              "source": {
+                "type": "base64",
+                "data": "QUJD"
+              }
+            },
+            {
+              "type": "text",
+              "text": "end"
+            }
+          ]
+        }
+      ],
+      "temperature": 0,
+      "top_p": 1,
+      "stop_sequences": [
+        "\n\n",
+        "END"
+      ],
+      "stream": true
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "x",
+      "messages": [
+        {
+          "role": "system",
+          "content": "\n\ntwo\n\n"
+        },
+        {
+          "role": "assistant",
+          "content": ""
+        },
+        {
+          "role": "assistant",
+          "content": ""
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "x1",
+              "type": "function",
+              "function": {
+                "name": "f",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "x1",
+          "content": "[error] boom"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "x2",
+          "content": ""
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "x3",
+          "content": "[image: attached to the next user message]\n"
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "https://i/x.png"
+              }
+            },
+            {
+              "type": "text",
+              "text": "doc text"
+            },
+            {
+              "type": "text",
+              "text": "end"
+            }
+          ]
+        }
+      ],
+      "temperature": 0,
+      "top_p": 1,
+      "stop": [
+        "\n\n",
+        "END"
+      ],
+      "stream": true
+    },
+    "soft": null,
+    "dropped": []
+  }
+}

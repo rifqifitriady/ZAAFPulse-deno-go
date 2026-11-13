@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\nERROR: Could not find a version that satisfies the requirement fastjsonx (from versions: none)\nERROR: No matching distribution found for fastjsonx"
+  ],
+  "out": null
+}

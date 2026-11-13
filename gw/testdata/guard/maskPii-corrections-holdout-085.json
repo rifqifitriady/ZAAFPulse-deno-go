@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "nggak, yang backend aja. frontend nanti"
+  ],
+  "out": {
+    "text": "nggak, yang backend aja. frontend nanti",
+    "counts": {}
+  }
+}

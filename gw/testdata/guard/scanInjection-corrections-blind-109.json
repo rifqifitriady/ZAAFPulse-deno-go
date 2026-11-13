@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "yes go ahead with option B"
+  ],
+  "out": null
+}

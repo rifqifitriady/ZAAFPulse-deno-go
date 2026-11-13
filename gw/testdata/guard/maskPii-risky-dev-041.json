@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "kill 1234"
+  ],
+  "out": {
+    "text": "kill 1234",
+    "counts": {}
+  }
+}

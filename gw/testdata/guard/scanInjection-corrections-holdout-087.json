@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "hapus semua console.log di folder src/utils"
+  ],
+  "out": null
+}

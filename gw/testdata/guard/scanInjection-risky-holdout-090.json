@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "kill 1234"
+  ],
+  "out": null
+}
