@@ -204,7 +204,8 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 		return
 	}
 	defer resp.Body.Close()
-	// The prompt is no longer needed: let it go for the length of the stream (Decision 11).
+	// The client's body and the plan's copies are no longer needed (Decision 11); the provider request keeps its own
+	// in-memory body until the call ends (net/http writes headers and body in one go only for such a body).
 	p.Body, req.Body, r.Body = nil, nil, http.NoBody
 	cs := NewChatStream(p.Model, p.WantsUsage, elapsed)
 	line = func() ipc.UsageRecord { return s.StreamLine(p, cs, elapsed()) }
