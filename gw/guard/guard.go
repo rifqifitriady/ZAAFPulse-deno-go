@@ -247,6 +247,26 @@ type run struct {
 	index    map[string]*Hit
 	redacted bool
 	failed   bool
+	failures []Failure
+}
+
+// Failure is a check whose detector failed in log mode during one call (N1): the call passed (as in the JS) and the
+// wiring should log or count it. Count is how many strings it failed on, Err the first failure.
+type Failure struct {
+	Check string
+	Count int
+	Err   string
+}
+
+func (r *run) fail(check string, p any) {
+	r.failed = true
+	for i := range r.failures {
+		if r.failures[i].Check == check {
+			r.failures[i].Count++
+			return
+		}
+	}
+	r.failures = append(r.failures, Failure{Check: check, Count: 1, Err: fmt.Sprint(p)})
 }
 
 func newRun(p Policy) *run { return &run{b: newCallBudget(), policy: p, index: map[string]*Hit{}} }
@@ -278,7 +298,7 @@ func (r *run) guarded(check string, f func() []uint16, fallback []uint16) (out [
 			if r.policy.mode(check) != "log" {
 				panic(errCheck{fmt.Errorf("%v", p)})
 			}
-			r.failed = true
+			r.fail(check, p)
 			out = fallback
 		}
 	}()
@@ -477,12 +497,14 @@ func lastAssistant(list []jsv.Value, format string) int {
 }
 
 // Result of CheckBody. Body is a new value (the input is never changed) that shares every unchanged nested value
-// with the input; Action is "redacted", "logged" or "" (JS null); Error is true when a check in log mode failed.
+// with the input; Action is "redacted", "logged" or "" (JS null); Error is true when a check in log mode failed, and
+// Failures says which (Go only, N1).
 type Result struct {
-	Body   jsv.Value
-	Action string
-	Hits   []Hit
-	Error  bool
+	Body     jsv.Value
+	Action   string
+	Hits     []Hit
+	Error    bool
+	Failures []Failure
 }
 
 // catchCheck turns a failed check into the returned error.
@@ -569,15 +591,16 @@ func CheckBody(body jsv.Value, p Policy, format string) (res Result, err error) 
 	if ferr != nil {
 		return Result{}, ferr
 	}
-	return Result{Body: out, Action: action, Hits: hits, Error: r.failed}, nil
+	return Result{Body: out, Action: action, Hits: hits, Error: r.failed, Failures: r.failures}, nil
 }
 
 // TextResult of CheckText.
 type TextResult struct {
-	Text   string
-	Action string
-	Hits   []Hit
-	Error  bool
+	Text     string
+	Action   string
+	Hits     []Hit
+	Error    bool
+	Failures []Failure
 }
 
 // CheckText checks one text: part "arguments" (secrets and pii), "result" (an MCP tool result: injection only) or
@@ -596,7 +619,7 @@ func CheckText(text jsv.Value, p Policy, part string) (res TextResult, err error
 	if ferr != nil {
 		return TextResult{}, ferr
 	}
-	return TextResult{Text: out, Action: action, Hits: hits, Error: r.failed}, nil
+	return TextResult{Text: out, Action: action, Hits: hits, Error: r.failed, Failures: r.failures}, nil
 }
 
 func hitsValue(hits []Hit) *jsv.Array {
