@@ -416,13 +416,18 @@ func (r *run) text(s []uint16, fresh bool) ([]uint16, bool) {
 			return nil
 		}, nil)
 	}
+	// "Changed" is whether a check redacted something in this text (r.redacted, set by the check that does it), never
+	// whether the result sits in other storage: the masking passes may write the result over s itself (C1).
+	before := r.redacted
+	r.redacted = false
 	t := s
 	if r.policy.Secrets != "off" {
 		t = r.guarded("secrets", func() []uint16 { return r.secretsIn(t) }, t)
 	}
+	secretsCopied := r.redacted // secretsIn redacted into a new buffer, so s is free for the masking passes
 	if r.policy.PII != "off" {
 		var spare []uint16
-		if !sameSlice(t, s) {
+		if secretsCopied {
 			spare = s
 		}
 		t = r.guarded("pii", func() []uint16 { return r.piiIn(t, spare) }, t)
@@ -430,10 +435,13 @@ func (r *run) text(s []uint16, fresh bool) ([]uint16, bool) {
 	for _, l := range injected {
 		r.add("injection", l, 1)
 	}
-	return t, !sameSlice(t, s)
+	changed := r.redacted
+	r.redacted = before || changed
+	return t, changed
 }
 
-// visitStr runs the checks on a Go string and returns the (possibly new) string.
+// visitStr runs the checks on a Go string and returns the (possibly new) string: the original when nothing was
+// redacted or the result has the same content (compared by content, not by storage).
 func (r *run) visitStr(s string, fresh bool) string {
 	out, changed := r.text(jsre.U16(s), fresh)
 	if !changed || equalU16String(out, s) {

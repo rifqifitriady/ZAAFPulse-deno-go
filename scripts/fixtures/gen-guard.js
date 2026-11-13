@@ -392,6 +392,40 @@ text('null', null, policy());
 text('number', 12345, policy());
 text('unknown-part', `${ANT}`, policy(), 'other');
 
+// Length-neutral redactions (B2 review C1): the secret and personal-data replacements of one text cancel out in
+// length, so the redacted text is as long as the original. The Go port once took "same length, same storage" for
+// "unchanged" and forwarded such text in clear. Net change per item: an Anthropic key of length L becomes a
+// 27-unit placeholder (27 - L), a@b.co +1, ab@cd.io -1, 10.0.0.7 -4, +62 812 3456 7890 -10.
+{
+  const PLACEHOLDER = '\u2039secret: Anthropic API key\u203a'.length;
+  const pool = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijklmnopqrstuvwxyz';
+  const antKey = (n) => ['sk', 'ant', pool.slice(0, n - 7)].join('-');
+  const both = policy({ scope: 'all', secrets: 'redact', pii: 'redact', injection: 'log' });
+  let n = 0;
+  for (let e = 0; e <= 3; e++) {
+    for (let f = 0; f <= 2; f++) {
+      for (let ip = 0; ip <= 1; ip++) {
+        for (let ph = 0; ph <= 1; ph++) {
+          const net = e - f - 4 * ip - 10 * ph;
+          if (net < 0) continue;
+          const key = antKey(PLACEHOLDER + net);
+          secrets.add(key);
+          const items = [
+            ...Array(e).fill('a@b.co'),
+            ...Array(f).fill('ab@cd.io'),
+            ...Array(ip).fill('10.0.0.7'),
+            ...Array(ph).fill('+62 812 3456 7890'),
+          ];
+          const t = n % 2 ? `k ${key} m ${items.join(' ')}` : `${items.join(' ')} then ${key} end`;
+          body(`length-neutral-${pad(n)}`, chat([{ role: 'user', content: t }]), both, 'openai-chat');
+          text(`length-neutral-${pad(n)}`, t, both, 'input');
+          n++;
+        }
+      }
+    }
+  }
+}
+
 /* ---------- everything the Go port copies from the JS, so a change cannot drift silently ---------- */
 // Every regex source and flag set, the category metadata, the constants and the tables of the three modules, read
 // from the modules themselves (vm: the module-level consts are not all exported), plus a SHA-256 of the source text

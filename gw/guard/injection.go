@@ -352,7 +352,7 @@ func deobfuscate(text []uint16, windows [][2]int, b *jsre.Budget) ([]uint16, *ke
 		return nil, nil // everything dropped (the JS has an empty string: nothing to match either way)
 	}
 	if isLeet {
-		s = leetInPlace(s, !sameSlice(s, text), b)
+		s = leetInPlace(s, dropped > 0, b) // s is a new buffer exactly when something was dropped
 	}
 	return s, km
 }

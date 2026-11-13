@@ -1,0 +1,33 @@
+{
+  "secrets": [
+    "c2stYW50LUFiQ2RFZkdoSWpLbE1uT3BRclN0"
+  ],
+  "fn": "checkText",
+  "in": [
+    "a@b.co ab@cd.io then <<ZPSECRET:0>> end",
+    {
+      "scope": "all",
+      "secrets": "redact",
+      "pii": "redact",
+      "injection": "log"
+    },
+    "input"
+  ],
+  "out": {
+    "text": "‹email› ‹email› then ‹secret: Anthropic API key› end",
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 1
+      },
+      {
+        "check": "pii",
+        "label": "email",
+        "count": 2
+      }
+    ],
+    "error": false
+  }
+}

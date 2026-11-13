@@ -54,11 +54,6 @@ func phone(m []uint16, b *jsre.Budget) []uint16 {
 	return m
 }
 
-// sameSlice reports whether a and b are the same slice of the same storage.
-func sameSlice(a, b []uint16) bool {
-	return len(a) == len(b) && cap(a) == cap(b) && (cap(a) == 0 || &a[:1][0] == &b[:1][0])
-}
-
 func equalU16(a, b []uint16) bool {
 	if len(a) != len(b) {
 		return false
@@ -101,16 +96,19 @@ func maskPII(s []uint16, disposable bool, spare []uint16, b *jsre.Budget) ([]uin
 	ip := jsre.U16("‹ip›")
 	// Each pass reads s and writes a new text only when it replaces something; the passes alternate between two
 	// buffers, so a long text costs at most two copies, never one per pass; with disposable, s and spare are those two.
-	in := s
+	// Whether a pass replaced anything is recorded as it happens, never read from which storage it returned; owned
+	// says whether s is storage a pass may write over later (the caller's when disposable, or a buffer made here).
+	owned := disposable
 	pass := func(re *jsre.Regexp, f func([]int) []uint16) {
-		out := re.ReplaceAllInto(spare, s, f, b)
-		if sameSlice(out, s) {
+		replaced := false
+		out := re.ReplaceAllInto(spare, s, func(c []int) []uint16 { replaced = true; return f(c) }, b)
+		if !replaced {
 			return
 		}
-		if disposable || !sameSlice(s, in) {
+		if owned {
 			spare = s
 		}
-		s = out
+		s, owned = out, true
 	}
 	pass(reEmail, seen("email", func([]uint16) []uint16 { return email }))
 	pass(reIPV4, seen("ip", func(m []uint16) []uint16 {
