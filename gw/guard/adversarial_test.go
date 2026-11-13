@@ -120,7 +120,7 @@ func TestOverrunFailsClosedInEveryMode(t *testing.T) {
 	saved := budgetPerUnit
 	savedBase := budgetBase
 	t.Cleanup(func() { budgetPerUnit, budgetBase = saved, savedBase })
-	budgetPerUnit, budgetBase = 1, 10
+	budgetPerUnit, budgetBase = 1, 3*stringSteps+20 // room for the body's three strings, not for the check
 	for _, mode := range []string{"log", "redact", "block"} {
 		_, err := CheckBody(chat("some text to scan for "+mode), Policy{Secrets: "off", PII: mode, Injection: "off"}, "openai-chat")
 		var b *Block
