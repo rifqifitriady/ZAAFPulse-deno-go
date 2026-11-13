@@ -40,10 +40,10 @@ func TestSkippedPositionsCount(t *testing.T) {
 	if m := re.ExecB(s, 0, b); m != nil {
 		t.Fatal("matched")
 	}
-	if b.Steps < 1<<20 {
+	if b.Steps < 1<<20/skipWeight {
 		t.Fatalf("%d steps for 1M skipped positions", b.Steps)
 	}
-	b = &Budget{Limit: 1 << 19}
+	b = &Budget{Limit: 1 << 19 / skipWeight}
 	if err := b.Run(func() { re.ExecB(s, 0, b) }); err != ErrBudget {
 		t.Fatalf("got %v", err)
 	}

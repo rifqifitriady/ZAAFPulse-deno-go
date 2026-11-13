@@ -31,7 +31,9 @@ type prefilter struct {
 	tab      *[2][129][130]bool // [prev is an ASCII word unit][sym s[p]][sym s[p+1], 129 at the end]: may start
 	first    [2][129]bool       // tab's union over the next unit: rejects most positions from a small table
 	lits     *trie              // the literal starts of every match, or nil
-	run      *bitset            // with then: every match is a run of run units ended by a then unit (runThen)
+	need     *bitset            // with within: every match holds a need unit among its first within units
+	within   int
+	run      *bitset // with then: every match is a run of run units ended by a then unit (runThen)
 	then     *bitset
 	prevNot  *bitset // code units that cannot precede a match (a leading negative lookbehind), or nil
 	one      symset
@@ -72,6 +74,9 @@ func (f *prefilter) next(s []uint16, q, end int) int {
 			continue
 		}
 		if f.lits != nil && !f.lits.starts(s, q, f.icase) {
+			continue
+		}
+		if f.within > 0 && !hasWithin(s, q, f.within, f.need) {
 			continue
 		}
 		return q
@@ -240,6 +245,7 @@ func (re *Regexp) filter() *prefilter {
 			re.pre.lits = newTrie(l.strs)
 		}
 		re.pre.run, re.pre.then = runThen(re.root, re.icase, fc)
+		re.pre.need, re.pre.within = requiredWithin(re.root, re.icase, fc)
 		if p2 := prefix2(re.root, re.icase, fc, map[*node]*pre2{}); !p2.any && !p2.nullable {
 			re.pre.pairs, re.pre.one, re.pre.two = true, p2.one, p2.two
 		}
