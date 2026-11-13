@@ -21,6 +21,7 @@ type Engine struct {
 	now      func() int64
 	logf     func(string, ...any)
 	modes    atomic.Pointer[func(sub string) (onGo, shadowed bool)]
+	own      atomic.Pointer[func(method, path string, body []byte) (int, []byte, error)]
 	streams  sync.WaitGroup // streams being served, until their usage line is handed to emit
 }
 
@@ -39,6 +40,19 @@ func (e *Engine) State() *State { return e.state.Load() }
 // StreamReadSize is how much of the provider's stream is read at once (P4c Decision 11; 4 KiB, the size of the
 // transport's own read buffer, after the memory gate of 2026-11-13).
 const StreamReadSize = 4 << 10
+
+// SetOwn gives the engine the front's call to the control plane's internal port (the shadow's capture and line) for
+// requests it reads in Serve but shadows (P4c: chat on go, chat-stream shadowed).
+func (e *Engine) SetOwn(own func(method, path string, body []byte) (int, []byte, error)) {
+	e.own.Store(&own)
+}
+
+func (e *Engine) ownFn() func(method, path string, body []byte) (int, []byte, error) {
+	if f := e.own.Load(); f != nil {
+		return *f
+	}
+	return nil
+}
 
 // SetModes tells the engine, per sub-class ("chat", "chat-stream"), whether it serves it and whether it shadows it
 // (the front's engines and shadow classes; Task 3).
@@ -99,7 +113,11 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	if p.Stream {
 		sub = "chat-stream"
 	}
-	if onGo, _ := e.mode(sub); !onGo {
+	if onGo, shadowed := e.mode(sub); !onGo {
+		if shadowed {
+			e.shadowRead(sub, w, r, s, &p, js, e.ownFn())
+			return
+		}
 		js.ServeHTTP(w, r)
 		return
 	}

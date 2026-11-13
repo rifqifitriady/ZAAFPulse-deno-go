@@ -155,3 +155,18 @@ test('captures are bounded in bytes: the oldest is dropped first', async () => {
     configureCaptures({});
   }
 });
+
+test('routing: chat-stream is its own go class with its own gate, and is never a path class (P4c)', () => {
+  const { CLASSES, GO_CLASSES } = require('../lib/front');
+  assert.ok(GO_CLASSES.includes('chat-stream'));
+  assert.ok(!CLASSES.includes('chat-stream'));
+  const seen = [];
+  const gate = (c) => (seen.push(c), c === 'chat' ? { ok: true } : { ok: false, reason: 'not yet' });
+  const r = routing({ engines: { chat: 'go', 'chat-stream': 'go' } }, { gate });
+  assert.equal(r.engines.chat, 'go');
+  assert.equal(r.engines['chat-stream'], 'js');
+  assert.equal(r.notes['chat-stream'], 'not yet');
+  assert.deepEqual(seen, ['chat', 'chat-stream']);
+  assert.deepEqual(shadowOf({ shadow: ['chat', 'chat-stream'] }, r.engines), ['chat-stream']);
+  assert.equal(routing({}).engines['chat-stream'], 'js');
+});

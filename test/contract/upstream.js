@@ -46,6 +46,21 @@ function chat(r) {
       },
     };
   const base = { id: 'c1', object: 'chat.completion.chunk', model: `${b.model}-upstream` };
+  // P4c: a slow stream (50 chunks 100 ms apart) for a client that leaves, and one that breaks off after 2 chunks.
+  if (b.model === 'slowstream')
+    return {
+      delayMs: 100,
+      sse: sse(Array.from({ length: 50 }, () => ({ ...base, choices: [{ index: 0, delta: { content: 'x' } }] }))),
+    };
+  if (b.model === 'cutstream')
+    return {
+      cutAfter: 2,
+      sse: sse([
+        { ...base, choices: [{ index: 0, delta: { content: 'a' } }] },
+        { ...base, choices: [{ index: 0, delta: { content: 'b' } }] },
+        { ...base, choices: [], usage: USAGE },
+      ]),
+    };
   return {
     sse: [
       ': keep-alive\n\n',

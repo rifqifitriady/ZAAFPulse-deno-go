@@ -86,7 +86,7 @@ type FrontShadow struct {
 	Classes []RouteClass `json:"classes,omitzero"`
 }
 
-// RouteClass is one of the gateway's route classes (gw/front Classes).
+// RouteClass is one of the gateway's route classes (gw/front Classes), or the sub-class chat-stream (P4c).
 type RouteClass string
 
 func (c *RouteClass) UnmarshalJSON(b []byte) error {
@@ -95,7 +95,7 @@ func (c *RouteClass) UnmarshalJSON(b []byte) error {
 		return fmt.Errorf("route class %s is not a string", b)
 	}
 	switch s {
-	case "chat", "messages", "responses", "embeddings", "models", "gemini", "mcp", "a2a", "skills", "agents":
+	case "chat", "chat-stream", "messages", "responses", "embeddings", "models", "gemini", "mcp", "a2a", "skills", "agents":
 		*c = RouteClass(s)
 		return nil
 	}

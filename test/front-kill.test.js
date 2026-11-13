@@ -1,6 +1,8 @@
 // Kill test of the Go front (P4a T6): the gateway is killed while a streamed chat answer goes through it. The client
 // sees the stream cut, the supervisor restarts the gateway and the main port answers again, and the call is recorded
 // once in the usage log (the server answered it; the gateway records nothing in P4a): no line lost, none twice.
+// P4c: the same with the stream served by the go engine (chat and chat-stream on go): the gateway dies with the call, so
+// its line is lost (the gap the owner accepted until P4f, 2026-11-13), and it is never written twice.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
@@ -57,10 +59,18 @@ async function until(check, ms, what) {
   }
 }
 
-test('the gateway killed during a stream: the client sees the cut, the port returns, the call is recorded once', async (t) => {
+const GO_GATEWAY = {
+  engine: 'front',
+  engines: { chat: 'go', 'chat-stream': 'go' },
+  shadowDays: 0,
+  shadowMinCompares: 0,
+};
+
+async function killDuringStream(t, { goEngine }) {
   if (!stubBin(t)) return;
   const up = await slowProvider(t);
-  const s = await startServer({ runtime: RUNTIME, config: { ...SEED_CONFIG, gateway: { engine: 'front' } } });
+  const gateway = goEngine ? GO_GATEWAY : { engine: 'front' };
+  const s = await startServer({ runtime: RUNTIME, config: { ...SEED_CONFIG, gateway } });
   t.after(() => s.stop());
   // The gateway in front must be up before the stream starts: one that failed to start (Deno serving the fallback)
   // would leave nothing to kill, and the stream would wait for a cut that never comes (P4a final review T6-1).
@@ -80,6 +90,8 @@ test('the gateway killed during a stream: the client sees the cut, the port retu
     secret: { mode: 'store', value: 'sk-slow' },
   });
   const key = await c.newKey({ scopes: ['llm'] });
+  // The go engine serves only calls no guardrail check applies to (P4e).
+  if (goEngine) await c.setGuardrails({ scope: 'external', secrets: 'off', pii: 'off', injection: 'off' });
 
   const r = await fetch(`${s.base}/v1/chat/completions`, {
     method: 'POST',
@@ -132,5 +144,14 @@ test('the gateway killed during a stream: the client sees the cut, the port retu
     'the usage line of the call after the restart',
   );
   const cut = logs.filter((e) => String(e.model).endsWith('slowm') || String(e.routedTo || '').endsWith('slowm'));
-  assert.equal(cut.length, 1, JSON.stringify(logs));
-});
+  // Served by the go engine, the call dies with the gateway: no line (the accepted gap), never two. A line here would mean
+  // the server answered it, so the go engine did not serve the stream.
+  if (goEngine) assert.equal(cut.length, 0, JSON.stringify(logs));
+  else assert.equal(cut.length, 1, JSON.stringify(logs));
+}
+
+test('the gateway killed during a stream: the client sees the cut, the port returns, the call is recorded once', (t) =>
+  killDuringStream(t, { goEngine: false }));
+
+test('the gateway killed during a stream it serves itself: the cut, the port returns, the line never twice (P4c)', (t) =>
+  killDuringStream(t, { goEngine: true }));

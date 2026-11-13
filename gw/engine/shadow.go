@@ -206,10 +206,11 @@ type Own func(method, path string, body []byte) (int, []byte, error)
 // shadowSlots bounds the compares running at once; a request past it is not compared.
 var shadowSlots = make(chan struct{}, 8)
 
-// Shadow forwards a request of a class on js to the control plane, marked for the compare when the engine would serve
-// it and a compare slot is free, then compares in the background once the client has its answer. A request the engine
-// would hand off is not marked (the control plane keeps no capture for it) and gets a "handoff" line; a request past
-// the slots is forwarded unmarked and gets no line (final review m9': captures only for compares that run).
+// Shadow forwards a chat request whose sub-class is on js to the control plane, marked for the compare when that
+// sub-class is shadowed, the engine would serve it and a compare slot is free, then compares in the background once
+// the client has its answer. A request the engine would hand off is not marked (the control plane keeps no capture for
+// it) and gets a "handoff" line; a request past the slots is forwarded unmarked and gets no line (final review m9':
+// captures only for compares that run).
 func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler,
 	own func(method, path string, body []byte) (int, []byte, error)) {
 	s := e.state.Load()
@@ -219,8 +220,32 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	}
 	req := ReadRequest(r, rawPath)
 	p := s.PlanChat(req, e.now())
+	sub := subOf(&p)
+	_, shadowed := e.mode(sub)
+	if e.modes.Load() == nil {
+		shadowed = sub == "chat" // P4b: the front calls Shadow for a shadowed chat
+	}
+	if !shadowed {
+		js.ServeHTTP(w, r)
+		return
+	}
+	e.shadowRead(sub, w, r, s, &p, js, own)
+}
+
+// subOf is the sub-class of chat a plan belongs to: chat-stream for a stream the engine would plan (P4c).
+func subOf(p *Plan) string {
 	if p.Handoff == "" && p.Stream {
-		p = handoff("stream: the chat-stream sub-class") // compared from P4c Task 5 on
+		return "chat-stream"
+	}
+	return "chat"
+}
+
+// shadowRead is Shadow after the request is read and planned: sub is the line's class.
+func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, s *State, p *Plan, js http.Handler,
+	own func(method, path string, body []byte) (int, []byte, error)) {
+	if own == nil {
+		js.ServeHTTP(w, r)
+		return
 	}
 	select {
 	case shadowSlots <- struct{}{}:
@@ -231,7 +256,7 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	// The engine counts what it would serve, as when it serves (the control plane counts every request of the key).
 	var wait int64
 	id := ""
-	if p.Handoff == "" {
+	if p.Handoff == "" && !p.Stream { // streams are compared from P4c Task 5 on
 		wait = e.limits.Take(p.Key.ID, p.Key.RPM, e.now())
 		id = NewShadowID()
 		r = front.WithShadowID(r, id) // set by the proxy's Rewrite, after the hop-by-hop headers are gone
@@ -239,18 +264,23 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	js.ServeHTTP(w, r)
 	go func() {
 		defer func() { <-shadowSlots }()
-		var c *Capture
-		if id != "" {
-			if code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil); err == nil && code == http.StatusOK {
-				c = &Capture{}
-				if json.Unmarshal(body, c) != nil {
-					c = nil
+		var l ShadowLine
+		if p.Handoff == "" && p.Stream {
+			l = ShadowLine{Class: sub, Outcome: "skipped", Reason: "stream compare: P4c Task 5"}
+		} else {
+			var c *Capture
+			if id != "" {
+				if code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil); err == nil && code == http.StatusOK {
+					c = &Capture{}
+					if json.Unmarshal(body, c) != nil {
+						c = nil
+					}
 				}
 			}
-		}
-		l := s.Compare(class, &p, c)
-		if wait > 0 {
-			l = rateLimitedLine(class, l.Status) // the engine would have answered 429 itself
+			l = s.Compare(sub, p, c)
+			if wait > 0 {
+				l = rateLimitedLine(sub, l.Status) // the engine would have answered 429 itself
+			}
 		}
 		line, _ := json.Marshal(l)
 		if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
