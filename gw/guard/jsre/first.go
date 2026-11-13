@@ -19,9 +19,30 @@ func (b *bitset) union(o *bitset) {
 }
 
 type prefilter struct {
-	once sync.Once
-	ok   bool // false: every position must be tried
-	set  bitset
+	once     sync.Once
+	ok       bool // false: every position must be tried
+	set      bitset
+	anchored bool // every match begins with ^ (no m flag): only position 0 can match
+}
+
+// anchoredAt reports whether every match of n must begin with ^.
+func anchoredAt(n *node) bool {
+	switch n.kind {
+	case kBegin:
+		return true
+	case kGroup:
+		return anchoredAt(n.subs[0])
+	case kSeq:
+		return len(n.subs) > 0 && anchoredAt(n.subs[0])
+	case kAlt:
+		for _, s := range n.subs {
+			if !anchoredAt(s) {
+				return false
+			}
+		}
+		return len(n.subs) > 0
+	}
+	return false
 }
 
 // firstOf returns the code units n can start with and whether n can match without consuming one (then the units of
@@ -87,6 +108,7 @@ func (re *Regexp) filter() *prefilter {
 		f, empty := firstOf(re.root, re.icase)
 		re.pre.ok = !empty
 		re.pre.set = *f
+		re.pre.anchored = anchoredAt(re.root)
 	})
 	return &re.pre
 }

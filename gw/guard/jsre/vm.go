@@ -1,6 +1,9 @@
 package jsre
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 // The matcher is iterative: backtracking state lives on a heap-allocated stack, so Go's stack depth never depends on
 // the input (a repeat of a group used to recurse once per iteration and overflow on about 1 MB). Only lookarounds
@@ -18,18 +21,73 @@ var ErrStack = errors.New("jsre: backtrack stack limit exceeded")
 // group over about two million iterations (a 4 MB run of "a a a …") does, and then fails closed.
 const MaxFrames = 2 << 20
 
-// Budget counts matcher steps (one per instruction, one per character a repeat consumes) across every call that is
-// given it. Past Limit the matcher panics with ErrBudget; Run turns that back into an error.
+// ErrDeadline is what a run past its Budget's Deadline reports.
+var ErrDeadline = errors.New("jsre: deadline exceeded")
+
+// clockEvery is how many steps pass between two reads of the clock (about 0.1 ms of matching).
+const clockEvery = 1 << 16
+
+// Budget counts matcher steps (one per instruction, one per character a repeat consumes, one per start position the
+// filter skips) across every call that is given it, and holds an optional wall-clock deadline. Past Limit the
+// matcher panics with ErrBudget, at or past Deadline (read every clockEvery steps) with ErrDeadline; Run turns either
+// back into an error. Limit may be raised between runs (Extend), never lowered.
 type Budget struct {
 	Steps, Limit int64
+	Deadline     time.Time        // zero: none
+	Now          func() time.Time // nil: time.Now
+	next         int64            // the step count at which the slow check runs next
 }
 
-// Run calls f and returns ErrBudget or ErrStack if a matcher inside ran past the budget or the stack limit. Other
-// panics propagate.
+// Extend raises Limit by n, up to max (never above it, never lowering Limit).
+func (b *Budget) Extend(n, max int64) {
+	if l := min(b.Limit+n, max); l > b.Limit {
+		b.Limit = l
+	}
+}
+
+// Expired reports whether the deadline has passed (reads the clock).
+func (b *Budget) Expired() bool {
+	if b.Deadline.IsZero() {
+		return false
+	}
+	now := time.Now
+	if b.Now != nil {
+		now = b.Now
+	}
+	return !now().Before(b.Deadline)
+}
+
+// add counts n steps; the slow path checks the limit and, every clockEvery steps, the clock.
+func (b *Budget) add(n int64) {
+	b.Steps += n
+	if b.Steps > b.next {
+		b.slow()
+	}
+}
+
+func (b *Budget) slow() {
+	if b.Steps > b.Limit {
+		panic(ErrBudget)
+	}
+	if b.Deadline.IsZero() {
+		b.next = b.Limit
+		return
+	}
+	if b.Expired() {
+		panic(ErrDeadline)
+	}
+	b.next = min(b.Limit, b.Steps+clockEvery)
+}
+
+// IsLimit reports whether a recovered panic value is one of the limits (ErrBudget, ErrStack, ErrDeadline).
+func IsLimit(r any) bool { return r == ErrBudget || r == ErrStack || r == ErrDeadline }
+
+// Run calls f and returns ErrBudget, ErrStack or ErrDeadline if a matcher inside ran past a limit. Other panics
+// propagate.
 func (b *Budget) Run(f func()) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if r == ErrBudget || r == ErrStack {
+			if IsLimit(r) {
 				err = r.(error)
 				return
 			}
@@ -72,10 +130,7 @@ func (re *Regexp) newVM(s []uint16, b *Budget) *vm {
 
 func (m *vm) step(n int) {
 	if m.b != nil {
-		m.b.Steps += int64(n)
-		if m.b.Steps > m.b.Limit {
-			panic(ErrBudget)
-		}
+		m.b.add(int64(n))
 	}
 }
 

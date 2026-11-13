@@ -142,16 +142,32 @@ func (re *Regexp) Exec(s []uint16, from int) []int { return re.ExecB(s, from, ni
 // ExecB is Exec counting its steps against b (nil: no limit). Past the limit it panics with ErrBudget; run it inside
 // Budget.Run.
 func (re *Regexp) ExecB(s []uint16, from int, b *Budget) []int {
-	m := re.newVM(s, b)
 	pre := re.filter()
+	if pre.anchored {
+		if from != 0 {
+			return nil
+		}
+		return re.newVM(s, b).matchAt(0)
+	}
+	m := re.newVM(s, b)
+	skipped := 0
 	for p := from; p <= len(s); p++ {
 		if pre.ok && (p == len(s) || !pre.set.has(s[p])) {
+			if skipped++; skipped == clockEvery {
+				m.step(skipped)
+				skipped = 0
+			}
 			continue
+		}
+		if skipped > 0 {
+			m.step(skipped)
+			skipped = 0
 		}
 		if c := m.matchAt(p); c != nil {
 			return c
 		}
 	}
+	m.step(skipped)
 	return nil
 }
 
