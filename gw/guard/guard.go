@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 
@@ -222,16 +223,48 @@ func NewBudget(units int) *jsre.Budget {
 	return b
 }
 
-// orBudget is b, or a budget for one check on n code units when b is nil.
+// orBudget is b, or a budget for one check on n code units when b is nil (after Prepare, so compiling is never
+// counted against b).
 func orBudget(b *jsre.Budget, n int) *jsre.Budget {
+	Prepare()
 	if b == nil {
 		return NewBudget(n)
 	}
 	return b
 }
 
+// allPatterns lists every regex of the package, for Prepare.
+func allPatterns() []*jsre.Regexp {
+	out := []*jsre.Regexp{reBase64URL, rePEMEnd, reInjCarries, reInjAnchor, reInjAnchorMark, reDocContext, reCodeLine,
+		reStringItem, reQuoteBefore, reZeroWidth, reSplitLetters, reHasZeroWidth, reHasSplit, reHasLeet, reSecretHint,
+		rePlaceholder, rePlaceholderPassword, reEmail, reIPV4, reIPV6, rePhone, reMasked, reLeetWord, reDigit, reLeetChar,
+		reAWSExample, reMasked3, reHasDigit, reDateHead}
+	for _, c := range injection {
+		out = append(out, c.res...)
+	}
+	for _, p := range secretPatterns {
+		out = append(out, p.re)
+	}
+	return out
+}
+
+var prepared sync.Once
+
+// Prepare compiles every pattern's program and filters (about half a second, once). The checks call it before their
+// first deadline starts, so compiling never counts against a request; the gateway may call it at startup.
+func Prepare() {
+	prepared.Do(func() {
+		for _, re := range allPatterns() {
+			re.Prepare()
+		}
+		setupInjMulti()
+		setupSecretMulti()
+	})
+}
+
 // newCallBudget is the budget a call starts with: the base steps and the deadline from now.
 func newCallBudget() *jsre.Budget {
+	Prepare()
 	return &jsre.Budget{Limit: min(budgetBase, budgetCap), Deadline: now().Add(requestDeadline), Now: now}
 }
 

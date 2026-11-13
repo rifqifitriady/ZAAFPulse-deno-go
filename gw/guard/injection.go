@@ -154,38 +154,36 @@ func (sc *scan) inDocContext(at, n int) bool {
 
 var reMasked = jsre.MustCompile(`\S+@\S+|https?:\/\/\S+`, "g")
 
-// anchorWindows: spans worth matching, around each anchor, widened to line starts and merged when they overlap.
+// anchorWindows: spans worth matching, around each anchor, widened to line starts and merged when they overlap. Both
+// anchor patterns run in one scan (anchorMulti); each goes on from where the JS loop would take it next.
 func anchorWindows(text []uint16, b *jsre.Budget) [][2]int {
+	Prepare()
 	var spans [][2]int
-	for _, re := range []*jsre.Regexp{reInjAnchor, reInjAnchorMark} {
-		last := 0
-		for {
-			m := re.ExecB(text, last, b)
-			if m == nil {
-				break
-			}
-			last = m[1]
-			hi := max(0, m[0]-windowBefore)
-			lo := max(0, m[0]-windowBefore-200)
-			nl := -1
-			for i := hi; i >= lo; i-- {
-				if text[i] == '\n' {
-					nl = i
-					break
-				}
-			}
-			from := hi
-			if nl >= 0 {
-				from = nl
-			}
-			to := min(len(text), m[1]+windowAfter)
-			spans = append(spans, [2]int{from, to})
-			last = max(last, to-200)
-			if last > len(text) {
+	var st jsre.MultiState
+	defer anchorMulti.Release(&st)
+	anchorMulti.AllB(&st, text, 3, b, func(_ int, m []int) int {
+		last := m[1]
+		hi := max(0, m[0]-windowBefore)
+		lo := max(0, m[0]-windowBefore-200)
+		nl := -1
+		for i := hi; i >= lo; i-- {
+			if text[i] == '\n' {
+				nl = i
 				break
 			}
 		}
-	}
+		from := hi
+		if nl >= 0 {
+			from = nl
+		}
+		to := min(len(text), m[1]+windowAfter)
+		spans = append(spans, [2]int{from, to})
+		last = max(last, to-200)
+		if last > len(text) {
+			return len(text) + 1 // stop this pattern, as the JS loop breaks
+		}
+		return last
+	})
 	sort.SliceStable(spans, func(i, j int) bool { return spans[i][0] < spans[j][0] })
 	var out [][2]int
 	for _, sp := range spans {
@@ -198,18 +196,55 @@ func anchorWindows(text []uint16, b *jsre.Budget) [][2]int {
 	return out
 }
 
+// injMulti finds the first match of every injection pattern in a window in one scan (set up by Prepare); injFirst[c]
+// is the index of category c's first pattern in it.
+var (
+	injMulti *jsre.Multi
+	injFirst []int
+)
+
+var anchorMulti *jsre.Multi
+
+func setupInjMulti() {
+	anchorMulti = jsre.NewMulti([]*jsre.Regexp{reInjAnchor, reInjAnchorMark})
+	var res []*jsre.Regexp
+	for _, c := range injection {
+		injFirst = append(injFirst, len(res))
+		res = append(res, c.res...)
+	}
+	injMulti = jsre.NewMulti(res)
+}
+
+// matchInjection finds, for each category in order, the first window holding an accepted match of one of its
+// patterns (the patterns in order, each at its first match in the window), like the JS. It goes window by window and
+// finds the first match of every pattern of the categories still open in one scan of the window: the same hits as
+// category by category, since each category's answer depends only on its own patterns.
 func matchInjection(text []uint16, offsetOf func(int) int, windows [][2]int, b *jsre.Budget) []injHit {
 	if len(windows) == 0 {
 		return nil
 	}
+	Prepare()
 	sc := newScan(text, b)
-	var hits []injHit
-	for _, p := range injection {
-		var hit *injHit
-		for _, w := range windows {
-			part := text[w[0]:w[1]]
-			for _, re := range p.res {
-				m := re.ExecB(part, 0, b)
+	found := make([]*injHit, len(injection))
+	open := len(injection)
+	var st jsre.MultiState
+	defer injMulti.Release(&st)
+	first := make([][]int, injFirst[len(injFirst)-1]+len(injection[len(injection)-1].res))
+	for _, w := range windows {
+		var active uint64
+		for ci, p := range injection {
+			if found[ci] == nil {
+				active |= (uint64(1)<<len(p.res) - 1) << injFirst[ci]
+			}
+		}
+		part := text[w[0]:w[1]]
+		injMulti.FirstB(&st, part, active, b, first)
+		for ci, p := range injection {
+			if found[ci] != nil {
+				continue
+			}
+			for j := range p.res {
+				m := first[injFirst[ci]+j]
 				if m == nil {
 					continue
 				}
@@ -220,15 +255,19 @@ func matchInjection(text []uint16, offsetOf func(int) int, windows [][2]int, b *
 				if sc.inDocContext(at, n) {
 					continue
 				}
-				hit = &injHit{id: p.id, label: p.label, at: offsetOf(at), match: text[at : at+n], supporting: p.supporting}
-				break
-			}
-			if hit != nil {
+				found[ci] = &injHit{id: p.id, label: p.label, at: offsetOf(at), match: text[at : at+n], supporting: p.supporting}
+				open--
 				break
 			}
 		}
-		if hit != nil {
-			hits = append(hits, *hit)
+		if open == 0 {
+			break
+		}
+	}
+	var hits []injHit
+	for _, h := range found {
+		if h != nil {
+			hits = append(hits, *h)
 		}
 	}
 	for _, h := range hits {
@@ -327,6 +366,7 @@ func leetInPlace(s []uint16, own bool, b *jsre.Budget) []uint16 {
 	pending := [2]int{-1, -1}
 	apply := func() {
 		a, z := pending[0], pending[1]
+		pending = [2]int{-1, -1}
 		if a < 0 || !reDigit.TestB(src[a:z], b) {
 			return
 		}
@@ -340,12 +380,41 @@ func leetInPlace(s []uint16, own bool, b *jsre.Budget) []uint16 {
 			}
 		}
 	}
-	reLeetWord.EachB(src, b, func(m []int) {
+	// Only a word with a digit changes, and a word lies inside one run of [A-Za-z0-9@$]; the search for words starts
+	// afresh at each run (the code unit before a run is outside every word and never rewritten). So only the runs
+	// holding a digit are searched, which skips most of a long text.
+	for i := 0; i < len(src); i++ {
+		if src[i] < '0' || src[i] > '9' {
+			continue
+		}
+		r0, r1 := i, i+1
+		for r0 > 0 && leetUnit(src[r0-1]) {
+			r0--
+		}
+		for r1 < len(src) && leetUnit(src[r1]) {
+			r1++
+		}
+		for p := r0; p <= r1; {
+			m := reLeetWord.ExecB(src, p, b)
+			if m == nil || m[0] >= r1 {
+				break
+			}
+			apply()
+			pending = [2]int{m[0], m[1]}
+			p = m[1]
+			if m[1] == m[0] {
+				p++
+			}
+		}
 		apply()
-		pending = [2]int{m[0], m[1]}
-	})
-	apply()
+		i = r1
+	}
 	return out
+}
+
+// leetUnit reports whether u is in [A-Za-z0-9@$] (what LEET_WORD's words are made of under the i flag).
+func leetUnit(u uint16) bool {
+	return u >= 'a' && u <= 'z' || u >= 'A' && u <= 'Z' || u >= '0' && u <= '9' || u == '@' || u == '$'
 }
 
 // keptMap maps an offset in a text with some code units dropped back to the offset in the original: a bit per
