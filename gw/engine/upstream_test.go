@@ -143,3 +143,46 @@ func TestWindowsSocketErrorsHaveNodeNames(t *testing.T) {
 		}
 	}
 }
+
+// Start returns once the headers are in: the body is read by the caller, and closing it ends the call (the provider
+// sees its request cancelled). The provider gets a Content-Length, as fetch sends one for a string body.
+func TestUpstreamStart(t *testing.T) {
+	gone := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength != int64(len(`{"model":"m1"}`)) {
+			t.Errorf("content-length %d", r.ContentLength)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, "data: 1\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		close(gone)
+	}))
+	defer srv.Close()
+	p := planTo(srv.URL)
+	resp, why := NewUpstream(func(string) string { return "" }).Start(context.Background(), p)
+	if why != "" || resp.StatusCode != 200 {
+		t.Fatalf("%q %v", why, resp)
+	}
+	buf := make([]byte, 64)
+	n, _ := resp.Body.Read(buf)
+	if string(buf[:n]) != "data: 1\n\n" {
+		t.Fatalf("%q", buf[:n])
+	}
+	_ = resp.Body.Close()
+	select {
+	case <-gone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing the body did not end the call")
+	}
+}
+
+// The request body lets go of its bytes once read.
+func TestOnceBodyReleases(t *testing.T) {
+	b := &onceBody{b: []byte("abc")}
+	out, _ := io.ReadAll(b)
+	if string(out) != "abc" || b.b != nil {
+		t.Fatalf("%q %v", out, b.b)
+	}
+}

@@ -8,7 +8,6 @@ package engine
 // connect timeout). A redirect is followed (at most 5, same method and body) only to the same origin.
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -18,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -56,9 +56,12 @@ func NewUpstream(getenv func(string) string) *Upstream {
 		TLSClientConfig:     &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout: ConnectTimeout,
 		MaxIdleConnsPerHost: 64,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true, // the body goes to the client as the provider wrote it, as fetch gives it
-		ForceAttemptHTTP2:   true,
+		// The request is written once per call (a large body bypasses the buffer); a small write buffer keeps a held
+		// stream's connection light (P4c Decision 11). The read buffer stays at net/http's 4 KiB.
+		WriteBufferSize:    1 << 10,
+		IdleConnTimeout:    90 * time.Second,
+		DisableCompression: true, // the body goes to the client as the provider wrote it, as fetch gives it
+		ForceAttemptHTTP2:  true,
 	}
 	return &Upstream{
 		client: &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -75,54 +78,108 @@ type Result struct {
 	Why    string
 }
 
-// Call sends the plan's request. ctx ends when the client goes away.
-func (u *Upstream) Call(ctx context.Context, p *Plan) Result {
+// Start sends the plan's request and returns the provider's answer once its headers are in, its body unread, or Why the
+// call failed. Closing the answer's body ends the call. ctx ends when the client goes away. The 120 s limit covers
+// the headers only; the body has none, as in JS.
+func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	var timedOut atomic.Bool
 	timer := time.AfterFunc(u.timeout, func() { timedOut.Store(true); cancel() })
+	fail := func(why string) (*http.Response, string) {
+		timer.Stop()
+		cancel()
+		return nil, why
+	}
 	current := p.URL
 	for hop := 0; hop <= maxRedirects; hop++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, current, bytes.NewReader(p.Body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, current, &onceBody{b: p.Body})
 		if err != nil {
-			timer.Stop()
-			return Result{Why: "fetch failed"}
+			return fail("fetch failed")
 		}
+		req.ContentLength = int64(len(p.Body))
+		req.GetBody = func() (io.ReadCloser, error) { return &onceBody{b: p.Body}, nil } // p.Body, read when called
 		req.Header = p.Header.Clone()
 		resp, err := u.client.Do(req)
 		if err != nil {
-			timer.Stop()
 			if timedOut.Load() {
-				return Result{Why: "timed out"}
+				return fail("timed out")
 			}
-			return Result{Why: ErrorCode(err)}
+			return fail(ErrorCode(err))
 		}
 		loc := resp.Header.Get("Location")
 		if resp.StatusCode < 300 || resp.StatusCode >= 400 || loc == "" {
 			timer.Stop() // the answer has started: the body has no time limit, as in JS
-			body, err := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			if err != nil && ctx.Err() != nil {
-				return Result{Status: resp.StatusCode, Body: body, Why: "client gone"}
-			}
-			return Result{Status: resp.StatusCode, Body: body}
+			resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: cancel}
+			return resp, ""
 		}
 		_ = resp.Body.Close()
 		from, _ := url.Parse(current)
 		next, err := from.Parse(loc)
 		if err != nil {
-			timer.Stop()
-			return Result{Why: "fetch failed"}
+			return fail("fetch failed")
 		}
 		if origin(next) != origin(from) {
-			timer.Stop()
-			return Result{Why: "refused a redirect from " + from.Host + " to " + next.Host +
-				"; credentials are not forwarded to another host"}
+			return fail("refused a redirect from " + from.Host + " to " + next.Host +
+				"; credentials are not forwarded to another host")
 		}
 		current = next.String()
 	}
-	timer.Stop()
-	return Result{Why: "too many redirects"}
+	return fail("too many redirects")
+}
+
+// Call sends the plan's request and reads the whole answer.
+func (u *Upstream) Call(ctx context.Context, p *Plan) Result {
+	resp, why := u.Start(ctx, p)
+	if why != "" {
+		return Result{Why: why}
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil && ctx.Err() != nil {
+		return Result{Status: resp.StatusCode, Body: body, Why: "client gone"}
+	}
+	return Result{Status: resp.StatusCode, Body: body}
+}
+
+// onceBody is a request body that lets go of its bytes once they are read or the request is done with it, so a long
+// stream does not keep its prompt alive (P4c Decision 11). Read and Close may run at once (net/http's rule).
+type onceBody struct {
+	mu sync.Mutex
+	b  []byte
+}
+
+func (o *onceBody) Read(p []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.b) == 0 {
+		o.b = nil
+		return 0, io.EOF
+	}
+	n := copy(p, o.b)
+	o.b = o.b[n:]
+	if len(o.b) == 0 {
+		o.b = nil
+	}
+	return n, nil
+}
+
+func (o *onceBody) Close() error {
+	o.mu.Lock()
+	o.b = nil
+	o.mu.Unlock()
+	return nil
+}
+
+// cancelBody ends the call when the answer's body is closed.
+type cancelBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelBody) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
 }
 
 func origin(u *url.URL) string {
