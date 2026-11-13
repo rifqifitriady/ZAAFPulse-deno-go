@@ -44,8 +44,14 @@ func isLiveSecret(label string, s []uint16, m []int, b *jsre.Budget) bool {
 	return len(distinct) >= 10
 }
 
-// SecretSpans is lib/signals.js secretSpans: the live secrets in text, overlapping ones merged (first label kept).
-func SecretSpans(text string) []Span { return secretSpans(jsre.U16(text), nil) }
+// SecretSpans is lib/signals.js secretSpans: the live secrets in text, overlapping ones merged (first label kept). It
+// runs under b like ScanInjection.
+func SecretSpans(text string, b *jsre.Budget) (spans []Span, err error) {
+	u := jsre.U16(text)
+	b = orBudget(b, len(u))
+	err = b.Run(func() { spans = secretSpans(u, b) })
+	return spans, err
+}
 
 func secretSpans(s []uint16, b *jsre.Budget) []Span {
 	if !reSecretHint.TestB(s, b) {
