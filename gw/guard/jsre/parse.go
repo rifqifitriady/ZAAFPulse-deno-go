@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type parser struct {
@@ -33,6 +34,7 @@ type Regexp struct {
 	icase bool
 	pre   prefilter
 	prog  lazyProg
+	vms   sync.Pool // idle *vm, reused across calls (ExecB, TestB, EachB)
 }
 
 // String is the pattern source.

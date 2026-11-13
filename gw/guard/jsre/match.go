@@ -134,6 +134,13 @@ func charMatch(n *node, u uint16, icase bool) bool {
 	return false
 }
 
+// Prepare compiles the pattern's program and start-position filter now instead of on first use (tens of
+// milliseconds for a large pattern), so the first call under a deadline does not pay for it.
+func (re *Regexp) Prepare() {
+	re.program()
+	re.filter()
+}
+
 // MatchAt runs the pattern anchored at pos. It returns the capture offsets (2 per group, group 0 first; -1 unset)
 // or nil.
 func (re *Regexp) MatchAt(s []uint16, pos int) []int { return re.newVM(s, nil).matchAt(pos) }
@@ -145,8 +152,16 @@ func (re *Regexp) Exec(s []uint16, from int) []int { return re.ExecB(s, from, ni
 // Budget.Run.
 func (re *Regexp) ExecB(s []uint16, from int, b *Budget) []int {
 	var m *vm
-	return re.exec(&m, s, from, b)
+	c := re.exec(&m, s, from, b)
+	if c != nil {
+		c = append([]int(nil), c...)
+	}
+	re.release(m)
+	return c
 }
+
+// noFilter turns the start-position filters off (tests only).
+var noFilter bool
 
 // exec is ExecB with a VM that is made on the first start position worth trying and kept in *mp for the next call on
 // the same text. The returned captures are the VM's own: valid until its next run.
@@ -158,32 +173,93 @@ func (re *Regexp) exec(mp **vm, s []uint16, from int, b *Budget) []int {
 		}
 		return re.vmFor(mp, s, b).matchAt(0)
 	}
-	skipped := 0
-	for p := from; p <= len(s); p++ {
-		if pre.ok && (p == len(s) || !pre.set.has(s[p])) {
-			if skipped++; skipped == clockEvery {
-				b.count(skipped)
-				skipped = 0
+	if noFilter || !pre.ok {
+		for p := from; p <= len(s); p++ {
+			if c := re.vmFor(mp, s, b).matchAt(p); c != nil {
+				return c
 			}
+		}
+		return nil
+	}
+	if pre.run != nil {
+		return re.execRun(mp, s, from, b)
+	}
+	// The scan for a start position: positions are counted as steps in bulk, when a candidate is tried and every
+	// clockEvery positions, so the deadline holds over a long text with no candidate.
+	for p := from; p < len(s); {
+		end := min(len(s), p+clockEvery)
+		q := pre.next(s, p, end)
+		b.count(q - p)
+		if q == end {
+			p = end
 			continue
 		}
-		if skipped > 0 {
-			b.count(skipped)
-			skipped = 0
-		}
-		if c := re.vmFor(mp, s, b).matchAt(p); c != nil {
+		if c := re.vmFor(mp, s, b).matchAt(q); c != nil {
 			return c
 		}
+		p = q + 1
 	}
-	b.count(skipped)
+	return nil
+}
+
+// execRun is exec for a runThen pattern: it looks for the units that can end a run, and tries the starts of the run
+// before each one (in order, so the first match found is the leftmost).
+func (re *Regexp) execRun(mp **vm, s []uint16, from int, b *Budget) []int {
+	pre := &re.pre
+	p := from
+	for q := from; q < len(s); q++ {
+		if q-p >= clockEvery {
+			b.count(q - p)
+			p = q
+		}
+		if !pre.then.has(s[q]) {
+			continue
+		}
+		r := q
+		for r > from && pre.run.has(s[r-1]) {
+			r--
+		}
+		b.count(q - p)
+		p = q
+		for c := r; c < q; c++ {
+			if c > 0 && pre.prevNot != nil && pre.prevNot.has(s[c-1]) {
+				continue
+			}
+			if m := re.vmFor(mp, s, b).matchAt(c); m != nil {
+				return m
+			}
+		}
+	}
+	b.count(len(s) - p)
 	return nil
 }
 
 func (re *Regexp) vmFor(mp **vm, s []uint16, b *Budget) *vm {
 	if *mp == nil {
-		*mp = re.newVM(s, b)
+		if m, ok := re.vms.Get().(*vm); ok {
+			if int64(len(s)) > 1<<31-1 {
+				panic(ErrStack)
+			}
+			m.s, m.b = s, b
+			*mp = m
+		} else {
+			*mp = re.newVM(s, b)
+		}
 	}
 	return *mp
+}
+
+// release returns an idle VM to the pool, without the text, the budget or a deep stack.
+func (re *Regexp) release(m *vm) {
+	if m == nil {
+		return
+	}
+	m.s, m.b = nil, nil
+	m.stack.chunks = nil
+	if cap(m.stack.small) > 4096 {
+		m.stack.small = nil
+	}
+	re.vms.Put(m)
 }
 
 // count adds n steps to a budget that may be nil.
@@ -197,7 +273,12 @@ func (b *Budget) count(n int) {
 func (re *Regexp) Test(s []uint16) bool { return re.ExecB(s, 0, nil) != nil }
 
 // TestB is Test under a budget.
-func (re *Regexp) TestB(s []uint16, b *Budget) bool { return re.ExecB(s, 0, b) != nil }
+func (re *Regexp) TestB(s []uint16, b *Budget) bool {
+	var m *vm
+	ok := re.exec(&m, s, 0, b) != nil
+	re.release(m)
+	return ok
+}
 
 // EachB calls f with each match of a g pattern in s (as FindAll finds them: an empty one advances by one), under b.
 // The captures passed to f are valid only during the call.
@@ -206,6 +287,7 @@ func (re *Regexp) EachB(s []uint16, b *Budget, f func(caps []int)) {
 	for p := 0; p <= len(s); {
 		c := re.exec(&m, s, p, b)
 		if c == nil {
+			re.release(m)
 			return
 		}
 		c0, c1 := c[0], c[1]
