@@ -247,49 +247,131 @@ var (
 	reLeetChar = jsre.MustCompile(`[013457@$]`, "g")
 )
 
-// deobfuscate undoes spelled-out (i-g-n-o-r-e), zero-width-split and leetspeak words. It returns the new text and,
-// for each of its code units, the offset in text; nil when there is nothing to undo.
-func deobfuscate(text []uint16, windows [][2]int, b *jsre.Budget) ([]uint16, []int) {
+// deobfuscate undoes spelled-out (i-g-n-o-r-e), zero-width-split and leetspeak words. It returns the new text and
+// the map from its offsets to offsets in text; nil when there is nothing to undo. It keeps one bit per dropped code
+// unit, not a flag and an offset per unit, and rewrites leetspeak in place on its own copy.
+func deobfuscate(text []uint16, windows [][2]int, b *jsre.Budget) ([]uint16, *keptMap) {
 	var near []uint16
-	for i, w := range windows {
-		if i > 0 {
-			near = append(near, '\n')
+	if len(windows) == 1 {
+		near = text[windows[0][0]:windows[0][1]]
+	} else {
+		n := len(windows)
+		for _, w := range windows {
+			n += w[1] - w[0]
 		}
-		near = append(near, text[w[0]:w[1]]...)
+		near = make([]uint16, 0, n)
+		for i, w := range windows {
+			if i > 0 {
+				near = append(near, '\n')
+			}
+			near = append(near, text[w[0]:w[1]]...)
+		}
 	}
 	isLeet := reHasLeet.TestB(near, b)
 	if !reHasZeroWidth.TestB(text, b) && !isLeet && !reHasSplit.TestB(near, b) {
 		return nil, nil
 	}
-	drop := make([]bool, len(text))
-	for _, m := range reZeroWidth.FindAllB(text, b) {
-		drop[m[0]] = true
+	km := &keptMap{drop: make([]uint64, len(text)/64+1)}
+	dropped := 0
+	mark := func(i int) {
+		if km.drop[i>>6]&(1<<(i&63)) == 0 {
+			km.drop[i>>6] |= 1 << (i & 63)
+			dropped++
+		}
 	}
-	for _, m := range reSplitLetters.FindAllB(text, b) {
+	reZeroWidth.EachB(text, b, func(m []int) { mark(m[0]) })
+	reSplitLetters.EachB(text, b, func(m []int) {
 		for i := m[0]; i < m[1]; i++ {
 			if c := text[i] | 0x20; c < 'a' || c > 'z' { // !/[a-z]/i.test(ch)
-				drop[i] = true
+				mark(i)
 			}
 		}
-	}
-	var s []uint16
-	var idx []int
-	for i, c := range text {
-		if !drop[i] {
-			s = append(s, c)
-			idx = append(idx, i)
+	})
+	s := text
+	if dropped > 0 {
+		// near is no longer needed: its storage holds the shortened text when it is large enough (it usually is
+		// when the windows cover most of a long text, the case where a second copy would cost the most).
+		if multi := len(windows) > 1; multi && cap(near) >= len(text)-dropped {
+			s = near[:0]
+		} else {
+			s = make([]uint16, 0, len(text)-dropped)
 		}
+		km.before = make([]int32, len(km.drop)+1)
+		for blk, word := range km.drop {
+			lo, hi := blk*64, min(blk*64+64, len(text))
+			for i := lo; i < hi; i++ {
+				if word&(1<<(i-lo)) == 0 {
+					s = append(s, text[i])
+				}
+			}
+			km.before[blk+1] = int32(len(s))
+		}
+	} else {
+		km = nil
+	}
+	if len(s) == 0 {
+		return nil, nil // everything dropped (the JS has an empty string: nothing to match either way)
 	}
 	if isLeet {
-		s = reLeetWord.ReplaceAllB(s, func(m []int) []uint16 {
-			w := s[m[0]:m[1]]
-			if !reDigit.TestB(w, b) {
-				return w
-			}
-			return reLeetChar.ReplaceAllB(w, func(c []int) []uint16 { return []uint16{leet[w[c[0]]]} }, b)
-		}, b)
+		s = leetInPlace(s, !sameSlice(s, text), b)
 	}
-	return s, idx
+	return s, km
+}
+
+// leetInPlace is s.replace(LEET_WORD, w => /\d/.test(w) ? w.replace(/[013457@$]/g, c => LEET[c]) : w). A replacement
+// keeps the length, so it is written over s (or over a copy, made at the first change, when s is not ours). A word is
+// rewritten only after the next one is found: the search for the next word reads the last code unit of the previous
+// one (\b), which must still be the original, as in the JS, which matches on the unchanged string.
+func leetInPlace(s []uint16, own bool, b *jsre.Budget) []uint16 {
+	src, out := s, s
+	pending := [2]int{-1, -1}
+	apply := func() {
+		a, z := pending[0], pending[1]
+		if a < 0 || !reDigit.TestB(src[a:z], b) {
+			return
+		}
+		for i := a; i < z; i++ {
+			if c, ok := leet[src[i]]; ok {
+				if !own {
+					out = append([]uint16(nil), src...)
+					own = true
+				}
+				out[i] = c
+			}
+		}
+	}
+	reLeetWord.EachB(src, b, func(m []int) {
+		apply()
+		pending = [2]int{m[0], m[1]}
+	})
+	apply()
+	return out
+}
+
+// keptMap maps an offset in a text with some code units dropped back to the offset in the original: a bit per
+// original code unit (set: dropped) and, per block of 64, how many were kept before it.
+type keptMap struct {
+	drop   []uint64
+	before []int32
+}
+
+// orig is the offset in the original text of code unit i of the shortened one.
+func (k *keptMap) orig(i int) int {
+	blk := sort.Search(len(k.drop), func(j int) bool { return int(k.before[j+1]) > i })
+	if blk >= len(k.drop) {
+		return -1
+	}
+	n := i - int(k.before[blk]) // the n-th kept unit of this block
+	word := ^k.drop[blk]
+	for bit := 0; bit < 64; bit++ {
+		if word&(1<<bit) != 0 {
+			if n == 0 {
+				return blk*64 + bit
+			}
+			n--
+		}
+	}
+	return -1
 }
 
 // ScanInjection is lib/signals.js scanInjection: nil, or the categories that matched. It runs under b (nil: NewBudget
@@ -308,12 +390,15 @@ func scanInjection(s []uint16, b *jsre.Budget) *Injection {
 	windows := anchorWindows(s, b)
 	hits := matchInjection(s, func(i int) int { return i }, windows, b)
 	if len(hits) == 0 && (len(windows) > 0 || reHasZeroWidth.TestB(s, b)) {
-		if d, idx := deobfuscate(s, windows, b); d != nil {
+		if d, km := deobfuscate(s, windows, b); d != nil {
 			hits = matchInjection(d, func(i int) int {
-				if i < len(idx) {
-					return idx[i]
+				if i >= len(d) {
+					return 0
 				}
-				return 0
+				if km == nil {
+					return i
+				}
+				return km.orig(i)
 			}, anchorWindows(d, b), b)
 		}
 	}

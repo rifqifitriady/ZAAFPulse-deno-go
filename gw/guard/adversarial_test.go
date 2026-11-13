@@ -79,9 +79,10 @@ func TestAdversarialInputs(t *testing.T) {
 	t.Log(mem.String())
 }
 
-// maxHeapGrowth bounds the extra heap one 20 MB body may take through CheckBody (I3, re-review 1). The body itself
-// is about 20 MB of Go string; the checks convert it to UTF-16 (40 MB) through a rune slice (80 MB) and may copy it.
-const maxHeapGrowth = 512 << 20
+// maxHeapGrowth bounds the extra heap one body of up to 20 MB may take through CheckBody (P4e entry condition 2,
+// 256 MB; it was 512 MB after I3). The body itself is about 20 MB of Go string, not counted; the checks hold it as
+// UTF-16 (40 MB) and copy it only where they replace something.
+const maxHeapGrowth = 256 << 20
 
 // peakHeapDuring runs f and returns the highest HeapAlloc seen above the level before it, sampled every millisecond.
 func peakHeapDuring(f func()) uint64 {

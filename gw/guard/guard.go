@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard/jsre"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate/jsv"
@@ -318,71 +319,114 @@ func (r *run) secretsIn(text []uint16) []uint16 {
 	if len(spans) == 0 {
 		return text
 	}
+	redact := r.policy.Secrets == "redact"
 	var out []uint16
+	if redact {
+		out = make([]uint16, 0, len(text)+64)
+	}
 	at := 0
 	for _, sp := range spans {
 		if sp.Start < at {
 			continue // inside a private key block already replaced
 		}
 		r.add("secrets", sp.Label, 1)
-		out = append(out, text[at:sp.Start]...)
-		out = append(out, jsre.U16("‹secret: "+sp.Label+"›")...)
+		if redact {
+			out = append(out, text[at:sp.Start]...)
+			out = append(out, jsre.U16("‹secret: "+sp.Label+"›")...)
+		}
 		if sp.Label == "Private key" {
 			at = privateKeyEnd(text, sp.End, b)
 		} else {
 			at = sp.End
 		}
 	}
-	if r.policy.Secrets != "redact" {
+	if !redact {
 		return text
 	}
 	r.redacted = true
 	return append(out, text[at:]...)
 }
 
-func (r *run) piiIn(text []uint16) []uint16 {
-	masked, counts := detectPII(text, r.budget(len(text)))
+// piiIn masks personal data in text. In redact mode the passes may write into spare and over text itself (the caller
+// no longer needs either); a replacement always changes the text (no placeholder can equal what it replaces), so
+// "something was masked" is "a count went up".
+func (r *run) piiIn(text, spare []uint16) []uint16 {
+	redact := r.policy.PII == "redact"
+	if !redact {
+		spare = nil
+	}
+	masked, counts := detectPII(text, redact, spare, r.budget(len(text)))
 	for _, kind := range piiKinds {
 		if counts[kind] > 0 {
 			r.add("pii", kind, counts[kind])
 		}
 	}
-	if r.policy.PII != "redact" || equalU16(masked, text) {
+	if !redact {
 		return text
 	}
-	r.redacted = true
+	if len(counts) > 0 {
+		r.redacted = true
+	}
 	return masked
 }
 
-func (r *run) text(s []uint16, fresh bool) []uint16 {
+// text runs the checks on s, which belongs to the call (a check may overwrite it), and returns the new text and
+// whether a check replaced something. Injection, which only reads, runs first so that s is free for the masking passes;
+// its hits are still added after the others, in the JS order (secrets, pii, injection).
+func (r *run) text(s []uint16, fresh bool) ([]uint16, bool) {
+	var injected []string
+	if fresh && r.policy.Injection != "off" {
+		r.guarded("injection", func() []uint16 {
+			if res := detectInjection(s, r.budget(len(s))); res != nil {
+				injected = res.Labels
+			}
+			return nil
+		}, nil)
+	}
 	t := s
 	if r.policy.Secrets != "off" {
 		t = r.guarded("secrets", func() []uint16 { return r.secretsIn(t) }, t)
 	}
 	if r.policy.PII != "off" {
-		t = r.guarded("pii", func() []uint16 { return r.piiIn(t) }, t)
+		var spare []uint16
+		if !sameSlice(t, s) {
+			spare = s
+		}
+		t = r.guarded("pii", func() []uint16 { return r.piiIn(t, spare) }, t)
 	}
-	if fresh && r.policy.Injection != "off" {
-		r.guarded("injection", func() []uint16 {
-			if res := detectInjection(s, r.budget(len(s))); res != nil {
-				for _, l := range res.Labels {
-					r.add("injection", l, 1)
-				}
-			}
-			return nil
-		}, nil)
+	for _, l := range injected {
+		r.add("injection", l, 1)
 	}
-	return t
+	return t, !sameSlice(t, s)
 }
 
 // visitStr runs the checks on a Go string and returns the (possibly new) string.
 func (r *run) visitStr(s string, fresh bool) string {
-	u := jsre.U16(s)
-	out := r.text(u, fresh)
-	if equalU16(out, u) {
+	out, changed := r.text(jsre.U16(s), fresh)
+	if !changed || equalU16String(out, s) {
 		return s
 	}
 	return jsre.Str(out)
+}
+
+// equalU16String reports whether u equals jsre.U16(s), without converting s.
+func equalU16String(u []uint16, s string) bool {
+	i := 0
+	for _, c := range s {
+		if c >= 0x10000 {
+			hi, lo := utf16.EncodeRune(c)
+			if i+1 >= len(u) || u[i] != uint16(hi) || u[i+1] != uint16(lo) {
+				return false
+			}
+			i += 2
+			continue
+		}
+		if i >= len(u) || u[i] != uint16(c) {
+			return false
+		}
+		i++
+	}
+	return i == len(u)
 }
 
 func (r *run) finish() (action string, hits []Hit, err error) {
@@ -408,8 +452,13 @@ func (r *run) finish() (action string, hits []Hit, err error) {
 	return action, hits, nil
 }
 
-// isBase64URL is BASE64_URL.test(s) under the call's budget; past it the call fails closed like a check.
+// isBase64URL is BASE64_URL.test(s) under the call's budget; past it the call fails closed like a check. The pattern
+// begins with ^data: under the i flag (which never maps a non-ASCII character to ASCII), so any other string is
+// answered without converting it.
 func (r *run) isBase64URL(s string) bool {
+	if len(s) < 5 || !strings.EqualFold(s[:5], "data:") {
+		return false
+	}
 	u := jsre.U16(s)
 	b := r.budget(len(u))
 	var ok bool

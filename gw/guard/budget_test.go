@@ -24,11 +24,18 @@ func TestOneBudgetPerCall(t *testing.T) {
 			msgs.Push(jsv.NewObject().Set("role", "user").Set("content", unit))
 		}
 		body := jsv.NewObject().Set("model", "m").Set("messages", msgs)
+		var err error
+		var wall, cpu time.Duration
 		cpu0 := processCPU()
-		start := time.Now()
-		_, err := CheckBody(body, a.policy, "openai-chat")
-		wall := time.Since(start)
-		cpu := processCPU() - cpu0
+		peak := peakHeapDuring(func() {
+			start := time.Now()
+			_, err = CheckBody(body, a.policy, "openai-chat")
+			wall = time.Since(start)
+			cpu = processCPU() - cpu0
+		})
+		if peak > maxHeapGrowth {
+			t.Errorf("%s: heap grew by %d MB, bound %d MB", a.name, peak>>20, maxHeapGrowth>>20)
+		}
 		var b *Block
 		outcome := "ok"
 		if errors.As(err, &b) {
@@ -36,7 +43,8 @@ func TestOneBudgetPerCall(t *testing.T) {
 		} else if err != nil {
 			t.Errorf("%s: %v", a.name, err)
 		}
-		t.Logf("%s ×%d: %v wall, %v CPU (%s)", a.name, strs, wall.Round(time.Millisecond), cpu.Round(time.Millisecond), outcome)
+		t.Logf("%s ×%d: %v wall, %v CPU, %d MB heap (%s)", a.name, strs, wall.Round(time.Millisecond),
+			cpu.Round(time.Millisecond), peak>>20, outcome)
 		if wall > 2500*time.Millisecond {
 			t.Errorf("%s: %v wall, bound 2.5 s", a.name, wall)
 		}

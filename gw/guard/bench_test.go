@@ -174,15 +174,19 @@ func TestBenchCorpusNeverOverruns(t *testing.T) {
 		for _, off := range benchOffsets(len(c), min(size, len(c)), 3) {
 			body := benchBody(benchText(c, off, size))
 			start := time.Now()
-			_, err := CheckBody(body, benchPolicy, "openai-chat")
+			var err error
+			peak := peakHeapDuring(func() { _, err = CheckBody(body, benchPolicy, "openai-chat") })
 			d := time.Since(start)
+			if peak > maxHeapGrowth {
+				t.Errorf("%d MB at %d: heap grew by %d MB, bound %d MB", size>>20, off, peak>>20, maxHeapGrowth>>20)
+			}
 			var b *Block
 			if errors.As(err, &b) && b.Overrun != "" {
 				t.Errorf("%d MB at %d: false block after %v: %v", size>>20, off, d, err)
 			} else if err != nil {
 				t.Errorf("%d MB at %d: %v", size>>20, off, err)
 			}
-			t.Logf("%d MB at %d: %v", size>>20, off, d.Round(time.Millisecond))
+			t.Logf("%d MB at %d: %v, %d MB heap", size>>20, off, d.Round(time.Millisecond), peak>>20)
 		}
 	}
 }
