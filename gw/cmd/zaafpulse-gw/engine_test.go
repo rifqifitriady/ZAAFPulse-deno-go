@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -85,4 +86,48 @@ func portOf(u string) int {
 	var p int
 	_, _ = fmt.Sscanf(u[strings.LastIndexByte(u, ':')+1:], "%d", &p)
 	return p
+}
+
+// P4c: a stream the go engine serves when the gateway is told to shut down: the stream is cut after the grace, and its
+// usage line still goes out (once) before the outbox closes.
+func TestShutdownWritesTheStreamLine(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"a"}}]}`+"\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done() // holds the stream until the gateway lets go
+	}))
+	defer provider.Close()
+	cp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Errorf("handed off") }))
+	defer cp.Close()
+	port := freePort(t)
+	r := drive(t)
+	r.next(t, "hello")
+	r.send(`{"v":1,"type":"hello.ok","seq":1,"ts":0,"re":"h1","body":{"protocol":1,"cpVersion":"test"}}`)
+	cfg := strings.Replace(chatConfig(2, 1, port, portOf(cp.URL), provider.URL+"/v1", "zp_engineTestSecret"),
+		`"engines":{"chat":"go"`, `"engines":{"chat":"go","chat-stream":"go"`, 1)
+	if !strings.Contains(cfg, `"chat-stream":"go"`) {
+		t.Fatalf("config without chat-stream: %s", cfg)
+	}
+	r.send(cfg)
+	r.send(secretsLine(3, 1))
+	r.send(fmt.Sprintf(`{"v":1,"type":"budget.snapshot","seq":4,"ts":%d,"body":{"at":%d,"budgets":[],"keyCenter":{}}}`,
+		time.Now().UnixMilli(), time.Now().UnixMilli()))
+	r.next(t, "ready")
+	req, _ := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", port),
+		strings.NewReader(`{"model":"pv/llama-9","stream":true,"messages":[]}`))
+	req.Header.Set("Authorization", "Bearer zp_engineTestSecret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if l, _ := bufio.NewReader(resp.Body).ReadString('\n'); !strings.HasPrefix(l, "data: ") {
+		t.Fatalf("%q; stderr %s", l, r.stderr)
+	}
+	r.send(`{"v":1,"type":"shutdown","seq":5,"ts":0,"body":{"graceMs":100}}`)
+	u := r.next(t, "usage.report")
+	if !strings.Contains(u, `"stream":true`) || !strings.Contains(u, `"status":200`) {
+		t.Fatalf("%s", u)
+	}
 }

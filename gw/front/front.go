@@ -48,9 +48,13 @@ var proxyHeaders = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-
 // and net/http reads MaxHeaderBytes plus 4096 bytes before it answers 431 (P4a final review m2, P4b entry condition 6).
 const MaxHeaderBytes = 16384 - 4096
 
-// GoClasses are the route classes the go engine serves (P4b: chat, not streaming; the engine hands the rest of a
-// class's requests to js itself). A config.push that puts another class on go is refused.
-var GoClasses = map[string]bool{"chat": true}
+// GoClasses are the route classes the go engine serves; the engine hands the rest of a class's requests to js itself.
+// chat-stream (P4c) is a sub-class of chat the engine picks after it reads the body; Classify never returns it. A
+// config.push that puts another class on go is refused.
+var GoClasses = map[string]bool{"chat": true, "chat-stream": true}
+
+// chatSubs are the sub-classes of chat, each with its own engine and shadow entry.
+var chatSubs = []string{"chat", "chat-stream"}
 
 // GoEngine serves a request of a class on the go engine, or hands it to js; Shadow forwards a request of a class on js
 // marked for the compare (gw/engine Engine).
@@ -125,8 +129,36 @@ func (s *Server) own(method, path string, body []byte) (int, []byte, error) {
 	return resp.StatusCode, b, err
 }
 
-// SetGoEngine installs the go engine before Serve (without one, a class on go is answered 501).
-func (s *Server) SetGoEngine(e GoEngine) { s.goEngine = e }
+// SetGoEngine installs the go engine before Serve (without one, a class on go is answered 501). An engine that reads
+// per-sub-class modes (SetModes) gets the front's.
+func (s *Server) SetGoEngine(e GoEngine) {
+	s.goEngine = e
+	if m, ok := e.(interface {
+		SetModes(func(string) (bool, bool))
+	}); ok {
+		m.SetModes(s.subModes)
+	}
+	if o, ok := e.(interface {
+		SetOwn(func(method, path string, body []byte) (int, []byte, error))
+	}); ok {
+		o.SetOwn(s.own)
+	}
+}
+
+// subModes is what the engine reads per sub-class of chat: on go, and shadowed (on js and in the shadow classes).
+func (s *Server) subModes(sub string) (bool, bool) {
+	e := s.engine(sub)
+	return e == "go", e == "js" && (*s.shadow.Load())[sub]
+}
+
+// chatToEngine: the engine reads a chat request when a sub-class is on go (serve) or else shadowed (shadow).
+func (s *Server) chatToEngine() (serve, shadow bool) {
+	for _, sub := range chatSubs {
+		g, sh := s.subModes(sub)
+		serve, shadow = serve || g, shadow || sh
+	}
+	return serve, shadow
+}
 
 // Listen loads the TLS files (when set) and opens the main port. ErrAddrInUse when the port is taken.
 func Listen(cfg Config, logger *log.Logger) (*Server, error) {
@@ -294,13 +326,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Header.Del(OwnHeader)
 	raw := RawPath(r.RequestURI)
 	class := Classify(raw)
-	if s.engine(class) == "go" && GoClasses[class] && s.goEngine != nil {
-		s.goEngine.Serve(class, w, r, raw, s.proxy)
-		return
-	}
-	if s.engine(class) == "js" && (*s.shadow.Load())[class] && GoClasses[class] && s.goEngine != nil {
-		s.goEngine.Shadow(class, w, r, raw, s.proxy, s.own)
-		return
+	if class == "chat" && s.goEngine != nil {
+		// chat and its sub-class chat-stream (P4c): the engine reads the body and serves, shadows or forwards each.
+		switch serve, shadow := s.chatToEngine(); {
+		case serve:
+			s.goEngine.Serve(class, w, r, raw, s.proxy)
+			return
+		case shadow:
+			s.goEngine.Shadow(class, w, r, raw, s.proxy, s.own)
+			return
+		}
 	}
 	if s.engine(class) != "js" {
 		w.Header().Set("Content-Type", "application/json")

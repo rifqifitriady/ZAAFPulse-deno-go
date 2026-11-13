@@ -297,3 +297,50 @@ func TestTwoHundredStreams(t *testing.T) {
 		}
 	}
 }
+
+// chat on go and chat-stream on js and shadowed: a whole call is served, a stream goes to the control plane and gets a
+// chat-stream shadow line; with chat-stream neither on go nor shadowed, a stream goes to the control plane plainly.
+func TestStreamSubClassModes(t *testing.T) {
+	g := newStreamRig(t, sseProvider([]string{"data: [DONE]\n\n"}, nil))
+	lines := make(chan string, 4)
+	g.e.SetOwn(func(method, path string, body []byte) (int, []byte, error) {
+		if method == http.MethodPost {
+			lines <- string(body)
+		}
+		return http.StatusNotFound, nil, nil
+	})
+	forwarded := make(chan struct{}, 4)
+	js := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded <- struct{}{}
+		_, _ = io.WriteString(w, "js")
+	})
+	for _, shadowed := range []bool{true, false} {
+		g.e.SetModes(func(sub string) (bool, bool) { return sub == "chat", sub == "chat-stream" && shadowed })
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(streamBody))
+		r.Host, r.RemoteAddr = "127.0.0.1:4777", "127.0.0.1:5000"
+		r.Header.Set("Authorization", g.key)
+		g.e.Serve("chat", w, r, "/v1/chat/completions", js)
+		select {
+		case <-forwarded:
+		case <-time.After(2 * time.Second):
+			t.Fatal("the stream was not forwarded")
+		}
+		if shadowed {
+			select {
+			case l := <-lines:
+				if !strings.Contains(l, `"class":"chat-stream"`) {
+					t.Fatalf("%s", l)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("no shadow line")
+			}
+		} else {
+			select {
+			case l := <-lines:
+				t.Fatalf("a line for a stream not shadowed: %s", l)
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
+	}
+}
