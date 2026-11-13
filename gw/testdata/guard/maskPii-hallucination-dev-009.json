@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "npm ERR! code E404\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/left-padx - Not found"
+  ],
+  "out": {
+    "text": "npm ERR! code E404\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/left-padx - Not found",
+    "counts": {}
+  }
+}

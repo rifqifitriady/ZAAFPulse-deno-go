@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "that's wrong, revert it"
+  ],
+  "out": {
+    "text": "that's wrong, revert it",
+    "counts": {}
+  }
+}

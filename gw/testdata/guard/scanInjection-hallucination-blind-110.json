@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Error: connect ECONNREFUSED 127.0.0.1:5432 - koneksi ditolak, database belum jalan"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "kamu salah, harusnya pakai tabel orders bukan users"
+  ],
+  "out": {
+    "text": "kamu salah, harusnya pakai tabel orders bukan users",
+    "counts": {}
+  }
+}

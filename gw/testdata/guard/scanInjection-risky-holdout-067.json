@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "bash -c \"sudo chown -R www-data /var/www\""
+  ],
+  "out": null
+}

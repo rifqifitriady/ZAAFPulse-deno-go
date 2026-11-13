@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1"
+  ],
+  "out": null
+}

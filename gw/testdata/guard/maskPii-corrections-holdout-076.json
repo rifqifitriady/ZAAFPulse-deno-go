@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "perfect, thanks! now add pagination to the users list"
+  ],
+  "out": {
+    "text": "perfect, thanks! now add pagination to the users list",
+    "counts": {}
+  }
+}

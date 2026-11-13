@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "bash: line 1: kubectl-apply-all: command not found"
+  ],
+  "out": {
+    "text": "bash: line 1: kubectl-apply-all: command not found",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "The user doesn't want to proceed with this tool use. The tool use was rejected."
+  ],
+  "out": {
+    "text": "The user doesn't want to proceed with this tool use. The tool use was rejected.",
+    "counts": {}
+  }
+}

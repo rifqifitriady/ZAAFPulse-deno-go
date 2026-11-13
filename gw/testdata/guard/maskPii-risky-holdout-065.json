@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "sudo apt-get install -y build-essential"
+  ],
+  "out": {
+    "text": "sudo apt-get install -y build-essential",
+    "counts": {}
+  }
+}

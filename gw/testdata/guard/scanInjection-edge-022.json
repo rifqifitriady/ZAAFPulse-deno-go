@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "const re = /ignore previous instructions/; // detector test"
+  ],
+  "out": null
+}

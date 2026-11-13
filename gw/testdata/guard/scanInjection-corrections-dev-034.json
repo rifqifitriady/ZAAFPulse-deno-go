@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "fix the typo in the footer"
+  ],
+  "out": null
+}

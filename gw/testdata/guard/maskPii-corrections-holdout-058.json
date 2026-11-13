@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "hmm that made it worse, the tests that passed before are failing now"
+  ],
+  "out": {
+    "text": "hmm that made it worse, the tests that passed before are failing now",
+    "counts": {}
+  }
+}

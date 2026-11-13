@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "cat docs/drop-table-guide.md"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 127\nbash: perintah tidak ditemukan: pnpx"
+  ],
+  "out": {
+    "text": "Exit code 127\nbash: perintah tidak ditemukan: pnpx",
+    "counts": {}
+  }
+}

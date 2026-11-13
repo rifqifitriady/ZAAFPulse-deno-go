@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "cd /app && npm ci && sudo systemctl restart api"
+  ],
+  "out": null
+}

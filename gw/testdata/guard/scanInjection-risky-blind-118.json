@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "echo 'jangan pernah jalankan git push --force ke main' >> CONTRIBUTING.md"
+  ],
+  "out": null
+}

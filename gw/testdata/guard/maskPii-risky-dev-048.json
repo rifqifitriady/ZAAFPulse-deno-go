@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git push --set-upstream origin feature/plus+sign"
+  ],
+  "out": {
+    "text": "git push --set-upstream origin feature/plus+sign",
+    "counts": {}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\nwhich: no docker in (/usr/local/bin:/usr/bin:/bin)"
+  ],
+  "out": null
+}

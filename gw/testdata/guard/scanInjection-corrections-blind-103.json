@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "stop stop, jangan hapus file itu! kembalikan"
+  ],
+  "out": null
+}

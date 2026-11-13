@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "grep -rn \"rm -rf\" scripts/ | head"
+  ],
+  "out": null
+}

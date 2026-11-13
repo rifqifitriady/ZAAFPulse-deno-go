@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "psql -c \"DROP TABLE users\" mydb"
+  ],
+  "out": null
+}

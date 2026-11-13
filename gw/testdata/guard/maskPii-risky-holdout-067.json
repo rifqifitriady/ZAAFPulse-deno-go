@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "bash -c \"sudo chown -R www-data /var/www\""
+  ],
+  "out": {
+    "text": "bash -c \"sudo chown -R www-data /var/www\"",
+    "counts": {}
+  }
+}

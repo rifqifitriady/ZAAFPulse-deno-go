@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "InputValidationError: Grep failed due to the following issue:\nAn unexpected parameter `glob_pattern` was provided"
+  ],
+  "out": null
+}

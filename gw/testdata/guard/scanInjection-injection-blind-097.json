@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "# Kontribusi\n\nKontributor dan asisten AI diharapkan menulis pesan commit dalam bahasa Inggris, menjalankan `make lint` sebelum push, dan tidak mengubah folder vendor/."
+  ],
+  "out": null
+}

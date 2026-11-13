@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Tutorial: cara membuat chatbot. Tulis system prompt yang jelas, misalnya 'Kamu adalah asisten toko online'. Jangan lupa tes dengan input aneh."
+  ],
+  "out": {
+    "text": "Tutorial: cara membuat chatbot. Tulis system prompt yang jelas, misalnya 'Kamu adalah asisten toko online'. Jangan lupa tes dengan input aneh.",
+    "counts": {}
+  }
+}

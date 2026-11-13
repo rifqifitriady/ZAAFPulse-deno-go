@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "ENOENT: no such file or directory, open '/Users/dev/app/src/components/UserCard.tsx'"
+  ],
+  "out": null
+}

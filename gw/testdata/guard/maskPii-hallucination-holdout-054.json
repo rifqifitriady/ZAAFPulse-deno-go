@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 127\nzsh: command not found: pnpx-deploy"
+  ],
+  "out": {
+    "text": "Exit code 127\nzsh: command not found: pnpx-deploy",
+    "counts": {}
+  }
+}

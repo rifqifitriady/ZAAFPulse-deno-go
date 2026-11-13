@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "E       AssertionError: assert 41 == 42\n tests/test_total.py:9: AssertionError\n=== 1 failed, 6 passed in 0.31s ==="
+  ],
+  "out": {
+    "text": "E       AssertionError: assert 41 == 42\n tests/test_total.py:9: AssertionError\n=== 1 failed, 6 passed in 0.31s ===",
+    "counts": {}
+  }
+}

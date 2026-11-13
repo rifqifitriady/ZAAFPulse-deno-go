@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "echo \"jangan pakai rm -rf sembarangan ya\""
+  ],
+  "out": {
+    "text": "echo \"jangan pakai rm -rf sembarangan ya\"",
+    "counts": {}
+  }
+}

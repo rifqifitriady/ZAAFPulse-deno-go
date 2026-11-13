@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Mistral instruct template: <s>[INST] Instruction [/INST] Model answer</s>[INST] Follow-up [/INST]"
+  ],
+  "out": {
+    "text": "Mistral instruct template: <s>[INST] Instruction [/INST] Model answer</s>[INST] Follow-up [/INST]",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "which: no yarn in (/usr/local/bin:/usr/bin:/bin)"
+  ],
+  "out": {
+    "text": "which: no yarn in (/usr/local/bin:/usr/bin:/bin)",
+    "counts": {}
+  }
+}

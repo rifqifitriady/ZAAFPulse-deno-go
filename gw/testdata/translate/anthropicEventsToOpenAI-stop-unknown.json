@@ -1,0 +1,52 @@
+{
+  "fn": "anthropicEventsToOpenAI",
+  "in": [
+    null,
+    [
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "refusal"
+        },
+        "usage": null
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  ],
+  "out": [
+    [
+      {
+        "id": "chatcmpl-010101010101010101010101",
+        "object": "chat.completion.chunk",
+        "created": 1767225600,
+        "model": null,
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "content_filter"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "id": "chatcmpl-010101010101010101010101",
+        "object": "chat.completion.chunk",
+        "created": 1767225600,
+        "model": null,
+        "choices": [],
+        "usage": {
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      }
+    ]
+  ]
+}

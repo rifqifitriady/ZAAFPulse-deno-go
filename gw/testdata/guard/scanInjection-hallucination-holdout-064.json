@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Error: connect ETIMEDOUT 104.18.2.35:443"
+  ],
+  "out": null
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "psql -c \"SELECT count(*) FROM users\" mydb"
+  ],
+  "out": null
+}

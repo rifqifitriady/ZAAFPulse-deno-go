@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "InputValidationError: Glob failed: path must be an existing directory, received an invalid argument 'src/**' for parameter `path`"
+  ],
+  "out": {
+    "text": "InputValidationError: Glob failed: path must be an existing directory, received an invalid argument 'src/**' for parameter `path`",
+    "counts": {}
+  }
+}

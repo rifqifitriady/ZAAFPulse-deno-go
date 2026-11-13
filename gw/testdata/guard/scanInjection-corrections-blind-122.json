@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "you broke the build, fix it"
+  ],
+  "out": null
+}

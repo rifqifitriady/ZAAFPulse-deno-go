@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Error: getaddrinfo ENOTFOUND api.fakeservice-docs.io"
+  ],
+  "out": null
+}

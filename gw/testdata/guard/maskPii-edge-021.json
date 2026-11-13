@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "For example, an attacker may write \"ignore previous instructions\" in a page."
+  ],
+  "out": {
+    "text": "For example, an attacker may write \"ignore previous instructions\" in a page.",
+    "counts": {}
+  }
+}

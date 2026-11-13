@@ -1,0 +1,103 @@
+{
+  "fn": "anthropicEventsToOpenAI",
+  "in": [
+    "m",
+    [
+      {
+        "type": "message_start"
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0
+      },
+      {
+        "type": "message_delta"
+      },
+      {
+        "type": "message_stop"
+      },
+      {
+        "type": "error",
+        "error": {
+          "type": "overloaded_error",
+          "message": "busy"
+        }
+      },
+      {
+        "type": "error"
+      },
+      {
+        "type": "unknown"
+      }
+    ]
+  ],
+  "out": [
+    [
+      {
+        "id": "chatcmpl-010101010101010101010101",
+        "object": "chat.completion.chunk",
+        "created": 1767225600,
+        "model": "m",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "role": "assistant",
+              "content": ""
+            },
+            "finish_reason": null
+          }
+        ]
+      }
+    ],
+    [],
+    [
+      {
+        "id": "chatcmpl-010101010101010101010101",
+        "object": "chat.completion.chunk",
+        "created": 1767225600,
+        "model": "m",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "id": "chatcmpl-010101010101010101010101",
+        "object": "chat.completion.chunk",
+        "created": 1767225600,
+        "model": "m",
+        "choices": [],
+        "usage": {
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      }
+    ],
+    [
+      {
+        "error": {
+          "type": "overloaded_error",
+          "message": "busy"
+        }
+      }
+    ],
+    [
+      {
+        "error": {
+          "message": "upstream error"
+        }
+      }
+    ],
+    []
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "the API returns the wrong status code for 404"
+  ],
+  "out": {
+    "text": "the API returns the wrong status code for 404",
+    "counts": {}
+  }
+}

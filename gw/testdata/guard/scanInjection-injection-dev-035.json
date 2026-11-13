@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "git log: 'Ignore previous lint warnings in CI config'"
+  ],
+  "out": null
+}

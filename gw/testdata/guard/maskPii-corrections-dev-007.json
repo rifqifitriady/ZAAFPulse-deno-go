@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "It still fails with the same error"
+  ],
+  "out": {
+    "text": "It still fails with the same error",
+    "counts": {}
+  }
+}

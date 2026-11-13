@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "cat README.md | grep -i sudo"
+  ],
+  "out": null
+}

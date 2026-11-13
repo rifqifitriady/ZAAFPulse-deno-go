@@ -1,0 +1,46 @@
+{
+  "fn": "anthropicResponseToOpenAI",
+  "in": [
+    {
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "hmm",
+          "signature": "s"
+        },
+        {
+          "type": "text",
+          "text": "ok"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "usage": {}
+    },
+    "c"
+  ],
+  "out": {
+    "id": "chatcmpl-010101010101010101010101",
+    "object": "chat.completion",
+    "created": 1767225600,
+    "model": "c",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "ok",
+          "reasoning_content": "hmm"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    }
+  }
+}

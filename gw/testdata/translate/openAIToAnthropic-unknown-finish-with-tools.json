@@ -1,0 +1,46 @@
+{
+  "fn": "openAIToAnthropic",
+  "in": [
+    {
+      "choices": [
+        {
+          "message": {
+            "tool_calls": [
+              {
+                "id": "a",
+                "function": {
+                  "name": "f",
+                  "arguments": ""
+                }
+              }
+            ]
+          },
+          "finish_reason": "weird"
+        }
+      ]
+    },
+    "m"
+  ],
+  "out": {
+    "id": "msg_010101010101010101010101",
+    "type": "message",
+    "role": "assistant",
+    "model": "m",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "a",
+        "name": "f",
+        "input": {}
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}

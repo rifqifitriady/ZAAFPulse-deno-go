@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/@acme/auth-helper-kit - Not found"
+  ],
+  "out": {
+    "text": "Exit code 1\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/@acme/auth-helper-kit - Not found",
+    "counts": {}
+  }
+}

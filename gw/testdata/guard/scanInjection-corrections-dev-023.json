@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "kenapa kamu ubah file config?"
+  ],
+  "out": null
+}

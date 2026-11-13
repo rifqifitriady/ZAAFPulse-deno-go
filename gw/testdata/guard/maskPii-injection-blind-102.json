@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Prompting guide: a system prompt sets the role, e.g. \"You are a helpful SQL assistant. Only answer questions about the provided schema.\" The user message then supplies the task."
+  ],
+  "out": {
+    "text": "Prompting guide: a system prompt sets the role, e.g. \"You are a helpful SQL assistant. Only answer questions about the provided schema.\" The user message then supplies the task.",
+    "counts": {}
+  }
+}

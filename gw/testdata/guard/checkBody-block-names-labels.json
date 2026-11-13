@@ -1,0 +1,32 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkBody",
+  "in": [
+    {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "<<ZPSECRET:0>> mail ana@example.com"
+        }
+      ]
+    },
+    {
+      "scope": "external",
+      "secrets": "block",
+      "pii": "log",
+      "injection": "log"
+    },
+    "openai-chat"
+  ],
+  "throws": "Blocked by ZAAFPulse guardrails: secret (Anthropic API key). Remove it, or ask the owner to change the policy.",
+  "hits": [
+    {
+      "check": "secrets",
+      "label": "Anthropic API key",
+      "count": 1
+    }
+  ]
+}

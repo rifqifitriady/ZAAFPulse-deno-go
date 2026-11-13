@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "dd if=/dev/zero of=test.img bs=1m count=10"
+  ],
+  "out": {
+    "text": "dd if=/dev/zero of=test.img bs=1m count=10",
+    "counts": {}
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "fn": "openAIToResponses",
+  "in": [
+    {
+      "choices": [
+        {
+          "message": {
+            "content": null,
+            "tool_calls": [
+              {
+                "function": {
+                  "name": "f"
+                }
+              },
+              {
+                "id": "x",
+                "function": {
+                  "name": "p",
+                  "arguments": "{\"input\":5}"
+                }
+              },
+              {
+                "id": "y",
+                "function": {
+                  "name": "p",
+                  "arguments": "not json"
+                }
+              },
+              {
+                "id": "z",
+                "function": {
+                  "name": "p",
+                  "arguments": "{\"other\":1}"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "r",
+    [
+      "p"
+    ]
+  ],
+  "out": {
+    "id": "resp_060606060606060606060606",
+    "object": "response",
+    "created_at": 1767225600,
+    "status": "completed",
+    "model": "r",
+    "output": [
+      {
+        "type": "function_call",
+        "id": "fc_010101010101010101010101",
+        "call_id": "call_020202020202020202020202",
+        "name": "f",
+        "arguments": "{}",
+        "status": "completed"
+      },
+      {
+        "type": "custom_tool_call",
+        "id": "ctc_030303030303030303030303",
+        "call_id": "x",
+        "name": "p",
+        "input": "5",
+        "status": "completed"
+      },
+      {
+        "type": "custom_tool_call",
+        "id": "ctc_040404040404040404040404",
+        "call_id": "y",
+        "name": "p",
+        "input": "not json",
+        "status": "completed"
+      },
+      {
+        "type": "custom_tool_call",
+        "id": "ctc_050505050505050505050505",
+        "call_id": "z",
+        "name": "p",
+        "input": "{\"other\":1}",
+        "status": "completed"
+      }
+    ],
+    "output_text": "",
+    "usage": {
+      "input_tokens": 0,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 0,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 0
+    }
+  }
+}

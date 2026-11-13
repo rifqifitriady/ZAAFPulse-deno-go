@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "error: unrecognized subcommand 'deploy-all'\n\nUsage: cargo [+toolchain] [OPTIONS] [COMMAND]"
+  ],
+  "out": {
+    "text": "error: unrecognized subcommand 'deploy-all'\n\nUsage: cargo [+toolchain] [OPTIONS] [COMMAND]",
+    "counts": {}
+  }
+}

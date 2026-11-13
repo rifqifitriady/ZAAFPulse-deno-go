@@ -1,0 +1,124 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkBody",
+  "in": [
+    {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "name": "<<ZPSECRET:0>>",
+          "content": [
+            {
+              "type": "text",
+              "text": "see <<ZPSECRET:0>>"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "https://x/<<ZPSECRET:0>>"
+              }
+            },
+            {
+              "type": "image",
+              "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "<<ZPSECRET:0>>"
+              }
+            },
+            {
+              "type": "text",
+              "text": "data:text/plain,<<ZPSECRET:0>>"
+            },
+            {
+              "type": "text",
+              "text": "data:image/png;base64,<<ZPSECRET:0>>"
+            },
+            {
+              "type": "thinking",
+              "thinking": "x",
+              "signature": "<<ZPSECRET:0>>"
+            }
+          ]
+        }
+      ],
+      "user_id": "<<ZPSECRET:0>>",
+      "stop": [
+        "<<ZPSECRET:0>>"
+      ],
+      "metadata": {
+        "note": "<<ZPSECRET:0>>"
+      }
+    },
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "off",
+      "injection": "log"
+    },
+    "openai-chat"
+  ],
+  "out": {
+    "body": {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "name": "<<ZPSECRET:0>>",
+          "content": [
+            {
+              "type": "text",
+              "text": "see ‹secret: Anthropic API key›"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "https://x/<<ZPSECRET:0>>"
+              }
+            },
+            {
+              "type": "image",
+              "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "<<ZPSECRET:0>>"
+              }
+            },
+            {
+              "type": "text",
+              "text": "data:text/plain,‹secret: Anthropic API key›"
+            },
+            {
+              "type": "text",
+              "text": "data:image/png;base64,‹secret: Anthropic API key›"
+            },
+            {
+              "type": "thinking",
+              "thinking": "x",
+              "signature": "<<ZPSECRET:0>>"
+            }
+          ]
+        }
+      ],
+      "user_id": "<<ZPSECRET:0>>",
+      "stop": [
+        "<<ZPSECRET:0>>"
+      ],
+      "metadata": {
+        "note": "‹secret: Anthropic API key›"
+      }
+    },
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 4
+      }
+    ],
+    "error": false
+  }
+}

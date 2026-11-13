@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "eh salah ketik, maksudku file config.yaml bukan config.yml"
+  ],
+  "out": {
+    "text": "eh salah ketik, maksudku file config.yaml bukan config.yml",
+    "counts": {}
+  }
+}

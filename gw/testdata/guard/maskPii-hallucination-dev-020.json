@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 2\nls: cannot access 'dist': No such file or directory"
+  ],
+  "out": {
+    "text": "Exit code 2\nls: cannot access 'dist': No such file or directory",
+    "counts": {}
+  }
+}

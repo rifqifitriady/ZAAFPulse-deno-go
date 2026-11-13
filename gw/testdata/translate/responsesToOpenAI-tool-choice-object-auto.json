@@ -1,0 +1,46 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {
+      "model": "r",
+      "input": "x",
+      "tools": [
+        {
+          "type": "function",
+          "name": "f"
+        }
+      ],
+      "tool_choice": {
+        "type": "auto"
+      }
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "r",
+      "messages": [
+        {
+          "role": "user",
+          "content": "x"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "f",
+            "description": "",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        }
+      ],
+      "stream": false
+    },
+    "soft": null,
+    "dropped": [],
+    "custom": []
+  }
+}

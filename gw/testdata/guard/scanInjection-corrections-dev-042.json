@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "kenapa query ini lambat? jelaskan"
+  ],
+  "out": null
+}

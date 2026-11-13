@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "<tool_use_error>Found 3 matches of the string to replace, but replace_all is false.</tool_use_error>"
+  ],
+  "out": null
+}

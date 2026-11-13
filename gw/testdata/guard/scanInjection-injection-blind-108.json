@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Selamat datang di Toko Kopi Nusantara. Kami menjual biji kopi dari Gayo dan Toraja. Pesan sebelum jam 3 sore untuk pengiriman hari yang sama."
+  ],
+  "out": null
+}

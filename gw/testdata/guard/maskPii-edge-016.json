@@ -1,0 +1,14 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Ü ä 😀 ana@example.com 😀 10.0.0.1 😀 +62 812 3456 7890"
+  ],
+  "out": {
+    "text": "Ü ä 😀 ‹email› 😀 ‹ip› 😀 ‹phone›",
+    "counts": {
+      "email": 1,
+      "ip": 1,
+      "phone": 1
+    }
+  }
+}

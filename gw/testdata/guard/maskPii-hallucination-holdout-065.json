@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Error: read ECONNRESET"
+  ],
+  "out": {
+    "text": "Error: read ECONNRESET",
+    "counts": {}
+  }
+}

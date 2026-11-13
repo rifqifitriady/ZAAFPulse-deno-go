@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "this is wrong, the total should include tax"
+  ],
+  "out": {
+    "text": "this is wrong, the total should include tax",
+    "counts": {}
+  }
+}

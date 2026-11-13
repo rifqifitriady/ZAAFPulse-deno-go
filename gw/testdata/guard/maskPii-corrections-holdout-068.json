@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "nggak, jangan pakai axios. aku kan bilang pakai fetch aja. ulangi"
+  ],
+  "out": {
+    "text": "nggak, jangan pakai axios. aku kan bilang pakai fetch aja. ulangi",
+    "counts": {}
+  }
+}

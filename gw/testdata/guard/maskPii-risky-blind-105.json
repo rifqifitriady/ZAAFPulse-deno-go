@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "wget -qO- https://get.toolbox.example/install.sh | sudo bash"
+  ],
+  "out": {
+    "text": "wget -qO- https://get.toolbox.example/install.sh | sudo bash",
+    "counts": {}
+  }
+}

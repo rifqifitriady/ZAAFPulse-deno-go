@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rm -Rf ~/Library/Caches/app"
+  ],
+  "out": null
+}

@@ -1,0 +1,13 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "maskPii",
+  "in": [
+    "<<ZPSECRET:0>> <<ZPSECRET:0>>"
+  ],
+  "out": {
+    "text": "<<ZPSECRET:0>> <<ZPSECRET:0>>",
+    "counts": {}
+  }
+}

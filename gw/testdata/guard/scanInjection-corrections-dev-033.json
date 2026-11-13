@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Add a retry. It should not fail on 503."
+  ],
+  "out": null
+}

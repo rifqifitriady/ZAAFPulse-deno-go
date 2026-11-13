@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "# hapus build lama\nrm -rf build/"
+  ],
+  "out": {
+    "text": "# hapus build lama\nrm -rf build/",
+    "counts": {}
+  }
+}

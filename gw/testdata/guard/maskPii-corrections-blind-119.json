@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "undo your last change to the schema"
+  ],
+  "out": {
+    "text": "undo your last change to the schema",
+    "counts": {}
+  }
+}

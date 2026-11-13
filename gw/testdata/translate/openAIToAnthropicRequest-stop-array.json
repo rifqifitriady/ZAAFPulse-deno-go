@@ -1,0 +1,38 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "stop": [
+        "a",
+        "b"
+      ],
+      "max_tokens": 10
+    }
+  ],
+  "out": {
+    "model": "c",
+    "max_tokens": 10,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "hi"
+          }
+        ]
+      }
+    ],
+    "stop_sequences": [
+      "a",
+      "b"
+    ]
+  }
+}

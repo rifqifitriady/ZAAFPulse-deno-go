@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "fix the typo in the footer"
+  ],
+  "out": {
+    "text": "fix the typo in the footer",
+    "counts": {}
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "fn": "wholeToChunks",
+  "in": [
+    {
+      "id": "c1",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "hi"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "prompt_tokens_details": {
+          "cached_tokens": 40
+        }
+      }
+    }
+  ],
+  "out": [
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant",
+            "content": "hi"
+          }
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "index": 0,
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ]
+    },
+    {
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "prompt_tokens_details": {
+          "cached_tokens": 40
+        }
+      }
+    }
+  ]
+}

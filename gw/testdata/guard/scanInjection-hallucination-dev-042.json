@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Rate limit exceeded (429). Try again later."
+  ],
+  "out": null
+}

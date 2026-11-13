@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "sqlite3 data.db 'drop table sessions'"
+  ],
+  "out": null
+}

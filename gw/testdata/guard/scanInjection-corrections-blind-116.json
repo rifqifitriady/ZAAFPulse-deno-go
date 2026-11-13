@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "perbaiki typo di footer, 'Hak Cipat' harusnya 'Hak Cipta'"
+  ],
+  "out": null
+}

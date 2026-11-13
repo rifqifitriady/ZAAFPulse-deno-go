@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "no, that is not what I want"
+  ],
+  "out": {
+    "text": "no, that is not what I want",
+    "counts": {}
+  }
+}

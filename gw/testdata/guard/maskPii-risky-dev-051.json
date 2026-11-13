@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "chmod 755 scripts/run.sh"
+  ],
+  "out": {
+    "text": "chmod 755 scripts/run.sh",
+    "counts": {}
+  }
+}

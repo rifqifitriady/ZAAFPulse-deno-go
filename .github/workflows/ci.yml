@@ -9,6 +9,7 @@
 # The build-deno job compiles and smoke-tests the six single-file binaries on native runners (P2 T6), and starts and
 # stops the Go gateway in front of the server on each of them (P4a T6, scripts/smoke-front.js).
 # The Node and Deno jobs also run the contract suite with the Go gateway in front (ZP_ENGINE=front, P4a T6).
+# The fixtures job regenerates the Go ports' fixtures from the JS on Node and Deno and fails on a diff (P4 stage 1).
 # The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
 # the test job's OS matrix. The Node and Deno jobs set up the same Go, so the cross-language IPC tests build the stub
 # (gw/cmd/zaafpulse-gw) and never skip; the Deno job builds it once up front (ZP_GW_BIN). Go is pinned to 1.27.3.
@@ -197,6 +198,47 @@ jobs:
         run: test -z "$(gofmt -l gw)" || { gofmt -l gw; exit 1; }
       - run: go -C gw vet ./...
       - run: go -C gw test -count=1 ./...
+
+  # The Go ports of the gateway's JS libraries (P4 stage 1) are proven by fixtures the JS writes
+  # (scripts/fixtures/gen-*.js → gw/testdata/<lib>/); the go job replays them. This job runs the generators on Node and
+  # on Deno and fails when either output differs from the committed fixtures, so the JS and the Go cannot drift
+  # silently. Ubuntu only: the generators are pure JS.
+  fixtures:
+    name: fixtures (regenerate and diff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DENO_DIR: ${{ github.workspace }}/../deno-dir
+      NO_COLOR: '1'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      - name: Regenerate on Node and diff
+        shell: bash
+        run: |
+          for g in scripts/fixtures/gen-*.js; do node "$g"; done
+          git add -N gw/testdata
+          git diff --exit-code --stat gw/testdata || { echo "::error::fixtures differ from the JS output (Node)"; exit 1; }
+      - name: Regenerate on Deno and diff
+        shell: bash
+        run: |
+          # One permission set for every generator: read anywhere, write only gw/testdata, nothing else (explicitly
+          # denied, so a generator that starts needing more fails here instead of prompting). Checked against
+          # gen-translate.js, gen-guard.js and stream C's gen-provauth.js (PR #6, writes gw/testdata/provauth).
+          for g in scripts/fixtures/gen-*.js; do
+            deno run -q --no-prompt --allow-read --allow-write=gw/testdata --deny-env --deny-net --deny-run --deny-sys "$g"
+          done
+          git add -N gw/testdata
+          git diff --exit-code --stat gw/testdata || { echo "::error::fixtures differ from the JS output (Deno)"; exit 1; }
 
   # Compiles the six single-file binaries with deno compile and the "cli" permission set (the binary's entry is the
   # command line, so it holds the superset of the server set), and smoke-tests each one on a runner of its own OS and

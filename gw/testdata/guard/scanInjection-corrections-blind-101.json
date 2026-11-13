@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "query yang kamu bikin salah, harusnya group by user_id bukan by date. ulangi ya"
+  ],
+  "out": null
+}

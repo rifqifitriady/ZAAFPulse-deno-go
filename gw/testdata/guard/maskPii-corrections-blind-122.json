@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "you broke the build, fix it"
+  ],
+  "out": {
+    "text": "you broke the build, fix it",
+    "counts": {}
+  }
+}
