@@ -49,6 +49,8 @@ func guardPatterns(t *testing.T) [][2]string {
 		[2]string{`(a|)b`, ""}, [2]string{`(?:ab)*c`, "i"}, [2]string{`(a)\1x`, ""}, [2]string{`x?y{0,2}z`, ""},
 		[2]string{`\bk[^s]`, "i"}, [2]string{`(?=ab)\w\w`, ""}, [2]string{`\b(?:é|ab)c`, "i"},
 		[2]string{`(?<![ab]|cd)\w`, "i"}, [2]string{`(?<!a)(?<=b)c`, ""}, [2]string{`(?<!x)(?:y|(?<!z)w)`, ""},
+		[2]string{`a{0,3}:`, ""}, [2]string{`(?:ab){2,}:x`, ""}, [2]string{`(?:\d{1,4}\.){3}\d`, ""}, [2]string{`x*:`, ""},
+		[2]string{`(?:a|bb)*-`, ""}, [2]string{`\d{2}(?:-\d)?`, ""}, [2]string{`(?:1:|22)+:`, ""},
 	)
 }
 
@@ -85,7 +87,7 @@ func filterTexts(t *testing.T) [][]uint16 {
 		}
 		out = append(out, U16(string(b[:min(len(b), 64<<10)])))
 	}
-	return append(out, U16("ab"), U16("b"), U16("kK sſ ééc ÉC"), U16(""), U16("aab ab c abab abc"))
+	return append(out, U16("aaa: ab: abab:x ababab:x 1.2.3.4 1234.5.6.7 xxxx: bbbb- a- 12-3 12 1:1:: 22:"), U16("ab"), U16("b"), U16("kK sſ ééc ÉC"), U16(""), U16("aab ab c abab abc"))
 }
 
 // The start-position filters (first unit, word start, first two units) change no match: every guard pattern finds

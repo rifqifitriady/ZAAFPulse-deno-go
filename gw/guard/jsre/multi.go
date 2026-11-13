@@ -119,7 +119,8 @@ func (mu *Multi) FirstB(st *MultiState, s []uint16, active uint64, b *Budget, ou
 			k := bits.TrailingZeros64(mask)
 			re := mu.res[k]
 			if (s[q] >= 128 && !re.pre.set.has(s[q])) || (q > 0 && re.pre.prevNot != nil && re.pre.prevNot.has(s[q-1])) ||
-				(re.pre.lits != nil && !re.pre.lits.starts(s, q, re.icase)) {
+				(re.pre.lits != nil && !re.pre.lits.starts(s, q, re.icase)) ||
+				(re.pre.within > 0 && !hasWithin(s, q, re.pre.within, re.pre.need)) {
 				continue
 			}
 			m := st.vms[k]
@@ -185,7 +186,8 @@ func (mu *Multi) AllB(st *MultiState, s []uint16, active uint64, b *Budget, f fu
 			re := mu.res[k]
 			if q < next[k] || (s[q] >= 128 && !re.pre.set.has(s[q])) ||
 				(q > 0 && re.pre.prevNot != nil && re.pre.prevNot.has(s[q-1])) ||
-				(re.pre.lits != nil && !re.pre.lits.starts(s, q, re.icase)) {
+				(re.pre.lits != nil && !re.pre.lits.starts(s, q, re.icase)) ||
+				(re.pre.within > 0 && !hasWithin(s, q, re.pre.within, re.pre.need)) {
 				continue
 			}
 			m := st.vms[k]

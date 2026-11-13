@@ -264,12 +264,21 @@ func (re *Regexp) release(m *vm) {
 
 // Charge counts n steps outside the matcher (work a caller does per item); like a run it panics with ErrBudget or
 // ErrDeadline past a limit, and the first charge reads the clock. Run it inside Run.
-func (b *Budget) Charge(n int) { b.count(n) }
-
-// count adds n steps to a budget that may be nil.
-func (b *Budget) count(n int) {
+func (b *Budget) Charge(n int) {
 	if b != nil && n > 0 {
 		b.add(int64(n))
+	}
+}
+
+// skipWeight: a start position the filters skip costs about a quarter of a matcher instruction (1–1.5 ns against
+// 5–10 ns), so skipped positions count a step per skipWeight. A step then costs about the same time whatever the
+// input, and the step budget bounds time.
+const skipWeight = 2
+
+// count adds n skipped start positions to a budget that may be nil.
+func (b *Budget) count(n int) {
+	if b != nil && n > 0 {
+		b.add(int64((n + skipWeight - 1) / skipWeight))
 	}
 }
 
