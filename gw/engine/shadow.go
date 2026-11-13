@@ -26,15 +26,20 @@ type Capture struct {
 		Headers map[string]string `json:"headers"`
 		Body    *string           `json:"body"`
 	} `json:"providerRequests"`
-	ProviderResponse *struct {
-		Status int    `json:"status"`
-		Body   string `json:"body"`
-	} `json:"providerResponse"`
-	Client *struct {
+	ProviderResponse *ProviderAnswer `json:"providerResponse"`
+	Client           *struct {
 		Status int    `json:"status"`
 		Body   string `json:"body"`
 	} `json:"client"`
 	Usage map[string]any `json:"usage"`
+}
+
+// ProviderAnswer is the provider's answer in a capture.
+type ProviderAnswer struct {
+	Status    int    `json:"status"`
+	Body      string `json:"body"`
+	Ended     string `json:"ended"`     // a stream (P4c): "eof" or "cut"
+	Truncated bool   `json:"truncated"` // a stream: the capture passed its cap
 }
 
 // Diff is one field that differs.
@@ -105,7 +110,23 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 		if jsBody != string(p.Body) {
 			dt("providerRequest.body", jsBody, string(p.Body))
 		}
-		a := s.Respond(p, c.ProviderResponse.Status, []byte(c.ProviderResponse.Body), 0)
+		var a Answer
+		if p.Stream && c.ProviderResponse.Status >= 200 && c.ProviderResponse.Status <= 299 {
+			// A stream (P4c): the provider's text as the control plane decoded it, replayed through the rewriter; the
+			// last partial line only after a clean end.
+			if c.ProviderResponse.Truncated {
+				l.Outcome, l.Reason = "skipped", "the stream's capture is over its limit"
+				return l
+			}
+			cs := NewChatStream(p.Model, p.WantsUsage, func() float64 { return 0 })
+			out, _ := cs.Feed([]byte(c.ProviderResponse.Body))
+			if c.ProviderResponse.Ended == "eof" {
+				out = append(out, cs.End()...)
+			}
+			a = Answer{Status: http.StatusOK, Body: out, Usage: s.StreamLine(p, cs, 0)}
+		} else {
+			a = s.Respond(p, c.ProviderResponse.Status, []byte(c.ProviderResponse.Body), 0)
+		}
 		if a.Status != c.Client.Status {
 			d("client.status", c.Client.Status, a.Status)
 		}
@@ -256,7 +277,7 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 	// The engine counts what it would serve, as when it serves (the control plane counts every request of the key).
 	var wait int64
 	id := ""
-	if p.Handoff == "" && !p.Stream { // streams are compared from P4c Task 5 on
+	if p.Handoff == "" {
 		wait = e.limits.Take(p.Key.ID, p.Key.RPM, e.now())
 		id = NewShadowID()
 		r = front.WithShadowID(r, id) // set by the proxy's Rewrite, after the hop-by-hop headers are gone
@@ -264,23 +285,18 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 	js.ServeHTTP(w, r)
 	go func() {
 		defer func() { <-shadowSlots }()
-		var l ShadowLine
-		if p.Handoff == "" && p.Stream {
-			l = ShadowLine{Class: sub, Outcome: "skipped", Reason: "stream compare: P4c Task 5"}
-		} else {
-			var c *Capture
-			if id != "" {
-				if code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil); err == nil && code == http.StatusOK {
-					c = &Capture{}
-					if json.Unmarshal(body, c) != nil {
-						c = nil
-					}
+		var c *Capture
+		if id != "" {
+			if code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil); err == nil && code == http.StatusOK {
+				c = &Capture{}
+				if json.Unmarshal(body, c) != nil {
+					c = nil
 				}
 			}
-			l = s.Compare(sub, p, c)
-			if wait > 0 {
-				l = rateLimitedLine(sub, l.Status) // the engine would have answered 429 itself
-			}
+		}
+		l := s.Compare(sub, p, c)
+		if wait > 0 {
+			l = rateLimitedLine(sub, l.Status) // the engine would have answered 429 itself
 		}
 		line, _ := json.Marshal(l)
 		if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
