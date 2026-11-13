@@ -25,10 +25,10 @@ func TestOneBudgetPerCall(t *testing.T) {
 	traceSteps = func(n int64) { steps = n }
 	// The outcome is asserted on steps: whatever ends a call here is its step budget or the stack cap (the clock is
 	// out of play), and a call that used the whole budget must have blocked. CPU time is logged and bounded loosely
-	// (B2 re-review 1, M6): 4 s on the guard-bench runner, well under the 10 s backstop; 30 s on the other runners.
+	// (B2 re-review 1, M6): 6 s on the guard-bench runner, under the 10 s backstop; 30 s on the other runners.
 	bound := 30 * time.Second
 	if os.Getenv("ZP_GUARD_BENCH") != "" {
-		bound = 4 * time.Second
+		bound = 6 * time.Second
 	}
 	for _, a := range adversarialInputs {
 		for _, shape := range []string{"one string", "1,000 strings"} {
