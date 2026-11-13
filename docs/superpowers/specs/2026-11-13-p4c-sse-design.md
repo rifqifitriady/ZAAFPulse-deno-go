@@ -96,7 +96,7 @@ Each one line, with the evidence that settled it.
 11. **Memory per stream is budgeted and freed early: an 8 KiB read buffer per stream, the line buffer compacted after
     each read, the client request body and the provider request body released once the provider's headers are in
     (`onceBody` drops its slice at EOF; `PlanChat`'s copies are cleared), a line longer than 16 MiB ends the stream as a
-    cut (JS has no limit; recorded as a difference).** Budget: at most **64 KiB of heap and stack per held stream**
+    cut (JS has no limit; recorded as a difference).** Budget: at most **80 KiB of heap and stack per held stream** (raised from 64 KiB on 2026-11-13, see the plan's Decision 19)
     (measured by a Go test, built without `-race`), and the M4 gateway RSS target (≤ 80 MB at 500 streams).
     Evidence: coding clients send prompts of hundreds of KB (a held 500 KB request × 500 streams is 250 MB);
     `translate.MaxSSEEvent` is 16 MiB; M4.
@@ -255,7 +255,7 @@ change is re-measured, and the result doc records which were used.
   `streamUsage: false`, an existing `stream_options` with other keys, a non-2xx answer to a stream, a failed call.
 - **Go:** `ChatStream` output does not depend on the split (every split of each fixture body); abort, cut, write error,
   panic and shutdown each give one line; a slow reader stops the provider read (backpressure); heap and stack per held
-  stream ≤ 64 KiB at 200 streams (`//go:build !race`); 200 concurrent streams with 0 errors on every OS.
+  stream ≤ 80 KiB at 200 streams (`//go:build !race`); 200 concurrent streams with 0 errors on every OS.
 - **Contract:** the stream cases of `formats.test.js` and `usage.test.js` run in `ZP_ENGINE=go` and `shadow` (the
   harness puts `chat-stream` on go / in the shadow list); new cases: a client that drops mid-stream gets one usage line,
   a provider that cuts off gets one line and a clean end, the response headers of a go-served stream equal those of a
