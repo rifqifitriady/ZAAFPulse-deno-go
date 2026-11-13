@@ -5,7 +5,8 @@
 //   node bench/run.js                      (ZP_RUNTIME=deno node bench/run.js for the Deno server; ZP_RUNTIME=binary ZP_BINARY=<path> for a compiled one)
 // Knobs (defaults in brackets): ZP_BENCH_REQUESTS [2000], ZP_BENCH_LEVELS [50,200,500], ZP_BENCH_SECONDS [10],
 // ZP_BENCH_DELAY_MS [20], ZP_BENCH_CHUNKS [20], ZP_BENCH_INTERVAL_MS [25], ZP_BENCH_STARTS [5], ZP_BENCH_OUT
-// [bench/results], ZP_BENCH_HOST [the host name].
+// [bench/results], ZP_BENCH_HOST [the host name], ZP_BENCH_TIER [external; private lets the go engine serve until P4e];
+// ZP_ENGINE (front, go: the Go gateway in front; go also records its RSS and which engine called the mock).
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -29,6 +30,9 @@ const CFG = {
   chunks: num('ZP_BENCH_CHUNKS', 20),
   intervalMs: num('ZP_BENCH_INTERVAL_MS', 25),
   starts: num('ZP_BENCH_STARTS', 5),
+  // P4c: the bench provider's tier (private: the go engine may serve it until P4e) and the engine mode (ZP_ENGINE).
+  tier: process.env.ZP_BENCH_TIER === 'private' ? 'private' : 'external',
+  engine: process.env.ZP_ENGINE || 'js',
 };
 const KEYS = 25; // the stream workers spread over these keys, so no key reaches its rate limit
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -185,14 +189,30 @@ async function main() {
       id: 'bench',
       preset: 'custom',
       baseUrl: mock.url,
-      tier: 'external',
+      tier: CFG.tier,
       approved: true,
       models: ['bench-1'],
     });
     const keys = [];
     for (let i = 0; i < KEYS; i++) keys.push((await c.newKey({ scopes: ['llm'], name: `bench-${i}` })).secret);
+    // The gateway's own process (P4c: M4 is the gateway's RSS), from the supervisor's status.
+    let gwPid = null;
+    if (CFG.engine !== 'js') {
+      const st = (await c.call('/api/gateway/status', { method: 'GET' })).json;
+      gwPid = st && Number.isInteger(st.pid) ? st.pid : null;
+      if (!gwPid) throw new Error(`no gateway pid in /api/gateway/status: ${JSON.stringify(st)}`);
+    }
+    // Which engine called the mock since the last look (and reset); a go run fails when the server answered any.
+    const mockBase = mock.url.replace(/\/v1$/, '');
+    const servedBy = async (what) => {
+      const s = await (await fetch(`${mockBase}/_stats`)).json();
+      if (CFG.engine === 'go' && s.js > 0)
+        throw new Error(`the go engine handed ${s.js} calls to the server (${what})`);
+      return s;
+    };
     await sleep(5000);
     const idleRssMB = rssMB(server.pid);
+    const gatewayIdleRssMB = gwPid ? rssMB(gwPid) : null;
 
     const json = { 'content-type': 'application/json' };
     const gwUrl = `${server.base}/v1/chat/completions`;
@@ -204,6 +224,7 @@ async function main() {
       await timed(gwUrl, gwHeaders(0), whole);
       await timed(directUrl, json, wholeDirect);
     } // warm-up, not counted
+    await (await fetch(`${mockBase}/_stats`)).json(); // reset: the warm-up's direct calls count as js
     const gw = [];
     const direct = [];
     const diff = [];
@@ -222,7 +243,11 @@ async function main() {
       direct.push(b);
       diff.push(a - b);
     }
-    const nonStream = { gateway: stats(gw), direct: stats(direct), overhead: stats(diff) };
+    // The direct calls are js too: the go engine's share is checked on the gateway steps only.
+    const nsCounts = await (await fetch(`${mockBase}/_stats`)).json();
+    const nonStream = { gateway: stats(gw), direct: stats(direct), overhead: stats(diff), servedBy: nsCounts };
+    if (CFG.engine === 'go' && nsCounts.go < CFG.requests)
+      throw new Error(`the go engine answered ${nsCounts.go} of ${CFG.requests} non-streaming calls`);
 
     const streamBody = JSON.stringify({
       model: 'bench/bench-1',
@@ -236,6 +261,7 @@ async function main() {
     });
     const streams = [];
     let peakRssMB = null;
+    let gatewayPeakRssMB = null;
     const top = Math.max(...CFG.levels);
     for (const level of CFG.levels) {
       let sampler = null;
@@ -243,6 +269,8 @@ async function main() {
         sampler = setInterval(() => {
           const v = rssMB(server.pid);
           if (v !== null && (peakRssMB === null || v > peakRssMB)) peakRssMB = v;
+          const g = gwPid ? rssMB(gwPid) : null;
+          if (g !== null && (gatewayPeakRssMB === null || g > gatewayPeakRssMB)) gatewayPeakRssMB = g;
         }, 250);
       const g = await streamStep(level, {
         url: gwUrl,
@@ -250,12 +278,15 @@ async function main() {
         body: streamBody,
       });
       if (sampler) clearInterval(sampler);
+      const stepServed = await servedBy(`${level} streams`);
       const d = await streamStep(level, { url: directUrl, headers: () => json, body: streamDirect });
+      await (await fetch(`${mockBase}/_stats`)).json(); // the direct step's calls: reset
       streams.push({
         level,
         seconds: CFG.seconds,
         gateway: g,
         direct: d,
+        servedBy: stepServed,
         overheadP95: g.durP95 === null || d.durP95 === null ? null : Math.round((g.durP95 - d.durP95) * 100) / 100,
         ttfbOverheadP95:
           g.ttfbP95 === null || d.ttfbP95 === null ? null : Math.round((g.ttfbP95 - d.ttfbP95) * 100) / 100,
@@ -285,16 +316,20 @@ async function main() {
       nonStream,
       streams,
       peakRssMB,
+      gatewayIdleRssMB,
+      gatewayPeakRssMB,
       durationS: Math.round((Date.now() - t0) / 1000),
     };
     const dir = process.env.ZP_BENCH_OUT || path.join(__dirname, 'results');
     fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, `${date}-${CFG.runtime}-${result.host.name}.json`);
+    const variant = CFG.engine !== 'js' || CFG.tier !== 'external' ? `-${CFG.engine}-${CFG.tier}` : '';
+    const file = path.join(dir, `${date}-${CFG.runtime}${variant}-${result.host.name}.json`);
     fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}\n`);
     console.log(`wrote ${path.relative(process.cwd(), file)} in ${result.durationS} s`);
     console.log(
       `startup p50 ${result.startup.p50} ms · idle RSS ${idleRssMB} MB · overhead p50/p95/p99 ` +
-        `${nonStream.overhead.p50}/${nonStream.overhead.p95}/${nonStream.overhead.p99} ms · peak RSS ${peakRssMB} MB`,
+        `${nonStream.overhead.p50}/${nonStream.overhead.p95}/${nonStream.overhead.p99} ms · peak RSS ${peakRssMB} MB` +
+        (gwPid ? ` · gateway idle/peak RSS ${gatewayIdleRssMB}/${gatewayPeakRssMB} MB` : ''),
     );
     for (const s of streams)
       console.log(
