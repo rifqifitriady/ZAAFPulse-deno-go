@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "find /tmp -type f -name 'cache*' -exec rm -f {} +"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git reset --soft HEAD~1"
+  ],
+  "out": {
+    "text": "git reset --soft HEAD~1",
+    "counts": {}
+  }
+}

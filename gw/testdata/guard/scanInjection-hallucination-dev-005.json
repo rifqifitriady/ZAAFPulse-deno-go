@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "MCP error -32602: Invalid arguments for tool search: unexpected property 'limit_count'"
+  ],
+  "out": null
+}

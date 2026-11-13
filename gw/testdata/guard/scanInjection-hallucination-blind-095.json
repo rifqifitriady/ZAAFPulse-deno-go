@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "docker: 'compose-up' is not a docker command.\nSee 'docker --help'"
+  ],
+  "out": null
+}

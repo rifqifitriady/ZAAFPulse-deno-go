@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "you broke the build, npm run build now fails with a type error in Header.tsx"
+  ],
+  "out": null
+}

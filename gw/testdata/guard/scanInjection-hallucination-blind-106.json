@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "TypeError: Cannot read properties of undefined (reading 'map')\n    at renderOrders (src/orders.js:18:22)"
+  ],
+  "out": null
+}

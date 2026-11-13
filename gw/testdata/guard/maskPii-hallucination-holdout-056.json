@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nnpm ERR! Missing script: \"lint:fix\"\nnpm ERR!\nnpm ERR! To see a list of scripts, run:\nnpm ERR!   npm run"
+  ],
+  "out": {
+    "text": "Exit code 1\nnpm ERR! Missing script: \"lint:fix\"\nnpm ERR!\nnpm ERR! To see a list of scripts, run:\nnpm ERR!   npm run",
+    "counts": {}
+  }
+}

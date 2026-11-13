@@ -1,0 +1,45 @@
+{
+  "fn": "openAIToAnthropic",
+  "in": [
+    {
+      "choices": [
+        {
+          "message": {
+            "content": [
+              {
+                "type": "text",
+                "text": "a"
+              },
+              "b",
+              {
+                "type": "x"
+              }
+            ]
+          },
+          "finish_reason": "length"
+        }
+      ]
+    },
+    "m"
+  ],
+  "out": {
+    "id": "msg_010101010101010101010101",
+    "type": "message",
+    "role": "assistant",
+    "model": "m",
+    "content": [
+      {
+        "type": "text",
+        "text": "ab"
+      }
+    ],
+    "stop_reason": "max_tokens",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}

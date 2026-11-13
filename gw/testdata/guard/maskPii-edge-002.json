@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "hello world, nothing to see here"
+  ],
+  "out": {
+    "text": "hello world, nothing to see here",
+    "counts": {}
+  }
+}

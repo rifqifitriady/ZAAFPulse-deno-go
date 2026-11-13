@@ -1,0 +1,54 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "read",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "tool_choice": "required",
+      "reasoning_effort": "low"
+    }
+  ],
+  "out": {
+    "model": "c",
+    "max_tokens": 8192,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "hi"
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "read",
+        "description": "",
+        "input_schema": {
+          "type": "object"
+        }
+      }
+    ],
+    "tool_choice": {
+      "type": "any"
+    }
+  }
+}

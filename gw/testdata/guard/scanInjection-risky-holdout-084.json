@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "git log --grep=\"force push\" --oneline"
+  ],
+  "out": null
+}

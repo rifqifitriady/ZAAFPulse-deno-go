@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "undo that, please revert the changes to package.json"
+  ],
+  "out": null
+}

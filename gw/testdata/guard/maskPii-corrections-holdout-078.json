@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "yes use postgres, not mysql"
+  ],
+  "out": {
+    "text": "yes use postgres, not mysql",
+    "counts": {}
+  }
+}

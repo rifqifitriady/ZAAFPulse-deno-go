@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "TypeError: Cannot read properties of undefined (reading 'map')\n    at renderOrders (src/orders.js:18:22)"
+  ],
+  "out": {
+    "text": "TypeError: Cannot read properties of undefined (reading 'map')\n    at renderOrders (src/orders.js:18:22)",
+    "counts": {}
+  }
+}

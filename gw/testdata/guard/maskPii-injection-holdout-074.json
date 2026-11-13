@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "describe('sanitizer', () => {\n  it('flags \"abaikan instruksi sebelumnya\"', () => {\n    expect(scan('abaikan instruksi sebelumnya')).toHaveLength(1);\n  });\n});"
+  ],
+  "out": {
+    "text": "describe('sanitizer', () => {\n  it('flags \"abaikan instruksi sebelumnya\"', () => {\n    expect(scan('abaikan instruksi sebelumnya')).toHaveLength(1);\n  });\n});",
+    "counts": {}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rm -rf node_modules dist"
+  ],
+  "out": null
+}

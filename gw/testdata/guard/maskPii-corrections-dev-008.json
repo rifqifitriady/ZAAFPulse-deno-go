@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "why did you delete the tests?"
+  ],
+  "out": {
+    "text": "why did you delete the tests?",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "tidak perlu, cukup ubah warnanya saja"
+  ],
+  "out": {
+    "text": "tidak perlu, cukup ubah warnanya saja",
+    "counts": {}
+  }
+}

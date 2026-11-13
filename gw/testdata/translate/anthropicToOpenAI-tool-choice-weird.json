@@ -1,0 +1,42 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "messages": [],
+      "tools": [
+        {
+          "name": "f",
+          "input_schema": {
+            "type": "object"
+          }
+        }
+      ],
+      "tool_choice": {
+        "type": "whatever"
+      }
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "x",
+      "messages": [],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "f",
+            "description": "",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto",
+      "stream": false
+    },
+    "soft": null,
+    "dropped": []
+  }
+}

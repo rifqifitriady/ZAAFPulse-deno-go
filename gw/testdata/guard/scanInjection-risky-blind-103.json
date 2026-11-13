@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "git push origin main -f"
+  ],
+  "out": null
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "grep -rn \"DROP TABLE\" migrations/"
+  ],
+  "out": null
+}

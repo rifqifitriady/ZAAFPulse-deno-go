@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Our OWASP guide: attackers may write \"ignore previous instructions\" in a page."
+  ],
+  "out": null
+}

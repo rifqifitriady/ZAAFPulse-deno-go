@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Contoh serangan prompt injection: penyerang menulis \"abaikan semua instruksi sebelumnya\" di halaman web."
+  ],
+  "out": {
+    "text": "Contoh serangan prompt injection: penyerang menulis \"abaikan semua instruksi sebelumnya\" di halaman web.",
+    "counts": {}
+  }
+}

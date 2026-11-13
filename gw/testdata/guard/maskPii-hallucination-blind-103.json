@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "EACCES: permission denied, open '/etc/hosts'"
+  ],
+  "out": {
+    "text": "EACCES: permission denied, open '/etc/hosts'",
+    "counts": {}
+  }
+}

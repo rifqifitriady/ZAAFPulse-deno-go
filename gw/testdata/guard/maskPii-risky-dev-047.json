@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "npm run clean && npm run build"
+  ],
+  "out": {
+    "text": "npm run clean && npm run build",
+    "counts": {}
+  }
+}

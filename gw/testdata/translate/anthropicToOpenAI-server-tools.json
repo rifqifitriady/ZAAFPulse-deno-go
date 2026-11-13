@@ -1,0 +1,251 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "max_tokens": 2000,
+      "thinking": {
+        "type": "enabled",
+        "budget_tokens": 1024
+      },
+      "output_config": {
+        "format": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object"
+          }
+        }
+      },
+      "tools": [
+        {
+          "name": "Read",
+          "input_schema": {
+            "type": "object"
+          }
+        },
+        {
+          "type": "bash_20250124",
+          "name": "bash"
+        },
+        {
+          "type": "text_editor_20250728",
+          "name": "str_replace_based_edit_tool"
+        },
+        {
+          "type": "web_search_20250305",
+          "name": "web_search",
+          "max_uses": 3
+        }
+      ],
+      "tool_choice": {
+        "type": "auto",
+        "disable_parallel_tool_use": true
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "look"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "server_tool_use",
+              "id": "srv1",
+              "name": "web_search",
+              "input": {
+                "query": "q"
+              }
+            },
+            {
+              "type": "web_search_tool_result",
+              "tool_use_id": "srv1",
+              "content": []
+            },
+            {
+              "type": "tool_use",
+              "id": "tu1",
+              "name": "Read",
+              "input": {
+                "f": "a.png"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "tu1",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "the screenshot"
+                },
+                {
+                  "type": "image",
+                  "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": "QUJD"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "what is in it?"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "look"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "tu1",
+              "type": "function",
+              "function": {
+                "name": "Read",
+                "arguments": "{\"f\":\"a.png\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "tu1",
+          "content": "the screenshot\n[image: attached to the next user message]"
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:image/png;base64,QUJD"
+              }
+            },
+            {
+              "type": "text",
+              "text": "what is in it?"
+            }
+          ]
+        }
+      ],
+      "max_tokens": 2000,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "Read",
+            "description": "",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "bash",
+            "description": "Run a shell command.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "restart": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "str_replace_based_edit_tool",
+            "description": "View, create and edit files: commands view, create, str_replace and insert.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "create",
+                    "str_replace",
+                    "insert",
+                    "undo_edit"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                },
+                "file_text": {
+                  "type": "string"
+                },
+                "old_str": {
+                  "type": "string"
+                },
+                "new_str": {
+                  "type": "string"
+                },
+                "insert_line": {
+                  "type": "integer"
+                },
+                "insert_text": {
+                  "type": "string"
+                },
+                "view_range": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "required": [
+                "command",
+                "path"
+              ]
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto",
+      "parallel_tool_calls": false,
+      "reasoning_effort": "low",
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "output",
+          "schema": {
+            "type": "object"
+          },
+          "strict": true
+        }
+      },
+      "stream": false
+    },
+    "soft": [
+      "reasoning_effort"
+    ],
+    "dropped": [
+      "tool web_search"
+    ]
+  }
+}

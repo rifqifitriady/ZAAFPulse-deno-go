@@ -1,0 +1,81 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "q"
+        }
+      ],
+      "thinking": {
+        "type": "adaptive"
+      },
+      "output_config": {
+        "effort": "max"
+      },
+      "tools": [
+        {
+          "type": "custom",
+          "name": "c1",
+          "description": "custom"
+        },
+        {
+          "name": "plain"
+        }
+      ],
+      "tool_choice": {
+        "type": "tool",
+        "name": "c1"
+      }
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "q"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "c1",
+            "description": "custom",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "plain",
+            "description": "",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        }
+      ],
+      "tool_choice": {
+        "type": "function",
+        "function": {
+          "name": "c1"
+        }
+      },
+      "reasoning_effort": "high",
+      "stream": false
+    },
+    "soft": [
+      "reasoning_effort"
+    ],
+    "dropped": []
+  }
+}

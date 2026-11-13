@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "perbaiki typo di footer, 'Hak Cipat' harusnya 'Hak Cipta'"
+  ],
+  "out": {
+    "text": "perbaiki typo di footer, 'Hak Cipat' harusnya 'Hak Cipta'",
+    "counts": {}
+  }
+}

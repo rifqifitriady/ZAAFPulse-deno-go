@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Llama 2 chat format: [INST] question [/INST]"
+  ],
+  "out": {
+    "text": "Llama 2 chat format: [INST] question [/INST]",
+    "counts": {}
+  }
+}

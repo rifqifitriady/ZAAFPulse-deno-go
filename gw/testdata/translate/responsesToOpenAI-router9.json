@@ -1,0 +1,135 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {
+      "model": "gpt-x",
+      "instructions": "sys",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "fix it"
+            }
+          ]
+        },
+        {
+          "type": "function_call",
+          "call_id": "f1",
+          "name": "shell",
+          "arguments": "{\"cmd\":[\"ls\"]}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "f1",
+          "output": "a.js"
+        },
+        {
+          "type": "custom_tool_call",
+          "call_id": "p1",
+          "name": "apply_patch",
+          "input": "*** Begin Patch"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "shell",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "type": "custom",
+          "name": "apply_patch",
+          "description": "patch"
+        }
+      ]
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "system",
+          "content": "sys"
+        },
+        {
+          "role": "user",
+          "content": "fix it"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "f1",
+              "type": "function",
+              "function": {
+                "name": "shell",
+                "arguments": "{\"cmd\":[\"ls\"]}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "f1",
+          "content": "a.js"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "p1",
+              "type": "function",
+              "function": {
+                "name": "apply_patch",
+                "arguments": "{\"input\":\"*** Begin Patch\"}"
+              }
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "shell",
+            "description": "",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "apply_patch",
+            "description": "patch Put the whole raw input in the \"input\" string.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "input"
+              ]
+            }
+          }
+        }
+      ],
+      "stream": false
+    },
+    "soft": null,
+    "dropped": [],
+    "custom": [
+      "apply_patch"
+    ]
+  }
+}

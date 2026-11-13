@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "fix the failing test in auth.spec.ts"
+  ],
+  "out": null
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "npm run clean && npm run build"
+  ],
+  "out": null
+}

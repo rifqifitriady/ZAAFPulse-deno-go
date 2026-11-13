@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Request failed with status code 429: Too Many Requests. Retry-After: 30"
+  ],
+  "out": {
+    "text": "Request failed with status code 429: Too Many Requests. Retry-After: 30",
+    "counts": {}
+  }
+}

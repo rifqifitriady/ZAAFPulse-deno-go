@@ -1,0 +1,7 @@
+{
+  "fn": "estimateTokens",
+  "in": [
+    "abc"
+  ],
+  "out": 2
+}

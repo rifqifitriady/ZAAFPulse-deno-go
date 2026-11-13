@@ -1,0 +1,20 @@
+{
+  "fn": "readSse",
+  "in": [
+    [
+      "data: [DONE]\n\n",
+      "event: ping\n\n",
+      "id: 4\ndata: x\nretry: 1\n\n"
+    ]
+  ],
+  "out": [
+    [
+      "message",
+      "[DONE]"
+    ],
+    [
+      "message",
+      "x"
+    ]
+  ]
+}

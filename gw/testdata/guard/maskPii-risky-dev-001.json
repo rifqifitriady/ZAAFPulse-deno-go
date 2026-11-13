@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm --recursive --force /tmp/x"
+  ],
+  "out": {
+    "text": "rm --recursive --force /tmp/x",
+    "counts": {}
+  }
+}

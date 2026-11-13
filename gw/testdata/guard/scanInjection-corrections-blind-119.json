@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "undo your last change to the schema"
+  ],
+  "out": null
+}

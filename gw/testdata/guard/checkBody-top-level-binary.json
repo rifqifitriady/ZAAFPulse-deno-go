@@ -1,0 +1,49 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkBody",
+  "in": [
+    {
+      "1": "a@b.com",
+      "2": "<<ZPSECRET:0>>",
+      "b64_json": "<<ZPSECRET:0>>",
+      "image_url": "<<ZPSECRET:0>>",
+      "model": "<<ZPSECRET:0>>",
+      "messages": "not a list",
+      "prompt_id": "<<ZPSECRET:0>>"
+    },
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "log",
+      "injection": "log"
+    },
+    "openai-chat"
+  ],
+  "out": {
+    "body": {
+      "1": "a@b.com",
+      "2": "‹secret: Anthropic API key›",
+      "b64_json": "<<ZPSECRET:0>>",
+      "image_url": "<<ZPSECRET:0>>",
+      "model": "<<ZPSECRET:0>>",
+      "messages": "not a list",
+      "prompt_id": "<<ZPSECRET:0>>"
+    },
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "pii",
+        "label": "email",
+        "count": 1
+      },
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 1
+      }
+    ],
+    "error": false
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Rate limit exceeded (429). Try again later."
+  ],
+  "out": {
+    "text": "Rate limit exceeded (429). Try again later.",
+    "counts": {}
+  }
+}

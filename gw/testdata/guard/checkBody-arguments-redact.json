@@ -1,0 +1,40 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkBody",
+  "in": [
+    {
+      "data": {
+        "token": "<<ZPSECRET:0>>"
+      },
+      "image_url": "<<ZPSECRET:0>>",
+      "type": "<<ZPSECRET:0>>"
+    },
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "off",
+      "injection": "log"
+    },
+    "arguments"
+  ],
+  "out": {
+    "body": {
+      "data": {
+        "token": "‹secret: Anthropic API key›"
+      },
+      "image_url": "‹secret: Anthropic API key›",
+      "type": "‹secret: Anthropic API key›"
+    },
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 3
+      }
+    ],
+    "error": false
+  }
+}

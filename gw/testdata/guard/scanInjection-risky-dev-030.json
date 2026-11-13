@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "{\"command\":[\"bash\",\"-lc\",\"git push --force origin main\"],\"workdir\":\"/w/app\"}"
+  ],
+  "out": null
+}

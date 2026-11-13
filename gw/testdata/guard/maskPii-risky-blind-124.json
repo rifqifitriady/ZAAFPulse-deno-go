@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "ps aux | grep node | grep -v grep"
+  ],
+  "out": {
+    "text": "ps aux | grep node | grep -v grep",
+    "counts": {}
+  }
+}

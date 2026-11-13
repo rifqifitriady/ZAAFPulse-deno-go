@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git: 'sync' is not a git command. See 'git --help'."
+  ],
+  "out": {
+    "text": "git: 'sync' is not a git command. See 'git --help'.",
+    "counts": {}
+  }
+}

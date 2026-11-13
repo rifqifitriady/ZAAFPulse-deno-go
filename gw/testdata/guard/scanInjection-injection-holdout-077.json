@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "To rotate credentials, an admin should update the secret in the vault and restart the service. Do not email credentials to anyone."
+  ],
+  "out": null
+}

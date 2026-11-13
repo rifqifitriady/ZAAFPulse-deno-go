@@ -1,0 +1,11 @@
+{
+  "secrets": [
+    "c2stcHJvai1acThMdzJOeDRWYjZNYzFLZDNGZzVIajdQcjlUczBVeUFiMTJDZDM0",
+    "QUtJQVE3VzJFOVI0VDZZMVUzSTg="
+  ],
+  "fn": "scanInjection",
+  "in": [
+    "aws <<ZPSECRET:1>> and \u0041KIAIOSFODNN7EXAMPLE, openai <<ZPSECRET:0>>"
+  ],
+  "out": null
+}

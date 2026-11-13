@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm -fr /tmp/cache"
+  ],
+  "out": {
+    "text": "rm -fr /tmp/cache",
+    "counts": {}
+  }
+}

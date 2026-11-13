@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "mail ana@example.com, call +62 812-3456-7890 from 10.0.0.7 in /Users/ana/app and C:\\Users\\ana\\x"
+  ],
+  "out": null
+}

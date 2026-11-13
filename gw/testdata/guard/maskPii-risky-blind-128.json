@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "curl -fsSL https://get.toolbox.example/install.sh -o install.sh && less install.sh"
+  ],
+  "out": {
+    "text": "curl -fsSL https://get.toolbox.example/install.sh -o install.sh && less install.sh",
+    "counts": {}
+  }
+}

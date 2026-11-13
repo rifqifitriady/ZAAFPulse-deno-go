@@ -1,0 +1,14 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {}
+  ],
+  "out": {
+    "body": {
+      "messages": [],
+      "stream": false
+    },
+    "soft": null,
+    "dropped": []
+  }
+}

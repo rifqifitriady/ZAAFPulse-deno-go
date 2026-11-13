@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "the regex you gave matches the empty string too, so every row passes. redo it"
+  ],
+  "out": {
+    "text": "the regex you gave matches the empty string too, so every row passes. redo it",
+    "counts": {}
+  }
+}

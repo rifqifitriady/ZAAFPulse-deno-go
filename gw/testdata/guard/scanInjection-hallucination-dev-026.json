@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\n FAIL  src/cart.test.ts\n  ● cart › applies discount\n    expect(received).toBe(expected)\n    Expected: 84.15\n    Received: undefined"
+  ],
+  "out": null
+}

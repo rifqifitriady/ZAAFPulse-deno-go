@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "<tool_use_error>File does not exist. Note: your current working directory is /Users/dev/app.</tool_use_error>"
+  ],
+  "out": null
+}

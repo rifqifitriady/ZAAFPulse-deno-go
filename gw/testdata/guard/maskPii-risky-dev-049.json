@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "{\"command\":[\"bash\",\"-lc\",\"ls -la src && cat package.json\"]}"
+  ],
+  "out": {
+    "text": "{\"command\":[\"bash\",\"-lc\",\"ls -la src && cat package.json\"]}",
+    "counts": {}
+  }
+}

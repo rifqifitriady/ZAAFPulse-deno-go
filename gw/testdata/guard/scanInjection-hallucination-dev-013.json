@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\nnpm ERR! Missing script: \"typecheck\""
+  ],
+  "out": null
+}

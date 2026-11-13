@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Pengguna dapat mengabaikan peringatan ini jika sudah memperbarui versi sebelumnya."
+  ],
+  "out": null
+}

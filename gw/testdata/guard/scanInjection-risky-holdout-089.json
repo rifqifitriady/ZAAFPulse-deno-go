@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "man rm"
+  ],
+  "out": null
+}

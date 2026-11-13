@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "File does not exist. Note: your current working directory is /w/app."
+  ],
+  "out": {
+    "text": "File does not exist. Note: your current working directory is /w/app.",
+    "counts": {}
+  }
+}

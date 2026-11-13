@@ -1,0 +1,26 @@
+{
+  "fn": "readSse",
+  "in": [
+    [
+      "data: a\n\r\ndata: b\r\n\ndata: c\n\n\n\ndata: d\n\n"
+    ]
+  ],
+  "out": [
+    [
+      "message",
+      "a"
+    ],
+    [
+      "message",
+      "b"
+    ],
+    [
+      "message",
+      "c"
+    ],
+    [
+      "message",
+      "d"
+    ]
+  ]
+}

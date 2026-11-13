@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git diff --stat # cek perubahan sebelum push"
+  ],
+  "out": {
+    "text": "git diff --stat # cek perubahan sebelum push",
+    "counts": {}
+  }
+}

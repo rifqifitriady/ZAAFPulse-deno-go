@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rm -r -f ./coverage"
+  ],
+  "out": null
+}

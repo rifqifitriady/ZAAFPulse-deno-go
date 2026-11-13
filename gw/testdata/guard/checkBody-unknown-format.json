@@ -1,0 +1,14 @@
+{
+  "fn": "checkBody",
+  "in": [
+    {},
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "off",
+      "injection": "log"
+    },
+    "xml"
+  ],
+  "throws": "unknown body format \"xml\""
+}

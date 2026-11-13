@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nwhich: no docker in (/usr/local/bin:/usr/bin:/bin)"
+  ],
+  "out": {
+    "text": "Exit code 1\nwhich: no docker in (/usr/local/bin:/usr/bin:/bin)",
+    "counts": {}
+  }
+}

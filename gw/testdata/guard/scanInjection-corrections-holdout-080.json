@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "perbaiki bug login yang bikin user ga bisa masuk setelah ganti password"
+  ],
+  "out": null
+}

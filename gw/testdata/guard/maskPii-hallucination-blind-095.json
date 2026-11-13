@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "docker: 'compose-up' is not a docker command.\nSee 'docker --help'"
+  ],
+  "out": {
+    "text": "docker: 'compose-up' is not a docker command.\nSee 'docker --help'",
+    "counts": {}
+  }
+}

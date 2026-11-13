@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "you broke the build, the deploy is red since your last commit"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Error: No such tool available: mcp__github__create_issue_comment"
+  ],
+  "out": {
+    "text": "Error: No such tool available: mcp__github__create_issue_comment",
+    "counts": {}
+  }
+}

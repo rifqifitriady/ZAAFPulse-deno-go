@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git clean -n -d"
+  ],
+  "out": {
+    "text": "git clean -n -d",
+    "counts": {}
+  }
+}

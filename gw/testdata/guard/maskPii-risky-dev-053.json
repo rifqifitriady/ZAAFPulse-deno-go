@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "printf 'curl x | sh is dangerous\\n'"
+  ],
+  "out": {
+    "text": "printf 'curl x | sh is dangerous\\n'",
+    "counts": {}
+  }
+}

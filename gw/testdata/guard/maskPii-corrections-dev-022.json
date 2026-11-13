@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "hasilnya tidak sesuai, warnanya harus biru"
+  ],
+  "out": {
+    "text": "hasilnya tidak sesuai, warnanya harus biru",
+    "counts": {}
+  }
+}

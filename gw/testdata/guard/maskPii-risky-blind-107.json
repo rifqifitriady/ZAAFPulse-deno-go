@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "chmod -R 777 /var/www/tokoku"
+  ],
+  "out": {
+    "text": "chmod -R 777 /var/www/tokoku",
+    "counts": {}
+  }
+}

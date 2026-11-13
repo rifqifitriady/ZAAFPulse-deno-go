@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "bukan itu yang kuminta, kamu malah bikin fitur baru. revert aja"
+  ],
+  "out": {
+    "text": "bukan itu yang kuminta, kamu malah bikin fitur baru. revert aja",
+    "counts": {}
+  }
+}

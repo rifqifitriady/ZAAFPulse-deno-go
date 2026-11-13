@@ -1,0 +1,258 @@
+{
+  "fn": "geminiToOpenAI",
+  "in": [
+    {
+      "system_instruction": {
+        "parts": [
+          {
+            "text": "a"
+          },
+          {},
+          {
+            "text": "b"
+          }
+        ]
+      },
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "hi"
+            },
+            {
+              "inline_data": {
+                "mime_type": "image/png",
+                "data": "QQ=="
+              }
+            }
+          ]
+        },
+        {
+          "role": "model",
+          "parts": [
+            {
+              "text": "thinking",
+              "thought": true
+            },
+            {
+              "text": "answer"
+            },
+            {
+              "functionCall": {
+                "name": "f",
+                "args": {
+                  "a": 1
+                }
+              }
+            },
+            {
+              "functionCall": {
+                "id": "own",
+                "name": "f"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "f",
+                "response": {
+                  "r": 1
+                }
+              }
+            },
+            {
+              "functionResponse": {
+                "name": "f"
+              }
+            },
+            {
+              "functionResponse": {
+                "name": "g",
+                "id": "gid"
+              }
+            },
+            {
+              "functionResponse": {
+                "name": "h"
+              }
+            }
+          ]
+        },
+        {
+          "role": "model",
+          "parts": []
+        },
+        {
+          "parts": [
+            {
+              "inlineData": {
+                "mimeType": "image/jpeg",
+                "data": "AA"
+              }
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "function_declarations": [
+            {
+              "name": "f",
+              "parametersJsonSchema": {
+                "type": "OBJECT",
+                "items": [
+                  {
+                    "type": "STRING"
+                  }
+                ],
+                "nested": {
+                  "type": 5
+                }
+              }
+            }
+          ]
+        },
+        {},
+        {
+          "functionDeclarations": [
+            {
+              "name": "g"
+            }
+          ]
+        }
+      ],
+      "generation_config": {
+        "temperature": 0,
+        "topP": 0.5,
+        "stopSequences": [
+          "x"
+        ]
+      }
+    },
+    "gm",
+    true
+  ],
+  "out": {
+    "model": "gm",
+    "messages": [
+      {
+        "role": "system",
+        "content": "a\n\nb"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "hi"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/png;base64,QQ=="
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "answer",
+        "tool_calls": [
+          {
+            "id": "call_0_f",
+            "type": "function",
+            "function": {
+              "name": "f",
+              "arguments": "{\"a\":1}"
+            }
+          },
+          {
+            "id": "own",
+            "type": "function",
+            "function": {
+              "name": "f",
+              "arguments": "{}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_0_f",
+        "content": "{\"r\":1}"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "own",
+        "content": "{}"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "gid",
+        "content": "{}"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_h",
+        "content": "{}"
+      },
+      {
+        "role": "assistant",
+        "content": ""
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/jpeg;base64,AA"
+            }
+          }
+        ]
+      }
+    ],
+    "temperature": 0,
+    "top_p": 0.5,
+    "stop": [
+      "x"
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "f",
+          "description": "",
+          "parameters": {
+            "type": "object",
+            "items": [
+              {
+                "type": "string"
+              }
+            ],
+            "nested": {
+              "type": 5
+            }
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "g",
+          "description": "",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      }
+    ],
+    "stream": true
+  }
+}

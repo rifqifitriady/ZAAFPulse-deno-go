@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "EACCES: permission denied, open '/etc/hosts'"
+  ],
+  "out": null
+}

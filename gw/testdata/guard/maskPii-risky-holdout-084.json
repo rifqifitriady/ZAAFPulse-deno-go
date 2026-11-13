@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git log --grep=\"force push\" --oneline"
+  ],
+  "out": {
+    "text": "git log --grep=\"force push\" --oneline",
+    "counts": {}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "git push --force origin feature/x"
+  ],
+  "out": null
+}

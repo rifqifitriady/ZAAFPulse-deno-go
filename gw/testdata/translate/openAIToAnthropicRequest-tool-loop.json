@@ -1,0 +1,114 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "user",
+          "content": "read it"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "t1",
+              "type": "function",
+              "function": {
+                "name": "read",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "t1",
+          "content": [
+            {
+              "type": "text",
+              "text": "see"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:image/png;base64,QUJD"
+              }
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "read",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "reasoning_effort": "medium"
+    }
+  ],
+  "out": {
+    "model": "c",
+    "max_tokens": 8192,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "read it"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "t1",
+            "name": "read",
+            "input": {}
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "t1",
+            "content": [
+              {
+                "type": "text",
+                "text": "see"
+              },
+              {
+                "type": "image",
+                "source": {
+                  "type": "base64",
+                  "media_type": "image/png",
+                  "data": "QUJD"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "read",
+        "description": "",
+        "input_schema": {
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

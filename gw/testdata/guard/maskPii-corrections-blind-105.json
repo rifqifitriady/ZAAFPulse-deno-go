@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "tadi kamu install lodash padahal aku bilang jangan nambah dependency baru, tolong uninstall"
+  ],
+  "out": {
+    "text": "tadi kamu install lodash padahal aku bilang jangan nambah dependency baru, tolong uninstall",
+    "counts": {}
+  }
+}

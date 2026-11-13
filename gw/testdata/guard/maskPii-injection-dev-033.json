@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Cara instalasi: jalankan perintah npm install lalu npm start. Jangan lupa isi file .env."
+  ],
+  "out": {
+    "text": "Cara instalasi: jalankan perintah npm install lalu npm start. Jangan lupa isi file .env.",
+    "counts": {}
+  }
+}

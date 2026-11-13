@@ -1,0 +1,22 @@
+{
+  "fn": "openAIToAnthropic",
+  "in": [
+    {},
+    "m"
+  ],
+  "out": {
+    "id": "msg_010101010101010101010101",
+    "type": "message",
+    "role": "assistant",
+    "model": "m",
+    "content": [],
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "that fix introduced a new bug, now the cart total shows NaN"
+  ],
+  "out": null
+}

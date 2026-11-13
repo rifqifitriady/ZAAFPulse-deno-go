@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "# hapus cache lama\nrm -rf ~/.cache/yarn"
+  ],
+  "out": {
+    "text": "# hapus cache lama\nrm -rf ~/.cache/yarn",
+    "counts": {}
+  }
+}
