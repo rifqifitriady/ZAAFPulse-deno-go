@@ -139,7 +139,12 @@ func (sc *scan) inDocContext(at, n int) bool {
 	default:
 		around = append(append(append([]uint16{}, prev[len(prev)-(k-len(line)-1):]...), '\n'), line...)
 	}
-	around = reMasked.ReplaceAllB(around, func([]int) []uint16 { return []uint16{' '} }, b)
+	// MASKED (\S+@\S+|https?:\/\/\S+) can match only where there is an '@' or an "http"; without either the
+	// replacement is the identity, so it is skipped (the common case in text dense with candidates: it was most of
+	// the steps of the guard's own test files).
+	if mayMask(around) {
+		around = reMasked.ReplaceAllB(around, func([]int) []uint16 { return []uint16{' '} }, b)
+	}
 	if reDocContext.TestB(around, b) {
 		return true
 	}
@@ -150,6 +155,16 @@ func (sc *scan) inDocContext(at, n int) bool {
 		sc.line[key] = code
 	}
 	return code
+}
+
+// mayMask reports whether s holds an '@' or "http", without which reMasked cannot match.
+func mayMask(s []uint16) bool {
+	for i, c := range s {
+		if c == '@' || (c == 'h' && i+3 < len(s) && s[i+1] == 't' && s[i+2] == 't' && s[i+3] == 'p') {
+			return true
+		}
+	}
+	return false
 }
 
 var reMasked = jsre.MustCompile(`\S+@\S+|https?:\/\/\S+`, "g")
