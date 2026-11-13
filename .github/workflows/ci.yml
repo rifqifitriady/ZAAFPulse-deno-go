@@ -243,10 +243,11 @@ jobs:
 
   # The guard benchmark (P4e entry conditions, docs/superpowers/plans/2026-11-13-p4e-guard-ready.md): one CheckBody pass
   # of the Go guard (gw/guard) on real text at 32 KB, 128 KB and 1 MB, all three checks on, against the absolute
-  # targets and at most 3x the JS guard timed on the same slices on this runner (scripts/bench-guard.js); then the
-  # real-text corpus up to 20 MB under the real 2 s deadline, which must never block. A size that misses a target is
-  # measured again, up to three attempts. Ubuntu only: the targets are set for this runner. Its own job, so other
-  # jobs' steps never mix with it.
+  # targets and at most 3x the JS guard timed on the same slices on this runner (scripts/bench-guard.js), each size
+  # judged on the median of three attempts. Then: the real-text corpus up to 20 MB, and legitimate 20 MB bodies under
+  # CPU load, never block (step budget and 10 s backstop); every adversarial input is stopped by the step budget
+  # within 2.5 s of CPU. Ubuntu only: the targets are set for this runner. Its own job, so other jobs' steps never
+  # mix with it.
   guard-bench:
     name: guard benchmark (Go vs JS)
     runs-on: ubuntu-latest
@@ -272,7 +273,7 @@ jobs:
           ZP_GUARD_BENCH: '1'
         run: |
           ZP_GUARD_BENCH_JS="$RUNNER_TEMP/guard-js.json" go -C gw test -count=1 -timeout 10m -v \
-            -run 'TestGuardBench|TestBenchCorpusNeverOverruns|TestOneBudgetPerCall' ./guard/
+            -run 'TestGuardBench|TestBenchCorpusNeverOverruns|TestOneBudgetPerCall|TestLegitimateBodiesUnderLoad' ./guard/
 
   # Compiles the six single-file binaries with deno compile and the "cli" permission set (the binary's entry is the
   # command line, so it holds the superset of the server set), and smoke-tests each one on a runner of its own OS and

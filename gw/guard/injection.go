@@ -444,7 +444,7 @@ func (k *keptMap) orig(i int) int {
 }
 
 // ScanInjection is lib/signals.js scanInjection: nil, or the categories that matched. It runs under b (nil: NewBudget
-// for the text, with the 2 s deadline); a limit comes back as jsre.ErrBudget, ErrStack or ErrDeadline, never a panic.
+// for the text, with the 10 s backstop); a limit comes back as jsre.ErrBudget, ErrStack or ErrDeadline, never a panic.
 func ScanInjection(text string, b *jsre.Budget) (r *Injection, err error) {
 	u := jsre.U16(text)
 	b = orBudget(b, len(u))

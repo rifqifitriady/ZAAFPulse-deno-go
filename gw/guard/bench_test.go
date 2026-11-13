@@ -21,8 +21,8 @@ import (
 //	node scripts/bench-guard.js --json /tmp/js.json
 //	ZP_GUARD_BENCH=1 ZP_GUARD_BENCH_JS=/tmp/js.json go -C gw test -run TestGuardBench -count=1 -v ./guard/
 //
-// A size that misses a target is measured again, up to three attempts, and passes when one attempt meets every target
-// (CI runners are noisy). Without ZP_GUARD_BENCH_JS only the absolute targets are checked.
+// Each size is measured three times and judged on the median attempt (CI runners are noisy, and one lucky attempt
+// must not pass a marginal configuration). Without ZP_GUARD_BENCH_JS only the absolute targets are checked.
 
 // benchPlan: the sizes, the slices per size and the rounds over them; scripts/bench-guard.js uses the same plan.
 var benchPlan = []struct{ size, offsets, rounds int }{
@@ -39,6 +39,9 @@ var benchTargets = map[int]struct{ p50, p99 time.Duration }{
 }
 
 const benchMaxRatio = 3.0
+
+// benchAttempts: each size is measured this many times and judged on the median.
+const benchAttempts = 3
 
 // pct is the nearest-rank percentile of sorted samples.
 func pct(sorted []time.Duration, p float64) time.Duration {
@@ -100,7 +103,7 @@ func TestGuardBench(t *testing.T) {
 	}
 	c := loadBenchCorpus(t)
 	var table strings.Builder
-	table.WriteString("| Size | Go p50 | Go p99 | JS p50 | JS p99 | Go/JS p50 | Go/JS p99 | Targets | Attempts |\n")
+	table.WriteString("| Size | Go p50 | Go p99 | JS p50 | JS p99 | Go/JS p50 | Go/JS p99 | Targets | Attempts (p50/p99 ms) |\n")
 	table.WriteString("|---|---|---|---|---|---|---|---|---|\n")
 	for _, pl := range benchPlan {
 		tg := benchTargets[pl.size]
@@ -112,29 +115,30 @@ func TestGuardBench(t *testing.T) {
 			}
 			jp50, jp99 = s.P50, s.P99
 		}
-		var p50, p99 time.Duration
+		// Three attempts, always; each size is judged on the median attempt (the median p50 and the median p99), so
+		// one lucky attempt cannot pass a marginal configuration (M1, B2 review). Every attempt is reported.
+		var p50s, p99s []time.Duration
+		var each []string
+		for range benchAttempts {
+			a50, a99 := measure(t, c, pl.size, pl.offsets, pl.rounds)
+			p50s, p99s = append(p50s, a50), append(p99s, a99)
+			each = append(each, fmt.Sprintf("%.2f/%.2f", ms(a50), ms(a99)))
+		}
+		slices.Sort(p50s)
+		slices.Sort(p99s)
+		p50, p99 := p50s[len(p50s)/2], p99s[len(p99s)/2]
 		var misses []string
-		attempt := 0
-		for attempt < 3 {
-			attempt++
-			p50, p99 = measure(t, c, pl.size, pl.offsets, pl.rounds)
-			misses = nil
-			if tg.p50 > 0 && p50 > tg.p50 {
-				misses = append(misses, fmt.Sprintf("p50 %.2f ms > %v", ms(p50), tg.p50))
-			}
-			if tg.p99 > 0 && p99 > tg.p99 {
-				misses = append(misses, fmt.Sprintf("p99 %.2f ms > %v", ms(p99), tg.p99))
-			}
-			if js != nil && ms(p50) > benchMaxRatio*jp50 {
-				misses = append(misses, fmt.Sprintf("p50 %.1fx the JS", ms(p50)/jp50))
-			}
-			if js != nil && ms(p99) > benchMaxRatio*jp99 {
-				misses = append(misses, fmt.Sprintf("p99 %.1fx the JS", ms(p99)/jp99))
-			}
-			if len(misses) == 0 {
-				break
-			}
-			t.Logf("%d KB, attempt %d: %s", pl.size>>10, attempt, strings.Join(misses, "; "))
+		if tg.p50 > 0 && p50 > tg.p50 {
+			misses = append(misses, fmt.Sprintf("p50 %.2f ms > %v", ms(p50), tg.p50))
+		}
+		if tg.p99 > 0 && p99 > tg.p99 {
+			misses = append(misses, fmt.Sprintf("p99 %.2f ms > %v", ms(p99), tg.p99))
+		}
+		if js != nil && ms(p50) > benchMaxRatio*jp50 {
+			misses = append(misses, fmt.Sprintf("p50 %.1fx the JS", ms(p50)/jp50))
+		}
+		if js != nil && ms(p99) > benchMaxRatio*jp99 {
+			misses = append(misses, fmt.Sprintf("p99 %.1fx the JS", ms(p99)/jp99))
 		}
 		verdict := "met"
 		if len(misses) > 0 {
@@ -147,8 +151,8 @@ func TestGuardBench(t *testing.T) {
 			}
 			return fmt.Sprintf("%.2fx", ms(g)/j)
 		}
-		fmt.Fprintf(&table, "| %d KB | %.2f ms | %.2f ms | %.2f ms | %.2f ms | %s | %s | %s | %d |\n", pl.size>>10,
-			ms(p50), ms(p99), jp50, jp99, ratio(p50, jp50), ratio(p99, jp99), verdict, attempt)
+		fmt.Fprintf(&table, "| %d KB | %.2f ms | %.2f ms | %.2f ms | %.2f ms | %s | %s | %s | %s |\n", pl.size>>10,
+			ms(p50), ms(p99), jp50, jp99, ratio(p50, jp50), ratio(p99, jp99), verdict, strings.Join(each, ", "))
 	}
 	t.Log("\n" + table.String())
 	if f := os.Getenv("GITHUB_STEP_SUMMARY"); f != "" {
@@ -165,7 +169,7 @@ func TestGuardBench(t *testing.T) {
 
 // TestBenchCorpusNeverOverruns is P4e entry condition 3: the real-text corpus never reaches a limit (step budget or
 // deadline) at any size up to MAX_BODY (20 MB), so the limits cause no false block. The step budget does not depend on
-// the machine and is checked on every run; the 2 s deadline does, so it is checked only in the benchmark job
+// the machine and is checked on every run; the 10 s backstop does, so it is in play only in the benchmark job
 // (ZP_GUARD_BENCH, the Ubuntu runner the targets are set on) and widened elsewhere.
 func TestBenchCorpusNeverOverruns(t *testing.T) {
 	if testing.Short() || raceEnabled {

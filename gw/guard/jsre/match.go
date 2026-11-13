@@ -262,6 +262,10 @@ func (re *Regexp) release(m *vm) {
 	re.vms.Put(m)
 }
 
+// Charge counts n steps outside the matcher (work a caller does per item); like a run it panics with ErrBudget or
+// ErrDeadline past a limit, and the first charge reads the clock. Run it inside Run.
+func (b *Budget) Charge(n int) { b.count(n) }
+
 // count adds n steps to a budget that may be nil.
 func (b *Budget) count(n int) {
 	if b != nil && n > 0 {

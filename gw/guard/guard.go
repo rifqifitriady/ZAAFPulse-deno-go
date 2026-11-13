@@ -199,19 +199,29 @@ var (
 	detectInjection = scanInjection
 )
 
-// The step budget of one call (CheckBody, CheckText), shared by every string and every check in it (I4): a base, plus
-// a share per code unit each time a check runs on a string, capped. With it runs a wall-clock deadline. A call past
-// either fails closed in every mode, log included (the JS has no limit: Go-only, spec deviation 12). The step budget is
-// sized from the corpus and the adversarial inputs of the review: about 20x the steps the heaviest legitimate text
-// measured needs; the deadline bounds the CPU of one call whatever the steps cost on the machine.
+// The step budget of one call (CheckBody, CheckText), shared by every string and every check in it (I4), is the
+// primary bound (owner's decision, 2026-11-13): it does not depend on the machine or its load. A base, plus a share
+// per code unit each time a check runs on a string, capped per call. A step costs about 4–6 ns on the Ubuntu runner,
+// whatever the input (matcher instructions, characters a repeat consumes, start positions the filters skip, and
+// stringSteps per string visited), so the cap of 400M steps bounds one call to about 2 s of CPU there. The
+// heaviest legitimate text measured needs 16 steps per code unit (20 MB of CSV numbers: 320M); the corpus and code 7.
+// A coarse wall-clock backstop (requestDeadline) runs with it. Past either the call fails closed in every mode, log
+// included (the JS has no limit: Go-only, spec deviation 12).
 var (
 	budgetBase    int64 = 20_000_000
 	budgetPerUnit int64 = 600
-	budgetCap     int64 = 3_000_000_000
+	budgetCap     int64 = 400_000_000
 )
 
-// requestDeadline bounds the wall-clock time of one call (P4e entry condition 2: at most 2 s).
-var requestDeadline = 2 * time.Second
+// stringSteps is what visiting one string costs in steps beyond its matching (walking, conversions): about 0.3 µs.
+const stringSteps = 64
+
+// traceSteps, when set (tests), receives the steps each call used.
+var traceSteps func(int64)
+
+// requestDeadline is the wall-clock backstop of one call: 10 s, far above what the step budget allows on an idle
+// machine, so load on the host (other requests, garbage collection) never blocks legitimate text.
+var requestDeadline = 10 * time.Second
 
 // now is the clock of the deadline (replaceable in tests).
 var now = time.Now
@@ -440,6 +450,14 @@ func (r *run) text(s []uint16, fresh bool) ([]uint16, bool) {
 	return t, changed
 }
 
+// charge counts stringSteps for a visited string, so a body of strings that run no regex still uses its budget and
+// reads the clock (M4); past a limit the call fails closed like a check.
+func (r *run) charge() {
+	if err := r.b.Run(func() { r.b.Charge(stringSteps) }); err != nil {
+		panic(errOverrun{"limit"})
+	}
+}
+
 // visitStr runs the checks on a Go string and returns the (possibly new) string: the original when nothing was
 // redacted or the result has the same content (compared by content, not by storage).
 func (r *run) visitStr(s string, fresh bool) string {
@@ -521,6 +539,7 @@ func isStructuralKey(key string, hasKey bool) bool {
 func (r *run) walk(v jsv.Value, key string, hasKey bool, fresh, structural bool) (jsv.Value, bool) {
 	switch x := v.(type) {
 	case string:
+		r.charge() // every string leaf, skipped ones too (structural keys, data: URLs)
 		if (structural && isStructuralKey(key, hasKey)) || r.isBase64URL(x) {
 			return x, false
 		}
@@ -630,6 +649,9 @@ func CheckBody(body jsv.Value, p Policy, format string) (res Result, err error) 
 		p.Injection = "off"
 	}
 	r := newRun(p)
+	if traceSteps != nil {
+		defer func() { traceSteps(r.b.Steps) }()
+	}
 	structural := format != "arguments"
 	o := jsv.Obj(body)
 	var out jsv.Value
@@ -704,6 +726,10 @@ func CheckText(text jsv.Value, p Policy, part string) (res TextResult, err error
 		p.Injection = "off"
 	}
 	r := newRun(p)
+	if traceSteps != nil {
+		defer func() { traceSteps(r.b.Steps) }()
+	}
+	r.charge()
 	out := r.visitStr(jsv.ToString(jsv.Nullish(text, "")), true)
 	action, hits, ferr := r.finish()
 	if ferr != nil {
