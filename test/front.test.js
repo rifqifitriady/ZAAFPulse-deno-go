@@ -286,3 +286,67 @@ test('m1: a save the gateway did not confirm in time is logged', async (t) => {
   assert.equal(await f.front.synced(50), true);
   assert.deepEqual(lines, []);
 });
+
+// Final review I2: the engines the gateway runs are the ones last pushed; status shows those, and a routing change is
+// pushed whenever it differs from them (not from the previous look), the first minute included.
+test('I2: status shows the pushed engines; pushIfChanged pushes when the routing differs from them', async (t) => {
+  let now = { chat: 'go' };
+  const f = await frontWithFakes(t, { engines: () => now });
+  let reloads = 0;
+  f.sups[0].reload = () => (reloads++, true);
+  assert.equal(f.front.pushIfChanged({ chat: 'js' }), false, 'nothing pushed yet');
+  f.sups[0].opts.sources.config(); // the supervisor builds a generation
+  assert.equal(f.front.status().engines.chat, 'go');
+  assert.equal(f.front.pushIfChanged({ chat: 'go' }), false);
+  assert.equal(reloads, 0);
+  now = { chat: 'js' };
+  assert.equal(f.front.pushIfChanged(now), true);
+  assert.equal(reloads, 1);
+  f.sups[0].opts.sources.config();
+  assert.equal(f.front.status().engines.chat, 'js');
+});
+
+// Final review I1 and I2 in server.js: OTLP export as otel itself sees it (config.json or the OTEL_EXPORTER_OTLP_*
+// variables), a routing look against the pushed engines, and a push on an otel save.
+test('I1, I2: server.js reads otel.status(), compares with the pushed engines, pushes on an otel save', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(src, /otel: otel\.status\(\)\.enabled === true,/);
+  assert.doesNotMatch(src, /otel: \(\(rawConfig\(\) \|\| \{\}\)\.otel/);
+  assert.match(src, /front\.pushIfChanged\(frontRouting\(\)\.engines\)/);
+  assert.match(src, /JSON\.stringify\(\(before \|\| \{\}\)\.otel\) !== JSON\.stringify\(\(after \|\| \{\}\)\.otel\)/);
+});
+
+// Final review m10': a generation that cannot be built (a price past US$9M per 1M tokens in a hand-edited config.json
+// makes toNano throw) must not leave the gateway serving go with the keys of the generation before: the next one has
+// no keys and every class on js, so a key revoked in between is refused (by the server) at once.
+test('m10: a config that cannot be built is pushed as no keys and every class on js', async (t) => {
+  const lines = [];
+  let fail = false;
+  const f = await frontWithFakes(t, {
+    log: (l) => lines.push(l),
+    engines: () => ({ chat: 'go' }),
+    sources: {
+      config: () => {
+        if (fail) throw new RangeError('toNano: 1e+20 USD is out of range');
+        return { ...configBody(undefined), keys: [{ id: 'k1' }] };
+      },
+      secrets: () => ({ providers: [{ id: 'oa', value: 'sk-1' }], mask: ['sk-1'] }),
+      snapshot: () => ({ budgets: [], keyCenter: {} }),
+    },
+  });
+  const src = f.sups[0].opts.sources;
+  assert.deepEqual(src.config().keys, [{ id: 'k1' }]);
+  assert.equal(src.config().front.engines.chat, 'go');
+  fail = true; // the key is revoked and a price is mistyped in the same save
+  const body = src.config();
+  assert.deepEqual(body.keys, []);
+  assert.deepEqual(body.gateway.providers, []);
+  assert.ok(Object.values(body.front.engines).every((e) => e === 'js'));
+  assert.equal(f.front.status().engines.chat, 'js');
+  assert.match(lines.join('\n'), /the gateway configuration could not be built \(toNano: 1e\+20 USD is out of range\)/);
+  const { check } = require('../lib/ipc/schema');
+  assert.deepEqual(check({ v: 1, type: 'config.push', seq: 2, ts: 0, body: { ...body, gen: 2 } }), {
+    errors: [],
+    unknownType: false,
+  });
+});

@@ -277,3 +277,40 @@ test('configPush: a key the push drops takes every key with its hash along (JS m
   const upper = [{ ...good, id: 'a', hash: 'D'.repeat(64) }, good];
   assert.deepEqual(configPush({ gateway: {}, keys: upper, pricing: {} }).keys, []);
 });
+
+// Final review I4: JS's tierOf reads any truthy tier that is not "private" as not private (approval, privateOnly and
+// the guardrails scope then apply), so the gateway gets "external" for it, never the preset's private.
+test('provider: a truthy tier other than "private" is pushed as external', () => {
+  const { tierOf } = require('../lib/gateway/providers');
+  for (const tier of ['External', 'Private', 'remote', 1, true]) {
+    const p = { id: 'x', preset: 'ollama', baseUrl: 'http://gpu.example:11434/v1', tier };
+    assert.equal(tierOf(p), tier === 'private' ? 'private' : tier, 'JS keeps the value, so it is not "private"');
+    assert.equal(
+      configPush({ gateway: { providers: [p] }, keys: [], pricing: {} }).gateway.providers[0].tier,
+      'external',
+      String(tier),
+    );
+  }
+  const priv = { id: 'p', preset: 'custom', baseUrl: 'http://h/v1', tier: 'private' };
+  assert.equal(
+    configPush({ gateway: { providers: [priv] }, keys: [], pricing: {} }).gateway.providers[0].tier,
+    'private',
+  );
+  const none = { id: 'n', preset: 'ollama', baseUrl: 'http://h/v1', tier: '' };
+  assert.equal(
+    'tier' in configPush({ gateway: { providers: [none] }, keys: [], pricing: {} }).gateway.providers[0],
+    false,
+  );
+});
+
+// Final review m3': JS compares the bytes Buffer.from(hash, 'hex') reads, which stop at the first non-hex character, so
+// "<64 hex>\n" or "<64 hex>zz" is the same key as "<64 hex>"; a dropped spelling takes every key of those bytes along.
+test('configPush: a hash JS reads leniently refuses the clean key with the same bytes', () => {
+  const good = { id: 'b', hash: 'f'.repeat(64), scopes: ['llm'], models: [], agents: [] };
+  for (const odd of [`${'f'.repeat(64)}\n`, `${'f'.repeat(64)}zz`, `${'F'.repeat(64)}0`])
+    assert.deepEqual(
+      configPush({ gateway: {}, keys: [{ ...good, id: 'a', hash: odd }, good], pricing: {} }).keys,
+      [],
+      JSON.stringify(odd),
+    );
+});

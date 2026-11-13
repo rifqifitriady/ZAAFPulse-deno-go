@@ -83,6 +83,16 @@ type Server struct {
 	upstream *url.URL
 }
 
+// shadowKey carries a request's shadow id from the go engine to the proxy's Rewrite.
+type shadowKey struct{}
+
+// WithShadowID marks r for the compare: the proxy's Rewrite sets ShadowHeader on the forwarded request. Rewrite runs
+// after the hop-by-hop headers are removed, so a client that names the header in Connection cannot strip the mark
+// (final review m9').
+func WithShadowID(r *http.Request, id string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), shadowKey{}, id))
+}
+
 // SetShadow replaces the route classes whose js requests are compared with the go engine (config.push front.shadow).
 func (s *Server) SetShadow(classes []string) {
 	m := make(map[string]bool, len(classes))
@@ -176,6 +186,9 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 				if v, ok := pr.In.Header[h]; ok {
 					pr.Out.Header[h] = append([]string(nil), v...)
 				}
+			}
+			if id, ok := pr.In.Context().Value(shadowKey{}).(string); ok {
+				pr.Out.Header.Set(ShadowHeader, id)
 			}
 			// Set replaces any X-Zp-Client the client sent.
 			pr.Out.Header.Set(ClientHeader, ClientValue(cfg.Token, pr.In.RemoteAddr, pr.In.TLS != nil))
