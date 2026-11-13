@@ -170,3 +170,22 @@ test('routing: chat-stream is its own go class with its own gate, and is never a
   assert.deepEqual(shadowOf({ shadow: ['chat', 'chat-stream'] }, r.engines), ['chat-stream']);
   assert.equal(routing({}).engines['chat-stream'], 'js');
 });
+
+test('noteStream keeps the provider text, how it ended and the client text; capturing() says when to collect', async () => {
+  const shadow = require('../lib/gateway/shadow');
+  assert.equal(shadow.capturing(), false);
+  const id = 'ab'.repeat(8);
+  await shadow.withShadow(id, async () => {
+    assert.equal(shadow.capturing(), true);
+    shadow.noteProviderRequest('http://p/v1/chat/completions', { a: '1' }, '{"stream":true}');
+    shadow.noteStream(
+      { status: 200, body: 'data: x\n', ended: 'eof', truncated: false },
+      { status: 200, body: 'data: x\n' },
+      { stream: true },
+    );
+  });
+  const c = shadow.takeCapture(id);
+  assert.equal(c.providerResponse.ended, 'eof');
+  assert.equal(c.providerResponse.truncated, false);
+  assert.equal(c.client.body, 'data: x\n');
+});

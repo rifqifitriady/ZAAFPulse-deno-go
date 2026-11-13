@@ -83,3 +83,39 @@ test('a provider that cuts off: the lines so far, a clean end, one line', async 
   served(lines[0]);
   assert.equal(lines[0].status, 200);
 });
+
+test('shadow mode: a stream the server answers is compared from its one provider stream, and is the same (P4c)', async (t) => {
+  if (process.env.ZP_ENGINE !== 'shadow' || !h.server.data) return t.skip('ZP_ENGINE=shadow only');
+  const file = require('path').join(h.server.data, '.data', 'gateway-shadow.jsonl');
+  const read = () => {
+    try {
+      return require('fs')
+        .readFileSync(file, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+        .filter((l) => l.class === 'chat-stream');
+    } catch {
+      return [];
+    }
+  };
+  const before = read().length;
+  for (const body of [
+    { model: 'oa/m1', stream: true, messages: user },
+    { model: 'oa/m1', stream: true, stream_options: { include_usage: true }, messages: user },
+  ]) {
+    const { r } = await open(body);
+    await r.text();
+  }
+  const end = Date.now() + 5000;
+  let lines = read().slice(before);
+  while (lines.length < 2 && Date.now() < end) {
+    await sleep(50);
+    lines = read().slice(before);
+  }
+  assert.deepEqual(
+    lines.map((l) => l.outcome),
+    ['same', 'same'],
+    JSON.stringify(lines),
+  );
+});
