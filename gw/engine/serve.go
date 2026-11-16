@@ -37,6 +37,12 @@ func (e *Engine) SetState(s *State) { e.state.Store(s) }
 // State is the current generation, or nil.
 func (e *Engine) State() *State { return e.state.Load() }
 
+// StreamsBody is whether chatCompletion streams a provider answer of this status: a 2xx with a body. fetch gives no
+// body for 204 and 205, and chatCompletion then answers whole (`!r.body`; final review m3).
+func StreamsBody(status int) bool {
+	return status >= 200 && status <= 299 && status != http.StatusNoContent && status != http.StatusResetContent
+}
+
 // StreamReadSize is how much of the provider's stream is read at once (P4c Decision 11; 4 KiB, the size of the
 // transport's own read buffer, after the memory gate of 2026-11-13).
 const StreamReadSize = 4 << 10
@@ -192,7 +198,7 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 		}
 		return
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+	if !StreamsBody(resp.StatusCode) {
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		a := s.Respond(p, resp.StatusCode, body, elapsed())

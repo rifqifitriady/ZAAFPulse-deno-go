@@ -111,7 +111,7 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 			dt("providerRequest.body", jsBody, string(p.Body))
 		}
 		var a Answer
-		if p.Stream && c.ProviderResponse.Status >= 200 && c.ProviderResponse.Status <= 299 {
+		if p.Stream && StreamsBody(c.ProviderResponse.Status) {
 			// A stream (P4c): the provider's text as the control plane decoded it, replayed through the rewriter; the
 			// last partial line only after a clean end.
 			if c.ProviderResponse.Truncated {

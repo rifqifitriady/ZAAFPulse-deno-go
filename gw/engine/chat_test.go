@@ -260,7 +260,7 @@ func TestChatStreamFixtures(t *testing.T) {
 		case c.Provider.Throw != "":
 			a := s.Failed(&p, c.Provider.Throw, 1)
 			status, body, rec = a.Status, string(a.Body), a.Usage
-		case c.Provider.Status < 200 || c.Provider.Status > 299:
+		case !StreamsBody(c.Provider.Status):
 			a := s.Respond(&p, c.Provider.Status, []byte(c.Provider.Body), 1)
 			status, body, rec = a.Status, string(a.Body), a.Usage
 		default:
