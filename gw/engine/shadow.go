@@ -62,6 +62,12 @@ type ShadowLine struct {
 // on its snapshot, up to a second behind (P4e Decision 18).
 const budgetLag = "budget: the go engine decided on its snapshot"
 
+// budgetRefusal is a budget's 402 (`budget "<name>" is used up for this <period>`), the only refusal the snapshot's lag
+// explains; the price rule's 402 and every other answer are compared (review m2).
+func budgetRefusal(status int, body string) bool {
+	return status == http.StatusPaymentRequired && strings.Contains(body, `"message":"budget \"`)
+}
+
 // usageFields are the usage-line fields compared; ts, ms, ttft, traceId and ipc differ by nature, cost is compared
 // in nano-USD, error as a text.
 var usageFields = []string{"keyId", "provider", "model", "requested", "routedTo", "kind", "format", "stream", "status",
@@ -87,7 +93,7 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 	case c != nil && c.ProviderResponse == nil && c.Client != nil && c.Client.Status == http.StatusTooManyRequests:
 		l.Outcome, l.Reason = "skipped", "the control plane's rate limit answered (each engine counts its own)"
 		return l
-	case c != nil && c.ProviderResponse == nil && c.Client != nil && c.Client.Status == http.StatusPaymentRequired:
+	case c != nil && c.ProviderResponse == nil && c.Client != nil && budgetRefusal(c.Client.Status, c.Client.Body):
 		// The control plane's budget refused on its live spend, the engine's snapshot did not (yet): a lag, not a diff.
 		l.Outcome, l.Reason = "skipped", budgetLag
 		return l
@@ -180,14 +186,19 @@ func (s *State) CompareRefusal(class string, p *Plan, ref *Answer, c *Capture) S
 	case c == nil || c.Client == nil:
 		d("served", "no capture", refused)
 	case len(c.ProviderRequests) > 0 || c.ProviderResponse != nil:
-		if ref.Status == http.StatusPaymentRequired {
+		if budgetRefusal(ref.Status, string(ref.Body)) {
 			l.Outcome, l.Reason = "skipped", budgetLag
 			return l
 		}
 		d("served", "called the provider", refused)
 	default:
+		if budgetRefusal(c.Client.Status, c.Client.Body) && budgetRefusal(ref.Status, string(ref.Body)) &&
+			c.Client.Body != string(ref.Body) {
+			l.Outcome, l.Reason = "skipped", budgetLag // two budgets, each side's newest view
+			return l
+		}
 		if c.Client.Status != ref.Status {
-			if c.Client.Status == http.StatusPaymentRequired || ref.Status == http.StatusPaymentRequired {
+			if budgetRefusal(c.Client.Status, c.Client.Body) || budgetRefusal(ref.Status, string(ref.Body)) {
 				l.Outcome, l.Reason = "skipped", budgetLag
 				return l
 			}
