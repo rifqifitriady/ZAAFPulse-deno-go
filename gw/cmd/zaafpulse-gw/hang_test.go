@@ -130,14 +130,18 @@ func TestHungControlPlaneBudgetsFailOpen(t *testing.T) {
 	var bad []string
 	var mu sync.Mutex
 	start := time.Now()
-	for i := 0; i < n; i++ {
+	// 20 clients of 15 calls each: a burst of 300 dials at once overflows the listen backlog on Windows (connection
+	// refused), which is not what this test is about.
+	for range 20 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if code, body := postChat(t, port, "pv/llama-9"); code != 200 {
-				mu.Lock()
-				bad = append(bad, fmt.Sprintf("%d %s", code, body))
-				mu.Unlock()
+			for range n / 20 {
+				if code, body := postChat(t, port, "pv/llama-9"); code != 200 {
+					mu.Lock()
+					bad = append(bad, fmt.Sprintf("%d %s", code, body))
+					mu.Unlock()
+				}
 			}
 		}()
 	}
