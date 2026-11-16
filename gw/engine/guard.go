@@ -170,11 +170,3 @@ func (s *State) Guard(p *Plan, ms float64) *Answer {
 
 // Budget is a placeholder until P4e Task 4: no refusal, checked.
 func (s *State) Budget(p *Plan, now, staleMs int64, own []any) (*Answer, bool) { return nil, false }
-
-// untilServed keeps a guarded plan with the control plane until Serve runs the checks (P4e Task 3 removes it).
-func untilServed(p Plan) Plan {
-	if p.Handoff == "" && p.Policy != nil {
-		return handoff("guardrails: a check applies (P4e)")
-	}
-	return p
-}

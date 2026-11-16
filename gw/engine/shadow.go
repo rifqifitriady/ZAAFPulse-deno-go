@@ -240,7 +240,7 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 		return
 	}
 	req := ReadRequest(r, rawPath)
-	p := untilServed(s.PlanChat(req, e.now()))
+	p := s.PlanChat(req, e.now())
 	sub := subOf(&p, req)
 	_, shadowed := e.mode(sub)
 	if e.modes.Load() == nil {
@@ -324,7 +324,16 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 				}
 			}
 		}
-		l := s.Compare(sub, p, c)
+		var l ShadowLine
+		if ref := s.Guard(p, 0); ref != nil {
+			// A guardrail refusal: compared from P4e Task 6 (CompareRefusal); until then it is not counted.
+			l = ShadowLine{Class: sub, Outcome: "skipped", Reason: "a guardrail refusal (compared from P4e Task 6)"}
+			if c != nil && c.Client != nil {
+				l.Status = c.Client.Status
+			}
+		} else {
+			l = s.Compare(sub, p, c)
+		}
 		if wait > 0 {
 			l = rateLimitedLine(sub, l.Status) // the engine would have answered 429 itself
 		}

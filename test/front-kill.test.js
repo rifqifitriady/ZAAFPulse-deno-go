@@ -90,8 +90,6 @@ async function killDuringStream(t, { goEngine }) {
     secret: { mode: 'store', value: 'sk-slow' },
   });
   const key = await c.newKey({ scopes: ['llm'] });
-  // The go engine serves only calls no guardrail check applies to (P4e).
-  if (goEngine) await c.setGuardrails({ scope: 'external', secrets: 'off', pii: 'off', injection: 'off' });
 
   const r = await fetch(`${s.base}/v1/chat/completions`, {
     method: 'POST',
