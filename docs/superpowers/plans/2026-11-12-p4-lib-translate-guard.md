@@ -321,10 +321,11 @@ the CPU was contended, so condition 2 now reads:
   out of it returns a `*Block{Overrun}` in every mode.
 - The wall-clock deadline is only a coarse backstop of 10 s per call, also failing closed.
 - Every adversarial input of the reviews is stopped by the step budget (or the backtrack stack cap), never by the
-  clock; the 2.5 s CPU bound for any body up to 20 MB applies on an idle runner.
+  clock. On an idle runner the worst measured takes 3.76 s of CPU at the 450M cap (it was 2.5 s with the 2 s
+  deadline); the CPU time is logged and bounded loosely at 8 s (B2 re-review 2, M8).
 - (Re-review 1, I2.) The owner's intent is no false blocks on legitimate text: the cap is 450M steps per call, which
   leaves the densest legitimate text measured (the guardrail tests) 1.5× headroom; the CPU an adversarial body may
-  then take on the runner is up to about 3.8 s, logged and bounded loosely (6 s) in `guard-bench`.
+  then take on the runner is up to about 3.8 s, logged and bounded loosely (8 s) in `guard-bench`.
 - Known limit: 20 MB of text dense in security terms takes 5.8–6.4 s under CPU load on the runner (two calls at once
   next to CPU-burning goroutines), against the 10 s backstop. A host loaded much more heavily could reach the
   backstop for such a body, and the clock would then block it.
@@ -410,9 +411,9 @@ The library now meets the P4e entry conditions; it is still not wired into the r
     JS fixtures `checkBody-length-neutral-*` / `checkText-length-neutral-*` that `gen-guard.js` builds from
     length-cancelling combinations of keys, emails, IPv4 addresses and phones; 16 of them failed before the fix.
 28. **B2 review minors.** M1: `TestGuardBench` measures each size three times and judges the median attempt (all
-    three reported). M3: the 2.5 s bounds of `TestOneBudgetPerCall` apply only in `guard-bench` (Ubuntu); the 4-OS
-    `go` job keeps a 30 s bound; since re-review 1 (M6) the test asserts the outcome on steps (a call that used the
-    whole budget blocked; the clock is out of play) and bounds CPU only loosely, 6 s in `guard-bench`. M4: see note 22 (a step per visited string). Left as notes: M2, the deobfuscation
+    three reported). M3: the CPU bound of `TestOneBudgetPerCall` is tight only in `guard-bench` (Ubuntu) and 30 s in the
+    4-OS `go` job; the test asserts the outcome on steps (a call that used the whole budget blocked; the clock is out
+    of play) and bounds CPU only loosely, 8 s in `guard-bench` (re-review 1 M6, re-review 2 M8). M4: see note 22 (a step per visited string). Left as notes: M2, the deobfuscation
     path is now measured by `TestLegitimateBodiesUnderLoad` (code text) but not by the latency benchmark; M5, the
     heap bound is per call and `HeapAlloc`, not RSS (entry-condition text above).
 
@@ -445,7 +446,7 @@ wall time two at a time next to `GOMAXPROCS` CPU-burning goroutines; none blocks
 | Guardrail tests (`test/guardrails*.js`) | 293M | 1.53x | 6.2–6.4 s |
 
 Adversarial inputs at the 450M cap, clock out of play (`TestOneBudgetPerCall`, same run). Every input ends by its
-steps or the stack cap, under the 6 s bound and the 10 s backstop:
+steps or the stack cap, under the 8 s bound and the 10 s backstop:
 
 | Input (20 MB) | One string | 1,000 strings |
 |---|---|---|

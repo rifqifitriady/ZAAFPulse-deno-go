@@ -23,9 +23,12 @@ patterns that begin with `\b`), which is what brings real text under the latency
   in `.github/workflows/ci.yml` (its own job; stream A adds steps to other jobs), and the plan docs.
 - Every existing fixture in `gw/testdata/guard` stays byte-identical to the JS output; the only behaviour change is a
   new overrun (a block where the JS answers slowly), already a recorded deviation (note 13).
-- Limits: one step budget per call, `min(20,000,000 + 600 × units checked, 3,000,000,000)` as before but shared by
-  every string and check of the call; a deadline of 2 s (`requestDeadline`). Either fails closed in every mode.
-- A 20 MB body split into 1,000 strings finishes or blocks within 2.5 s of CPU (I4).
+- Limits (as amended by the owner, 2026-11-13; see the Outcome and notes 22–28 of the stream B plan): one step budget
+  per call, `min(20,000,000 + 600 × units checked, 450,000,000)`, shared by every string and check of the call, the
+  primary bound; a wall-clock backstop of 10 s (`requestDeadline`). Either fails closed in every mode. (The plan
+  started from the original condition: the 3G cap per string and a 2 s deadline.)
+- A 20 MB body split into 1,000 strings finishes or blocks on its steps; the worst measured takes 3.76 s of CPU on
+  the Ubuntu runner, logged and bounded loosely at 8 s (I4; originally 2.5 s under the 2 s deadline).
 - Peak extra heap ≤ 256 MB for any body up to 20 MB, measured as in `TestAdversarialInputs`.
 - Real-text corpus (`gw/guard/testdata/bench-corpus.txt`): no overrun at any size up to 20 MB.
 - Benchmark targets on the Ubuntu runner, all three checks on: 32 KB p50 ≤ 5 ms and p99 ≤ 15 ms; 128 KB p50 ≤ 30 ms and
@@ -142,5 +145,5 @@ Done; results and the benchmark table are in notes 22–26 of `2026-11-12-p4-lib
 the tasks above: the speed task also added a literal-prefix trie, a leading-lookbehind filter, a run-then-unit search
 (email), the one-scan `jsre.Multi` for the injection, anchor and secret patterns, and `guard.Prepare` (pattern
 compilation outside the deadline); injection now runs before secrets and pii inside a string (its hits are still added
-last). `TestBenchCorpusNeverOverruns` checks the step budget on every run and the 2 s deadline only in the
+last). `TestBenchCorpusNeverOverruns` checks the step budget on every run and the 10 s backstop only in the
 `guard-bench` job, where the targets are set.
