@@ -282,7 +282,29 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		id = NewShadowID()
 		r = front.WithShadowID(r, id) // set by the proxy's Rewrite, after the hop-by-hop headers are gone
 	}
+	// The front's ReverseProxy panics with http.ErrAbortHandler when the client leaves mid-answer (the stop button of
+	// a stream). The slot is released and a "skipped" line posted on that path too, then the panic goes on to net/http
+	// (final review I1: otherwise 8 leaves held every slot and the shadow compared nothing more).
+	compared := false
+	defer func() {
+		if compared {
+			return
+		}
+		v := recover()
+		go func() {
+			defer func() { <-shadowSlots }()
+			l := ShadowLine{Class: sub, Outcome: "skipped", Reason: "the client left before the answer ended"}
+			line, _ := json.Marshal(l)
+			if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
+				e.logf("shadow: the compare line could not be posted: %v", err)
+			}
+		}()
+		if v != nil {
+			panic(v)
+		}
+	}()
 	js.ServeHTTP(w, r)
+	compared = true
 	go func() {
 		defer func() { <-shadowSlots }()
 		var c *Capture
