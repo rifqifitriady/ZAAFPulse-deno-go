@@ -165,6 +165,65 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 	return l
 }
 
+// CompareRefusal is the line for a request the engine would refuse itself, without a provider call (ref: a 402, or a
+// guardrail 400/500): the control plane's status, its error body (when its capture has one) and the refusal's usage
+// line. A budget disagreement is the snapshot's lag, not a diff (P4e Decision 18); an overrun the JS has no limit for
+// is a real diff (Decision 9).
+func (s *State) CompareRefusal(class string, p *Plan, ref *Answer, c *Capture) ShadowLine {
+	l := ShadowLine{Class: class}
+	if c != nil && c.Client != nil {
+		l.Status = c.Client.Status
+	}
+	d := func(field string, js, gov any) { l.Diffs = append(l.Diffs, Diff{field, js, gov}) }
+	refused := "refused " + NumberString(float64(ref.Status))
+	switch {
+	case c == nil || c.Client == nil:
+		d("served", "no capture", refused)
+	case len(c.ProviderRequests) > 0 || c.ProviderResponse != nil:
+		if ref.Status == http.StatusPaymentRequired {
+			l.Outcome, l.Reason = "skipped", budgetLag
+			return l
+		}
+		d("served", "called the provider", refused)
+	default:
+		if c.Client.Status != ref.Status {
+			if c.Client.Status == http.StatusPaymentRequired || ref.Status == http.StatusPaymentRequired {
+				l.Outcome, l.Reason = "skipped", budgetLag
+				return l
+			}
+			d("client.status", c.Client.Status, ref.Status)
+		}
+		if c.Client.Body != "" && c.Client.Body != string(ref.Body) {
+			a, b := digest(c.Client.Body, string(ref.Body))
+			d("client.body", a, b)
+		}
+		switch {
+		case ref.NoLine && c.Usage != nil:
+			d("usage", "a line", "none")
+		case !ref.NoLine && c.Usage == nil:
+			d("usage", "none", "a line")
+		case !ref.NoLine:
+			var goU map[string]any
+			b, _ := json.Marshal(ref.Usage)
+			_ = json.Unmarshal(b, &goU)
+			for _, f := range usageFields {
+				if canonical(c.Usage[f]) != canonical(goU[f]) {
+					d("usage."+f, c.Usage[f], goU[f])
+				}
+			}
+			if js, gov := text(c.Usage["error"]), text(goU["error"]); js != gov {
+				a, b := digest(js, gov)
+				d("usage.error", a, b)
+			}
+		}
+	}
+	l.Outcome = "same"
+	if len(l.Diffs) > 0 {
+		l.Outcome = "diff"
+	}
+	return l
+}
+
 func canonical(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
@@ -343,18 +402,8 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		if ref == nil {
 			ref = s.Guard(p, 0)
 		}
-		if ref != nil && ref.Status == http.StatusPaymentRequired && c != nil &&
-			(len(c.ProviderRequests) > 0 || c.ProviderResponse != nil) {
-			l = ShadowLine{Class: sub, Outcome: "skipped", Reason: budgetLag}
-			if c.Client != nil {
-				l.Status = c.Client.Status
-			}
-		} else if ref != nil {
-			// A guardrail refusal: compared from P4e Task 6 (CompareRefusal); until then it is not counted.
-			l = ShadowLine{Class: sub, Outcome: "skipped", Reason: "a refusal (compared from P4e Task 6)"}
-			if c != nil && c.Client != nil {
-				l.Status = c.Client.Status
-			}
+		if ref != nil {
+			l = s.CompareRefusal(sub, p, ref, c)
 		} else {
 			l = s.Compare(sub, p, c)
 		}
