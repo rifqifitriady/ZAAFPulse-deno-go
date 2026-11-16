@@ -23,6 +23,8 @@ type Engine struct {
 	modes    atomic.Pointer[func(sub string) (onGo, shadowed bool)]
 	own      atomic.Pointer[func(method, path string, body []byte) (int, []byte, error)]
 	streams  sync.WaitGroup // streams being served, until their usage line is handed to emit
+	closeMu  sync.Mutex     // closing and streams.Add: no Add once Wait has begun (final review m5)
+	closing  bool
 }
 
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
@@ -75,9 +77,23 @@ func (e *Engine) mode(sub string) (bool, bool) {
 	return sub == "chat", false // P4b: chat on go, streams handed off
 }
 
+// track counts a stream about to be served, unless the shutdown already waits for the streams (false: hand it off).
+func (e *Engine) track() bool {
+	e.closeMu.Lock()
+	defer e.closeMu.Unlock()
+	if e.closing {
+		return false
+	}
+	e.streams.Add(1)
+	return true
+}
+
 // Wait waits at most d for the streams in flight and their usage lines (the gateway's shutdown, before the outbox
 // closes); false when d passed first.
 func (e *Engine) Wait(d time.Duration) bool {
+	e.closeMu.Lock()
+	e.closing = true // from now on a new stream goes to the control plane (track)
+	e.closeMu.Unlock()
 	done := make(chan struct{})
 	go func() { e.streams.Wait(); close(done) }()
 	select {
@@ -135,6 +151,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		return
 	}
 	if p.Stream {
+		if !e.track() {
+			js.ServeHTTP(w, r) // the gateway is shutting down
+			return
+		}
 		e.serveStream(w, r, s, &p, req, started)
 		return
 	}
@@ -176,7 +196,6 @@ func itoa(n int) string { return NumberString(float64(n)) }
 // written synchronously (a slow client slows the provider read), and one usage line when it ends, whatever ended it,
 // handed to emit after the response's last byte.
 func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p *Plan, req *Request, started time.Time) {
-	e.streams.Add(1)
 	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
 	var line func() ipc.UsageRecord
 	defer func() {

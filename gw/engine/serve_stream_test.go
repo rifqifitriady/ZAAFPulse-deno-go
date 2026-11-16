@@ -501,3 +501,21 @@ func TestStreamWriteErrorAndPanicWriteOneLine(t *testing.T) {
 		t.Fatalf("%+v", rec)
 	}
 }
+
+// Final review m5: once the gateway's shutdown waits for the streams (Wait), a stream that arrives is not counted any
+// more (a WaitGroup must not grow while it is waited on): it goes to the control plane.
+func TestNoStreamStartsOnceShutdownWaits(t *testing.T) {
+	g := newStreamRig(t, sseProvider([]string{"data: [DONE]\n\n"}, nil))
+	if !g.e.Wait(time.Second) {
+		t.Fatal("Wait with no stream")
+	}
+	handed := false
+	js := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handed = true })
+	r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(streamBody))
+	r.Host, r.RemoteAddr = "127.0.0.1:4777", "127.0.0.1:5000"
+	r.Header.Set("Authorization", g.key)
+	g.e.Serve("chat", httptest.NewRecorder(), r, "/v1/chat/completions", js)
+	if !handed {
+		t.Fatal("a stream started after the shutdown began waiting")
+	}
+}
