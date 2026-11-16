@@ -34,6 +34,29 @@ async function linesAfter(before, want = 1, ms = 5000) {
 const served = (line) => {
   if (GO) assert.ok(line.ipc, `the go engine served it: ${JSON.stringify(line)}`);
 };
+// The server's chat-stream shadow lines (ZP_ENGINE=shadow), oldest first.
+function shadowLines() {
+  if (!h.server.data) return [];
+  try {
+    return require('fs')
+      .readFileSync(require('path').join(h.server.data, '.data', 'gateway-shadow.jsonl'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+      .filter((l) => l.class === 'chat-stream');
+  } catch {
+    return [];
+  }
+}
+async function shadowLinesAfter(before, want) {
+  const end = Date.now() + 5000;
+  let lines = shadowLines().slice(before);
+  while (lines.length < want && Date.now() < end) {
+    await sleep(50);
+    lines = shadowLines().slice(before);
+  }
+  return lines;
+}
 async function open(body) {
   const ctl = new AbortController();
   const r = await fetch(`${h.base}/v1/chat/completions`, {
@@ -61,8 +84,9 @@ test('a stream: bytes as the server writes them, the headers of a front-mode str
   assert.deepEqual([lines[0].stream, lines[0].status, lines[0].input, lines[0].output], [true, 200, 10, 2]);
 });
 
-test('a client that leaves mid-stream: one line, status 200', async () => {
+test('a client that leaves mid-stream: one line, status 200; in shadow mode a skipped line (review I1)', async () => {
   const before = (await h.logs()).length;
+  const shadowBefore = shadowLines().length;
   const { r, ctl } = await open({ model: 'oa/slowstream', stream: true, messages: user });
   const reader = r.body.getReader();
   await reader.read();
@@ -71,6 +95,13 @@ test('a client that leaves mid-stream: one line, status 200', async () => {
   assert.equal(lines.length, 1);
   served(lines[0]);
   assert.deepEqual([lines[0].stream, lines[0].status], [true, 200]);
+  if (process.env.ZP_ENGINE === 'shadow') {
+    const sl = await shadowLinesAfter(shadowBefore, 1);
+    assert.deepEqual(
+      sl.map((l) => [l.outcome, l.reason]),
+      [['skipped', 'the client left before the answer ended']],
+    );
+  }
 });
 
 test('a provider that cuts off: the lines so far, a clean end, one line', async () => {
@@ -86,19 +117,7 @@ test('a provider that cuts off: the lines so far, a clean end, one line', async 
 
 test('shadow mode: a stream the server answers is compared from its one provider stream, and is the same (P4c)', async (t) => {
   if (process.env.ZP_ENGINE !== 'shadow' || !h.server.data) return t.skip('ZP_ENGINE=shadow only');
-  const file = require('path').join(h.server.data, '.data', 'gateway-shadow.jsonl');
-  const read = () => {
-    try {
-      return require('fs')
-        .readFileSync(file, 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => JSON.parse(l))
-        .filter((l) => l.class === 'chat-stream');
-    } catch {
-      return [];
-    }
-  };
+  const read = shadowLines;
   const before = read().length;
   for (const body of [
     { model: 'oa/m1', stream: true, messages: user },
