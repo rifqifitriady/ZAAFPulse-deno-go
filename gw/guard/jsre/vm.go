@@ -1,6 +1,9 @@
 package jsre
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 // The matcher is iterative: backtracking state lives on a heap-allocated stack, so Go's stack depth never depends on
 // the input (a repeat of a group used to recurse once per iteration and overflow on about 1 MB). Only lookarounds
@@ -13,23 +16,78 @@ var ErrBudget = errors.New("jsre: step budget exceeded")
 // is given (a nil-budget call panics with it); Budget.Run turns it into an error like ErrBudget.
 var ErrStack = errors.New("jsre: backtrack stack limit exceeded")
 
-// MaxFrames caps the backtrack stack of one run: 2,097,152 frames of 40 bytes, 80 MiB. V8 caps its own backtrack
+// MaxFrames caps the backtrack stack of one run: 2,097,152 frames of 20 bytes, 40 MiB. V8 caps its own backtrack
 // stack too (it throws a RangeError). No fixture or legitimate text measured comes near it; a crafted repeat of a
 // group over about two million iterations (a 4 MB run of "a a a …") does, and then fails closed.
 const MaxFrames = 2 << 20
 
-// Budget counts matcher steps (one per instruction, one per character a repeat consumes) across every call that is
-// given it. Past Limit the matcher panics with ErrBudget; Run turns that back into an error.
+// ErrDeadline is what a run past its Budget's Deadline reports.
+var ErrDeadline = errors.New("jsre: deadline exceeded")
+
+// clockEvery is how many steps pass between two reads of the clock (about 0.1 ms of matching).
+const clockEvery = 1 << 16
+
+// Budget counts matcher steps (one per instruction, one per character a repeat consumes, one per start position the
+// filter skips) across every call that is given it, and holds an optional wall-clock deadline. Past Limit the
+// matcher panics with ErrBudget, at or past Deadline (read every clockEvery steps) with ErrDeadline; Run turns either
+// back into an error. Limit may be raised between runs (Extend), never lowered.
 type Budget struct {
 	Steps, Limit int64
+	Deadline     time.Time        // zero: none
+	Now          func() time.Time // nil: time.Now
+	next         int64            // the step count at which the slow check runs next
 }
 
-// Run calls f and returns ErrBudget or ErrStack if a matcher inside ran past the budget or the stack limit. Other
-// panics propagate.
+// Extend raises Limit by n, up to max (never above it, never lowering Limit).
+func (b *Budget) Extend(n, max int64) {
+	if l := min(b.Limit+n, max); l > b.Limit {
+		b.Limit = l
+	}
+}
+
+// Expired reports whether the deadline has passed (reads the clock).
+func (b *Budget) Expired() bool {
+	if b.Deadline.IsZero() {
+		return false
+	}
+	now := time.Now
+	if b.Now != nil {
+		now = b.Now
+	}
+	return !now().Before(b.Deadline)
+}
+
+// add counts n steps; the slow path checks the limit and, every clockEvery steps, the clock.
+func (b *Budget) add(n int64) {
+	b.Steps += n
+	if b.Steps > b.next {
+		b.slow()
+	}
+}
+
+func (b *Budget) slow() {
+	if b.Steps > b.Limit {
+		panic(ErrBudget)
+	}
+	if b.Deadline.IsZero() {
+		b.next = b.Limit
+		return
+	}
+	if b.Expired() {
+		panic(ErrDeadline)
+	}
+	b.next = min(b.Limit, b.Steps+clockEvery)
+}
+
+// IsLimit reports whether a recovered panic value is one of the limits (ErrBudget, ErrStack, ErrDeadline).
+func IsLimit(r any) bool { return r == ErrBudget || r == ErrStack || r == ErrDeadline }
+
+// Run calls f and returns ErrBudget, ErrStack or ErrDeadline if a matcher inside ran past a limit. Other panics
+// propagate.
 func (b *Budget) Run(f func()) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if r == ErrBudget || r == ErrStack {
+			if IsLimit(r) {
 				err = r.(error)
 				return
 			}
@@ -55,10 +113,64 @@ type frame struct {
 	a, b    int
 }
 
+// packed is a frame as the stack holds it: 20 bytes instead of 40 (offsets, counts and program counters all fit in 32
+// bits: newVM refuses a text of 2^31 code units or more).
+type packed struct {
+	pc, pos, a, b int32
+	kind          uint8
+}
+
+func (f frame) pack() packed {
+	return packed{kind: f.kind, pc: int32(f.pc), pos: int32(f.pos), a: int32(f.a), b: int32(f.b)}
+}
+
+func (p packed) unpack() frame {
+	return frame{kind: p.kind, pc: int(p.pc), pos: int(p.pos), a: int(p.a), b: int(p.b)}
+}
+
+// frames is the backtrack stack: the first chunkFrames frames in a slice grown by append (most runs push few), the
+// rest in chunks of chunkFrames, so a deep run grows without copying and leaves no discarded smaller copies behind (a
+// slice grown by append to two million frames left as much garbage again as it held).
+type frames struct {
+	small  []packed
+	chunks [][]packed
+	n      int
+}
+
+const chunkShift = 14 // 16,384 frames, 320 KiB per chunk
+
+const chunkFrames = 1 << chunkShift
+
+func (st *frames) push(f packed) {
+	if st.n < chunkFrames {
+		if st.n < len(st.small) {
+			st.small[st.n] = f
+		} else {
+			st.small = append(st.small, f)
+		}
+		st.n++
+		return
+	}
+	c := st.n>>chunkShift - 1
+	if c == len(st.chunks) {
+		st.chunks = append(st.chunks, make([]packed, chunkFrames))
+	}
+	st.chunks[c][st.n&(chunkFrames-1)] = f
+	st.n++
+}
+
+func (st *frames) pop() packed {
+	st.n--
+	if st.n < chunkFrames {
+		return st.small[st.n]
+	}
+	return st.chunks[st.n>>chunkShift-1][st.n&(chunkFrames-1)]
+}
+
 type vm struct {
 	s     []uint16
 	caps  []int
-	stack []frame
+	stack frames
 	b     *Budget
 	icase bool
 	prog  *prog
@@ -66,32 +178,36 @@ type vm struct {
 }
 
 func (re *Regexp) newVM(s []uint16, b *Budget) *vm {
+	if int64(len(s)) > 1<<31-1 {
+		panic(ErrStack) // the stack's 32-bit offsets cannot address it: refused like a run past the stack cap
+	}
 	p := re.program()
 	return &vm{s: s, caps: make([]int, 2*(re.ncap+1)), b: b, icase: re.icase, prog: p, regs: make([]int, p.nregs)}
 }
 
 func (m *vm) step(n int) {
 	if m.b != nil {
-		m.b.Steps += int64(n)
-		if m.b.Steps > m.b.Limit {
-			panic(ErrBudget)
-		}
+		m.b.add(int64(n))
 	}
 }
+
+// attemptSteps is what one start attempt costs beyond its instructions, in steps.
+const attemptSteps = 4
 
 // push adds a backtrack frame; past MaxFrames the run stops with ErrStack.
 func (m *vm) push(f frame) {
-	if len(m.stack) >= MaxFrames {
+	if m.stack.n >= MaxFrames {
 		panic(ErrStack)
 	}
-	m.stack = append(m.stack, f)
+	m.stack.push(f.pack())
 }
 
 func (m *vm) matchAt(pos int) []int {
+	m.step(attemptSteps) // the attempt's setup and the filters' checks before it (the trie, the required units)
 	for i := range m.caps {
 		m.caps[i] = -1
 	}
-	m.stack = m.stack[:0]
+	m.stack.n = 0
 	end, ok := m.run(m.prog, m.regs, pos, -1)
 	if !ok {
 		return nil
@@ -104,6 +220,7 @@ func (m *vm) wordAt(i int) bool { return i >= 0 && i < len(m.s) && isWord(m.s[i]
 
 // altFrom returns the first alternative at index >= k whose first character can match at pos, or -1.
 func (m *vm) altFrom(in *inst, k, pos int) int {
+	m.step(1) // choosing among the alternatives
 	var list []int
 	switch {
 	case pos >= len(m.s):
@@ -150,7 +267,7 @@ func (m *vm) followUp(in *inst, base, lo, hi int) int {
 // run executes p from pos. With target >= 0 a match must end exactly there (lookbehind). Frames below the stack
 // height at entry belong to the caller and are never popped here.
 func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
-	base := len(m.stack)
+	base := m.stack.n
 	pc := 0
 	s := m.s
 	for {
@@ -275,11 +392,10 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 		}
 		// Backtrack: undo state changes until a frame that resumes matching.
 		for resumed := false; !resumed; {
-			if len(m.stack) == base {
+			if m.stack.n == base {
 				return 0, false
 			}
-			f := m.stack[len(m.stack)-1]
-			m.stack = m.stack[:len(m.stack)-1]
+			f := m.stack.pop().unpack()
 			switch f.kind {
 			case fCap:
 				m.caps[f.a] = f.b
@@ -323,7 +439,7 @@ func (m *vm) look(in *inst, pos int) bool {
 	if in.sub.hasCaps {
 		saved = append([]int(nil), m.caps...)
 	}
-	height := len(m.stack)
+	height := m.stack.n
 	var regs []int
 	if in.sub.nregs > 0 {
 		regs = make([]int, in.sub.nregs)
@@ -340,10 +456,10 @@ func (m *vm) look(in *inst, pos int) bool {
 		}
 		for j := pos - in.min; j >= lo && !found; j-- {
 			_, found = m.run(in.sub, regs, j, pos)
-			m.stack = m.stack[:height]
+			m.stack.n = height
 		}
 	}
-	m.stack = m.stack[:height]
+	m.stack.n = height
 	if saved == nil {
 		return found != in.neg
 	}
