@@ -30,6 +30,7 @@ type sender struct {
 	mu      sync.Mutex
 	lost    bool // a line did not fit the queue: the rest comes from the outbox
 	started bool
+	stopped bool // stop was called
 
 	next int64 // the seq the control plane gets next (the goroutine only)
 }
@@ -155,10 +156,11 @@ func (s *sender) flush() {
 // before the outbox closes.
 func (s *sender) stop(grace time.Duration) {
 	s.mu.Lock()
-	started := s.started
+	started, again := s.started, s.stopped
+	s.stopped = true
 	s.mu.Unlock()
-	if !started {
-		return
+	if !started || again {
+		return // a second stop (the deferred one after drain or shutdown) does not wait again
 	}
 	s.once.Do(func() { close(s.quit) })
 	select {
