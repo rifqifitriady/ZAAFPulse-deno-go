@@ -300,12 +300,27 @@ func (o *Outbox) rotate(first int64) error {
 	return nil
 }
 
+// SeqOf is the seq of an encoded event line.
+func SeqOf(line []byte) (int64, error) { return seqOf(line) }
+
 // Replay calls send with every stored line whose seq is at least from, in order, under the stream's send lock: no
 // new event is stored or sent until the replay is done. The state lock is not held across a send, so an ack is
 // never kept waiting by a slow reader (P3 Task 4 minor).
 func (o *Outbox) Replay(from int64, send func(line []byte) error) error {
 	o.sendMu.Lock()
 	defer o.sendMu.Unlock()
+	return o.scan(from, func(_ int64, line []byte) error { return send(line) })
+}
+
+// ReadFrom calls fn with every stored line whose seq is at least from, in order, without the send lock: events may be
+// appended while it reads. A segment is append-only and a line not yet ended by a newline is not read, so fn sees
+// whole lines only; a segment an ack pruned meanwhile is skipped (every event in it is stored by the control plane).
+// The gateway's sender reads with it after its queue overflowed (P4e Decision 19).
+func (o *Outbox) ReadFrom(from int64, fn func(seq int64, line []byte) error) error {
+	return o.scan(from, fn)
+}
+
+func (o *Outbox) scan(from int64, fn func(seq int64, line []byte) error) error {
 	o.mu.Lock()
 	if o.closed {
 		o.mu.Unlock()
@@ -319,7 +334,7 @@ func (o *Outbox) Replay(from int64, send func(line []byte) error) error {
 		}
 		data, err := os.ReadFile(o.segPath(first))
 		if errors.Is(err, fs.ErrNotExist) {
-			continue // an ack pruned it during the replay: every event in it is stored by the control plane
+			continue // an ack pruned it: every event in it is stored by the control plane
 		}
 		if err != nil {
 			return err
@@ -338,7 +353,7 @@ func (o *Outbox) Replay(from int64, send func(line []byte) error) error {
 			if seq < from {
 				continue
 			}
-			if err := send(line); err != nil {
+			if err := fn(seq, line); err != nil {
 				return err
 			}
 		}

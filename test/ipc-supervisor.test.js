@@ -69,6 +69,27 @@ test('start, ready, snapshots every interval, reload, stop: exit 0', async (t) =
   assert.equal(sup.status().restarts, 0);
 });
 
+test('a reload sends the budget snapshot before the config and the secrets (P4e Decision 25)', async (t) => {
+  const bin = stubBin(t);
+  if (!bin) return;
+  const order = [];
+  const first = initial();
+  const { sup } = supervise(t, bin, [], {
+    snapshotEveryMs: 60000, // only the reload's own snapshot after the start
+    sources: {
+      config: () => (order.push('config'), first.config),
+      secrets: () => (order.push('secrets'), first.secrets),
+      snapshot: () => (order.push('snapshot'), { budgets: [], keyCenter: {} }),
+    },
+  });
+  sup.start();
+  await waitFor(() => sup.status().state === 'ready', 5000, 'ready');
+  order.length = 0;
+  assert.equal(sup.reload(), true);
+  assert.deepEqual(order.slice(0, 3), ['snapshot', 'config', 'secrets']);
+  await waitFor(() => sup.status().lastHealth && sup.status().lastHealth.gen === 2, 5000, 'health of generation 2');
+});
+
 test('synced(): a reload is in force once the health names its generation, long before the next tick', async (t) => {
   const bin = stubBin(t);
   if (!bin) return;

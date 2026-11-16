@@ -15,6 +15,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
@@ -89,6 +90,16 @@ type Plan struct {
 
 	Stream     bool // the client asked for a stream (body.stream truthy; P4c)
 	WantsUsage bool // the client's stream_options.include_usage is truthy
+
+	// P4e. Policy is set when a guardrail check applies: Body is then built by State.Guard from pending (proxyChat's
+	// upstream body before the checks).
+	Policy     *guard.Policy
+	pending    *Value
+	Unchecked  bool            // no fresh snapshot checked the call: its usage lines say budget "unchecked"
+	Failures   []guard.Failure // checks that failed in log mode (the call goes on, its line says error)
+	Overrun    string          // the check that ran past its limit, when Guard refused for that
+	refused    *Answer         // the shadow: the budget refusal the engine would have answered
+	GuardPanic string          // a panic out of the checks, refused as a 500 (for the log)
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }
@@ -158,18 +169,6 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 			return handoff("provider: no credential")
 		}
 	}
-	if key.BudgetUSD != nil {
-		return handoff("budget: the key has a monthly budget")
-	}
-	if s.Snapshot == nil || now-s.SnapshotAt > StaleMs {
-		return handoff("budget: no fresh snapshot")
-	}
-	if s.budgetApplies(key.ID, model, t.Provider.ID) {
-		return handoff("budget: a blocking budget applies (P4e)")
-	}
-	if GuardActive(s.Gateway.Guardrails, key, ScopeTier(t.Provider, t.Model)) {
-		return handoff("guardrails: a check applies (P4e)")
-	}
 	if s.Gateway.TokenSaver && !strings.EqualFold(strings.Join(r.Header.Values("X-Zp-Token-Saver"), ", "), "off") &&
 		hasToolMessage(body) {
 		return handoff("token saver: tool results")
@@ -190,8 +189,6 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 		merged.Set("include_usage", &Value{Kind: Bool, B: true})
 		out.Set("stream_options", merged)
 	}
-	out.Set("model", Str(t.Model))
-	AdaptChat(t.Provider, t.Model, out)
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")
 	h.Set("Accept", "application/json")
@@ -200,8 +197,12 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	}
 	so := body.Get("stream_options")
 	p := Plan{Key: key, Target: t, Model: model, URL: t.Provider.BaseURL + "/chat/completions", Header: h,
-		Body: out.Stringify(), Base: s.base(key, t, model, r), Stream: stream,
-		WantsUsage: so.Truthy() && so.Get("include_usage").Truthy()}
+		Base: s.base(key, t, model, r), Stream: stream, WantsUsage: so.Truthy() && so.Get("include_usage").Truthy()}
+	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
+		p.Policy, p.pending = &pol, out // State.Guard builds Body (P4e)
+	} else {
+		p.Body = finishBody(t, out)
+	}
 	if stream {
 		v := true
 		p.Base.Stream = &v
@@ -236,39 +237,6 @@ func hasToolMessage(body *Value) bool {
 	for _, m := range msgs.A {
 		if r := m.Get("role"); r != nil && r.Kind == String && r.S == "tool" {
 			return true
-		}
-	}
-	return false
-}
-
-// budgetApplies: a blocking budget of the snapshot reaches this call (lib/cost/guard.js applies, source "gateway"),
-// whatever its state: the engine leaves every budgeted call to the control plane until P4e.
-func (s *State) budgetApplies(keyID, model, provider string) bool {
-	nm := NormalizeModel(model)
-	for _, b := range s.Snapshot.Budgets {
-		if b.Enforce != "block" {
-			continue
-		}
-		if b.Scope.Global {
-			return true
-		}
-		switch v := b.Scope.Value; b.Scope.Dim {
-		case "key", "source":
-			if b.Scope.Dim == "key" && keyID == v || b.Scope.Dim == "source" && v == "gateway" {
-				return true
-			}
-		case "center":
-			if c, ok := s.Snapshot.KeyCenter[keyID]; ok && c == v {
-				return true
-			}
-		case "model":
-			if nm != "" && nm == v {
-				return true
-			}
-		case "provider":
-			if provider == v {
-				return true
-			}
 		}
 	}
 	return false
@@ -337,6 +305,7 @@ type Answer struct {
 	Header http.Header
 	Body   []byte
 	Usage  ipc.UsageRecord
+	NoLine bool // no usage line goes with this answer (a 402: allowedTargets throws before any record)
 }
 
 func answerHeader() http.Header {
@@ -391,7 +360,7 @@ func (s *State) Respond(p *Plan, status int, raw []byte, ms float64) Answer {
 func (s *State) Failed(p *Plan, why string, ms float64) Answer {
 	msg := s.mask(p.Target.Provider.ID + ": " + why)
 	rec := p.Base
-	rec.RoutedTo = nil
+	rec.RoutedTo, rec.Guard = nil, nil // a target that failed carries no guardrail outcome (G8)
 	rec.Status, rec.Ms, rec.Error = 599, ms, &msg
 	b := NewObject()
 	e := NewObject()

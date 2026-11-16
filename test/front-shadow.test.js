@@ -6,7 +6,14 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { withShadow, noteProviderRequest, noteAnswer, takeCapture } = require('../lib/gateway/shadow');
+const {
+  withShadow,
+  noteProviderRequest,
+  noteAnswer,
+  noteClient,
+  noteUsage,
+  takeCapture,
+} = require('../lib/gateway/shadow');
 const { createShadowLog, shadowEndpoints, DAY } = require('../lib/front/shadow-log');
 const { createInternalListener } = require('../lib/front/internal');
 const { signClient } = require('../lib/front/client');
@@ -36,6 +43,29 @@ test('a capture exists only for a marked request, and is handed out once', async
     client: { status: 401, body: null },
     usage: null,
   });
+});
+
+test('a refusal leaves its error body and its usage line in the capture (P4e)', async () => {
+  const res = { statusCode: 400 };
+  const body = '{"error":{"message":"Blocked","type":"invalid_request_error","code":"guardrail_blocked"}}';
+  const line = { status: 400, error: 'blocked by guardrails', guard: { action: 'blocked', hits: [] } };
+  await withShadow(
+    '00112233445566cc',
+    async () => {
+      noteUsage(line);
+      noteClient(body);
+    },
+    res,
+  );
+  assert.deepEqual(takeCapture('00112233445566cc'), {
+    providerRequests: [],
+    providerResponse: null,
+    client: { status: 400, body },
+    usage: line,
+  });
+  // Outside a marked request both are no-ops.
+  noteClient('x');
+  noteUsage({});
 });
 
 test('the shadow log: counts per class, and the switch rule (owner: 1 clean day and 20 compares; a diff restarts it)', (t) => {

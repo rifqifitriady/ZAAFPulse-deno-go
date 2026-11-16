@@ -593,11 +593,14 @@ them (build it with `npm run gw:build`, or point `ZAAFPULSE_GW_BIN` at a binary)
 the port itself and the Overview shows it. The default, `"js"`, starts no Go process.
 
 In front mode the Go process can also answer non-streaming chat calls itself (`"engines": { "chat": "go" }`): to an
-OpenAI-format provider with a plain API key, from a client on this machine, when no guardrail check and no blocking
-budget applies; it hands every other call to the server. Before it switches, `"shadow": ["chat"]` has it compare each
-chat call the server answers with what it would have sent and answered (`.data/gateway-shadow.jsonl`, no prompt text);
-chat moves to Go only after 20 compared calls and 1 day without a difference (`"shadowMinCompares"`,
-`"shadowDays"`), and while OpenTelemetry export is off.
+OpenAI-format provider with a plain API key, from a client on this machine; it hands every other call to the server.
+It runs the same guardrail checks as the server (redact, log or block, with the same answers) and the same budget
+checks, from a budget snapshot the server sends every second; when that snapshot is more than 5 s old (the server is
+stuck) metered calls still pass, each one marked `budget: "unchecked"` in the usage log, and the gateway status
+(`GET /api/gateway/status`) raises an alert. A budget the last snapshot showed as used up is still refused. Before it
+switches, `"shadow": ["chat"]` has it compare each chat call the server answers with what it would have sent and
+answered (`.data/gateway-shadow.jsonl`, no prompt text); chat moves to Go only after 20 compared calls and 1 day without
+a difference (`"shadowMinCompares"`, `"shadowDays"`), and while OpenTelemetry export is off.
 `GET /api/gateway/status` shows the counts and why a class stays on the server.
 
 Streamed chat calls have a switch of their own, `"chat-stream"`: with `"engines": { "chat": "go", "chat-stream": "go" }`
