@@ -1,0 +1,94 @@
+{
+  "fn": "spans",
+  "in": {
+    "request": {},
+    "answer": {
+      "status": 502,
+      "chunks": [
+        "{\"error\":{\"message\":\"x\"}}"
+      ]
+    },
+    "usage": {
+      "ts": 1767225600000,
+      "ms": 12.345,
+      "status": 500,
+      "input": 0,
+      "output": 0,
+      "cost": 0,
+      "keyId": "k1",
+      "provider": "oa",
+      "model": "oa/m1",
+      "kind": "chat",
+      "format": "openai",
+      "stream": false,
+      "local": true
+    },
+    "providerSpan": {
+      "name": "oa",
+      "address": "127.0.0.1",
+      "port": 9
+    }
+  },
+  "out": {
+    "traceId": "01010101010101010101010101010101",
+    "spans": [
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0202020202020202",
+          "p": null,
+          "n": "POST /v1/chat/completions",
+          "k": "server",
+          "st": 0,
+          "d": 0,
+          "ok": false,
+          "err": "error",
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "http.request.method": "POST",
+            "http.route": "/v1/chat/completions",
+            "url.path": "/v1/chat/completions",
+            "url.scheme": "http",
+            "network.protocol.version": "1.1",
+            "http.response.status_code": 502,
+            "error.type": "502"
+          }
+        }
+      },
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0303030303030303",
+          "p": "0202020202020202",
+          "n": "chat oa/m1",
+          "k": "client",
+          "st": 1767225599987655,
+          "d": 12345,
+          "ok": false,
+          "err": "HTTP 500",
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.provider.name": "oa",
+            "gen_ai.request.model": "oa/m1",
+            "gen_ai.response.model": "oa/m1",
+            "server.address": "127.0.0.1",
+            "server.port": 9,
+            "gen_ai.request.stream": false,
+            "zaafpulse.cost.usd": 0,
+            "zaafpulse.api_key.id": "k1",
+            "zaafpulse.provider.id": "oa",
+            "zaafpulse.request.kind": "chat",
+            "zaafpulse.request.format": "openai",
+            "error.type": "500"
+          }
+        },
+        "otlp": {
+          "message": "HTTP 500"
+        }
+      }
+    ]
+  }
+}

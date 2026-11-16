@@ -99,6 +99,8 @@ the results, and stays out of the generated corpus (the precedent of P4b deviati
    masks the provider secrets of the handoff and `GENERIC_SECRETS`.
 5. `url.path` is the request's raw path; JS gives WHATWG's pathname. Equal for every path the engine serves (it routes
    on the exact raw path, P4b entry condition 2).
+6. A string cut in the middle of a surrogate pair (a User-Agent, span name or response id at 256 UTF-16 units, an
+   attribute at 8192): JS keeps a lone high surrogate, the engine drops the pair whole (found in Task 1).
 
 ## File structure
 
@@ -2693,3 +2695,23 @@ gh workflow run ci.yml -R rifqifitriady/ZAAFPulse-deno-go --ref migrate/p4f-ipc-
   "Interfaces" block of the tasks that consume it.
 - Order: Task 1 and Task 2 touch different files except `gw/engine/serve.go` (Task 2 only) and may run in parallel;
   Task 4 needs both. Task 3 adds `State.Spans()` used by Task 4.
+
+## Plan deviations found while building
+
+Task 1 (2026-11-16):
+1. **A cut surrogate pair** (Known deviation 6): JavaScript's `slice` keeps the high half of a pair it cuts (a
+   `user_agent.original`, a span name or a response id at 256 units, an attribute at 8192), and the store then holds a
+   lone surrogate; the engine cuts the pair whole (`jsSlice`, as since P4b). Pinned by `TestCutPairIsDroppedWhole`; the
+   corpus case `15-user-agent-long` ends exactly at a pair instead.
+2. **`providerSpanAttrs` looks a preset up as an own key of `PROVIDER_NAME`.** Before, a preset named like an
+   `Object.prototype` member (`constructor`) gave a function, which `cleanValue` dropped, so the span had no
+   `gen_ai.provider.name`; now it is the preset itself. A JS fix, not a port difference (corpus case `24`).
+3. **Order of a client span that does not wait**: on a model endpoint, a `chat` usage line's span waits for the
+   response (server span first); any other kind (`embeddings`) ends at once, before the server span. The fixtures pin
+   both orders (`61-embeddings`); Task 4's `spans` helper must emit in the same order.
+4. `LLMFormat(method, path)` (lib/otel.js `llmFormat`) is exported from `gw/engine/spans.go`: the observer runs only for
+   a model endpoint other than embeddings.
+5. `scripts/fixtures/lib.js writeCases` returns the written texts (the drift check reads them); every other generator
+   ignores the value and gives the same bytes as before.
+6. The fixtures carry `providerSpan` (what `config.push` will push for the case's provider) next to the request, since
+   the Go side reads it from the push, not from config.json.
