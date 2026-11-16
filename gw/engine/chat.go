@@ -93,12 +93,13 @@ type Plan struct {
 
 	// P4e. Policy is set when a guardrail check applies: Body is then built by State.Guard from pending (proxyChat's
 	// upstream body before the checks).
-	Policy    *guard.Policy
-	pending   *Value
-	Unchecked bool            // no fresh snapshot checked the call: its usage lines say budget "unchecked"
-	Failures  []guard.Failure // checks that failed in log mode (the call goes on, its line says error)
-	Overrun   string          // the check that ran past its limit, when Guard refused for that
-	refused   *Answer         // the shadow: the budget refusal the engine would have answered
+	Policy     *guard.Policy
+	pending    *Value
+	Unchecked  bool            // no fresh snapshot checked the call: its usage lines say budget "unchecked"
+	Failures   []guard.Failure // checks that failed in log mode (the call goes on, its line says error)
+	Overrun    string          // the check that ran past its limit, when Guard refused for that
+	refused    *Answer         // the shadow: the budget refusal the engine would have answered
+	GuardPanic string          // a panic out of the checks, refused as a 500 (for the log)
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }

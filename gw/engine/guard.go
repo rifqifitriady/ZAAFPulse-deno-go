@@ -8,6 +8,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
@@ -137,13 +138,25 @@ func refusal(p *Plan, status int, msg, typ, code string, ms float64, lineErr str
 	return &Answer{Status: status, Header: answerHeader(), Body: errorBody(msg, typ, code), Usage: rec}
 }
 
+// check runs the checks; a panic out of them (a runtime error the library re-panics) is an error, kept for the log, so
+// it fails closed with the JS 500 and never takes the gateway down (review m3).
+func (p *Plan) check() (res guard.Result, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			p.GuardPanic = fmt.Sprint(v)
+			err = fmt.Errorf("guardrails: %v", v)
+		}
+	}()
+	return checkBody(toJSV(p.pending), *p.Policy, "openai-chat")
+}
+
 // Guard runs the checks of a plan that has them and finishes its provider body; it returns the client's answer when
 // the call is refused (its Usage is the line to emit), nil when the call goes on. ms is the time since the start.
 func (s *State) Guard(p *Plan, ms float64) *Answer {
 	if p.Policy == nil || p.pending == nil {
 		return nil
 	}
-	res, err := checkBody(toJSV(p.pending), *p.Policy, "openai-chat")
+	res, err := p.check()
 	if err != nil {
 		p.pending = nil
 		var b *guard.Block
