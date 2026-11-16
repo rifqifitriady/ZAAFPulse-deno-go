@@ -34,10 +34,14 @@ import (
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/engine"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/front"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
 const version = "0.4.0-front"
+
+// prepareGuard compiles the guardrail patterns (replaceable in tests).
+var prepareGuard = guard.Prepare
 
 type options struct {
 	memLimitMB        int64
@@ -97,6 +101,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return exitWith(logger, ipc.ExitRefused, "bad command line: %v", err)
 	}
+	// The guard's patterns compile off the start path (P4e Decision 12); a first guarded call waits on the same Once,
+	// outside its own budget.
+	go prepareGuard()
 	if err := applyMemLimit(o.memLimitMB); err != nil {
 		return exitWith(logger, ipc.ExitRefused, "bad command line: %v", err)
 	}

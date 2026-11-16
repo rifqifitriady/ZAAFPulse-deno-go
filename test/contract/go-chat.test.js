@@ -1,7 +1,7 @@
-// Contract: non-streaming chat as the go engine serves it (P4b), with guardrails off so the engine may serve: answers,
-// errors, the usage line, the rate limit, and a revoked key refused as soon as the revoke has answered. The cases hold
-// in every mode; under ZP_ENGINE=go each call the engine serves must have its usage line from the gateway's outbox
-// (the line carries "ipc"), so the run proves the engine answered and not the server.
+// Contract: non-streaming chat as the go engine serves it (P4b), under the default guardrail policy (P4e: the engine
+// serves guarded calls too): answers, errors, the usage line, the rate limit, and a revoked key refused as soon as the
+// revoke has answered. The cases hold in every mode; under ZP_ENGINE=go each call the engine serves must have its usage
+// line from the gateway's outbox (the line carries "ipc"), so the run proves the engine answered and not the server.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { start } = require('./harness');
@@ -11,7 +11,6 @@ const GO = process.env.ZP_ENGINE === 'go';
 let h;
 test.before(async () => {
   h = await start();
-  await h.setGuardrails({ scope: 'external', secrets: 'off', pii: 'off', injection: 'off' });
 });
 test.after(async () => {
   if (h) await h.stop();

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
@@ -25,12 +26,15 @@ type Engine struct {
 	streams  sync.WaitGroup // streams being served, until their usage line is handed to emit
 	closeMu  sync.Mutex     // closing and streams.Add: no Add once Wait has begun (final review m5)
 	closing  bool
+	failMu   sync.Mutex
+	failAt   map[string]time.Time // when each check's log-mode failure was last logged
 }
 
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
 // plane: lib/ipc/ingest.js stores it through the JS gateway's own writer).
 func New(up *Upstream, emit func(*ipc.UsageReport) error, logf func(string, ...any)) *Engine {
-	return &Engine{limits: NewRateLimiter(), upstream: up, emit: emit, now: NowMs, logf: logf}
+	return &Engine{limits: NewRateLimiter(), upstream: up, emit: emit, now: NowMs, logf: logf,
+		failAt: map[string]time.Time{}}
 }
 
 // SetState installs a generation (nil: none yet; every request is handed to the control plane).
@@ -129,7 +133,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	}
 	req := ReadRequest(r, rawPath)
 	started := time.Now()
-	p := untilServed(s.PlanChat(req, e.now()))
+	p := s.PlanChat(req, e.now())
 	// The sub-class (P4c): a stream is chat-stream, with its own engine entry.
 	sub := subOf(&p, req)
 	onGo, shadowed := e.mode(sub)
@@ -149,6 +153,22 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	if wait := e.limits.Take(p.Key.ID, p.Key.RPM, e.now()); wait > 0 {
 		write(w, RateLimited(p.Key, wait))
 		return
+	}
+	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
+	if p.Policy != nil {
+		if a := s.Guard(&p, elapsed()); a != nil {
+			if p.Overrun != "" {
+				e.logf("go engine: guardrails: the %s check ran past its limit; the call was refused", p.Overrun)
+			}
+			rec := a.Usage
+			rec.Ts = e.now()
+			e.emitLine(rec, false) // a refusal was not metered: no unchecked mark (P4e Decision 14)
+			if r.Context().Err() == nil {
+				write(w, *a)
+			}
+			return
+		}
+		e.noteFailures(p.Failures)
 	}
 	if p.Stream {
 		if !e.track() {
@@ -173,11 +193,38 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	// (it is stored a few milliseconds later, through the outbox and the ingest), as the JS gateway records before it ends.
 	rec := a.Usage
 	rec.Ts = e.now()
-	if err := e.emit(&ipc.UsageReport{Record: rec}); err != nil {
-		e.logf("go engine: the usage line could not be stored: %v", err)
-	}
+	e.emitLine(rec, p.Unchecked)
 	if r.Context().Err() == nil {
 		write(w, a)
+	}
+}
+
+// emitLine hands one usage line to the outbox, marked when no fresh snapshot checked the call.
+func (e *Engine) emitLine(rec ipc.UsageRecord, unchecked bool) {
+	rep := &ipc.UsageReport{Record: rec}
+	if unchecked {
+		u := ipc.Unchecked
+		rep.Budget = &u
+	}
+	if err := e.emit(rep); err != nil {
+		e.logf("go engine: the usage line could not be stored: %v", err)
+	}
+}
+
+// noteFailures logs checks that failed in log mode: the check and how many strings, at most once a minute per check,
+// never the detector's text (P4e Decision 10).
+func (e *Engine) noteFailures(fs []guard.Failure) {
+	for _, f := range fs {
+		e.failMu.Lock()
+		now := time.Now()
+		if last, ok := e.failAt[f.Check]; ok && now.Sub(last) < time.Minute {
+			e.failMu.Unlock()
+			continue
+		}
+		e.failAt[f.Check] = now
+		e.failMu.Unlock()
+		e.logf("go engine: guardrails: the %s check failed on %d string(s) in log mode; the call went on, marked",
+			f.Check, f.Count)
 	}
 }
 
@@ -207,9 +254,7 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 		rec.Ts = e.now()
 		go func() {
 			defer e.streams.Done()
-			if err := e.emit(&ipc.UsageReport{Record: rec}); err != nil {
-				e.logf("go engine: the usage line could not be stored: %v", err)
-			}
+			e.emitLine(rec, p.Unchecked)
 		}()
 	}()
 	resp, why := e.upstream.Start(r.Context(), p)

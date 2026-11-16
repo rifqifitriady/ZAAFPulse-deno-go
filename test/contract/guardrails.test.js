@@ -28,8 +28,20 @@ test.after(async () => {
 });
 
 const sent = (path) => h.upstream.requests.filter((r) => r.path === path);
-const chat = (model, content) =>
-  h.call('/v1/chat/completions', { key: h.key, body: { model, messages: [{ role: 'user', content }] } });
+const GO = process.env.ZP_ENGINE === 'go';
+// Under ZP_ENGINE=go a chat call to an OpenAI-format provider (oa, pv) is the go engine's, guarded or not (P4e): its
+// usage line comes from the gateway's outbox and carries "ipc".
+const chat = async (model, content) => {
+  const r = await h.call('/v1/chat/completions', {
+    key: h.key,
+    body: { model, messages: [{ role: 'user', content }] },
+  });
+  if (GO && /^(oa|pv)\//.test(model)) {
+    const e = (await h.logs())[0];
+    assert.ok(e && e.ipc, `the go engine served ${model}: ${JSON.stringify(e)}`);
+  }
+  return r;
+};
 const lastSent = (path) => sent(path).at(-1);
 const newest = async () => (await h.logs())[0];
 const xKey = () => ({ 'x-api-key': h.key });
