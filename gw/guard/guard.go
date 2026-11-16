@@ -9,6 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
+	"unicode/utf16"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard/jsre"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate/jsv"
@@ -167,7 +170,8 @@ func BlockMessage(hits []Hit) string {
 }
 
 // Block is the GuardrailBlock error: a check in block mode found something (Hits are only those checks' hits), or,
-// in Go only, a check ran past its step budget (Overrun names the check; Hits is empty). Either way nothing is sent.
+// in Go only, the call ran past its step budget or its deadline (Overrun names the check that was running; Hits is
+// empty). Either way nothing is sent.
 type Block struct {
 	Hits    []Hit
 	Overrun string
@@ -195,17 +199,86 @@ var (
 	detectInjection = scanInjection
 )
 
-// The step budget of one check on one string: a base plus a share per code unit, capped. A check past it fails the
-// call closed in every mode, log included (the JS has no budget: Go-only, spec deviation 12). Sized from the corpus
-// and the adversarial inputs of the review: about 20x the steps the heaviest legitimate text measured needs.
+// The step budget of one call (CheckBody, CheckText), shared by every string and every check in it (I4), is the
+// primary bound (owner's decision, 2026-11-13): it does not depend on the machine or its load. A base, plus a share
+// per code unit each time a check runs on a string, capped per call. Steps are weighted to cost about the same time
+// whatever the input: a matcher instruction, a character a repeat consumes or an alternation choice is one step, a
+// start attempt four (jsre.attemptSteps), a start position the filters skip half of one (jsre.skipWeight), a visited
+// string stringSteps. One step costs 2–8 ns on an M-series Mac and about 2–2.5 times that on the Ubuntu runner, so the
+// cap of 450M steps bounds a call to about 3.8 s of CPU there (3.76 s measured), well under the backstop. The owner's
+// intent is no false block on legitimate text: 20 MB bodies measured need 78M (the corpus), 112M (code), 121M
+// (numeric CSV) and up to 293M steps (text dense in injection and secret terms: the guardrail tests), at least 1.5x
+// below the cap. A coarse wall-clock backstop (requestDeadline) runs with it. Past either the call fails closed in
+// every mode, log included (the JS has no limit: Go-only, spec deviation 12).
 var (
 	budgetBase    int64 = 20_000_000
 	budgetPerUnit int64 = 600
-	budgetCap     int64 = 3_000_000_000
+	budgetCap     int64 = 450_000_000
 )
 
-func budgetFor(n int) *jsre.Budget {
-	return &jsre.Budget{Limit: min(budgetBase+budgetPerUnit*int64(n), budgetCap)}
+// stringSteps is what visiting one string costs in steps beyond its matching (walking, conversions).
+const stringSteps = 16
+
+// traceSteps, when set (tests), receives the steps each call used.
+var traceSteps func(int64)
+
+// requestDeadline is the wall-clock backstop of one call: 10 s, far above what the step budget allows on an idle
+// machine, so load on the host (other requests, garbage collection) never blocks legitimate text.
+var requestDeadline = 10 * time.Second
+
+// now is the clock of the deadline (replaceable in tests).
+var now = time.Now
+
+// NewBudget is the budget of one call that checks units code units once: the step limit for them and the deadline.
+func NewBudget(units int) *jsre.Budget {
+	b := newCallBudget()
+	b.Extend(budgetPerUnit*int64(units), budgetCap)
+	return b
+}
+
+// orBudget is b, or a budget for one check on n code units when b is nil (after Prepare, so compiling is never
+// counted against b).
+func orBudget(b *jsre.Budget, n int) *jsre.Budget {
+	Prepare()
+	if b == nil {
+		return NewBudget(n)
+	}
+	return b
+}
+
+// allPatterns lists every regex of the package, for Prepare.
+func allPatterns() []*jsre.Regexp {
+	out := []*jsre.Regexp{reBase64URL, rePEMEnd, reInjCarries, reInjAnchor, reInjAnchorMark, reDocContext, reCodeLine,
+		reStringItem, reQuoteBefore, reZeroWidth, reSplitLetters, reHasZeroWidth, reHasSplit, reHasLeet, reSecretHint,
+		rePlaceholder, rePlaceholderPassword, reEmail, reIPV4, reIPV6, rePhone, reMasked, reLeetWord, reDigit, reLeetChar,
+		reAWSExample, reMasked3, reHasDigit, reDateHead}
+	for _, c := range injection {
+		out = append(out, c.res...)
+	}
+	for _, p := range secretPatterns {
+		out = append(out, p.re)
+	}
+	return out
+}
+
+var prepared sync.Once
+
+// Prepare compiles every pattern's program and filters (about half a second, once). The checks call it before their
+// first deadline starts, so compiling never counts against a request; the gateway may call it at startup.
+func Prepare() {
+	prepared.Do(func() {
+		for _, re := range allPatterns() {
+			re.Prepare()
+		}
+		setupInjMulti()
+		setupSecretMulti()
+	})
+}
+
+// newCallBudget is the budget a call starts with: the base steps and the deadline from now.
+func newCallBudget() *jsre.Budget {
+	Prepare()
+	return &jsre.Budget{Limit: min(budgetBase, budgetCap), Deadline: now().Add(requestDeadline), Now: now}
 }
 
 // errCheck is a check that failed (a detector panicked): in redact or block mode the call fails closed.
@@ -215,14 +288,41 @@ type errCheck struct{ err error }
 type errOverrun struct{ check string }
 
 type run struct {
+	b        *jsre.Budget // the call's budget and deadline
 	policy   Policy
 	hits     []*Hit
 	index    map[string]*Hit
 	redacted bool
 	failed   bool
+	failures []Failure
 }
 
-func newRun(p Policy) *run { return &run{policy: p, index: map[string]*Hit{}} }
+// Failure is a check whose detector failed in log mode during one call (N1): the call passed (as in the JS) and the
+// wiring should log or count it. Count is how many strings it failed on, Err the first failure.
+type Failure struct {
+	Check string
+	Count int
+	Err   string
+}
+
+func (r *run) fail(check string, p any) {
+	r.failed = true
+	for i := range r.failures {
+		if r.failures[i].Check == check {
+			r.failures[i].Count++
+			return
+		}
+	}
+	r.failures = append(r.failures, Failure{Check: check, Count: 1, Err: fmt.Sprint(p)})
+}
+
+func newRun(p Policy) *run { return &run{b: newCallBudget(), policy: p, index: map[string]*Hit{}} }
+
+// budget grants the call's budget the allowance of one check on n code units and returns it.
+func (r *run) budget(n int) *jsre.Budget {
+	r.b.Extend(budgetPerUnit*int64(n), budgetCap)
+	return r.b
+}
 
 func (r *run) add(check, label string, n int) {
 	k := check + "|" + label
@@ -239,13 +339,13 @@ func (r *run) add(check, label string, n int) {
 func (r *run) guarded(check string, f func() []uint16, fallback []uint16) (out []uint16) {
 	defer func() {
 		if p := recover(); p != nil {
-			if p == jsre.ErrBudget || p == jsre.ErrStack {
+			if jsre.IsLimit(p) {
 				panic(errOverrun{check})
 			}
 			if r.policy.mode(check) != "log" {
 				panic(errCheck{fmt.Errorf("%v", p)})
 			}
-			r.failed = true
+			r.fail(check, p)
 			out = fallback
 		}
 	}()
@@ -260,76 +360,135 @@ func privateKeyEnd(text []uint16, from int, b *jsre.Budget) int {
 }
 
 func (r *run) secretsIn(text []uint16) []uint16 {
-	b := budgetFor(len(text))
+	b := r.budget(len(text))
 	spans := detectSecrets(text, b)
 	if len(spans) == 0 {
 		return text
 	}
+	redact := r.policy.Secrets == "redact"
 	var out []uint16
+	if redact {
+		out = make([]uint16, 0, len(text)+64)
+	}
 	at := 0
 	for _, sp := range spans {
 		if sp.Start < at {
 			continue // inside a private key block already replaced
 		}
 		r.add("secrets", sp.Label, 1)
-		out = append(out, text[at:sp.Start]...)
-		out = append(out, jsre.U16("‹secret: "+sp.Label+"›")...)
+		if redact {
+			out = append(out, text[at:sp.Start]...)
+			out = append(out, jsre.U16("‹secret: "+sp.Label+"›")...)
+		}
 		if sp.Label == "Private key" {
 			at = privateKeyEnd(text, sp.End, b)
 		} else {
 			at = sp.End
 		}
 	}
-	if r.policy.Secrets != "redact" {
+	if !redact {
 		return text
 	}
 	r.redacted = true
 	return append(out, text[at:]...)
 }
 
-func (r *run) piiIn(text []uint16) []uint16 {
-	masked, counts := detectPII(text, budgetFor(len(text)))
+// piiIn masks personal data in text. In redact mode the passes may write into spare and over text itself (the caller
+// no longer needs either); a replacement always changes the text (no placeholder can equal what it replaces), so
+// "something was masked" is "a count went up".
+func (r *run) piiIn(text, spare []uint16) []uint16 {
+	redact := r.policy.PII == "redact"
+	if !redact {
+		spare = nil
+	}
+	masked, counts := detectPII(text, redact, spare, r.budget(len(text)))
 	for _, kind := range piiKinds {
 		if counts[kind] > 0 {
 			r.add("pii", kind, counts[kind])
 		}
 	}
-	if r.policy.PII != "redact" || equalU16(masked, text) {
+	if !redact {
 		return text
 	}
-	r.redacted = true
+	if len(counts) > 0 {
+		r.redacted = true
+	}
 	return masked
 }
 
-func (r *run) text(s []uint16, fresh bool) []uint16 {
-	t := s
-	if r.policy.Secrets != "off" {
-		t = r.guarded("secrets", func() []uint16 { return r.secretsIn(t) }, t)
-	}
-	if r.policy.PII != "off" {
-		t = r.guarded("pii", func() []uint16 { return r.piiIn(t) }, t)
-	}
+// text runs the checks on s, which belongs to the call (a check may overwrite it), and returns the new text and
+// whether a check replaced something. Injection, which only reads, runs first so that s is free for the masking passes;
+// its hits are still added after the others, in the JS order (secrets, pii, injection).
+func (r *run) text(s []uint16, fresh bool) ([]uint16, bool) {
+	var injected []string
 	if fresh && r.policy.Injection != "off" {
 		r.guarded("injection", func() []uint16 {
-			if res := detectInjection(s, budgetFor(len(s))); res != nil {
-				for _, l := range res.Labels {
-					r.add("injection", l, 1)
-				}
+			if res := detectInjection(s, r.budget(len(s))); res != nil {
+				injected = res.Labels
 			}
 			return nil
 		}, nil)
 	}
-	return t
+	// "Changed" is whether a check redacted something in this text (r.redacted, set by the check that does it), never
+	// whether the result sits in other storage: the masking passes may write the result over s itself (C1).
+	before := r.redacted
+	r.redacted = false
+	t := s
+	if r.policy.Secrets != "off" {
+		t = r.guarded("secrets", func() []uint16 { return r.secretsIn(t) }, t)
+	}
+	secretsCopied := r.redacted // secretsIn redacted into a new buffer, so s is free for the masking passes
+	if r.policy.PII != "off" {
+		var spare []uint16
+		if secretsCopied {
+			spare = s
+		}
+		t = r.guarded("pii", func() []uint16 { return r.piiIn(t, spare) }, t)
+	}
+	for _, l := range injected {
+		r.add("injection", l, 1)
+	}
+	changed := r.redacted
+	r.redacted = before || changed
+	return t, changed
 }
 
-// visitStr runs the checks on a Go string and returns the (possibly new) string.
+// charge counts stringSteps for a visited string, so a body of strings that run no regex still uses its budget and
+// reads the clock (M4); past a limit the call fails closed like a check.
+func (r *run) charge() {
+	if err := r.b.Run(func() { r.b.Charge(stringSteps) }); err != nil {
+		panic(errOverrun{"limit"})
+	}
+}
+
+// visitStr runs the checks on a Go string and returns the (possibly new) string: the original when nothing was
+// redacted or the result has the same content (compared by content, not by storage).
 func (r *run) visitStr(s string, fresh bool) string {
-	u := jsre.U16(s)
-	out := r.text(u, fresh)
-	if equalU16(out, u) {
+	out, changed := r.text(jsre.U16(s), fresh)
+	if !changed || equalU16String(out, s) {
 		return s
 	}
 	return jsre.Str(out)
+}
+
+// equalU16String reports whether u equals jsre.U16(s), without converting s.
+func equalU16String(u []uint16, s string) bool {
+	i := 0
+	for _, c := range s {
+		if c >= 0x10000 {
+			hi, lo := utf16.EncodeRune(c)
+			if i+1 >= len(u) || u[i] != uint16(hi) || u[i+1] != uint16(lo) {
+				return false
+			}
+			i += 2
+			continue
+		}
+		if i >= len(u) || u[i] != uint16(c) {
+			return false
+		}
+		i++
+	}
+	return i == len(u)
 }
 
 func (r *run) finish() (action string, hits []Hit, err error) {
@@ -355,10 +514,15 @@ func (r *run) finish() (action string, hits []Hit, err error) {
 	return action, hits, nil
 }
 
-// isBase64URL is BASE64_URL.test(s) under its own step budget; past it the call fails closed like a check.
-func isBase64URL(s string) bool {
+// isBase64URL is BASE64_URL.test(s) under the call's budget; past it the call fails closed like a check. The pattern
+// begins with ^data: under the i flag (which never maps a non-ASCII character to ASCII), so any other string is
+// answered without converting it.
+func (r *run) isBase64URL(s string) bool {
+	if len(s) < 5 || !strings.EqualFold(s[:5], "data:") {
+		return false
+	}
 	u := jsre.U16(s)
-	b := budgetFor(len(u))
+	b := r.budget(len(u))
 	var ok bool
 	if err := b.Run(func() { ok = reBase64URL.TestB(u, b) }); err != nil {
 		panic(errOverrun{dataURLCheck})
@@ -378,7 +542,8 @@ func isStructuralKey(key string, hasKey bool) bool {
 func (r *run) walk(v jsv.Value, key string, hasKey bool, fresh, structural bool) (jsv.Value, bool) {
 	switch x := v.(type) {
 	case string:
-		if (structural && isStructuralKey(key, hasKey)) || isBase64URL(x) {
+		r.charge() // every string leaf, skipped ones too (structural keys, data: URLs)
+		if (structural && isStructuralKey(key, hasKey)) || r.isBase64URL(x) {
 			return x, false
 		}
 		out := r.visitStr(x, fresh)
@@ -444,12 +609,14 @@ func lastAssistant(list []jsv.Value, format string) int {
 }
 
 // Result of CheckBody. Body is a new value (the input is never changed) that shares every unchanged nested value
-// with the input; Action is "redacted", "logged" or "" (JS null); Error is true when a check in log mode failed.
+// with the input; Action is "redacted", "logged" or "" (JS null); Error is true when a check in log mode failed, and
+// Failures says which (Go only, N1).
 type Result struct {
-	Body   jsv.Value
-	Action string
-	Hits   []Hit
-	Error  bool
+	Body     jsv.Value
+	Action   string
+	Hits     []Hit
+	Error    bool
+	Failures []Failure
 }
 
 // catchCheck turns a failed check into the returned error.
@@ -462,7 +629,7 @@ func catchCheck(err *error) {
 			*err = &Block{Overrun: e.check}
 		case error:
 			// A limit reached outside a check (no path is known to do so): still fail closed, never panic out.
-			if errors.Is(e, jsre.ErrBudget) || errors.Is(e, jsre.ErrStack) {
+			if errors.Is(e, jsre.ErrBudget) || errors.Is(e, jsre.ErrStack) || errors.Is(e, jsre.ErrDeadline) {
 				*err = &Block{Overrun: "limit"}
 				return
 			}
@@ -485,6 +652,9 @@ func CheckBody(body jsv.Value, p Policy, format string) (res Result, err error) 
 		p.Injection = "off"
 	}
 	r := newRun(p)
+	if traceSteps != nil {
+		defer func() { traceSteps(r.b.Steps) }()
+	}
 	structural := format != "arguments"
 	o := jsv.Obj(body)
 	var out jsv.Value
@@ -536,15 +706,16 @@ func CheckBody(body jsv.Value, p Policy, format string) (res Result, err error) 
 	if ferr != nil {
 		return Result{}, ferr
 	}
-	return Result{Body: out, Action: action, Hits: hits, Error: r.failed}, nil
+	return Result{Body: out, Action: action, Hits: hits, Error: r.failed, Failures: r.failures}, nil
 }
 
 // TextResult of CheckText.
 type TextResult struct {
-	Text   string
-	Action string
-	Hits   []Hit
-	Error  bool
+	Text     string
+	Action   string
+	Hits     []Hit
+	Error    bool
+	Failures []Failure
 }
 
 // CheckText checks one text: part "arguments" (secrets and pii), "result" (an MCP tool result: injection only) or
@@ -558,12 +729,16 @@ func CheckText(text jsv.Value, p Policy, part string) (res TextResult, err error
 		p.Injection = "off"
 	}
 	r := newRun(p)
+	if traceSteps != nil {
+		defer func() { traceSteps(r.b.Steps) }()
+	}
+	r.charge()
 	out := r.visitStr(jsv.ToString(jsv.Nullish(text, "")), true)
 	action, hits, ferr := r.finish()
 	if ferr != nil {
 		return TextResult{}, ferr
 	}
-	return TextResult{Text: out, Action: action, Hits: hits, Error: r.failed}, nil
+	return TextResult{Text: out, Action: action, Hits: hits, Error: r.failed, Failures: r.failures}, nil
 }
 
 func hitsValue(hits []Hit) *jsv.Array {
