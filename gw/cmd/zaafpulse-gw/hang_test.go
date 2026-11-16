@@ -169,5 +169,24 @@ func TestHungControlPlaneBudgetsFailOpen(t *testing.T) {
 			t.Fatalf("report seq %d after %d", seq, last)
 		}
 		last = seq
+		if strings.Contains(l, `"model":"pv/llama-x"`) {
+			t.Fatalf("the refused call wrote a line: %s", l)
+		}
+	}
+	// The 402 wrote no usage line (allowedTargets throws before any record): nothing more comes (review m6). A line
+	// for it would follow the 300, since it was answered after them.
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case l, ok := <-r.lines:
+			if !ok {
+				return
+			}
+			if strings.Contains(l, `"type":"usage.report"`) {
+				t.Fatalf("a usage line after the %d calls: %s", n, l)
+			}
+		case <-deadline:
+			return
+		}
 	}
 }

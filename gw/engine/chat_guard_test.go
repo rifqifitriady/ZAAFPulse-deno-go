@@ -2,12 +2,14 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate/jsv"
 )
@@ -16,7 +18,9 @@ type guardCase struct {
 	Config   ipc.ConfigPush      `json:"config"`
 	Secrets  ipc.SecretsHandoff  `json:"secrets"`
 	Snapshot *ipc.BudgetSnapshot `json:"snapshot"`
-	Request  struct {
+	// FailChecks: the generator made the JS checks throw; the Go checks fail the same way.
+	FailChecks bool `json:"failChecks"`
+	Request    struct {
 		Headers map[string]string `json:"headers"`
 		Body    string            `json:"body"`
 	} `json:"request"`
@@ -95,11 +99,18 @@ func TestChatGuardFixtures(t *testing.T) {
 			continue
 		}
 		var a *Answer
+		was := checkBody
+		if c.FailChecks {
+			checkBody = func(jsv.Value, guard.Policy, string) (guard.Result, error) {
+				return guard.Result{}, errors.New("a check failed")
+			}
+		}
 		if ref, _ := s.Budget(&p, fixtureNow, ipc.StaleAfterMs, nil); ref != nil {
 			a = ref
 		} else if g := s.Guard(&p, 1); g != nil {
 			a = g
 		}
+		checkBody = was
 		if a != nil {
 			if want.Request != nil {
 				t.Errorf("%s: the engine refused (%d) where the JS called the provider", name, a.Status)
