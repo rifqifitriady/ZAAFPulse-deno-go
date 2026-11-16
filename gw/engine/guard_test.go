@@ -146,3 +146,24 @@ func TestConversionRoundTrip(t *testing.T) {
 		t.Fatalf("only %d bodies", n)
 	}
 }
+
+// A panic inside the checks (a runtime error the library re-panics) is the JS 500 refusal with its line, never a crash
+// of the gateway: on the serve path and in the shadow's compare goroutine alike (review m3).
+func TestGuardPanicIsA500(t *testing.T) {
+	withCheckBody(t, func(jsv.Value, guard.Policy, string) (guard.Result, error) {
+		var a []int
+		_ = a[3] // index out of range
+		return guard.Result{}, nil
+	})
+	s, p := guardedPlan(t)
+	a := s.Guard(&p, 1)
+	if a == nil || a.Status != 500 || string(a.Body) != `{"error":{"message":"guardrails failed","type":"server_error"}}` {
+		t.Fatalf("got %+v", a)
+	}
+	if a.Usage.Status != 500 || a.Usage.Error == nil || *a.Usage.Error != "guardrails failed" {
+		t.Fatalf("line %+v", a.Usage)
+	}
+	if p.GuardPanic == "" {
+		t.Fatal("the panic is not kept for the log")
+	}
+}
