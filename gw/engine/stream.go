@@ -28,6 +28,7 @@ type ChatStream struct {
 	wantsUsage bool
 	elapsed    func() float64
 	buf        []byte // the bytes of a line not yet complete
+	scanned    int    // buf[:scanned] holds no newline
 	bomDone    bool
 	skipBlank  bool
 
@@ -43,29 +44,36 @@ func NewChatStream(model string, wantsUsage bool, elapsed func() float64) *ChatS
 }
 
 // Feed takes the provider's next bytes and returns what the client gets now (nil: nothing yet). p is not kept: only
-// an incomplete last line is copied, so a stream between events holds no buffer (P4c Decision 11).
+// an incomplete last line is copied, so a stream between events holds no buffer (P4c Decision 11). A long line costs
+// linear time and memory (final review I2): its buffer only grows, by append, until a newline arrives, and the search
+// for that newline starts where the last one ended.
 func (s *ChatStream) Feed(p []byte) ([]byte, error) {
-	data := p
+	data, inBuf, from := p, false, 0
 	if len(s.buf) > 0 {
+		from = s.scanned // s.buf[:s.scanned] holds no newline
 		s.buf = append(s.buf, p...)
-		data = s.buf
+		data, inBuf = s.buf, true
 	}
 	if !s.bomDone {
 		// TextDecoder drops one byte order mark at the start of the stream, also when it arrives in pieces.
 		if len(data) < len(utf8BOM) && bytes.HasPrefix(utf8BOM, data) {
 			s.buf = append(s.buf[:0], data...)
+			s.scanned = len(s.buf)
 			return nil, nil
 		}
-		data = bytes.TrimPrefix(data, utf8BOM)
+		if bytes.HasPrefix(data, utf8BOM) {
+			data, from = data[len(utf8BOM):], 0
+		}
 		s.bomDone = true
 	}
 	var out []byte
 	start := 0
 	for {
-		nl := bytes.IndexByte(data[start:], '\n')
+		nl := bytes.IndexByte(data[max(start, from):], '\n')
 		if nl < 0 {
 			break
 		}
+		nl += max(start, from) - start
 		raw := data[start : start+nl]
 		start += nl + 1
 		if s.skipBlank && jsBlank(raw) {
@@ -84,12 +92,16 @@ func (s *ChatStream) Feed(p []byte) ([]byte, error) {
 	case len(rest) > MaxStreamLine:
 		return out, ErrStreamLine
 	case len(rest) == 0:
-		s.buf = nil
-	case len(s.buf) > 0 && cap(s.buf) <= 64<<10:
+		s.buf, s.scanned = nil, 0
+		return out, nil
+	case inBuf && start == 0 && len(rest) == len(s.buf):
+		// No line ended and nothing was trimmed: keep the buffer as it is.
+	case inBuf && cap(s.buf) <= 64<<10:
 		s.buf = append(s.buf[:0], rest...) // rest lies in s.buf: copy moves it to the front
 	default:
-		s.buf = append([]byte(nil), rest...) // out of p, or out of a big line's buffer, which goes
+		s.buf = append([]byte(nil), rest...) // out of p, or the tail of a big line's buffer, which goes
 	}
+	s.scanned = len(s.buf)
 	return out, nil
 }
 
@@ -100,7 +112,7 @@ func (s *ChatStream) End() []byte {
 		return nil // at most a partial byte order mark, which TextDecoder holds and never flushes
 	}
 	rest := s.buf[:len(s.buf)-incompleteTail(s.buf)]
-	s.buf = nil
+	s.buf, s.scanned = nil, 0
 	if len(rest) == 0 {
 		return nil
 	}

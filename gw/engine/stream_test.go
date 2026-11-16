@@ -2,8 +2,10 @@ package engine
 
 import (
 	"bytes"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func clock7() float64 { return 7 } // every ttft reads 7 ms
@@ -117,5 +119,47 @@ func TestChatStreamLongLine(t *testing.T) {
 	s := NewChatStream("M", false, clock7)
 	if _, err := s.Feed(bytes.Repeat([]byte("x"), MaxStreamLine+1)); err != ErrStreamLine {
 		t.Fatalf("%v", err)
+	}
+}
+
+// feedLongLine feeds one data: line of n bytes in 4 KiB reads (StreamReadSize), then its newline, and returns the
+// bytes allocated and the time it took.
+func feedLongLine(t testing.TB, n int) (uint64, time.Duration) {
+	s := NewChatStream("M", false, clock7)
+	line := append([]byte("data: "), bytes.Repeat([]byte("x"), n-6)...)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	started := time.Now()
+	for i := 0; i < len(line); i += StreamReadSize {
+		if _, err := s.Feed(line[i:min(i+StreamReadSize, len(line))]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := s.Feed([]byte("\n"))
+	took := time.Since(started)
+	runtime.ReadMemStats(&after)
+	if err != nil || len(out) != n+1 {
+		t.Fatalf("%v, %d bytes out", err, len(out))
+	}
+	return after.TotalAlloc - before.TotalAlloc, took
+}
+
+// Final review I2: a long provider line costs linear time and allocation (it was copied whole on every read past
+// 64 KiB: 52 GiB and 2.4 s for 16 MiB). Now about 10 times the line (the buffer's doubling, then the rewriter's own
+// copies: decoding, the parse attempt, the output); the bound is 16 times, whatever the length.
+func TestChatStreamLongLineIsLinear(t *testing.T) {
+	for _, n := range []int{1 << 20, 4 << 20, MaxStreamLine - 1} {
+		alloc, took := feedLongLine(t, n)
+		t.Logf("%d MiB line in 4 KiB reads: %d MiB allocated, %v", n>>20, alloc>>20, took)
+		if alloc > uint64(16*n) {
+			t.Errorf("%d bytes allocated for a %d-byte line", alloc, n)
+		}
+	}
+}
+
+func BenchmarkChatStreamLongLine(b *testing.B) {
+	for b.Loop() {
+		feedLongLine(b, 4<<20)
 	}
 }
