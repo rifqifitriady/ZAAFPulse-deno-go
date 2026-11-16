@@ -1,0 +1,51 @@
+{
+  "secrets": [
+    "c2stYW50LUFiQ2RFZkdoSWpLbE1uT3BRclN0VXY=",
+    "c2stYW50LUFiQ2RFZkdoSWpLbE1uT3BRclN0VQ==",
+    "c2stYW50LUFiQ2RFZkdoSWpLbE1uT3BRclN0"
+  ],
+  "fn": "checkBody",
+  "in": [
+    {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "k <<ZPSECRET:0>> m a@b.co a@b.co a@b.co ab@cd.io"
+        }
+      ]
+    },
+    {
+      "scope": "all",
+      "secrets": "redact",
+      "pii": "redact",
+      "injection": "log"
+    },
+    "openai-chat"
+  ],
+  "out": {
+    "body": {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "k ‹secret: Anthropic API key› m ‹email› ‹email› ‹email› ‹email›"
+        }
+      ]
+    },
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 1
+      },
+      {
+        "check": "pii",
+        "label": "email",
+        "count": 4
+      }
+    ],
+    "error": false
+  }
+}

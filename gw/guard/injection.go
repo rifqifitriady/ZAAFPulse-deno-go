@@ -139,7 +139,12 @@ func (sc *scan) inDocContext(at, n int) bool {
 	default:
 		around = append(append(append([]uint16{}, prev[len(prev)-(k-len(line)-1):]...), '\n'), line...)
 	}
-	around = reMasked.ReplaceAllB(around, func([]int) []uint16 { return []uint16{' '} }, b)
+	// MASKED (\S+@\S+|https?:\/\/\S+) can match only where there is an '@' or an "http"; without either the
+	// replacement is the identity, so it is skipped (the common case in text dense with candidates: it was most of
+	// the steps of the guard's own test files).
+	if mayMask(around) {
+		around = reMasked.ReplaceAllB(around, func([]int) []uint16 { return []uint16{' '} }, b)
+	}
 	if reDocContext.TestB(around, b) {
 		return true
 	}
@@ -152,40 +157,48 @@ func (sc *scan) inDocContext(at, n int) bool {
 	return code
 }
 
+// mayMask reports whether s holds an '@' or "http", without which reMasked cannot match.
+func mayMask(s []uint16) bool {
+	for i, c := range s {
+		if c == '@' || (c == 'h' && i+3 < len(s) && s[i+1] == 't' && s[i+2] == 't' && s[i+3] == 'p') {
+			return true
+		}
+	}
+	return false
+}
+
 var reMasked = jsre.MustCompile(`\S+@\S+|https?:\/\/\S+`, "g")
 
-// anchorWindows: spans worth matching, around each anchor, widened to line starts and merged when they overlap.
+// anchorWindows: spans worth matching, around each anchor, widened to line starts and merged when they overlap. Both
+// anchor patterns run in one scan (anchorMulti); each goes on from where the JS loop would take it next.
 func anchorWindows(text []uint16, b *jsre.Budget) [][2]int {
+	Prepare()
 	var spans [][2]int
-	for _, re := range []*jsre.Regexp{reInjAnchor, reInjAnchorMark} {
-		last := 0
-		for {
-			m := re.ExecB(text, last, b)
-			if m == nil {
-				break
-			}
-			last = m[1]
-			hi := max(0, m[0]-windowBefore)
-			lo := max(0, m[0]-windowBefore-200)
-			nl := -1
-			for i := hi; i >= lo; i-- {
-				if text[i] == '\n' {
-					nl = i
-					break
-				}
-			}
-			from := hi
-			if nl >= 0 {
-				from = nl
-			}
-			to := min(len(text), m[1]+windowAfter)
-			spans = append(spans, [2]int{from, to})
-			last = max(last, to-200)
-			if last > len(text) {
+	var st jsre.MultiState
+	defer anchorMulti.Release(&st)
+	anchorMulti.AllB(&st, text, 3, b, func(_ int, m []int) int {
+		last := m[1]
+		hi := max(0, m[0]-windowBefore)
+		lo := max(0, m[0]-windowBefore-200)
+		nl := -1
+		for i := hi; i >= lo; i-- {
+			if text[i] == '\n' {
+				nl = i
 				break
 			}
 		}
-	}
+		from := hi
+		if nl >= 0 {
+			from = nl
+		}
+		to := min(len(text), m[1]+windowAfter)
+		spans = append(spans, [2]int{from, to})
+		last = max(last, to-200)
+		if last > len(text) {
+			return len(text) + 1 // stop this pattern, as the JS loop breaks
+		}
+		return last
+	})
 	sort.SliceStable(spans, func(i, j int) bool { return spans[i][0] < spans[j][0] })
 	var out [][2]int
 	for _, sp := range spans {
@@ -198,18 +211,55 @@ func anchorWindows(text []uint16, b *jsre.Budget) [][2]int {
 	return out
 }
 
+// injMulti finds the first match of every injection pattern in a window in one scan (set up by Prepare); injFirst[c]
+// is the index of category c's first pattern in it.
+var (
+	injMulti *jsre.Multi
+	injFirst []int
+)
+
+var anchorMulti *jsre.Multi
+
+func setupInjMulti() {
+	anchorMulti = jsre.NewMulti([]*jsre.Regexp{reInjAnchor, reInjAnchorMark})
+	var res []*jsre.Regexp
+	for _, c := range injection {
+		injFirst = append(injFirst, len(res))
+		res = append(res, c.res...)
+	}
+	injMulti = jsre.NewMulti(res)
+}
+
+// matchInjection finds, for each category in order, the first window holding an accepted match of one of its
+// patterns (the patterns in order, each at its first match in the window), like the JS. It goes window by window and
+// finds the first match of every pattern of the categories still open in one scan of the window: the same hits as
+// category by category, since each category's answer depends only on its own patterns.
 func matchInjection(text []uint16, offsetOf func(int) int, windows [][2]int, b *jsre.Budget) []injHit {
 	if len(windows) == 0 {
 		return nil
 	}
+	Prepare()
 	sc := newScan(text, b)
-	var hits []injHit
-	for _, p := range injection {
-		var hit *injHit
-		for _, w := range windows {
-			part := text[w[0]:w[1]]
-			for _, re := range p.res {
-				m := re.ExecB(part, 0, b)
+	found := make([]*injHit, len(injection))
+	open := len(injection)
+	var st jsre.MultiState
+	defer injMulti.Release(&st)
+	first := make([][]int, injFirst[len(injFirst)-1]+len(injection[len(injection)-1].res))
+	for _, w := range windows {
+		var active uint64
+		for ci, p := range injection {
+			if found[ci] == nil {
+				active |= (uint64(1)<<len(p.res) - 1) << injFirst[ci]
+			}
+		}
+		part := text[w[0]:w[1]]
+		injMulti.FirstB(&st, part, active, b, first)
+		for ci, p := range injection {
+			if found[ci] != nil {
+				continue
+			}
+			for j := range p.res {
+				m := first[injFirst[ci]+j]
 				if m == nil {
 					continue
 				}
@@ -220,15 +270,19 @@ func matchInjection(text []uint16, offsetOf func(int) int, windows [][2]int, b *
 				if sc.inDocContext(at, n) {
 					continue
 				}
-				hit = &injHit{id: p.id, label: p.label, at: offsetOf(at), match: text[at : at+n], supporting: p.supporting}
-				break
-			}
-			if hit != nil {
+				found[ci] = &injHit{id: p.id, label: p.label, at: offsetOf(at), match: text[at : at+n], supporting: p.supporting}
+				open--
 				break
 			}
 		}
-		if hit != nil {
-			hits = append(hits, *hit)
+		if open == 0 {
+			break
+		}
+	}
+	var hits []injHit
+	for _, h := range found {
+		if h != nil {
+			hits = append(hits, *h)
 		}
 	}
 	for _, h := range hits {
@@ -247,53 +301,171 @@ var (
 	reLeetChar = jsre.MustCompile(`[013457@$]`, "g")
 )
 
-// deobfuscate undoes spelled-out (i-g-n-o-r-e), zero-width-split and leetspeak words. It returns the new text and,
-// for each of its code units, the offset in text; nil when there is nothing to undo.
-func deobfuscate(text []uint16, windows [][2]int, b *jsre.Budget) ([]uint16, []int) {
+// deobfuscate undoes spelled-out (i-g-n-o-r-e), zero-width-split and leetspeak words. It returns the new text and
+// the map from its offsets to offsets in text; nil when there is nothing to undo. It keeps one bit per dropped code
+// unit, not a flag and an offset per unit, and rewrites leetspeak in place on its own copy.
+func deobfuscate(text []uint16, windows [][2]int, b *jsre.Budget) ([]uint16, *keptMap) {
 	var near []uint16
-	for i, w := range windows {
-		if i > 0 {
-			near = append(near, '\n')
+	if len(windows) == 1 {
+		near = text[windows[0][0]:windows[0][1]]
+	} else {
+		n := len(windows)
+		for _, w := range windows {
+			n += w[1] - w[0]
 		}
-		near = append(near, text[w[0]:w[1]]...)
+		near = make([]uint16, 0, n)
+		for i, w := range windows {
+			if i > 0 {
+				near = append(near, '\n')
+			}
+			near = append(near, text[w[0]:w[1]]...)
+		}
 	}
 	isLeet := reHasLeet.TestB(near, b)
 	if !reHasZeroWidth.TestB(text, b) && !isLeet && !reHasSplit.TestB(near, b) {
 		return nil, nil
 	}
-	drop := make([]bool, len(text))
-	for _, m := range reZeroWidth.FindAllB(text, b) {
-		drop[m[0]] = true
+	km := &keptMap{drop: make([]uint64, len(text)/64+1)}
+	dropped := 0
+	mark := func(i int) {
+		if km.drop[i>>6]&(1<<(i&63)) == 0 {
+			km.drop[i>>6] |= 1 << (i & 63)
+			dropped++
+		}
 	}
-	for _, m := range reSplitLetters.FindAllB(text, b) {
+	reZeroWidth.EachB(text, b, func(m []int) { mark(m[0]) })
+	reSplitLetters.EachB(text, b, func(m []int) {
 		for i := m[0]; i < m[1]; i++ {
 			if c := text[i] | 0x20; c < 'a' || c > 'z' { // !/[a-z]/i.test(ch)
-				drop[i] = true
+				mark(i)
 			}
 		}
-	}
-	var s []uint16
-	var idx []int
-	for i, c := range text {
-		if !drop[i] {
-			s = append(s, c)
-			idx = append(idx, i)
+	})
+	s := text
+	if dropped > 0 {
+		// near is no longer needed: its storage holds the shortened text when it is large enough (it usually is
+		// when the windows cover most of a long text, the case where a second copy would cost the most).
+		if multi := len(windows) > 1; multi && cap(near) >= len(text)-dropped {
+			s = near[:0]
+		} else {
+			s = make([]uint16, 0, len(text)-dropped)
 		}
+		km.before = make([]int32, len(km.drop)+1)
+		for blk, word := range km.drop {
+			lo, hi := blk*64, min(blk*64+64, len(text))
+			for i := lo; i < hi; i++ {
+				if word&(1<<(i-lo)) == 0 {
+					s = append(s, text[i])
+				}
+			}
+			km.before[blk+1] = int32(len(s))
+		}
+	} else {
+		km = nil
+	}
+	if len(s) == 0 {
+		return nil, nil // everything dropped (the JS has an empty string: nothing to match either way)
 	}
 	if isLeet {
-		s = reLeetWord.ReplaceAllB(s, func(m []int) []uint16 {
-			w := s[m[0]:m[1]]
-			if !reDigit.TestB(w, b) {
-				return w
-			}
-			return reLeetChar.ReplaceAllB(w, func(c []int) []uint16 { return []uint16{leet[w[c[0]]]} }, b)
-		}, b)
+		s = leetInPlace(s, dropped > 0, b) // s is a new buffer exactly when something was dropped
 	}
-	return s, idx
+	return s, km
 }
 
-// ScanInjection is lib/signals.js scanInjection: nil, or the categories that matched.
-func ScanInjection(text string) *Injection { return scanInjection(jsre.U16(text), nil) }
+// leetInPlace is s.replace(LEET_WORD, w => /\d/.test(w) ? w.replace(/[013457@$]/g, c => LEET[c]) : w). A replacement
+// keeps the length, so it is written over s (or over a copy, made at the first change, when s is not ours). A word is
+// rewritten only after the next one is found: the search for the next word reads the last code unit of the previous
+// one (\b), which must still be the original, as in the JS, which matches on the unchanged string.
+func leetInPlace(s []uint16, own bool, b *jsre.Budget) []uint16 {
+	src, out := s, s
+	pending := [2]int{-1, -1}
+	apply := func() {
+		a, z := pending[0], pending[1]
+		pending = [2]int{-1, -1}
+		if a < 0 || !reDigit.TestB(src[a:z], b) {
+			return
+		}
+		for i := a; i < z; i++ {
+			if c, ok := leet[src[i]]; ok {
+				if !own {
+					out = append([]uint16(nil), src...)
+					own = true
+				}
+				out[i] = c
+			}
+		}
+	}
+	// Only a word with a digit changes, and a word lies inside one run of [A-Za-z0-9@$]; the search for words starts
+	// afresh at each run (the code unit before a run is outside every word and never rewritten). So only the runs
+	// holding a digit are searched, which skips most of a long text.
+	for i := 0; i < len(src); i++ {
+		if src[i] < '0' || src[i] > '9' {
+			continue
+		}
+		r0, r1 := i, i+1
+		for r0 > 0 && leetUnit(src[r0-1]) {
+			r0--
+		}
+		for r1 < len(src) && leetUnit(src[r1]) {
+			r1++
+		}
+		for p := r0; p <= r1; {
+			m := reLeetWord.ExecB(src, p, b)
+			if m == nil || m[0] >= r1 {
+				break
+			}
+			apply()
+			pending = [2]int{m[0], m[1]}
+			p = m[1]
+			if m[1] == m[0] {
+				p++
+			}
+		}
+		apply()
+		i = r1
+	}
+	return out
+}
+
+// leetUnit reports whether u is in [A-Za-z0-9@$] (what LEET_WORD's words are made of under the i flag).
+func leetUnit(u uint16) bool {
+	return u >= 'a' && u <= 'z' || u >= 'A' && u <= 'Z' || u >= '0' && u <= '9' || u == '@' || u == '$'
+}
+
+// keptMap maps an offset in a text with some code units dropped back to the offset in the original: a bit per
+// original code unit (set: dropped) and, per block of 64, how many were kept before it.
+type keptMap struct {
+	drop   []uint64
+	before []int32
+}
+
+// orig is the offset in the original text of code unit i of the shortened one.
+func (k *keptMap) orig(i int) int {
+	blk := sort.Search(len(k.drop), func(j int) bool { return int(k.before[j+1]) > i })
+	if blk >= len(k.drop) {
+		return -1
+	}
+	n := i - int(k.before[blk]) // the n-th kept unit of this block
+	word := ^k.drop[blk]
+	for bit := 0; bit < 64; bit++ {
+		if word&(1<<bit) != 0 {
+			if n == 0 {
+				return blk*64 + bit
+			}
+			n--
+		}
+	}
+	return -1
+}
+
+// ScanInjection is lib/signals.js scanInjection: nil, or the categories that matched. It runs under b (nil: NewBudget
+// for the text, with the 10 s backstop); a limit comes back as jsre.ErrBudget, ErrStack or ErrDeadline, never a panic.
+func ScanInjection(text string, b *jsre.Budget) (r *Injection, err error) {
+	u := jsre.U16(text)
+	b = orBudget(b, len(u))
+	err = b.Run(func() { r = scanInjection(u, b) })
+	return r, err
+}
 
 func scanInjection(s []uint16, b *jsre.Budget) *Injection {
 	if len(s) < 8 {
@@ -302,12 +474,15 @@ func scanInjection(s []uint16, b *jsre.Budget) *Injection {
 	windows := anchorWindows(s, b)
 	hits := matchInjection(s, func(i int) int { return i }, windows, b)
 	if len(hits) == 0 && (len(windows) > 0 || reHasZeroWidth.TestB(s, b)) {
-		if d, idx := deobfuscate(s, windows, b); d != nil {
+		if d, km := deobfuscate(s, windows, b); d != nil {
 			hits = matchInjection(d, func(i int) int {
-				if i < len(idx) {
-					return idx[i]
+				if i >= len(d) {
+					return 0
 				}
-				return 0
+				if km == nil {
+					return i
+				}
+				return km.orig(i)
 			}, anchorWindows(d, b), b)
 		}
 	}
