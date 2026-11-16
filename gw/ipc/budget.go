@@ -43,15 +43,7 @@ func Decide(s *BudgetSnapshot, now, staleMs int64, in CheckInput) Decision {
 	if keyID == "dashboard" {
 		keyID = ""
 	}
-	source := "gateway"
-	switch {
-	case in.RunID != "":
-		source = "collab"
-	case in.Agent == "judge":
-		source = "judge"
-	case in.Agent == "replay":
-		source = "replay"
-	}
+	source := sourceOf(in)
 	for _, b := range s.Budgets {
 		if applies(b, keyID, in, source, s.KeyCenter) && b.State == "exceeded" {
 			return Decision{Action: Refuse, Budget: b.ID, Message: "budget \"" + b.Name + "\" is used up for this " + b.Period}
@@ -61,6 +53,29 @@ func Decide(s *BudgetSnapshot, now, staleMs int64, in CheckInput) Decision {
 		return Decision{Action: Unchecked}
 	}
 	return Decision{Action: Pass}
+}
+
+// sourceOf is the ledger's source of a gateway call (lib/cost/guard.js sourceOf).
+func sourceOf(in CheckInput) string {
+	switch {
+	case in.RunID != "":
+		return "collab"
+	case in.Agent == "judge":
+		return "judge"
+	case in.Agent == "replay":
+		return "replay"
+	}
+	return "gateway"
+}
+
+// AppliesTo is whether budget b reaches a call, with Decide's rules (the "dashboard" key is no key; the source comes
+// from the agent and the run). The go engine counts its own spend with it, so the two cannot drift (P4e).
+func AppliesTo(b BudgetView, in CheckInput, centers map[string]string) bool {
+	keyID := in.KeyID
+	if keyID == "dashboard" {
+		keyID = ""
+	}
+	return applies(b, keyID, in, sourceOf(in), centers)
 }
 
 func applies(b BudgetView, keyID string, in CheckInput, source string, centers map[string]string) bool {

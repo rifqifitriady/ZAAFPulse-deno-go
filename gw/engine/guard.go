@@ -167,6 +167,3 @@ func (s *State) Guard(p *Plan, ms float64) *Answer {
 	}
 	return nil
 }
-
-// Budget is a placeholder until P4e Task 4: no refusal, checked.
-func (s *State) Budget(p *Plan, now, staleMs int64, own []any) (*Answer, bool) { return nil, false }

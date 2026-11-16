@@ -58,6 +58,10 @@ type ShadowLine struct {
 	Diffs   []Diff `json:"diffs,omitzero"`
 }
 
+// budgetLag is the reason a budget disagreement is not a diff: the control plane decides on its live spend, the engine
+// on its snapshot, up to a second behind (P4e Decision 18).
+const budgetLag = "budget: the go engine decided on its snapshot"
+
 // usageFields are the usage-line fields compared; ts, ms, ttft, traceId and ipc differ by nature, cost is compared
 // in nano-USD, error as a text.
 var usageFields = []string{"keyId", "provider", "model", "requested", "routedTo", "kind", "format", "stream", "status",
@@ -82,6 +86,10 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 		return l
 	case c != nil && c.ProviderResponse == nil && c.Client != nil && c.Client.Status == http.StatusTooManyRequests:
 		l.Outcome, l.Reason = "skipped", "the control plane's rate limit answered (each engine counts its own)"
+		return l
+	case c != nil && c.ProviderResponse == nil && c.Client != nil && c.Client.Status == http.StatusPaymentRequired:
+		// The control plane's budget refused on its live spend, the engine's snapshot did not (yet): a lag, not a diff.
+		l.Outcome, l.Reason = "skipped", budgetLag
 		return l
 	case c == nil || c.ProviderResponse == nil || c.Client == nil:
 		js := "no capture"
@@ -287,6 +295,12 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 	id := ""
 	if p.Handoff == "" {
 		wait = e.limits.Take(p.Key.ID, p.Key.RPM, e.now())
+		// The budget, decided now on the snapshot (cheap); the guardrail checks run after the answer, off this path.
+		if ref, unchecked := s.Budget(p, e.now(), e.staleMs, nil); ref != nil {
+			p.refused = ref
+		} else {
+			p.Unchecked = unchecked
+		}
 		id = NewShadowID()
 		r = front.WithShadowID(r, id) // set by the proxy's Rewrite, after the hop-by-hop headers are gone
 	}
@@ -325,9 +339,19 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 			}
 		}
 		var l ShadowLine
-		if ref := s.Guard(p, 0); ref != nil {
+		ref := p.refused
+		if ref == nil {
+			ref = s.Guard(p, 0)
+		}
+		if ref != nil && ref.Status == http.StatusPaymentRequired && c != nil &&
+			(len(c.ProviderRequests) > 0 || c.ProviderResponse != nil) {
+			l = ShadowLine{Class: sub, Outcome: "skipped", Reason: budgetLag}
+			if c.Client != nil {
+				l.Status = c.Client.Status
+			}
+		} else if ref != nil {
 			// A guardrail refusal: compared from P4e Task 6 (CompareRefusal); until then it is not counted.
-			l = ShadowLine{Class: sub, Outcome: "skipped", Reason: "a guardrail refusal (compared from P4e Task 6)"}
+			l = ShadowLine{Class: sub, Outcome: "skipped", Reason: "a refusal (compared from P4e Task 6)"}
 			if c != nil && c.Client != nil {
 				l.Status = c.Client.Status
 			}

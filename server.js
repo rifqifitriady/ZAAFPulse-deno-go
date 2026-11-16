@@ -1849,7 +1849,16 @@ const handler = async (req, res) => {
         contentType: req.headers['content-type'],
         readBody: () => readBody(req),
       });
-      if (hit) return send(res, hit.status, hit.body, hit.type || 'application/json', hit.headers);
+      if (hit) {
+        // A budget or cost-settings change goes to the gateway in front before the save answers: the reload sends the
+        // budget snapshot first, so the go engine enforces the change at once (P4e Decision 25; 2 s at most).
+        const budgetsChange =
+          req.method === 'POST' &&
+          hit.status === 200 &&
+          (url.pathname.startsWith('/api/cost/budgets') || url.pathname === '/api/cost/settings');
+        if (budgetsChange && front && front.push()) await front.synced(2000);
+        return send(res, hit.status, hit.body, hit.type || 'application/json', hit.headers);
+      }
     }
     // The governance audit log: entries, export (a download), verify, status and the retention setting. Behind the
     // same sign-in; no gateway key or MCP client reaches it. A reviewer or a viewer sees no change's values.

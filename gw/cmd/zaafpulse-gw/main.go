@@ -141,6 +141,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	g.out = newSender(box, g.ch.SendLine, logger.Printf)
 	defer g.out.stop(time.Second)
 	g.engine = engine.New(engine.NewUpstream(os.Getenv), g.emitUsage, g.log.Printf)
+	g.engine.SetStaleMs(o.staleMs)
 	return g.serve(protocols)
 }
 

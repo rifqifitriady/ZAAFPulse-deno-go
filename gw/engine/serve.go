@@ -28,14 +28,19 @@ type Engine struct {
 	closing  bool
 	failMu   sync.Mutex
 	failAt   map[string]time.Time // when each check's log-mode failure was last logged
+	spend    *Spend               // the engine's own lines since the newest snapshot (P4e)
+	staleMs  int64                // the age at which a budget snapshot no longer checks a call
 }
 
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
 // plane: lib/ipc/ingest.js stores it through the JS gateway's own writer).
 func New(up *Upstream, emit func(*ipc.UsageReport) error, logf func(string, ...any)) *Engine {
 	return &Engine{limits: NewRateLimiter(), upstream: up, emit: emit, now: NowMs, logf: logf,
-		failAt: map[string]time.Time{}}
+		failAt: map[string]time.Time{}, spend: &Spend{}, staleMs: StaleMs}
 }
+
+// SetStaleMs sets the age at which a budget snapshot is stale (--stale-ms); call it before serving.
+func (e *Engine) SetStaleMs(ms int64) { e.staleMs = ms }
 
 // SetState installs a generation (nil: none yet; every request is handed to the control plane).
 func (e *Engine) SetState(s *State) { e.state.Store(s) }
@@ -154,6 +159,15 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		write(w, RateLimited(p.Key, wait))
 		return
 	}
+	// The budget (P4e Decision 13): the price rule, the snapshot, and the engine's own spend since it.
+	ref, unchecked := s.Budget(&p, e.now(), e.staleMs, e.spend.Since(s.SnapshotAt))
+	if ref != nil {
+		if r.Context().Err() == nil {
+			write(w, *ref) // allowedTargets throws before any record: no line
+		}
+		return
+	}
+	p.Unchecked = unchecked
 	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
 	if p.Policy != nil {
 		if a := s.Guard(&p, elapsed()); a != nil {
@@ -201,6 +215,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 
 // emitLine hands one usage line to the outbox, marked when no fresh snapshot checked the call.
 func (e *Engine) emitLine(rec ipc.UsageRecord, unchecked bool) {
+	// Counted before the hand-over, so the next call sees it at once (P4e Decision 15).
+	if sp, ok := spentOf(rec); ok {
+		e.spend.Add(sp)
+	}
 	rep := &ipc.UsageReport{Record: rec}
 	if unchecked {
 		u := ipc.Unchecked
