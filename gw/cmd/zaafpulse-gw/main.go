@@ -130,6 +130,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		done:    make(chan struct{}),
 		unknown: map[string]bool{},
 	}
+	// The sender stops before the outbox closes (defers run last first): what it still holds goes out on the next start.
+	g.out = newSender(box, g.ch.SendLine, logger.Printf)
+	defer g.out.stop(time.Second)
 	g.engine = engine.New(engine.NewUpstream(os.Getenv), g.emitUsage, g.log.Printf)
 	return g.serve(protocols)
 }
@@ -168,6 +171,7 @@ type gateway struct {
 	ready   bool
 	quiet   bool // --hang-after-ready
 
+	out        *sender          // sends the outbox's events to the control plane (P4e)
 	engine     *engine.Engine   // the go engine (P4b): its state is the newest generation with the newest snapshot
 	cfgBody    *ipc.ConfigPush  // under mu: the newest config.push, until its secrets arrive
 	frontCfg   *ipc.FrontConfig // under mu: the first config.push's front section, opened on ready
@@ -218,6 +222,8 @@ func (g *gateway) serve(protocols []int) int {
 				if err := g.box.Replay(g.box.Acked()+1, g.ch.SendLine); err != nil {
 					return exitWith(g.log, ipc.ExitDamaged, "outbox replay: %v", err)
 				}
+				// From here on every event goes through the sender, after what the replay sent (P4e Decision 19).
+				g.out.start(g.box.Next())
 				go g.healthLoop()
 			case *ipc.HelloRefused:
 				return exitWith(g.log, ipc.ExitRefused, "refused by the control plane: %s", b.Reason)
@@ -414,10 +420,11 @@ func (g *gateway) checkBudget(body any) {
 // gateway's own usage writer, lib/ipc/server-sinks.js).
 func (g *gateway) emitUsage(r *ipc.UsageReport) error { return g.appendAndSend(ipc.TypeUsageReport, r) }
 
-// appendAndSend writes an event to the outbox, then sends it (D4: never the other way round), under the outbox's send
-// lock, which the replay holds too (E10).
+// appendAndSend stores an event in the outbox and hands it to the sender (D4: stored before sent; E10: one lock for the
+// append and the hand-over, so the sender gets the lines in seq order). It never waits for the control plane to read
+// (P4e Decision 19).
 func (g *gateway) appendAndSend(typ string, body any) error {
-	_, err := g.box.AppendSend(typ, body, time.Now().UnixMilli(), g.ch.SendLine)
+	_, err := g.box.AppendSend(typ, body, time.Now().UnixMilli(), g.out.enqueue)
 	return err
 }
 
@@ -472,10 +479,12 @@ func (g *gateway) drain() {
 	g.log.Print("the control plane closed the channel: exiting")
 	g.closeFront(0) // nothing to forward to any more
 	g.stopEmitter(time.Second)
+	g.out.stop(time.Second)
 }
 
 func (g *gateway) shutdown(grace time.Duration) {
 	g.log.Printf("shutting down (grace %s)", grace)
 	g.closeFront(grace)
 	g.stopEmitter(grace)
+	g.out.stop(grace)
 }

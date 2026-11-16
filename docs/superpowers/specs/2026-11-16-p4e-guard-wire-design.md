@@ -162,6 +162,17 @@ Each one line, with the evidence that settled it.
     delete in the cost API triggers that reload and waits for it (`front.push()` then `front.synced()`, as a key save
     does since P4b). No IPC message changes.
 
+## Owner answers (2026-11-16)
+
+26. **Input only, now and after G3**: no guardrail on model output, whole or streamed (owner question 1; Decision 1
+    stands for good).
+27. **`memLimitMB` stays 64 by default** (question 2). Task 7 measures a guarded 20 MB call; if it drives the gateway
+    into constant GC or past its limit, the results doc reports the numbers and recommends a value. The default is not
+    changed in P4e.
+28. **One governance audit entry per unchecked-budget alert window: yes, in P4f** (question 3). P4e leaves only a
+    marked hook (a `TODO(P4f)` note at the supervisor's alert), no audit write.
+29. **P4e lands the sender goroutine first; P4f builds on it** (question 4).
+
 ## Design
 
 ### D1. Planning (`gw/engine/chat.go`)

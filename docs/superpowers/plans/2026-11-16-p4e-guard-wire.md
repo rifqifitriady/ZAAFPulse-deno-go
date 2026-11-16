@@ -50,6 +50,17 @@
 24. M3/M4 external tier: requirement recorded for the final quiet-machine step.
 25. Reload sends the snapshot first; a budget save reloads and waits, so the snapshot has the budget before the save answers.
 
+## Owner answers (2026-11-16)
+
+26. **Input only, now and after G3**: no guardrail on model output, whole or streamed (owner question 1; Decision 1
+    stands for good).
+27. **`memLimitMB` stays 64 by default** (question 2). Task 7 measures a guarded 20 MB call; if it drives the gateway
+    into constant GC or past its limit, the results doc reports the numbers and recommends a value. The default is not
+    changed in P4e.
+28. **One governance audit entry per unchecked-budget alert window: yes, in P4f** (question 3). P4e leaves only a
+    marked hook (a `TODO(P4f)` note at the supervisor's alert), no audit write.
+29. **P4e lands the sender goroutine first; P4f builds on it** (question 4).
+
 ## Files
 
 | File | Responsibility | Task |
