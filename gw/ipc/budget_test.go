@@ -45,6 +45,19 @@ func TestBudgetDecideFixtures(t *testing.T) {
 			if got := Decide(snap, fx.Now, StaleAfterMs, fx.Input); got != fx.Expect {
 				t.Fatalf("got %+v, want %+v", got, fx.Expect)
 			}
+			// AppliesTo (P4e) agrees with Decide: a refusal names a budget AppliesTo reaches, and an exceeded budget
+			// AppliesTo reaches makes Decide refuse.
+			if snap != nil {
+				refuses := false
+				for _, b := range snap.Budgets {
+					if b.State == "exceeded" && AppliesTo(b, fx.Input, snap.KeyCenter) {
+						refuses = true
+					}
+				}
+				if refuses != (fx.Expect.Action == Refuse) {
+					t.Fatalf("AppliesTo says refuse=%v, Decide %s", refuses, fx.Expect.Action)
+				}
+			}
 			if !strings.HasPrefix(f.Name(), fx.Expect.Action+"-") {
 				t.Fatalf("the file name starts with the expected action %q", fx.Expect.Action)
 			}

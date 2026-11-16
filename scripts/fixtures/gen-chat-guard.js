@@ -181,6 +181,64 @@ const CASES = [
     { model: 'oa/m1', stream: true, messages: user(`key ${ANT}`) },
     ok(),
   ],
+  // Budgets (P4e Task 4): lib/cost/guard.js over the fake service; the Go side reads the same budgets as its snapshot.
+  [
+    'budget-model-exceeded',
+    { budgets: [budget('b1', { dim: 'model', value: 'm1' }, 'exceeded')] },
+    { model: 'oa/m1', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'budget-model-ok',
+    { budgets: [budget('b1', { dim: 'model', value: 'm1' }, 'ok')] },
+    { model: 'oa/m1', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'budget-no-data-passes',
+    { budgets: [budget('b1', 'global', 'no_data')] },
+    { model: 'oa/m1', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'budget-provider-exceeded',
+    { budgets: [budget('b2', { dim: 'provider', value: 'oa' }, 'exceeded')] },
+    { model: 'oa/m1', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'budget-other-key-passes',
+    { budgets: [budget('b3', { dim: 'key', value: 'k4' }, 'exceeded')] },
+    { model: 'oa/m1', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'budget-center-exceeded',
+    { key: 'k4', keyCenter: { k4: 'c1' }, budgets: [budget('b4', { dim: 'center', value: 'c1' }, 'exceeded')] },
+    { model: 'oa/m1', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'budget-private-provider-exceeded',
+    { budgets: [budget('b6', { dim: 'provider', value: 'pv' }, 'exceeded')] },
+    { model: 'pv/llama-9', messages: user('hi') },
+    ok(),
+  ],
+  ['price-rule-refuses-unpriced', { key: 'k3' }, { model: 'oa/nopr', messages: user('hi') }, ok()],
+  ['price-rule-private-is-free', { key: 'k3' }, { model: 'pv/unpriced-9', messages: user('hi') }, ok()],
+  ['price-rule-priced-passes', { key: 'k3' }, { model: 'oa/m1', messages: user('hi') }, ok()],
+  [
+    'price-rule-center-budget-limits',
+    { key: 'k4', keyCenter: { k4: 'c1' }, budgets: [budget('b5', { dim: 'center', value: 'c1' }, 'ok')] },
+    { model: 'oa/nopr', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'budget-refused-before-guard',
+    { guardrails: { ...OFF, secrets: 'block' }, budgets: [budget('b1', 'global', 'exceeded')] },
+    { model: 'oa/m1', messages: user(`key ${ANT}`) },
+    ok(),
+  ],
 ];
 
 // A request as gateway.handle reads it: headers, the target, a loopback client, the body as one chunk.

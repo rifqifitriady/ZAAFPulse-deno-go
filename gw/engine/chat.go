@@ -98,6 +98,7 @@ type Plan struct {
 	Unchecked bool            // no fresh snapshot checked the call: its usage lines say budget "unchecked"
 	Failures  []guard.Failure // checks that failed in log mode (the call goes on, its line says error)
 	Overrun   string          // the check that ran past its limit, when Guard refused for that
+	refused   *Answer         // the shadow: the budget refusal the engine would have answered
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }
@@ -167,15 +168,6 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 			return handoff("provider: no credential")
 		}
 	}
-	if key.BudgetUSD != nil {
-		return handoff("budget: the key has a monthly budget")
-	}
-	if s.Snapshot == nil || now-s.SnapshotAt > StaleMs {
-		return handoff("budget: no fresh snapshot")
-	}
-	if s.budgetApplies(key.ID, model, t.Provider.ID) {
-		return handoff("budget: a blocking budget applies (P4e)")
-	}
 	if s.Gateway.TokenSaver && !strings.EqualFold(strings.Join(r.Header.Values("X-Zp-Token-Saver"), ", "), "off") &&
 		hasToolMessage(body) {
 		return handoff("token saver: tool results")
@@ -244,39 +236,6 @@ func hasToolMessage(body *Value) bool {
 	for _, m := range msgs.A {
 		if r := m.Get("role"); r != nil && r.Kind == String && r.S == "tool" {
 			return true
-		}
-	}
-	return false
-}
-
-// budgetApplies: a blocking budget of the snapshot reaches this call (lib/cost/guard.js applies, source "gateway"),
-// whatever its state: the engine leaves every budgeted call to the control plane until P4e.
-func (s *State) budgetApplies(keyID, model, provider string) bool {
-	nm := NormalizeModel(model)
-	for _, b := range s.Snapshot.Budgets {
-		if b.Enforce != "block" {
-			continue
-		}
-		if b.Scope.Global {
-			return true
-		}
-		switch v := b.Scope.Value; b.Scope.Dim {
-		case "key", "source":
-			if b.Scope.Dim == "key" && keyID == v || b.Scope.Dim == "source" && v == "gateway" {
-				return true
-			}
-		case "center":
-			if c, ok := s.Snapshot.KeyCenter[keyID]; ok && c == v {
-				return true
-			}
-		case "model":
-			if nm != "" && nm == v {
-				return true
-			}
-		case "provider":
-			if provider == v {
-				return true
-			}
 		}
 	}
 	return false

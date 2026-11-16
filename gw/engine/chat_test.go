@@ -166,19 +166,6 @@ func TestChatHandoffs(t *testing.T) {
 		}},
 		{"oauth2", "provider: OAuth2", func(s *State, r *Request) { s.Gateway.Providers[0].Auth = &ipc.ProviderAuth{Type: "oauth2"} }},
 		{"credential missing", "provider: no credential", func(s *State, r *Request) { delete(s.Secrets, "oa") }},
-		{"key budget", "budget: the key", func(s *State, r *Request) {
-			b := 5.0
-			s.Keys.list[0].BudgetUSD = &b
-		}},
-		{"stale snapshot", "budget: no fresh", func(s *State, r *Request) { s.SnapshotAt = fixtureNow - StaleMs - 1 }},
-		{"global budget", "budget: a blocking", func(s *State, r *Request) {
-			s.Snapshot = &ipc.BudgetSnapshot{At: fixtureNow, Budgets: []ipc.BudgetView{{ID: "b", Enforce: "block",
-				Scope: ipc.BudgetScope{Global: true}, State: "ok"}}}
-		}},
-		{"model budget", "budget: a blocking", func(s *State, r *Request) {
-			s.Snapshot = &ipc.BudgetSnapshot{At: fixtureNow, Budgets: []ipc.BudgetView{{ID: "b", Enforce: "block",
-				Scope: ipc.BudgetScope{Dim: "model", Value: "m1"}, State: "ok"}}}
-		}},
 		{"tool results", "token saver:", func(s *State, r *Request) {
 			s.Gateway.TokenSaver = true
 			r.Body = []byte(`{"model":"oa/m1","messages":[{"role":"tool","tool_call_id":"c","content":"x"}]}`)
