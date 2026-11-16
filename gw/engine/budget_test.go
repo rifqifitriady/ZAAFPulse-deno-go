@@ -43,7 +43,7 @@ func TestOwnSpendRefusesTheNextCall(t *testing.T) {
 	s = s.WithSnapshot(&ipc.BudgetSnapshot{At: T, Budgets: []ipc.BudgetView{keyBudget("ok", 0, 0.002)}})
 	p := plan(t, s, r)
 	sp := &Spend{}
-	if a, _ := s.Budget(&p, T+5, StaleMs, sp.Recent(T+5)); a != nil {
+	if a, _ := s.Budget(&p, T+5, StaleMs, sp.Live()); a != nil {
 		t.Fatalf("refused before any spend: %s", a.Body)
 	}
 	rec := p.Base
@@ -53,7 +53,7 @@ func TestOwnSpendRefusesTheNextCall(t *testing.T) {
 		t.Fatalf("spent %+v %v", x, ok)
 	}
 	sp.Add(x)
-	a, _ := s.Budget(&p, T+20, StaleMs, sp.Recent(T+20))
+	a, _ := s.Budget(&p, T+20, StaleMs, sp.Live())
 	if a == nil || a.Status != 402 || !a.NoLine ||
 		string(a.Body) != `{"error":{"message":"budget \"Key k1\" is used up for this month","type":"insufficient_quota"}}` {
 		t.Fatalf("got %+v", a)
@@ -72,12 +72,12 @@ func TestOwnSpendSurvivesTheIngestLag(t *testing.T) {
 	x, _ := spentOf(rec, s.Snapshot)
 	sp.Add(x)
 	lag := s.WithSnapshot(&ipc.BudgetSnapshot{At: T + 1000, Budgets: []ipc.BudgetView{keyBudget("ok", 0, 0.002)}})
-	if a, _ := lag.Budget(&p, T+1010, StaleMs, sp.Recent(T+1010)); a == nil {
+	if a, _ := lag.Budget(&p, T+1010, StaleMs, sp.Live()); a == nil {
 		t.Fatal("the line missing from the snapshot was not counted")
 	}
 	// The snapshot holds the line (spent 0.002 of 0.003): 0.002, not 0.004, so the call passes.
 	held := s.WithSnapshot(&ipc.BudgetSnapshot{At: T + 2000, Budgets: []ipc.BudgetView{keyBudget("ok", 0.002, 0.003)}})
-	if a, _ := held.Budget(&p, T+2010, StaleMs, sp.Recent(T+2010)); a != nil {
+	if a, _ := held.Budget(&p, T+2010, StaleMs, sp.Live()); a != nil {
 		t.Fatalf("counted twice: %s", a.Body)
 	}
 	// A new period (spent back to 0, below the line's base of an earlier one) leaves the old line out.
@@ -85,12 +85,56 @@ func TestOwnSpendSurvivesTheIngestLag(t *testing.T) {
 	x2.Base = map[string]float64{"kb": 0.5}
 	sp2 := &Spend{}
 	sp2.Add(x2)
-	if a, _ := s.Budget(&p, T+20, StaleMs, sp2.Recent(T+20)); a != nil {
+	if a, _ := s.Budget(&p, T+20, StaleMs, sp2.Live()); a != nil {
 		t.Fatalf("an earlier period's line counted: %s", a.Body)
 	}
-	// Lines leave after keepSpentMs.
-	if n := len(sp.Recent(T + 10 + keepSpentMs)); n != 0 {
-		t.Fatalf("%d lines kept", n)
+}
+
+// Own lines stay until a snapshot provably holds them (review m1): an ack alone, or a snapshot before the ack, keeps
+// them; a snapshot after the ack drops them. Time alone never does.
+func TestOwnLinesLeaveOnceASnapshotHoldsThem(t *testing.T) {
+	sp := &Spend{}
+	sp.Add(Spent{Seq: 5, USD: 1})
+	sp.Add(Spent{Seq: 6, USD: 1})
+	sp.Add(Spent{Seq: 0, USD: 1}) // not stored: kept until the cap
+	sp.SnapshotIn()               // a snapshot before any ack holds nothing of ours
+	if n := len(sp.Live()); n != 3 {
+		t.Fatalf("%d lines, want 3", n)
+	}
+	sp.Acked(5)
+	if n := len(sp.Live()); n != 3 {
+		t.Fatalf("an ack alone dropped lines: %d", n)
+	}
+	sp.SnapshotIn()
+	got := sp.Live()
+	if len(got) != 2 || got[0].Seq != 6 || got[1].Seq != 0 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+// The review's mixed-spend case (I1): spend from elsewhere lands on the budget between two go-served lines; the second
+// line is not in the snapshot yet. The next call must be refused, as JS refuses it on live spend.
+func TestOwnSpendKeepsSpendFromElsewhere(t *testing.T) {
+	s, r := basicState(t)
+	b := func(spent float64) *State {
+		v := keyBudget("ok", spent, 0.90)
+		return s.WithSnapshot(&ipc.BudgetSnapshot{At: T, Budgets: []ipc.BudgetView{v}})
+	}
+	s0 := b(0)
+	p := plan(t, s0, r)
+	sp := &Spend{}
+	add := func(st *State, seq int64, usd float64) {
+		rec := p.Base
+		rec.Ts, rec.Cost = T, int64(usd*1e9)
+		x, _ := spentOf(rec, st.Snapshot)
+		x.Seq = seq
+		sp.Add(x)
+	}
+	add(s0, 1, 0.40) // L1 at base 0
+	s1 := b(0.70)    // the snapshot holds L1 and 0.30 served by JS
+	add(s1, 2, 0.25) // L2 at base 0.70; real spend 0.95, not stored yet
+	if a, _ := s1.Budget(&p, T, StaleMs, sp.Live()); a == nil || a.Status != 402 {
+		t.Fatalf("passed at 0.95 of 0.90: %+v", a)
 	}
 }
 
@@ -140,7 +184,7 @@ func TestSpendIsBounded(t *testing.T) {
 	for i := range 70000 {
 		sp.Add(Spent{Ts: int64(i) + 1, USD: 1})
 	}
-	if n := len(sp.Recent(1)); n > maxSpent {
+	if n := len(sp.Live()); n > maxSpent {
 		t.Fatalf("%d lines kept", n)
 	}
 }

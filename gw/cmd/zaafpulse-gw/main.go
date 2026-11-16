@@ -279,6 +279,7 @@ func (g *gateway) handle(msg ipc.Message) int {
 		if st := g.engine.State(); st != nil {
 			g.engine.SetState(st.WithSnapshot(b))
 		}
+		g.engine.SnapshotIn()
 		g.mu.Unlock()
 		if g.o.healthOnSnapshot {
 			g.sendHealth()
@@ -292,6 +293,7 @@ func (g *gateway) handle(msg ipc.Message) int {
 		if err := g.box.Ack(b.UpTo); err != nil {
 			g.log.Printf("outbox ack: %v", err)
 		}
+		g.engine.Acked(b.UpTo) // the engine's own spend up to it is stored, and in the next snapshot (P4e review m1)
 	case *ipc.Shutdown:
 		if g.o.ignoreShutdown {
 			g.log.Print("shutdown ignored (--ignore-shutdown)")
@@ -426,7 +428,9 @@ func (g *gateway) checkBudget(body any) {
 
 // emitUsage stores a go-engine call in the outbox and sends it (P4b; the control plane stores it through the JS
 // gateway's own usage writer, lib/ipc/server-sinks.js).
-func (g *gateway) emitUsage(r *ipc.UsageReport) error { return g.appendAndSend(ipc.TypeUsageReport, r) }
+func (g *gateway) emitUsage(r *ipc.UsageReport) (int64, error) {
+	return g.box.AppendSend(ipc.TypeUsageReport, r, time.Now().UnixMilli(), g.out.enqueue)
+}
 
 // appendAndSend stores an event in the outbox and hands it to the sender (D4: stored before sent; E10: one lock for the
 // append and the hand-over, so the sender gets the lines in seq order). It never waits for the control plane to read

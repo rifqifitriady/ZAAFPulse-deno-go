@@ -13,26 +13,27 @@ import (
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
-// maxSpent bounds the lines kept while no snapshot comes (a hung control plane): the oldest go first.
+// maxSpent bounds the lines kept while no snapshot holds them (a hung control plane): the oldest go first.
 const maxSpent = 65536
 
-// keepSpentMs is how long the engine keeps its own lines: past it every snapshot holds them (the ingest stores a line a
-// few milliseconds after it is sent), or the snapshot is stale and the call is unchecked anyway.
-const keepSpentMs = 10_000
-
-// Spent is one line the engine emitted: when, what it reached, its list cost in USD, and the spent of each budget it
-// counts in as the snapshot of that moment had it (Base), before this line.
+// Spent is one line the engine emitted: its outbox seq (0: not stored), when, what it reached, its list cost in USD,
+// and the spent of each budget it counts in as the snapshot of that moment had it (Base), before this line.
 type Spent struct {
+	Seq  int64
 	Ts   int64
 	In   ipc.CheckInput
 	USD  float64
 	Base map[string]float64
 }
 
-// Spend holds the engine's own recent lines (P4e Decision 15).
+// Spend holds the engine's own lines until a snapshot provably holds them (P4e Decision 15, review m1): the control
+// plane acknowledges a seq only after storing it (and the budget service counts a line when it is stored), and the
+// gateway reads its messages in order, so a snapshot that arrives after an ack of seq N holds every line up to N.
 type Spend struct {
-	mu    sync.Mutex
-	lines []Spent
+	mu      sync.Mutex
+	lines   []Spent // in Add order
+	acked   int64   // the newest ack's seq
+	covered int64   // the ack in force when the newest snapshot arrived: lines up to it are in that snapshot
 }
 
 // Add keeps one line.
@@ -45,13 +46,27 @@ func (sp *Spend) Add(x Spent) {
 	sp.lines = append(sp.lines, x)
 }
 
-// Recent drops the lines older than keepSpentMs at now and returns a copy of the rest.
-func (sp *Spend) Recent(now int64) []Spent {
+// Acked records an ack of every event up to seq.
+func (sp *Spend) Acked(seq int64) {
+	sp.mu.Lock()
+	sp.acked = max(sp.acked, seq)
+	sp.mu.Unlock()
+}
+
+// SnapshotIn records that a snapshot arrived: it holds every line acknowledged before it.
+func (sp *Spend) SnapshotIn() {
+	sp.mu.Lock()
+	sp.covered = sp.acked
+	sp.mu.Unlock()
+}
+
+// Live drops the lines the newest snapshot holds and returns a copy of the rest, in Add order.
+func (sp *Spend) Live() []Spent {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	keep := sp.lines[:0]
 	for _, l := range sp.lines {
-		if l.Ts > now-keepSpentMs {
+		if l.Seq == 0 || l.Seq > sp.covered {
 			keep = append(keep, l)
 		}
 	}
@@ -125,10 +140,11 @@ func (s *State) Budget(p *Plan, now, staleMs int64, own []Spent) (*Answer, bool)
 	return nil, d.Action == ipc.Unchecked
 }
 
-// ownRefusal: a budget the engine's own recent lines used up. For each budget the estimate is the larger of the
-// snapshot's spent and the spent the oldest of those lines saw plus all of them: when the snapshot already holds the
-// lines the two agree (no double count), when it does not yet (the ingest lags), the second one counts them. A line
-// whose base is above today's spent belongs to an earlier period and is left out.
+// ownRefusal: a budget the engine's own lines, not yet in the snapshot, used up. For each budget the estimate is the
+// largest of the snapshot's spent and, for every own line i, the spent line i saw before it (base_i) plus line i and
+// every own line after it (review I1): base_i was read before line i was emitted, so it holds none of those lines and
+// the sum never counts one twice, while spend from elsewhere that landed before line i is kept. A line whose base is
+// above today's spent belongs to an earlier period and is left out.
 func (s *State) ownRefusal(in ipc.CheckInput, own []Spent) string {
 	if s.Snapshot == nil || len(own) == 0 {
 		return ""
@@ -137,19 +153,16 @@ func (s *State) ownRefusal(in ipc.CheckInput, own []Spent) string {
 		if b.SpentUSD == nil || b.AmountUSD == nil || !ipc.AppliesTo(b, in, s.Snapshot.KeyCenter) {
 			continue
 		}
-		sum, base, any := 0.0, 0.0, false
-		for _, l := range own {
-			v, ok := l.Base[b.ID]
+		est, suffix := *b.SpentUSD, 0.0
+		for i := len(own) - 1; i >= 0; i-- {
+			v, ok := own[i].Base[b.ID]
 			if !ok || v > *b.SpentUSD+1e-12 {
 				continue
 			}
-			if !any || v < base {
-				base = v
-			}
-			sum += l.USD
-			any = true
+			suffix += own[i].USD
+			est = max(est, v+suffix)
 		}
-		if any && max(*b.SpentUSD, base+sum) >= *b.AmountUSD {
+		if est > *b.SpentUSD && est >= *b.AmountUSD {
 			return `budget "` + b.Name + `" is used up for this ` + b.Period
 		}
 	}
