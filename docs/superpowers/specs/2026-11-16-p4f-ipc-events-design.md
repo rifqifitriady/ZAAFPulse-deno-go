@@ -190,8 +190,8 @@ The journal covers non-streaming calls too (Fact 7). The journal is emptied at r
 has passed 64 KiB.
 
 **D15. The recovered line.** The call's base record (key, provider, model, routed model, kind, format, stream, client,
-local), `ts` = the call's start, `ms` 0, `status` 599, `error` `"the gateway stopped before the call ended"`, 0 tokens,
-cost 0, no `traceId` (no span was stored). The tokens are unknown: a stream's usage arrives in its last chunk. Owner
+local), `ts` = the call's start, `ms` 0, `status` 599, `error` `"the gateway stopped before the call ended"`, no
+token counts (as the engine's own 599 line), cost 0, no `traceId` (no span was stored). The tokens are unknown: a stream's usage arrives in its last chunk. Owner
 question 1.
 
 **D16. One rate-limit window, replicated.** Each engine decides locally and synchronously, as today, and tells the
@@ -266,7 +266,7 @@ to existing messages are all optional fields (version rule).
 | T3 | Control plane side (D8–D12, D4 push, D9 ingest, `exportRecord`, routing) | ingest tests for store on/off and export; routing tests; the session survives spans with tracing off |
 | T4 | The engine emits spans and `traceId` (D1, D6, D8) for served calls, streams and 429s | contract suite in go mode with spans asserted; engine tests |
 | T5 | One rate-limit window (D16) | a key with rpm 3 alternating js and go routes is refused on the fourth call on either; the window survives a gateway restart |
-| T6 | The S8 equality test (D17, D18) and its CI job | the diff is empty on Node and Deno |
+| T6 | The S8 equality test (D17, D18), run by the existing Node (four OS) and Deno (two OS) jobs, which take `test/*.test.js` | the diff is empty on Node and Deno |
 | T7 | The acker retries a failed mark write (T2-f) | test: a mark file that fails once is written on the next tick, acks follow |
 | T8 | Bench, results and docs (D21, D22) | M3 and M4 re-measured within target; `docs/migration/2026-11-16-p4f-results.md`; plan §5 S8 ticked |
 
@@ -305,7 +305,7 @@ equality across many JS semantics), T2 (exactly once across a crash).
 | `lib/front/push.js` | guard policy and budget push | translate presets | `trace`, provider `span` |
 | `server.js` | front wiring | – | sinks, push triggers, `ratelimit` hooks |
 | `gw/guard` | its owner (P4e) | – | read only: `SecretSpans`, `jsre` |
-| `test/contract/go-*.test.js`, `.github/workflows/ci.yml` | new cases, jobs | new cases | span asserts; the `s8-equality` step |
+| `test/contract/go-*.test.js`, `test/contract/upstream.js`, `test/contract/harness.js` | new cases | new cases | `go-spans`, `go-ratelimit`; the `slowwhole` model; `providerList` exported |
 
 The engine's answer path gets one helper, `e.finish(w, r, ans)` (D1), that every answer the engine writes goes
 through; P4e's blocked answer and P4d's translated answers use it and get their spans for free. Merge order: whichever
@@ -313,7 +313,7 @@ of P4e and P4f lands second rebases its `serve.go` hunks onto the helper; the co
 
 ## Open questions for the owner
 
-1. **The recovered line after a crash (D15)**: status 599, 0 tokens, cost 0 (the tokens are unknown). Accept, or
+1. **The recovered line after a crash (D15)**: status 599, no token counts, cost 0 (the tokens are unknown). Accept, or
    should the line carry an estimate (e.g. the prompt's size priced as input)? Default applied: 599 and 0.
 2. **Content capture (D10)**: with OTLP `captureContent: true`, go classes stay on js, because prompts and answers
    would sit in the gateway's outbox on disk until acknowledged. Accept, or allow content through the outbox?
