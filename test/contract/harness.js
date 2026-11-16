@@ -68,6 +68,8 @@ function shadowDiffs(data) {
   } catch {
     return [];
   }
+  // ZP_SHADOW_TALLY=<file>: every compare line is appended there too, to count the outcomes of a run (P4e results).
+  if (process.env.ZP_SHADOW_TALLY && text) fs.appendFileSync(process.env.ZP_SHADOW_TALLY, text);
   return text.split('\n').filter((l) => l.includes('"outcome":"diff"'));
 }
 
