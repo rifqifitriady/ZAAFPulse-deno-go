@@ -127,3 +127,25 @@ func TestCompareRedactedSame(t *testing.T) {
 		t.Fatalf("got %+v", l)
 	}
 }
+
+// Only a budget's 402 is the snapshot's lag; a price-rule 402 the other side did not answer is a diff (review m2).
+func TestPriceRuleDisagreementIsADiff(t *testing.T) {
+	s, p, want, c := guardFixture(t, "price-rule-refuses-unpriced")
+	ref, _ := s.Budget(&p, fixtureNow, ipc.StaleAfterMs, nil)
+	if ref == nil || ref.Status != 402 {
+		t.Fatal("not refused")
+	}
+	// Go's price 402, JS called the provider.
+	_, _, served, sc := guardFixture(t, "price-rule-priced-passes")
+	if l := s.CompareRefusal("chat", &p, ref, jsCapture(t, served, nil, sc)); l.Outcome != "diff" {
+		t.Fatalf("go price 402 vs js served: %+v", l)
+	}
+	// JS's price 402, Go would serve.
+	s2, p2, _, _ := guardFixture(t, "price-rule-priced-passes")
+	if ref2 := s2.Guard(&p2, 0); ref2 != nil {
+		t.Fatal("refused")
+	}
+	if l := s2.Compare("chat", &p2, jsCapture(t, want, nil, c)); l.Outcome != "diff" {
+		t.Fatalf("js price 402 vs go served: %+v", l)
+	}
+}
