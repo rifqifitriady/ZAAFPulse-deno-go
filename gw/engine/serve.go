@@ -160,7 +160,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		return
 	}
 	// The budget (P4e Decision 13): the price rule, the snapshot, and the engine's own spend since it.
-	ref, unchecked := s.Budget(&p, e.now(), e.staleMs, e.spend.Since(s.SnapshotAt))
+	ref, unchecked := s.Budget(&p, e.now(), e.staleMs, e.spend.Recent(e.now()))
 	if ref != nil {
 		if r.Context().Err() == nil {
 			write(w, *ref) // allowedTargets throws before any record: no line
@@ -216,7 +216,11 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 // emitLine hands one usage line to the outbox, marked when no fresh snapshot checked the call.
 func (e *Engine) emitLine(rec ipc.UsageRecord, unchecked bool) {
 	// Counted before the hand-over, so the next call sees it at once (P4e Decision 15).
-	if sp, ok := spentOf(rec); ok {
+	var snap *ipc.BudgetSnapshot
+	if st := e.state.Load(); st != nil {
+		snap = st.Snapshot
+	}
+	if sp, ok := spentOf(rec, snap); ok {
 		e.spend.Add(sp)
 	}
 	rep := &ipc.UsageReport{Record: rec}

@@ -37,34 +37,60 @@ func plan(t *testing.T, s *State, r *Request) Plan {
 	return p
 }
 
-// The call after the one that used a budget up is refused at once, from the engine's own line; the next snapshot holds
-// that spend and refuses through Decide, and the own line is dropped (P4e Decision 15).
+// The call after the one that used a budget up is refused at once, from the engine's own line (P4e Decision 15).
 func TestOwnSpendRefusesTheNextCall(t *testing.T) {
 	s, r := basicState(t)
 	s = s.WithSnapshot(&ipc.BudgetSnapshot{At: T, Budgets: []ipc.BudgetView{keyBudget("ok", 0, 0.002)}})
 	p := plan(t, s, r)
 	sp := &Spend{}
-	if a, _ := s.Budget(&p, T+5, StaleMs, sp.Since(T)); a != nil {
+	if a, _ := s.Budget(&p, T+5, StaleMs, sp.Recent(T+5)); a != nil {
 		t.Fatalf("refused before any spend: %s", a.Body)
 	}
 	rec := p.Base
 	rec.Ts, rec.Cost = T+10, 2_000_000
-	x, ok := spentOf(rec)
-	if !ok {
-		t.Fatal("no spend from a priced line")
+	x, ok := spentOf(rec, s.Snapshot)
+	if !ok || x.Base["kb"] != 0 {
+		t.Fatalf("spent %+v %v", x, ok)
 	}
 	sp.Add(x)
-	a, _ := s.Budget(&p, T+20, StaleMs, sp.Since(T))
+	a, _ := s.Budget(&p, T+20, StaleMs, sp.Recent(T+20))
 	if a == nil || a.Status != 402 || !a.NoLine ||
 		string(a.Body) != `{"error":{"message":"budget \"Key k1\" is used up for this month","type":"insufficient_quota"}}` {
 		t.Fatalf("got %+v", a)
 	}
-	s2 := s.WithSnapshot(&ipc.BudgetSnapshot{At: T + 30, Budgets: []ipc.BudgetView{keyBudget("exceeded", 0.002, 0.002)}})
-	if own := sp.Since(T + 30); len(own) != 0 {
-		t.Fatalf("own lines kept past the snapshot: %v", own)
+}
+
+// A snapshot taken after the line but before the ingest stored it (the lag the Windows runner hit) still refuses;
+// one that holds the line does not count it twice.
+func TestOwnSpendSurvivesTheIngestLag(t *testing.T) {
+	s, r := basicState(t)
+	s = s.WithSnapshot(&ipc.BudgetSnapshot{At: T, Budgets: []ipc.BudgetView{keyBudget("ok", 0, 0.003)}})
+	p := plan(t, s, r)
+	sp := &Spend{}
+	rec := p.Base
+	rec.Ts, rec.Cost = T+10, 2_000_000
+	x, _ := spentOf(rec, s.Snapshot)
+	sp.Add(x)
+	lag := s.WithSnapshot(&ipc.BudgetSnapshot{At: T + 1000, Budgets: []ipc.BudgetView{keyBudget("ok", 0, 0.002)}})
+	if a, _ := lag.Budget(&p, T+1010, StaleMs, sp.Recent(T+1010)); a == nil {
+		t.Fatal("the line missing from the snapshot was not counted")
 	}
-	if a, _ := s2.Budget(&p, T+40, StaleMs, sp.Since(T+30)); a == nil || a.Status != 402 {
-		t.Fatalf("the exceeded snapshot did not refuse: %+v", a)
+	// The snapshot holds the line (spent 0.002 of 0.003): 0.002, not 0.004, so the call passes.
+	held := s.WithSnapshot(&ipc.BudgetSnapshot{At: T + 2000, Budgets: []ipc.BudgetView{keyBudget("ok", 0.002, 0.003)}})
+	if a, _ := held.Budget(&p, T+2010, StaleMs, sp.Recent(T+2010)); a != nil {
+		t.Fatalf("counted twice: %s", a.Body)
+	}
+	// A new period (spent back to 0, below the line's base of an earlier one) leaves the old line out.
+	x2 := x
+	x2.Base = map[string]float64{"kb": 0.5}
+	sp2 := &Spend{}
+	sp2.Add(x2)
+	if a, _ := s.Budget(&p, T+20, StaleMs, sp2.Recent(T+20)); a != nil {
+		t.Fatalf("an earlier period's line counted: %s", a.Body)
+	}
+	// Lines leave after keepSpentMs.
+	if n := len(sp.Recent(T + 10 + keepSpentMs)); n != 0 {
+		t.Fatalf("%d lines kept", n)
 	}
 }
 
@@ -114,7 +140,7 @@ func TestSpendIsBounded(t *testing.T) {
 	for i := range 70000 {
 		sp.Add(Spent{Ts: int64(i) + 1, USD: 1})
 	}
-	if n := len(sp.Since(0)); n > maxSpent {
+	if n := len(sp.Recent(1)); n > maxSpent {
 		t.Fatalf("%d lines kept", n)
 	}
 }
