@@ -1,0 +1,225 @@
+{
+  "secrets": [
+    "enBfZ3VhcmRGaXh0dXJlU2VjcmV0MDEyMzQ1Njc4OWFiY2RlZg==",
+    "c2stb2EtZ3VhcmQtZml4dHVyZS0xMjM0NTY="
+  ],
+  "fn": "chatGuard",
+  "in": [
+    {
+      "config": {
+        "gateway": {
+          "providers": [
+            {
+              "id": "oa",
+              "preset": "custom",
+              "baseUrl": "http://127.0.0.1:9/v1",
+              "approved": true,
+              "tier": "external",
+              "auth": {
+                "type": "key"
+              }
+            },
+            {
+              "id": "pv",
+              "preset": "ollama",
+              "baseUrl": "http://127.0.0.1:11434/v1"
+            }
+          ],
+          "routes": [],
+          "guardrails": {
+            "scope": "external",
+            "secrets": "off",
+            "pii": "redact",
+            "injection": "off"
+          },
+          "defaults": {
+            "model": "",
+            "plannerModel": "",
+            "codeModel": ""
+          },
+          "tokenSaver": true,
+          "modelMap": []
+        },
+        "keys": [
+          {
+            "id": "k1",
+            "name": "k1",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "2a112a7006cd1da46c57e5951470a8dfd3857d7817b10e1701a3bdcf396dea89"
+          },
+          {
+            "id": "k2",
+            "name": "k2",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {
+              "secrets": "block"
+            },
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "c1169397525ee08de6db12932650ccadba516fb8b81f641e5e65f89bc327aaf4"
+          },
+          {
+            "id": "k3",
+            "name": "k3",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": 1,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "f044cc78bef966c2d00d0169ce7f30bc4893fe7251e539a5a407f201aaf594ea"
+          },
+          {
+            "id": "k4",
+            "name": "k4",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "a882a973c69db193f3c62e390193120aadd6788c4a89adb971d70479138806ea"
+          }
+        ],
+        "pricing": {
+          "m1": {
+            "input": 1000000000,
+            "output": 2000000000
+          },
+          "llama-9": {
+            "input": 100000000,
+            "output": 300000000
+          }
+        }
+      },
+      "secrets": {
+        "providers": [
+          {
+            "id": "oa",
+            "value": "<<ZPSECRET:1>>"
+          }
+        ],
+        "mask": [
+          "<<ZPSECRET:1>>"
+        ]
+      },
+      "snapshot": {
+        "budgets": [],
+        "keyCenter": {},
+        "at": 1767225600000
+      },
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer <<ZPSECRET:0>>"
+        },
+        "body": "{\"model\":\"oa/m1\",\"messages\":[{\"role\":\"user\",\"content\":\"mail a@b.co or call +1 415 555 0100 from 10.1.2.3\"}]}"
+      },
+      "provider": {
+        "status": 200,
+        "body": "{\"id\":\"c1\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500}}"
+      }
+    }
+  ],
+  "out": {
+    "request": {
+      "url": "http://127.0.0.1:9/v1/chat/completions",
+      "headers": {
+        "content-type": "application/json",
+        "accept": "application/json",
+        "authorization": "Bearer <<ZPSECRET:1>>"
+      },
+      "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"mail ‹email› or call ‹phone› from ‹ip›\"}]}"
+    },
+    "client": {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*"
+      },
+      "body": "{\"id\":\"c1\",\"object\":\"chat.completion\",\"model\":\"oa/m1\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500}}"
+    },
+    "usage": {
+      "keyId": "k1",
+      "provider": "oa",
+      "model": "oa/m1",
+      "kind": "chat",
+      "format": "openai",
+      "stream": false,
+      "guard": {
+        "action": "redacted",
+        "hits": [
+          {
+            "check": "pii",
+            "label": "email",
+            "count": 1
+          },
+          {
+            "check": "pii",
+            "label": "phone",
+            "count": 1
+          },
+          {
+            "check": "pii",
+            "label": "ip",
+            "count": 1
+          }
+        ]
+      },
+      "local": true,
+      "status": 200,
+      "input": 1000,
+      "output": 500,
+      "cached": 0,
+      "cost": 2000000
+    }
+  }
+}

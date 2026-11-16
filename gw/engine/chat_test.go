@@ -179,11 +179,6 @@ func TestChatHandoffs(t *testing.T) {
 			s.Snapshot = &ipc.BudgetSnapshot{At: fixtureNow, Budgets: []ipc.BudgetView{{ID: "b", Enforce: "block",
 				Scope: ipc.BudgetScope{Dim: "model", Value: "m1"}, State: "ok"}}}
 		}},
-		{"guardrails", "guardrails:", func(s *State, r *Request) { s.Gateway.Guardrails.Secrets = "redact" }},
-		{"key guardrails", "guardrails:", func(s *State, r *Request) {
-			m := "log"
-			s.Keys.list[0].Guardrails.PII = &m
-		}},
 		{"tool results", "token saver:", func(s *State, r *Request) {
 			s.Gateway.TokenSaver = true
 			r.Body = []byte(`{"model":"oa/m1","messages":[{"role":"tool","tool_call_id":"c","content":"x"}]}`)
