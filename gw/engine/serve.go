@@ -37,6 +37,10 @@ func (e *Engine) SetState(s *State) { e.state.Store(s) }
 // State is the current generation, or nil.
 func (e *Engine) State() *State { return e.state.Load() }
 
+// streamFeedHook, when set (tests only), runs before each read is rewritten: a panic there shows the stream's usage
+// line is still written once.
+var streamFeedHook func()
+
 // StreamsBody is whether chatCompletion streams a provider answer of this status: a 2xx with a body. fetch gives no
 // body for 204 and 205, and chatCompletion then answers whole (`!r.body`; final review m3).
 func StreamsBody(status int) bool {
@@ -229,6 +233,9 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			if streamFeedHook != nil {
+				streamFeedHook()
+			}
 			out, ferr := cs.Feed(buf[:n])
 			if len(out) > 0 {
 				if _, werr := w.Write(out); werr != nil || rc.Flush() != nil {
