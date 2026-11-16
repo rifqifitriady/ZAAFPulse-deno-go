@@ -166,11 +166,14 @@ false, UNSET otherwise, `dropped` 0 (a gateway span has at most 25 attributes).
 so the push on an `otel` save routes on the new value at once. With D10 the minute of lag n2 described applies only
 to switching `captureContent`. n1 (the shadow slot leak) was closed in P4c (final review I1).
 
-**D13. Audit: a go-served chat call produces no audit event, as in JS.** Evidence: Fact 3. `audit.event` stays in v1
-unchanged for the slices that produce one: `/mcp tools/call` (S9, `log: "mcp"`) and any governance entry a later
-slice moves to Go. The S8 equality test (D18) diffs the governance chain and the MCP audit log and proves zero extra
-entries on the go side. The P3 minor "`audit.gap` over-counted while the audit key is unreadable" stays deferred to S9,
-the first slice that sends governance events from Go.
+**D13. Audit: no audit event per go-served chat call, as in JS; one governance entry per unchecked-budget window
+(corrected 2026-11-16, D24).** A go-served chat call, served or refused, writes no governance entry and no MCP audit
+entry, exactly as the JS gateway (Fact 3); `audit.event` stays in v1 unchanged for the slices that produce one
+(`/mcp tools/call`, S9, `log: "mcp"`, and any governance entry a later slice moves to Go). The one audit entry this
+slice adds is written by the control plane itself, not sent by Go: the supervisor's unchecked-budget alert (D24). The
+S8 equality test (D18) diffs the governance chain and the MCP audit log and proves zero extra entries on the go side for
+its corpus, which has no stale snapshot; the D24 entry has its own test. The P3 minor "`audit.gap` over-counted while
+the audit key is unreadable" stays deferred to S9, the first slice that sends governance events from Go.
 
 **D14. The crash gap is closed by a call journal in the outbox folder.** `gw-outbox/calls.jsonl`, append only, same
 writer lock and durability target as the outbox (a killed process, no fsync; the owner's decision of 2026-11-12):
@@ -245,6 +248,24 @@ MacBook as in P4c; a regression beyond either target stops the task.
 fixtures; `scripts/build-deno.js` lists them; the `doctor` line becomes `Gateway IPC  v1, 17 schemas`. The additions
 to existing messages are all optional fields (version rule).
 
+**D23. The owner's answers (2026-11-16).** All three defaults are accepted: the recovered crash line is status 599
+with cost 0 (D15); `captureContent: true` keeps the go classes on js (D10); the replicated rate-limit window is accepted
+(D16). The questions are closed; see "Owner answers" below.
+
+**D24. One governance entry per unchecked-budget alert window (owner decision, program plan §3 design rule 2: "marked
+`budget_unchecked` in the usage report and the audit, and the dashboard raises an alert").** Today a stale snapshot
+marks the usage line (`budget: "unchecked"`) and the supervisor logs an alert at most once a minute
+(`lib/ipc/supervisor.js noteUnchecked`, `ALERT_EVERY_MS`), but nothing reaches the audit. From P4f, each time the
+supervisor raises that alert it also calls `onUncheckedAlert({ calls, since, at })`, and `server.js` writes one
+governance entry through `govRecord` as the system: `{ action: "gateway.budget_unchecked", outcome: "error", target:
+{ type: "gateway" }, actor: { via: "system" }, calls, since }`, where `calls` is the number of unchecked calls stored
+since the previous entry (this one included) and `since` the time of the first of them (ISO). One entry per alert
+window, never one per call: a stale snapshot under load must not bury the chain (the reason `lib/users/refusals.js`
+batches refused requests). A resend after a restart is a duplicate the ingest does not count, so it adds no entry. The
+entry is written by the control plane, the chain's only writer (rule 1); Go sends nothing new. An entry that cannot be
+written (the audit key unreadable) is the chain's own `degraded` case (counted in its next `audit.gap`); the alert and
+the counter are unaffected.
+
 ## IPC v1 additions (additive only)
 
 | Message | Change | Direction |
@@ -268,10 +289,15 @@ to existing messages are all optional fields (version rule).
 | T5 | One rate-limit window (D16) | a key with rpm 3 alternating js and go routes is refused on the fourth call on either; the window survives a gateway restart |
 | T6 | The S8 equality test (D17, D18), run by the existing Node (four OS) and Deno (two OS) jobs, which take `test/*.test.js` | the diff is empty on Node and Deno |
 | T7 | The acker retries a failed mark write (T2-f) | test: a mark file that fails once is written on the next tick, acks follow |
+| T9 | One governance entry per unchecked-budget alert window (D24) | supervisor test: three unchecked calls in a minute give one `onUncheckedAlert`, the next window a second; server test: one `gateway.budget_unchecked` entry in the chain per window, `calls` and `since` right |
 | T8 | Bench, results and docs (D21, D22) | M3 and M4 re-measured within target; `docs/migration/2026-11-16-p4f-results.md`; plan §5 S8 ticked |
 
 Order: T1 → T2 (independent of T1; may run in parallel) → T3 → T4 → T5 → T6 → T7 → T8. Riskiest first: T1 (byte
 equality across many JS semantics), T2 (exactly once across a crash).
+
+Scheduling (coordinator, 2026-11-16): P4e (guard and budget wiring) is being implemented on `migrate/p4e-guard-wire`
+and touches `serve.go`, `main.go`, `outbox.go` and `ingest.js`. T1 and T7 do not, and run now; T2–T6, T9 and T8 run
+after P4e merges into `migrate/deno-go` and this branch merges it.
 
 ## Exit (plan §5 S8)
 
@@ -280,6 +306,7 @@ equality across many JS semantics), T2 (exactly once across a crash).
 - [ ] A gateway crash mid-call leaves exactly one usage line (kill tests).
 - [ ] One rate-limit window across engines.
 - [ ] Go routes allowed while OTLP export is on (without `captureContent`).
+- [ ] One governance entry per unchecked-budget alert window (D24).
 - [ ] M3 and M4 still met with spans and the journal on.
 
 ## Out of scope
@@ -311,13 +338,13 @@ The engine's answer path gets one helper, `e.finish(w, r, ans)` (D1), that every
 through; P4e's blocked answer and P4d's translated answers use it and get their spans for free. Merge order: whichever
 of P4e and P4f lands second rebases its `serve.go` hunks onto the helper; the coordinator decides.
 
-## Open questions for the owner
+## Owner answers (2026-11-16)
 
-1. **The recovered line after a crash (D15)**: status 599, no token counts, cost 0 (the tokens are unknown). Accept, or
-   should the line carry an estimate (e.g. the prompt's size priced as input)? Default applied: 599 and 0.
-2. **Content capture (D10)**: with OTLP `captureContent: true`, go classes stay on js, because prompts and answers
-   would sit in the gateway's outbox on disk until acknowledged. Accept, or allow content through the outbox?
-   Default applied: stay on js.
-3. **The replicated window (D16)** can admit a few requests over `rpm` when both engines admit the last slot within
-   the same tenth of a millisecond. Accept, or require a strict single owner (an asynchronous `authed` in JS)?
-   Default applied: accept.
+The three questions below were answered on 2026-11-16: every default is accepted (D23). They are kept as asked.
+
+1. **The recovered line after a crash (D15)**: status 599, no token counts, cost 0. **Accepted.**
+2. **Content capture (D10)**: with OTLP `captureContent: true`, go classes stay on js. **Accepted.**
+3. **The replicated window (D16)**: a few requests over `rpm` are possible at the boundary. **Accepted.**
+
+The unchecked-budget audit entry (D24) is an earlier owner decision (design rule 2), added to this slice on the same
+day.

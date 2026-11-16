@@ -48,6 +48,13 @@ module's own `gw/guard` (`SecretSpans`) and `gw/guard/jsre` (read only); Node 24
 - Full matrix after Task 6 and after Task 8: `gh workflow run ci.yml -R rifqifitriady/ZAAFPulse-deno-go --ref
   migrate/p4f-ipc-events`.
 
+## Scheduling (coordinator, 2026-11-16)
+
+P4e (guard and budget wiring) is being implemented on `migrate/p4e-guard-wire`; it adds the sender goroutine and
+touches `gw/engine/serve.go`, `gw/cmd/zaafpulse-gw/main.go`, `gw/ipc/outbox.go` and `lib/ipc/ingest.js`. Tasks 1 and 7
+stay away from those files and run now. Tasks 2–6, 9 and 8 run after P4e merges into `migrate/deno-go` and this branch
+merges `migrate/deno-go`; adapt their `serve.go`, `main.go`, outbox and ingest steps to P4e's code then.
+
 ## Decisions (from the spec, one line each; the evidence is in the spec)
 
 1. D1: a go-answered request emits the JS spans for it: SERVER `POST {route}` for every answer the engine writes, CLIENT
@@ -65,7 +72,7 @@ module's own `gw/guard` (`SecretSpans`) and `gw/guard/jsre` (read only); Node 24
 10. D10: go is allowed with OTLP export on, except with `captureContent: true`.
 11. D11: `trace.span.otlp {traceState, remote, message}` makes the OTLP export equal.
 12. D12: n2 closed by `otel.status({ fresh: true })`.
-13. D13: no audit event for a go-served chat call, as in JS.
+13. D13 (corrected 2026-11-16): no audit event per go-served chat call, as in JS; the one new audit entry is D24's, written by the control plane.
 14. D14: the call journal `gw-outbox/calls.jsonl` closes the crash gap, for streams and non-stream calls.
 15. D15: the recovered line: base, status 599, the fixed error text, no token counts, cost 0, `ts` = start, `ms` 0.
 16. D16: the window is replicated with `ratelimit.take` both ways and seeded with `ratelimit.window`.
@@ -75,6 +82,8 @@ module's own `gw/guard` (`SecretSpans`) and `gw/guard/jsre` (read only); Node 24
 20. D20: T6-2, T1-c, T2-f folded in; `audit.gap`, the replay lock and the 4 MiB tail stay deferred.
 21. D21: M3 and M4 re-measured with spans and the journal on.
 22. D22: 17 schemas; `build-deno.js` and the `doctor` line updated.
+23. D23: the owner accepted the three defaults on 2026-11-16 (599 and cost 0; `captureContent` keeps js; the replicated window).
+24. D24: one governance entry `gateway.budget_unchecked` per unchecked-budget alert window, from the supervisor's alert (Task 9).
 
 ## Known deviations to record (found while writing this plan)
 
@@ -111,6 +120,7 @@ the results, and stays out of the generated corpus (the precedent of P4b deviati
 | `gw/cmd/zaafpulse-gw/main.go` | journal recovery before `hello`; span and usage emitters; `ratelimit.*` |
 | `lib/ipc/ingest.js`, `lib/ipc/server-sinks.js` | `spanStoreOn`, `afterSpan` |
 | `lib/ipc/session.js`, `lib/ipc/supervisor.js` | `ratelimit.window` in the hello sequence; `ratelimit.take` both ways; `sendControl` |
+| `lib/ipc/supervisor.js` (`onUncheckedAlert`), `lib/front/index.js`, `server.js` | D24, Task 9 |
 | `lib/ipc/acker.js`, `test/ipc-acker.test.js` (new) | T2-f: retry a failed `beforeAck` on the next tick |
 | `lib/front/index.js`, `lib/front/push.js` | routing with `otel {enabled, captureContent}`; `trace` and provider `span` in the push |
 | `lib/gateway/keys.js`, `lib/gateway/index.js` | `onTake`, `note`, `windows`; `gateway.onRateTake`, `noteRateTake`, `rateWindows` |
@@ -2496,6 +2506,137 @@ git commit -m "Retry a failed acknowledgement on the next tick when no event fol
 git push origin migrate/p4f-ipc-events
 ```
 
+### Task 9: One governance entry per unchecked-budget alert window (D24, owner decision, design rule 2)
+
+Runs after P4e merges (P4e changes how unchecked calls reach the ingest; this task only hooks the supervisor's alert).
+
+**Files:**
+- Modify: `lib/ipc/supervisor.js` (`noteUnchecked`, option `onUncheckedAlert`, header comment)
+- Modify: `lib/front/index.js` (pass `onUncheckedAlert` through to the supervisor), `server.js` (the `govRecord` call)
+- Test: `test/ipc-supervisor.test.js`, `test/front-server.test.js` (or a new `test/front-unchecked-audit.test.js`)
+
+**Interfaces:**
+- Consumes: `createSupervisor` (unchanged otherwise), `govRecord(entry)` in `server.js`.
+- Produces: supervisor option `onUncheckedAlert({ calls: number, since: number, at: number })`, called once per alert
+  window (at most every `ALERT_EVERY_MS`, 60 s), never throwing into the ingest path; the governance entry
+  `{ action: 'gateway.budget_unchecked', outcome: 'error', target: { type: 'gateway' }, actor: { via: 'system' },
+  calls, since: <ISO> }`.
+
+- [ ] **Step 1: The failing supervisor test (`test/ipc-supervisor.test.js`)**
+
+```js
+test('one unchecked-budget audit call per alert window, with the calls since the last one (P4f D24)', async (t) => {
+  const { sessions, start } = fakeStart();
+  const clock = { t: 1000 };
+  const alerts = [];
+  const ingest = createIngest({ recordUsage: () => {}, recordGovernance: () => {}, recordMcp: () => {}, writeSpans: () => {}, log: () => {} });
+  const sup = createSupervisor(fakeOpts(start, [], clock, { ingest, onUncheckedAlert: (a) => alerts.push(a) }));
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  const base = JSON.parse(fs.readFileSync(path.join(DIR, 'fixtures', 'usage.report', 'valid-unchecked.json'), 'utf8'));
+  const at = (seq, t) => {
+    clock.t = t;
+    sessions[0].opts.onEvent({ ...base, seq }, 'gw-1');
+  };
+  at(1, 1000); // opens a window: one entry at once
+  at(2, 20_000);
+  at(3, 40_000);
+  assert.deepEqual(alerts, [{ calls: 1, since: 1000, at: 1000 }]);
+  at(4, 61_000); // the next window: the calls since the last entry, from the first of them
+  assert.deepEqual(alerts[1], { calls: 3, since: 20_000, at: 61_000 });
+  at(4, 62_000); // a resend: a duplicate, not counted
+  at(5, 200_000);
+  assert.deepEqual(alerts[2], { calls: 1, since: 200_000, at: 200_000 });
+  assert.equal(alerts.length, 3);
+});
+
+test('an unchecked-alert hook that throws changes nothing for the ingest (P4f D24)', async (t) => {
+  const { sessions, start } = fakeStart();
+  const logs = [];
+  const ingest = createIngest({ recordUsage: () => {}, recordGovernance: () => {}, recordMcp: () => {}, writeSpans: () => {}, log: () => {} });
+  const sup = createSupervisor(fakeOpts(start, logs, { t: 5 }, { ingest, onUncheckedAlert: () => { throw new Error('audit down'); } }));
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  const msg = JSON.parse(fs.readFileSync(path.join(DIR, 'fixtures', 'usage.report', 'valid-unchecked.json'), 'utf8'));
+  sessions[0].opts.onEvent(msg, 'gw-1');
+  assert.equal(sup.status().unchecked.count, 1);
+  assert.ok(logs.some((l) => l.includes('audit down')));
+});
+```
+
+(`fakeOpts(start, logs, clock, extra)` spreads `extra` into the options, as the existing tests do; the event's `seq`
+is set per call so the ingest does not drop the later ones as duplicates.)
+
+Run: `node --test test/ipc-supervisor.test.js`. Expected: FAIL (`alerts` stays empty).
+
+- [ ] **Step 2: Implement in `lib/ipc/supervisor.js`**
+
+```js
+  const unchecked = { count: 0, lastAt: null, alertedAt: -Infinity, pending: 0, pendingSince: null };
+  function noteUnchecked() {
+    unchecked.count++;
+    unchecked.lastAt = now();
+    unchecked.pending++;
+    if (unchecked.pendingSince === null) unchecked.pendingSince = unchecked.lastAt;
+    if (unchecked.lastAt - unchecked.alertedAt >= ALERT_EVERY_MS) {
+      unchecked.alertedAt = unchecked.lastAt;
+      log(`gw: alert: ${unchecked.count} metered calls passed without a budget check (the budget snapshot was stale)`);
+      // Design rule 2 (P4f D24): the alert window is also one governance entry, written by the control plane.
+      const info = { calls: unchecked.pending, since: unchecked.pendingSince, at: unchecked.lastAt };
+      unchecked.pending = 0;
+      unchecked.pendingSince = null;
+      try {
+        onUncheckedAlert(info);
+      } catch (err) {
+        log(`gw: the unchecked-budget audit entry could not be written: ${err && err.message}`);
+      }
+    }
+  }
+```
+
+Add `onUncheckedAlert = () => {}` to the options and its JSDoc; `status().unchecked` keeps its fields (do not expose
+`pending`). Update the header comment's "logged once a minute as an alert" with "and written once per alert window to
+the governance audit (onUncheckedAlert)".
+
+Run: `node --test test/ipc-supervisor.test.js`. Expected: PASS.
+
+- [ ] **Step 3: Wire it in `lib/front/index.js` and `server.js`**
+
+`createFront({ ..., onUncheckedAlert })` passes it to `createSupervisor`. In `server.js`, in the `createFront` call:
+
+```js
+  // Design rule 2 (P4f D24): calls that passed a stale budget snapshot are marked, alerted and audited: one governance
+  // entry per alert window, as the system.
+  onUncheckedAlert: ({ calls, since }) =>
+    govContext.runAs({ via: 'system' }, () =>
+      govRecord({
+        action: 'gateway.budget_unchecked',
+        outcome: 'error',
+        target: { type: 'gateway' },
+        actor: { via: 'system' },
+        calls,
+        since: new Date(since).toISOString(),
+      }),
+    ),
+```
+
+A test in `test/front-server.test.js` style: a server in front mode with a gateway stub that emits unchecked usage
+(`--emit` already sends `usage.report` events; give the stub `--emit-unchecked` only if the existing synthetic events
+carry no `budget: "unchecked"`, else use them), then read the governance chain (`GET /api/governance/audit?action=
+gateway.budget_unchecked` as the owner, or the `.data/audit` files): exactly one entry for the window, `calls` equal
+to the stored unchecked count, `actor.via` `system`, and the chain verifies.
+
+- [ ] **Step 4: Full checks, commit, push**
+
+```bash
+node --test test/ipc-supervisor.test.js test/front-server.test.js test/ipc-hardening.test.js
+deno test -q --no-check --no-prompt -P=test test/ipc-supervisor.test.js test/front-server.test.js test/ipc-hardening.test.js
+npm run typecheck
+git add lib/ipc/supervisor.js lib/front/index.js server.js test
+git commit -m "Write one governance entry per unchecked-budget alert window (P4f D24, design rule 2)"
+git push origin migrate/p4f-ipc-events
+```
+
 ### Task 8: Bench, results and the program plan
 
 **Files:**
@@ -2542,7 +2683,7 @@ gh workflow run ci.yml -R rifqifitriady/ZAAFPulse-deno-go --ref migrate/p4f-ipc-
 
 ## Self-review (done while writing)
 
-- Spec coverage: D1 (Tasks 1, 4), D2–D7 (Task 1), D8 (Tasks 3, 4), D9–D12 (Task 3), D13 (Task 6's governance and MCP
+- Spec coverage: D24 (Task 9), D23 (no task: the defaults were already planned); D1 (Tasks 1, 4), D2–D7 (Task 1), D8 (Tasks 3, 4), D9–D12 (Task 3), D13 (Task 6's governance and MCP
   diff), D14–D15 (Task 2), D16 (Task 5), D17–D18 (Task 6), D19 (no task: nothing changes in the shadow), D20 (T6-2 and
   T1-c in Task 2, T2-f in Task 7), D21–D22 (Tasks 5, 8).
 - Types used across tasks: `TraceCtx`, `SpanIDs`, `ServerFacts`, `Observed`, `ipc.TraceSpanBody.OTLP`,
