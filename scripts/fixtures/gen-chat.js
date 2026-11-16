@@ -322,6 +322,9 @@ const STREAM_CASES = [
   ],
   ['stream-upstream-500', {}, streamed(), { status: 500, body: '{"error":{"message":"upstream exploded"}}' }],
   ['stream-connection-refused', {}, streamed(), { throw: 'ECONNREFUSED' }],
+  // A 2xx without a body (final review m3): fetch gives no body, and chatCompletion answers it whole.
+  ['stream-upstream-204', {}, streamed(), { status: 204, nullBody: true }],
+  ['stream-upstream-205', {}, streamed(), { status: 205, nullBody: true }],
   [
     'stream-private-alias',
     { key: `${SECRET}2` },
@@ -378,6 +381,7 @@ async function main() {
     sent = { url, headers: init.headers, body: init.body };
     if (provider.throw === 'timeout') throw Object.assign(new Error('aborted'), { name: 'AbortError' });
     if (provider.throw) throw Object.assign(new TypeError('fetch failed'), { cause: { code: provider.throw } });
+    if (provider.nullBody) return new Response(null, { status: provider.status });
     if (provider.chunks || provider.b64) {
       const pieces = provider.b64
         ? provider.b64.map((b) => Buffer.from(b, 'base64'))

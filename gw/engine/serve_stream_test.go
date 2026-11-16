@@ -420,3 +420,20 @@ func TestStreamWavesReuseProviderConnections(t *testing.T) {
 		t.Fatalf("the second wave opened %d new provider connections (first wave %d)", again, opened)
 	}
 }
+
+// Final review m3: a 2xx without a body (204, 205) is answered whole, as chatCompletion does when fetch gives no body:
+// the provider's status, JSON headers, an empty body, and its usage line with that status.
+func TestStreamNoBodyStatusesAreAnsweredWhole(t *testing.T) {
+	for _, code := range []int{http.StatusNoContent, http.StatusResetContent} {
+		g := newStreamRig(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }))
+		resp := g.post(context.Background(), t, streamBody)
+		b, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != code || len(b) != 0 || resp.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("%d: got %d %q %v", code, resp.StatusCode, b, resp.Header)
+		}
+		if rec := g.oneLine(t); rec.Status != int64(code) || !*rec.Stream || rec.TTFT.Set {
+			t.Fatalf("%d: %+v", code, rec)
+		}
+	}
+}
