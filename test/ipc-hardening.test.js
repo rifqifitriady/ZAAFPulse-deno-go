@@ -227,10 +227,12 @@ test('reload() while starting is queued and sent once ready; onReady runs on eac
   assert.equal(sup.reload(), true);
   assert.deepEqual(f.runs[0].sent, []);
   f.runs[0].becomeReady();
-  await waitFor(() => f.runs[0].sent.length === 2, 5000, 'the queued reload');
+  // The reload's budget snapshot goes first (P4e Decision 25), then the generation's config and secrets.
+  await waitFor(() => f.runs[0].sent.length === 3, 5000, 'the queued reload');
   assert.deepEqual(
     f.runs[0].sent.map(([type, body]) => [type, body.gen]),
     [
+      ['budget.snapshot', undefined],
       ['config.push', 2],
       ['secrets.handoff', 2],
     ],
