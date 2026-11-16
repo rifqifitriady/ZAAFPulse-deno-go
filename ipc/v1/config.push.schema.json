@@ -41,7 +41,17 @@
               "format": { "type": "string", "enum": ["openai", "anthropic"] },
               "responses": { "type": "boolean" },
               "reasoning": { "type": "boolean" },
-              "tokenParam": { "type": "string", "enum": ["max_tokens", "max_completion_tokens"] }
+              "tokenParam": { "type": "string", "enum": ["max_tokens", "max_completion_tokens"] },
+              "span": {
+                "type": "object",
+                "required": ["name"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "address": { "type": "string" },
+                  "port": { "type": "integer", "minimum": 0 }
+                }
+              }
             }
           }
         },
