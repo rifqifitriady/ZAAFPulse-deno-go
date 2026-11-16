@@ -314,6 +314,24 @@ These must be measured on the ubuntu CI runner with a committed benchmark: real 
 
 Shorter version: guard p99 ≤ 15 ms at 32 KB and ≤ 60 ms at 128 KB, within 3× of the JS, with a per-request budget and a deadline of 2 s or less that fails closed.
 
+**Amended by the owner, 2026-11-13 (B2 review I1).** A 2 s wall-clock deadline blocked legitimate 20 MB bodies when
+the CPU was contended, so condition 2 now reads:
+
+- The per-call step budget is the primary bound. It is deterministic and does not depend on machine load. Running
+  out of it returns a `*Block{Overrun}` in every mode.
+- The wall-clock deadline is only a coarse backstop of 10 s per call, also failing closed.
+- Every adversarial input of the reviews is stopped by the step budget (or the backtrack stack cap), never by the
+  clock. On an idle runner the worst measured takes 3.76 s of CPU at the 450M cap (it was 2.5 s with the 2 s
+  deadline); the CPU time is logged and bounded loosely at 8 s (B2 re-review 2, M8).
+- (Re-review 1, I2.) The owner's intent is no false blocks on legitimate text: the cap is 450M steps per call, which
+  leaves the densest legitimate text measured (the guardrail tests) 1.5× headroom; the CPU an adversarial body may
+  then take on the runner is up to about 3.8 s, logged and bounded loosely (8 s) in `guard-bench`.
+- Known limit: 20 MB of text dense in security terms takes 5.8–6.4 s under CPU load on the runner (two calls at once
+  next to CPU-burning goroutines), against the 10 s backstop. A host loaded much more heavily could reach the
+  backstop for such a body, and the clock would then block it.
+- Condition 3 (no false blocks) is also checked with legitimate 20 MB bodies under concurrent CPU load.
+- The heap bound (256 MB) is the extra Go heap of one call, sampled `HeapAlloc`, not process RSS (B2 review M5).
+
 Also carried into P4e (not fixed in stage 1):
 
 - **I4: one budget per `CheckBody` call, plus a 2 s deadline.** Today each check gets its own budget per string, so
@@ -334,3 +352,109 @@ Also carried into P4e (not fixed in stage 1):
     unbudgeted path fails closed instead of panicking. A grep of every jsre call reachable from `CheckBody` and
     `CheckText` found no other unbudgeted one. Repro (now a regression test): default policy, one 4.4 MB user message
     `"data:a/b" + ";x"×2,200,000 + ";base64,AAAA"` panicked with `ErrStack`; JS returns null. Go now blocks it.
+
+## P4e guard readiness (plan `2026-11-13-p4e-guard-ready.md`, branch `migrate/p4e-guard-ready`)
+
+The library now meets the P4e entry conditions; it is still not wired into the request path (stage 2).
+
+22. **I4: one budget per call, the primary bound; a 10 s backstop (owner's decision, 2026-11-13).** `CheckBody`
+    and `CheckText` hold one `jsre.Budget` for the whole call, shared by every string, check and the data-URL test:
+    20,000,000 steps, plus `600 × length` each time a check runs on a string, capped at 450,000,000 per call
+    (220M, then 350M, before B2 re-review 1, I2). Steps
+    are weighted to cost about the same time whatever the input: a matcher instruction, a character a repeat
+    consumes or an alternation choice is one step, a start attempt four, a start position the filters skip half of
+    one, a visited string 16 (every string leaf, skipped ones too, so a body of tiny strings counts: B2 review M4).
+    One step costs 2–8 ns on an M-series Mac and 2–2.5 times that on the Ubuntu runner, so the cap bounds a call to
+    about 3.8 s of CPU there (idle). Legitimate 20 MB bodies and their headroom under the cap, at any machine load:
+    the corpus 78M (5.8×), this repository's code 112M (4.0×), numeric CSV 121M (3.7×), `lib/signals.js` 156M
+    (2.9×), the guardrail tests plus `lib/signals.js` 264M (1.7×), the guardrail tests alone 293M (1.53×, the
+    densest legitimate text measured). The budget also
+    carries a wall-clock backstop of 10 s (`requestDeadline`, read every 65,536 steps and at the first step of a
+    call; `jsre.ErrDeadline`). Past either the call returns `*Block{Overrun: <check>}` in every mode. M8 (note 20)
+    now applies per call. Compiling the patterns (about 0.2–0.5 s, once) happens in `guard.Prepare`, before the
+    first budget starts; stage 2 may call it at startup. `TestOneBudgetPerCall` takes the clock out of play and
+    shows every adversarial input stopped by its steps (table below); `TestLegitimateBodiesUnderLoad` checks 20 MB
+    code, corpus and CSV bodies, two at a time next to `GOMAXPROCS` CPU-burning goroutines: no block.
+23. **M7: the exported scanners take a budget.** `ScanInjection(text, b)`, `SecretSpans(text, b)` and
+    `MaskPII(text, b)` run under `b` (nil: `NewBudget(len)`, with the deadline) and return a limit as
+    `jsre.ErrBudget`, `ErrStack` or `ErrDeadline`, never as a panic.
+24. **N1: failures in `log` mode are reported.** `Result.Failures` and `TextResult.Failures` list each check whose
+    detector failed in the call (`{Check, Count, Err}`); `Error` stays the JS boolean. Stage 2 should log or count
+    them.
+25. **Heap.** Peak extra heap for a 20 MB body is now 40–122 MB (bound 256 MB, asserted for the adversarial inputs,
+    the 1,000-string bodies and the 20 MB corpus). The cuts: `ReplaceAll` returns its input when nothing matched;
+    the PII passes alternate two buffers (and reuse the input once injection, which now runs first, has read it; its
+    hits are still added last, in the JS order); `Str` writes UTF-8 without a rune slice; `deobfuscate` keeps a bit
+    per dropped unit and rewrites leetspeak in place, only in runs that hold a digit; the backtrack stack grows in
+    chunks of 16,384 frames of 20 bytes (`MaxFrames` is now 40 MiB) instead of by doubling.
+26. **Speed.** Start positions are filtered by the first two code units, by word start for patterns that begin with
+    `\b`, by a leading negative lookbehind's single characters, and by a trie of literal prefixes; a pattern that is
+    a class run ended by a disjoint unit (the email pattern) is tried only before such a unit; a `^` pattern only at
+    0. The injection patterns, the two anchor patterns and the secret patterns each run in one scan of the text
+    (`jsre.Multi`), VMs are pooled. A pattern whose every match holds a unit of a set R among its first K units (a
+    ':' within five for IPv6, a '.' within four for IPv4, '+', '(' or '-' within five for phones) is tried only where
+    one is (`requiredWithin`), so numbers in CSV or code cost no matcher run. Every change is checked against the
+    previous behaviour: `TestFiltersChangeNoMatch` (every guard pattern, with and without the filters, on the fixture
+    inputs and the corpus; a deliberately broken filter fails it), `TestMultiMatchesExec`, `TestMultiAllMatchesEach`,
+    `TestMatchInjectionMatchesReference`, `TestDeobfuscateMatchesReference`, and the fixtures, unchanged. The step
+    cap is the only new behaviour on output: an adversarial body past 450M steps now blocks where the JS answers
+    slowly (`"the ai said you "×N` at 20 MB, which JS answers in 0.8 s; a recorded overrun deviation like note 13;
+    the doc-context line, 260M steps, now finishes as in JS). `MASKED` is skipped where `around` holds no '@' or
+    "http" (it cannot match there).
+27. **C1 (B2 review): a redaction bypass, fixed.** The heap work let the PII passes write their result over the
+    original buffer, and `text()` took "same buffer, same length" for "unchanged": with secrets and PII on `redact`,
+    `"k " + <28-unit Anthropic key> + " m a@b.co"` (the key shrinks by one, the email grows by one) went upstream in
+    clear while the result said `redacted`. "Changed" now comes from whether a check redacted in this text, and the
+    returned string is compared by content; the PII passes record a replacement as it happens; no slice identity
+    stands for "changed" anywhere (`sameSlice` is gone). Tests: `TestLengthNeutralRedactionsAreApplied`
+    (secret+email, secret+2 emails, 4 emails+IPv4, secret+4 emails+IPv4, 9 emails+phone+secret, 2 secrets) and 18
+    JS fixtures `checkBody-length-neutral-*` / `checkText-length-neutral-*` that `gen-guard.js` builds from
+    length-cancelling combinations of keys, emails, IPv4 addresses and phones; 16 of them failed before the fix.
+28. **B2 review minors.** M1: `TestGuardBench` measures each size three times and judges the median attempt (all
+    three reported). M3: the CPU bound of `TestOneBudgetPerCall` is tight only in `guard-bench` (Ubuntu) and 30 s in the
+    4-OS `go` job; the test asserts the outcome on steps (a call that used the whole budget blocked; the clock is out
+    of play) and bounds CPU only loosely, 8 s in `guard-bench` (re-review 1 M6, re-review 2 M8). M4: see note 22 (a step per visited string). Left as notes: M2, the deobfuscation
+    path is now measured by `TestLegitimateBodiesUnderLoad` (code text) but not by the latency benchmark; M5, the
+    heap bound is per call and `HeapAlloc`, not RSS (entry-condition text above).
+
+### Benchmark (CI job `guard-bench`, ubuntu-latest)
+
+`scripts/bench-guard.js` times the JS `checkBody`, `TestGuardBench` the Go `CheckBody`, on the same slices of the
+corpus in `gw/guard/testdata/bench-corpus.txt` (guard corpus, `lib/` code, plans and specs, agent transcripts), one
+user message, secrets and pii `redact`, injection `log`; each size judged on the median of three attempts. Run
+43357393023 (37489e3, cap 450M):
+
+| Size | Go p50 | Go p99 | JS p50 | JS p99 | Go/JS p50 | Go/JS p99 | Target |
+|---|---|---|---|---|---|---|---|
+| 32 KB | 2.51 ms | 4.74 ms | 3.15 ms | 8.77 ms | 0.80x | 0.54x | p50 ≤ 5, p99 ≤ 15 ms: met |
+| 128 KB | 12.55 ms | 17.75 ms | 21.74 ms | 34.75 ms | 0.58x | 0.51x | p50 ≤ 30, p99 ≤ 60 ms: met |
+| 1 MB | 63.68 ms | 127.81 ms | 92.68 ms | 305.93 ms | 0.69x | 0.42x | p99 ≤ 300 ms: met |
+
+Runner speed varies between runs by up to 1.5x. Before this work (M4 laptop): 32 KB 4.93 / 11.28 ms (2.8x the JS),
+128 KB 26.2 / 42.7 ms, 1 MB 150 / 300 ms. The corpus runs 917–969 ms at 20 MB on the runner, with no overrun.
+
+Legitimate 20 MB bodies (`TestLegitimateBodiesUnderLoad`, same run): steps and headroom under the 450M cap, then
+wall time two at a time next to `GOMAXPROCS` CPU-burning goroutines; none blocks.
+
+| Body | Steps | Headroom | Under load |
+|---|---|---|---|
+| Corpus | 78M | 5.77x | 1.9–2.1 s |
+| This repository's code | 112M | 4.03x | 2.4–2.5 s |
+| Numeric CSV | 121M | 3.71x | 2.3 s |
+| `lib/signals.js` | 156M | 2.88x | 3.2 s |
+| Guardrail tests + `lib/signals.js` | 264M | 1.70x | 5.8–6.0 s |
+| Guardrail tests (`test/guardrails*.js`) | 293M | 1.53x | 6.2–6.4 s |
+
+Adversarial inputs at the 450M cap, clock out of play (`TestOneBudgetPerCall`, same run). Every input ends by its
+steps or the stack cap, under the 8 s bound and the 10 s backstop:
+
+| Input (20 MB) | One string | 1,000 strings |
+|---|---|---|
+| `token `+`a `×N | 303 ms CPU, 40M steps, blocked (stack) | 957 ms, 90M, ok |
+| IPv6 | 400 ms, 63M, blocked (stack) | 1.29 s, 143M, ok |
+| email | 582 ms, 42M, blocked (stack) | 1.78 s, 215M, ok |
+| exfil | 3.69 s, 450M, blocked (budget) | 3.63 s, 450M, blocked (budget) |
+| `the ai said you `×N | 3.76 s, 450M, blocked (budget) | 3.69 s, 450M, blocked (budget) |
+| doc-context line | 1.68 s, 260M, ok | 1.68 s, 251M, ok |
+
+Heap per call: 14–122 MB.

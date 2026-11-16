@@ -66,13 +66,21 @@ func equalU16(a, b []uint16) bool {
 	return true
 }
 
-// MaskPII masks emails, IP addresses and phone numbers and counts each kind masked (a kind appears once seen).
-func MaskPII(text string) (string, map[string]int) {
-	s, counts := maskPII(jsre.U16(text), nil)
-	return jsre.Str(s), counts
+// MaskPII masks emails, IP addresses and phone numbers and counts each kind masked (a kind appears once seen). It runs
+// under b like ScanInjection.
+func MaskPII(text string, b *jsre.Budget) (masked string, counts map[string]int, err error) {
+	u := jsre.U16(text)
+	b = orBudget(b, len(u))
+	var s []uint16
+	if err = b.Run(func() { s, counts = maskPII(u, true, nil, b) }); err != nil {
+		return "", nil, err
+	}
+	return jsre.Str(s), counts, nil
 }
 
-func maskPII(s []uint16, b *jsre.Budget) ([]uint16, map[string]int) {
+// maskPII masks s. With disposable the passes may write over s once they no longer read it, and over spare (which
+// must not overlap s); otherwise s is never written. The result may be either storage.
+func maskPII(s []uint16, disposable bool, spare []uint16, b *jsre.Budget) ([]uint16, map[string]int) {
 	counts := map[string]int{}
 	seen := func(kind string, f func(m []uint16) []uint16) func([]int) []uint16 {
 		return func(c []int) []uint16 {
@@ -86,14 +94,30 @@ func maskPII(s []uint16, b *jsre.Budget) ([]uint16, map[string]int) {
 	}
 	email := jsre.U16("‹email›")
 	ip := jsre.U16("‹ip›")
-	s = reEmail.ReplaceAllB(s, seen("email", func([]uint16) []uint16 { return email }), b)
-	s = reIPV4.ReplaceAllB(s, seen("ip", func(m []uint16) []uint16 {
+	// Each pass reads s and writes a new text only when it replaces something; the passes alternate between two
+	// buffers, so a long text costs at most two copies, never one per pass; with disposable, s and spare are those two.
+	// Whether a pass replaced anything is recorded as it happens, never read from which storage it returned; owned
+	// says whether s is storage a pass may write over later (the caller's when disposable, or a buffer made here).
+	owned := disposable
+	pass := func(re *jsre.Regexp, f func([]int) []uint16) {
+		replaced := false
+		out := re.ReplaceAllInto(spare, s, func(c []int) []uint16 { replaced = true; return f(c) }, b)
+		if !replaced {
+			return
+		}
+		if owned {
+			spare = s
+		}
+		s, owned = out, true
+	}
+	pass(reEmail, seen("email", func([]uint16) []uint16 { return email }))
+	pass(reIPV4, seen("ip", func(m []uint16) []uint16 {
 		if keepIP[jsre.Str(m)] {
 			return m
 		}
 		return ip
-	}), b)
-	s = reIPV6.ReplaceAllB(s, seen("ip", func(m []uint16) []uint16 { return ipv6(m, b) }), b)
-	s = rePhone.ReplaceAllB(s, seen("phone", func(m []uint16) []uint16 { return phone(m, b) }), b)
+	}))
+	pass(reIPV6, seen("ip", func(m []uint16) []uint16 { return ipv6(m, b) }))
+	pass(rePhone, seen("phone", func(m []uint16) []uint16 { return phone(m, b) }))
 	return s, counts
 }
