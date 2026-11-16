@@ -491,7 +491,9 @@ func (g *gateway) drain() {
 	g.log.Print("the control plane closed the channel: exiting")
 	g.closeFront(0) // nothing to forward to any more
 	g.stopEmitter(time.Second)
-	g.out.stop(time.Second)
+	// The control plane is gone: nothing can be sent any more, and what is unsent stays in the outbox. Do not hold the
+	// exit (on Windows a running gateway exe keeps its folder locked).
+	g.out.stop(100 * time.Millisecond)
 }
 
 func (g *gateway) shutdown(grace time.Duration) {

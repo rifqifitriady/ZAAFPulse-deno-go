@@ -115,3 +115,21 @@ func TestSenderStopBeforeStart(t *testing.T) {
 	s := newSender(senderOutbox(t), func([]byte) error { return nil }, t.Logf)
 	s.stop(time.Second)
 }
+
+// A second stop (the deferred one after drain) returns at once instead of waiting its grace again.
+func TestSenderSecondStopDoesNotWait(t *testing.T) {
+	box := senderOutbox(t)
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+	s := newSender(box, func([]byte) error { <-block; return nil }, t.Logf)
+	s.start(box.Next())
+	if _, err := box.AppendSend(ipc.TypeUsageReport, usageEvent(), 1, s.enqueue); err != nil {
+		t.Fatal(err)
+	}
+	s.stop(50 * time.Millisecond)
+	start := time.Now()
+	s.stop(5 * time.Second)
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("the second stop waited %s", d)
+	}
+}
