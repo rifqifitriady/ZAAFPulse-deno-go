@@ -129,7 +129,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	}
 	req := ReadRequest(r, rawPath)
 	started := time.Now()
-	p := s.PlanChat(req, e.now())
+	p := untilServed(s.PlanChat(req, e.now()))
 	// The sub-class (P4c): a stream is chat-stream, with its own engine entry.
 	sub := subOf(&p, req)
 	onGo, shadowed := e.mode(sub)

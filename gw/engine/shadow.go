@@ -240,7 +240,7 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 		return
 	}
 	req := ReadRequest(r, rawPath)
-	p := s.PlanChat(req, e.now())
+	p := untilServed(s.PlanChat(req, e.now()))
 	sub := subOf(&p, req)
 	_, shadowed := e.mode(sub)
 	if e.modes.Load() == nil {
