@@ -437,3 +437,67 @@ func TestStreamNoBodyStatusesAreAnsweredWhole(t *testing.T) {
 		}
 	}
 }
+
+// failingWriter fails every write after the first (the headers' flush goes through), while the client is still there.
+type failingWriter struct {
+	http.ResponseWriter
+	writes int
+}
+
+func (f *failingWriter) Write(b []byte) (int, error) {
+	if f.writes++; f.writes > 1 {
+		return 0, io.ErrClosedPipe
+	}
+	return f.ResponseWriter.Write(b)
+}
+func (f *failingWriter) Unwrap() http.ResponseWriter { return f.ResponseWriter }
+
+// Final review m4: a write that fails (the client still connected) ends the stream with one line and cancels the
+// provider call; a panic inside the stream loop still writes one line.
+func TestStreamWriteErrorAndPanicWriteOneLine(t *testing.T) {
+	cancelled := make(chan struct{}, 1)
+	provider := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		for i := 0; ; i++ {
+			if _, err := io.WriteString(w, `data: {"choices":[{"delta":{"content":"x"}}]}`+"\n\n"); err != nil {
+				break
+			}
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+				cancelled <- struct{}{}
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	})
+	g := newStreamRig(t, provider)
+	js := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Errorf("handed off") })
+	serve := func(wrap func(http.ResponseWriter) http.ResponseWriter) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			g.e.Serve("chat", wrap(w), r, "/v1/chat/completions", js)
+		}))
+		defer srv.Close()
+		req, _ := http.NewRequest("POST", srv.URL+"/v1/chat/completions", strings.NewReader(streamBody))
+		req.Header.Set("Authorization", g.key)
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			_, _ = io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+		}
+	}
+	serve(func(w http.ResponseWriter) http.ResponseWriter { return &failingWriter{ResponseWriter: w} })
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a write error did not cancel the provider call")
+	}
+	if rec := g.oneLine(t); rec.Status != 200 {
+		t.Fatalf("%+v", rec)
+	}
+	streamFeedHook = func() { panic("boom") }
+	defer func() { streamFeedHook = nil }()
+	serve(func(w http.ResponseWriter) http.ResponseWriter { return w })
+	if rec := g.oneLine(t); rec.Status != 200 {
+		t.Fatalf("%+v", rec)
+	}
+}
