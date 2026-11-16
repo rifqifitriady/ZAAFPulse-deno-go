@@ -49,9 +49,9 @@ func newStreamRigAt(t *testing.T, providerURL string) *streamRig {
 	// A snapshot dated an hour ahead stays fresh for the whole test (PlanChat refuses one older than StaleMs).
 	s = s.WithSnapshot(&ipc.BudgetSnapshot{At: NowMs() + 3600_000, KeyCenter: map[string]string{}})
 	lines := make(chan ipc.UsageRecord, 1024)
-	e := New(NewUpstream(func(string) string { return "" }), func(r *ipc.UsageReport) error {
+	e := New(NewUpstream(func(string) string { return "" }), func(r *ipc.UsageReport) (int64, error) {
 		lines <- r.Record
-		return nil
+		return 0, nil
 	}, t.Logf)
 	e.SetState(s)
 	e.SetModes(func(string) (bool, bool) { return true, false }) // both sub-classes on go

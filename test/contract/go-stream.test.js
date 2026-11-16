@@ -1,6 +1,7 @@
-// Contract: streamed chat as the go engine serves it (P4c), with guardrails off so the engine may serve: the bytes, the
-// headers, one usage line for a normal end, a client that leaves and a provider that cuts off. The cases hold in every
-// mode; under ZP_ENGINE=go each line must come from the gateway's outbox (it carries "ipc").
+// Contract: streamed chat as the go engine serves it (P4c), under the default guardrail policy (P4e: the engine serves
+// guarded calls too): the bytes, the headers, one usage line for a normal end, a client that leaves and a provider that
+// cuts off. The cases hold in every mode; under ZP_ENGINE=go each line must come from the gateway's outbox (it carries
+// "ipc").
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { start } = require('./harness');
@@ -9,7 +10,6 @@ const GO = process.env.ZP_ENGINE === 'go';
 let h;
 test.before(async () => {
   h = await start();
-  await h.setGuardrails({ scope: 'external', secrets: 'off', pii: 'off', injection: 'off' });
 });
 test.after(async () => {
   if (h) await h.stop();
