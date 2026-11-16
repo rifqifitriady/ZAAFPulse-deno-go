@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
@@ -17,7 +18,7 @@ type Engine struct {
 	state    atomic.Pointer[State]
 	limits   *RateLimiter
 	upstream *Upstream
-	emit     func(*ipc.UsageReport) error
+	emit     func(*ipc.UsageReport) (int64, error)
 	now      func() int64
 	logf     func(string, ...any)
 	modes    atomic.Pointer[func(sub string) (onGo, shadowed bool)]
@@ -25,13 +26,21 @@ type Engine struct {
 	streams  sync.WaitGroup // streams being served, until their usage line is handed to emit
 	closeMu  sync.Mutex     // closing and streams.Add: no Add once Wait has begun (final review m5)
 	closing  bool
+	failMu   sync.Mutex
+	failAt   map[string]time.Time // when each check's log-mode failure was last logged
+	spend    *Spend               // the engine's own lines since the newest snapshot (P4e)
+	staleMs  int64                // the age at which a budget snapshot no longer checks a call
 }
 
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
 // plane: lib/ipc/ingest.js stores it through the JS gateway's own writer).
-func New(up *Upstream, emit func(*ipc.UsageReport) error, logf func(string, ...any)) *Engine {
-	return &Engine{limits: NewRateLimiter(), upstream: up, emit: emit, now: NowMs, logf: logf}
+func New(up *Upstream, emit func(*ipc.UsageReport) (int64, error), logf func(string, ...any)) *Engine {
+	return &Engine{limits: NewRateLimiter(), upstream: up, emit: emit, now: NowMs, logf: logf,
+		failAt: map[string]time.Time{}, spend: &Spend{}, staleMs: StaleMs}
 }
+
+// SetStaleMs sets the age at which a budget snapshot is stale (--stale-ms); call it before serving.
+func (e *Engine) SetStaleMs(ms int64) { e.staleMs = ms }
 
 // SetState installs a generation (nil: none yet; every request is handed to the control plane).
 func (e *Engine) SetState(s *State) { e.state.Store(s) }
@@ -150,6 +159,34 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		write(w, RateLimited(p.Key, wait))
 		return
 	}
+	// The budget (P4e Decision 13): the price rule, the snapshot, and the engine's own spend since it.
+	ref, unchecked := s.Budget(&p, e.now(), e.staleMs, e.spend.Live())
+	if ref != nil {
+		if r.Context().Err() == nil {
+			write(w, *ref) // allowedTargets throws before any record: no line
+		}
+		return
+	}
+	p.Unchecked = unchecked
+	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
+	if p.Policy != nil {
+		if a := s.Guard(&p, elapsed()); a != nil {
+			if p.Overrun != "" {
+				e.logf("go engine: guardrails: the %s check ran past its limit; the call was refused", p.Overrun)
+			}
+			if p.GuardPanic != "" {
+				e.logf("go engine: guardrails: the checks panicked (%s); the call was refused with 500", p.GuardPanic)
+			}
+			rec := a.Usage
+			rec.Ts = e.now()
+			e.emitLine(rec, false) // a refusal was not metered: no unchecked mark (P4e Decision 14)
+			if r.Context().Err() == nil {
+				write(w, *a)
+			}
+			return
+		}
+		e.noteFailures(p.Failures)
+	}
 	if p.Stream {
 		if !e.track() {
 			js.ServeHTTP(w, r) // the gateway is shutting down
@@ -173,11 +210,56 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	// (it is stored a few milliseconds later, through the outbox and the ingest), as the JS gateway records before it ends.
 	rec := a.Usage
 	rec.Ts = e.now()
-	if err := e.emit(&ipc.UsageReport{Record: rec}); err != nil {
-		e.logf("go engine: the usage line could not be stored: %v", err)
-	}
+	e.emitLine(rec, p.Unchecked)
 	if r.Context().Err() == nil {
 		write(w, a)
+	}
+}
+
+// emitLine hands one usage line to the outbox, marked when no fresh snapshot checked the call.
+func (e *Engine) emitLine(rec ipc.UsageRecord, unchecked bool) {
+	rep := &ipc.UsageReport{Record: rec}
+	if unchecked {
+		u := ipc.Unchecked
+		rep.Budget = &u
+	}
+	var snap *ipc.BudgetSnapshot
+	if st := e.state.Load(); st != nil {
+		snap = st.Snapshot
+	}
+	sp, priced := spentOf(rec, snap) // the bases before the line goes out
+	seq, err := e.emit(rep)
+	if err != nil {
+		e.logf("go engine: the usage line could not be stored: %v", err)
+	}
+	// Counted as soon as it is stored (it goes out without waiting), so the next call sees it (P4e Decision 15).
+	if priced {
+		sp.Seq = seq
+		e.spend.Add(sp)
+	}
+}
+
+// Acked tells the engine the control plane stored every event up to seq (the outbox ack).
+func (e *Engine) Acked(seq int64) { e.spend.Acked(seq) }
+
+// SnapshotIn tells the engine a budget snapshot arrived (after SetState with it): its own lines acknowledged before it
+// are in it.
+func (e *Engine) SnapshotIn() { e.spend.SnapshotIn() }
+
+// noteFailures logs checks that failed in log mode: the check and how many strings, at most once a minute per check,
+// never the detector's text (P4e Decision 10).
+func (e *Engine) noteFailures(fs []guard.Failure) {
+	for _, f := range fs {
+		e.failMu.Lock()
+		now := time.Now()
+		if last, ok := e.failAt[f.Check]; ok && now.Sub(last) < time.Minute {
+			e.failMu.Unlock()
+			continue
+		}
+		e.failAt[f.Check] = now
+		e.failMu.Unlock()
+		e.logf("go engine: guardrails: the %s check failed on %d string(s) in log mode; the call went on, marked",
+			f.Check, f.Count)
 	}
 }
 
@@ -207,9 +289,7 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 		rec.Ts = e.now()
 		go func() {
 			defer e.streams.Done()
-			if err := e.emit(&ipc.UsageReport{Record: rec}); err != nil {
-				e.logf("go engine: the usage line could not be stored: %v", err)
-			}
+			e.emitLine(rec, p.Unchecked)
 		}()
 	}()
 	resp, why := e.upstream.Start(r.Context(), p)

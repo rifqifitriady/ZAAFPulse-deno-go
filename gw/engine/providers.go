@@ -140,17 +140,5 @@ func ScopeTier(p *ipc.ProviderConfig, model string) string {
 // GuardActive is lib/gateway/guardrails.js resolvePolicy then inScope: whether any check would look at a call to a
 // target of this tier. The engine serves only calls no check looks at; the checks themselves are P4e.
 func GuardActive(global ipc.GuardrailsPolicy, key *ipc.GatewayKeyAuth, tier string) bool {
-	p := global
-	own := key.Guardrails
-	if own.Secrets != nil {
-		p.Secrets = *own.Secrets
-	}
-	if own.PII != nil {
-		p.PII = *own.PII
-	}
-	if own.Injection != nil {
-		p.Injection = *own.Injection
-	}
-	inScope := p.Scope == "all" || tier != "private"
-	return inScope && (p.Secrets != "off" || p.PII != "off" || p.Injection != "off")
+	return checksApply(PolicyFor(global, key), tier)
 }

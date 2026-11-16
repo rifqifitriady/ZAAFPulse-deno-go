@@ -18,8 +18,17 @@ test.after(async () => {
   }
 });
 
-const chat = (key, model = 'oa/m1') =>
-  h.call('/v1/chat/completions', { key, body: { model, messages: [{ role: 'user', content: 'x' }] } });
+const GO = process.env.ZP_ENGINE === 'go';
+// Under ZP_ENGINE=go an OpenAI-format chat call is the go engine's, budgeted or not (P4e): a call that answered has its
+// usage line from the gateway's outbox (it carries "ipc"); a refused one has none.
+const chat = async (key, model = 'oa/m1') => {
+  const r = await h.call('/v1/chat/completions', { key, body: { model, messages: [{ role: 'user', content: 'x' }] } });
+  if (GO && r.status === 200 && /^(oa|pv)\//.test(model)) {
+    const e = (await h.logs())[0];
+    assert.ok(e && e.ipc, `the go engine served ${model}: ${JSON.stringify(e)}`);
+  }
+  return r;
+};
 
 const CASES = [
   {

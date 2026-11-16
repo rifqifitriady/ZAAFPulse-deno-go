@@ -18,7 +18,16 @@ function buildStub({ env = process.env } = {}) {
   if (v.status !== 0)
     return { skip: 'go is not on PATH: the cross-language IPC tests build gw/cmd/zaafpulse-gw with it (CI has it)' };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-gw-bin-'));
-  process.once('exit', () => fs.rmSync(dir, { recursive: true, force: true }));
+  // On Windows a test's kill of the server is a hard kill: the server's gateway (a grandchild) outlives it until its stdin
+  // closes, and Windows locks a running exe, so the folder can still be busy here. Retry for a moment, then leave it to
+  // the OS temp cleanup: an exit hook that throws fails the whole test file (EPERM).
+  process.once('exit', () => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch {
+      /* a gateway still exiting holds the exe */
+    }
+  });
   const bin = path.join(dir, process.platform === 'win32' ? 'zaafpulse-gw.exe' : 'zaafpulse-gw');
   const r = spawnSync('go', ['build', '-o', bin, './cmd/zaafpulse-gw'], { cwd: GW_DIR, encoding: 'utf8', env: goEnv });
   if (r.status !== 0) throw new Error(`go build of gw/cmd/zaafpulse-gw failed:\n${r.stderr || r.error}`);
