@@ -109,3 +109,56 @@ func TestCallsAnswerWhileTheControlPlaneHangs(t *testing.T) {
 		last = seq
 	}
 }
+
+// TestHungControlPlaneBudgetsFailOpen is S7's kill-IPC test at the process level (all four OS): the control plane
+// stops reading and sending; once the snapshot is older than --stale-ms, metered calls still answer, a model whose
+// budget the last snapshot shows exceeded is still refused, and when the control plane reads again every call's report
+// is there, in order, once, marked "unchecked".
+func TestHungControlPlaneBudgetsFailOpen(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":"c1","usage":{"prompt_tokens":10,"completion_tokens":5}}`)
+	}))
+	defer provider.Close()
+	now := time.Now().UnixMilli()
+	exceeded := `{"id":"b1","name":"Spent","scope":{"dim":"model","value":"llama-x"},"period":"month","currency":"USD",` +
+		`"measure":"list","enforce":"block","amount":1,"from":"","to":"","state":"exceeded","spentUSD":2,` +
+		`"amountUSD":1,"reason":null}`
+	r, port := hungGateway(t, provider.URL, snapshotLine(4, now, exceeded), "--stale-ms", "300")
+	time.Sleep(400 * time.Millisecond) // the snapshot is now stale, and no new one comes
+	const n = 300
+	var wg sync.WaitGroup
+	var bad []string
+	var mu sync.Mutex
+	start := time.Now()
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if code, body := postChat(t, port, "pv/llama-9"); code != 200 {
+				mu.Lock()
+				bad = append(bad, fmt.Sprintf("%d %s", code, body))
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if len(bad) > 0 || time.Since(start) > 10*time.Second {
+		t.Fatalf("%d calls failed (%v) or took %s; stderr %s", len(bad), bad[:min(3, len(bad))], time.Since(start), r.stderr)
+	}
+	if code, body := postChat(t, port, "pv/llama-x"); code != 402 ||
+		body != `{"error":{"message":"budget \"Spent\" is used up for this month","type":"insufficient_quota"}}` {
+		t.Fatalf("the exceeded budget: %d %s", code, body)
+	}
+	var last int64
+	for i := 0; i < n; i++ {
+		l := r.next(t, "usage.report")
+		if !strings.Contains(l, `"budget":"unchecked"`) {
+			t.Fatalf("report %d not marked: %s", i, l)
+		}
+		seq, _ := strconv.ParseInt(seqRe.FindStringSubmatch(l)[1], 10, 64)
+		if last != 0 && seq != last+1 {
+			t.Fatalf("report seq %d after %d", seq, last)
+		}
+		last = seq
+	}
+}
