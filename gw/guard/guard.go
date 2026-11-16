@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf16"
 
@@ -264,7 +265,7 @@ func allPatterns() []*jsre.Regexp {
 var prepared sync.Once
 
 // Prepare compiles every pattern's program and filters (about half a second, once). The checks call it before their
-// first deadline starts, so compiling never counts against a request; the gateway may call it at startup.
+// first deadline starts, so compiling never counts against a request; the gateway calls it at startup (P4e).
 func Prepare() {
 	prepared.Do(func() {
 		for _, re := range allPatterns() {
@@ -272,8 +273,14 @@ func Prepare() {
 		}
 		setupInjMulti()
 		setupSecretMulti()
+		preparedDone.Store(true)
 	})
 }
+
+var preparedDone atomic.Bool
+
+// Prepared is whether Prepare has finished.
+func Prepared() bool { return preparedDone.Load() }
 
 // newCallBudget is the budget a call starts with: the base steps and the deadline from now.
 func newCallBudget() *jsre.Budget {
