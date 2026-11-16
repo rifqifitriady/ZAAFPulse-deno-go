@@ -91,3 +91,58 @@ func TestShadowSlotReleasedWhenTheClientLeaves(t *testing.T) {
 		t.Fatal("a whole shadowed stream was not compared after the leaves")
 	}
 }
+
+// Final review m1, m2: a request the engine hands off gets its hand-off line under the sub-class its body asks for
+// (a stream: chat-stream), from Shadow and from Serve (chat shadowed while chat-stream is on go).
+func TestHandoffLinesUnderTheirSubClass(t *testing.T) {
+	g := newStreamRig(t, http.NotFoundHandler())
+	lines := make(chan string, 8)
+	own := func(method, path string, body []byte) (int, []byte, error) {
+		if method == http.MethodPost {
+			lines <- string(body)
+		}
+		return http.StatusNotFound, nil, nil
+	}
+	g.e.SetOwn(own)
+	js := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "js") })
+	call := func(entry, body string) {
+		r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
+		r.Host, r.RemoteAddr = "127.0.0.1:4777", "127.0.0.1:5000"
+		r.Header.Set("Authorization", g.key)
+		w := httptest.NewRecorder()
+		if entry == "shadow" {
+			g.e.Shadow("chat", w, r, "/v1/chat/completions", js, own)
+		} else {
+			g.e.Serve("chat", w, r, "/v1/chat/completions", js)
+		}
+		if w.Body.String() != "js" {
+			t.Fatalf("%s %s: answered %q, not by the control plane", entry, body, w.Body.String())
+		}
+	}
+	expect := func(what, class string) {
+		t.Helper()
+		select {
+		case l := <-lines:
+			if !strings.Contains(l, `"class":"`+class+`"`) || !strings.Contains(l, `"outcome":"handoff"`) {
+				t.Fatalf("%s: %s", what, l)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s: no %s hand-off line", what, class)
+		}
+	}
+	// m1: only chat-stream shadowed; a stream the engine would hand off (a string stream_options).
+	g.e.SetModes(func(sub string) (bool, bool) { return false, sub == "chat-stream" })
+	call("shadow", `{"model":"oa/m1","stream":true,"stream_options":"x","messages":[]}`)
+	expect("m1 shadow", "chat-stream")
+	// m2: chat on js and shadowed, chat-stream on go; a whole call the engine hands off (an unknown model).
+	g.e.SetModes(func(sub string) (bool, bool) { return sub == "chat-stream", sub == "chat" })
+	call("serve", `{"model":"zz/none","messages":[]}`)
+	expect("m2 serve", "chat")
+	// and a stream handed off while chat-stream is on go: no line (only a sub-class on js is shadowed).
+	call("serve", `{"model":"oa/m1","stream":true,"stream_options":"x","messages":[]}`)
+	select {
+	case l := <-lines:
+		t.Fatalf("a line for a sub-class on go: %s", l)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
