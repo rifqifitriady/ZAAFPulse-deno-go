@@ -41,7 +41,9 @@ async function fakeServer(routes) {
       if (out.destroy) return req.socket.destroy();
       if (Array.isArray(out.sse)) {
         res.writeHead(out.status || 200, { 'content-type': 'text/event-stream', ...(out.headers || {}) });
-        for (const chunk of out.sse) {
+        for (const [i, chunk] of out.sse.entries()) {
+          // A provider that breaks off after cutAfter chunks (written first, so the client has its headers and those chunks).
+          if (out.cutAfter !== undefined && i >= out.cutAfter) return setTimeout(() => req.socket.destroy(), 100);
           res.write(chunk);
           if (out.delayMs) await new Promise((resolve) => setTimeout(resolve, out.delayMs));
         }

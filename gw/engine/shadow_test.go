@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -20,10 +21,7 @@ func captureOf(t *testing.T, c chatCase, want chatOut) *Capture {
 		Headers map[string]string `json:"headers"`
 		Body    *string           `json:"body"`
 	}{want.Request.URL, want.Request.Headers, &body})
-	cap.ProviderResponse = &struct {
-		Status int    `json:"status"`
-		Body   string `json:"body"`
-	}{c.Provider.Status, decodeUTF8([]byte(c.Provider.Body))}
+	cap.ProviderResponse = &ProviderAnswer{Status: c.Provider.Status, Body: decodeUTF8([]byte(c.Provider.Body))}
 	cap.Client = &struct {
 		Status int    `json:"status"`
 		Body   string `json:"body"`
@@ -97,3 +95,42 @@ func TestRateLimitedShadowLine(t *testing.T) {
 		t.Errorf("server 200: %+v", l)
 	}
 }
+
+// A stream capture is compared by replaying the provider's text: the same text gives "same"; a client text that
+// differs is a diff named by length and hash; a truncated capture is skipped; a cut stream replays without End.
+func TestCompareStream(t *testing.T) {
+	var base chatCase
+	for _, f := range loadFixtures(t, "chat") {
+		if strings.HasSuffix(f.Name, "-stream-basic.json") {
+			_ = json.Unmarshal(f.In, &base)
+		}
+	}
+	s := stateFor(t, base)
+	p := s.PlanChat(requestFor(base), fixtureNow)
+	provider := `data: {"model":"m","choices":[{"delta":{"content":"a"}}]}` + "\n\n" + "data: {\"mo"
+	hdr := map[string]string{}
+	for k := range p.Header {
+		hdr[strings.ToLower(k)] = p.Header.Get(k)
+	}
+	hb, _ := json.Marshal(hdr)
+	client := `data: {"model":"oa/m1","choices":[{"delta":{"content":"a"}}]}` + "\n\n"
+	mk := func(ended string, truncated bool, clientBody string) *Capture {
+		c := &Capture{}
+		_ = json.Unmarshal([]byte(`{"providerRequests":[{"url":`+mustQuote(p.URL)+`,"headers":`+string(hb)+`,"body":`+mustQuote(string(p.Body))+`}],
+			"providerResponse":{"status":200,"body":`+mustQuote(provider)+`,"ended":"`+ended+`","truncated":`+fmt.Sprint(truncated)+`},
+			"client":{"status":200,"body":`+mustQuote(clientBody)+`},
+			"usage":{"keyId":"k1","provider":"oa","model":"oa/m1","kind":"chat","format":"openai","stream":true,"status":200,"input":0,"output":0,"cached":0,"local":true,"cost":0}}`), c)
+		return c
+	}
+	if l := s.Compare("chat-stream", &p, mk("cut", false, client)); l.Outcome != "same" {
+		t.Fatalf("%+v", l)
+	}
+	if l := s.Compare("chat-stream", &p, mk("cut", false, client+"x")); l.Outcome != "diff" || l.Diffs[0].Field != "client.body" {
+		t.Fatalf("%+v", l)
+	}
+	if l := s.Compare("chat-stream", &p, mk("cut", true, client)); l.Outcome != "skipped" {
+		t.Fatalf("%+v", l)
+	}
+}
+
+func mustQuote(s string) string { b, _ := json.Marshal(s); return string(b) }

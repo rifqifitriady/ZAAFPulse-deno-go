@@ -18,7 +18,7 @@ test('engineOf: "front" only when config.json asks for it; js otherwise', () => 
 
 test('the config.push body with its front section is a valid v1 message; a go engine is refused', () => {
   const front = frontSection({ host: '127.0.0.1', port: 4777, upstreamPort: 53120 });
-  assert.deepEqual(Object.keys(front.engines), CLASSES);
+  assert.deepEqual(Object.keys(front.engines), [...CLASSES, 'chat-stream']); // chat-stream: a sub-class (P4c)
   assert.ok(Object.values(front.engines).every((e) => e === 'js'));
   assert.equal(front.tls, undefined);
   const msg = { v: 1, type: 'config.push', seq: 2, ts: 0, body: { ...configBody(front), gen: 1 } };
@@ -28,7 +28,7 @@ test('the config.push body with its front section is a valid v1 message; a go en
   assert.equal(frontSection({ host: 'h', port: 1, upstreamPort: 1, engines: { chat: 'go' } }).engines.chat, 'go');
   assert.throws(
     () => frontSection({ host: 'h', port: 1, upstreamPort: 1, engines: { messages: 'go' } }),
-    /engine "go" for messages is not available: only chat can run on go/,
+    /engine "go" for messages is not available: only chat, chat-stream can run on go/,
   );
 });
 
@@ -349,4 +349,19 @@ test('m10: a config that cannot be built is pushed as no keys and every class on
     errors: [],
     unknownType: false,
   });
+});
+
+test('gwArgs: the gateway gets --mem-limit-mb from gateway.memLimitMB (default 64; 0 turns it off) (P4c)', () => {
+  const { gwArgs, MEM_LIMIT_MB } = require('../lib/front');
+  assert.equal(MEM_LIMIT_MB, 64);
+  assert.deepEqual(gwArgs(undefined), ['--mem-limit-mb', '64']);
+  assert.deepEqual(gwArgs({ memLimitMB: 96 }), ['--mem-limit-mb', '96']);
+  assert.deepEqual(gwArgs({ memLimitMB: 0 }), []);
+  for (const bad of [-1, 1.5, '64', null, Infinity])
+    assert.deepEqual(gwArgs({ memLimitMB: bad }), ['--mem-limit-mb', '64']);
+});
+
+test('createFront hands its args to the supervisor (P4c: --mem-limit-mb)', async (t) => {
+  const { sups } = await frontWithFakes(t, { args: ['--mem-limit-mb', '64'] });
+  assert.deepEqual(sups[0].opts.args, ['--mem-limit-mb', '64']);
 });

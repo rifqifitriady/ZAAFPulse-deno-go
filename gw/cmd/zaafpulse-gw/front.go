@@ -107,9 +107,14 @@ func (g *gateway) closeFront(grace time.Duration) {
 	}
 	if grace <= 0 {
 		_ = srv.Close()
-		return
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), grace)
+		defer cancel()
+		_ = srv.Shutdown(ctx) // closes what is left when the grace ends
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), grace)
-	defer cancel()
-	_ = srv.Shutdown(ctx)
+	// The streams the go engine was serving end with their connections; their usage lines go to the outbox before it
+	// closes (P4c D4).
+	if g.engine != nil && !g.engine.Wait(2*time.Second) {
+		g.log.Printf("shutdown: some stream usage lines were not stored within 2 s")
+	}
 }
