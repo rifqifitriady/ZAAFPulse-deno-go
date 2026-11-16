@@ -173,6 +173,22 @@ test(
       await new Promise((r) => setTimeout(r, 50));
     }
     assert.ok(st.shadow.chat.compared >= 8, JSON.stringify(st.shadow));
-    assert.equal(st.shadow.chat.diffs, 0);
+    // On a diff, the compare lines that differ (no prompt text), so a CI failure says which field.
+    let diffLines = '';
+    if (st.shadow.chat.diffs && h.server.data) {
+      try {
+        const log = require('fs').readFileSync(
+          require('path').join(h.server.data, '.data', 'gateway-shadow.jsonl'),
+          'utf8',
+        );
+        diffLines = log
+          .split('\n')
+          .filter((l) => l.includes('"outcome":"diff"'))
+          .join('\n');
+      } catch {
+        /* no log */
+      }
+    }
+    assert.equal(st.shadow.chat.diffs, 0, diffLines);
   },
 );

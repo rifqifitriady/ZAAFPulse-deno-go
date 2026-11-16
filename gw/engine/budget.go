@@ -16,14 +16,20 @@ import (
 // maxSpent bounds the lines kept while no snapshot comes (a hung control plane): the oldest go first.
 const maxSpent = 65536
 
-// Spent is one line the engine emitted: when, what it reached, its list cost in USD.
+// keepSpentMs is how long the engine keeps its own lines: past it every snapshot holds them (the ingest stores a line a
+// few milliseconds after it is sent), or the snapshot is stale and the call is unchecked anyway.
+const keepSpentMs = 10_000
+
+// Spent is one line the engine emitted: when, what it reached, its list cost in USD, and the spent of each budget it
+// counts in as the snapshot of that moment had it (Base), before this line.
 type Spent struct {
-	Ts  int64
-	In  ipc.CheckInput
-	USD float64
+	Ts   int64
+	In   ipc.CheckInput
+	USD  float64
+	Base map[string]float64
 }
 
-// Spend holds the engine's own lines newer than the newest snapshot.
+// Spend holds the engine's own recent lines (P4e Decision 15).
 type Spend struct {
 	mu    sync.Mutex
 	lines []Spent
@@ -39,13 +45,13 @@ func (sp *Spend) Add(x Spent) {
 	sp.lines = append(sp.lines, x)
 }
 
-// Since drops the lines at or before at (the snapshot taken at at holds them) and returns a copy of the rest.
-func (sp *Spend) Since(at int64) []Spent {
+// Recent drops the lines older than keepSpentMs at now and returns a copy of the rest.
+func (sp *Spend) Recent(now int64) []Spent {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	keep := sp.lines[:0]
 	for _, l := range sp.lines {
-		if l.Ts > at {
+		if l.Ts > now-keepSpentMs {
 			keep = append(keep, l)
 		}
 	}
@@ -54,8 +60,8 @@ func (sp *Spend) Since(at int64) []Spent {
 }
 
 // spentOf is a line's share of the budgets: the model it was billed at (routedTo, else model), normalized as the
-// ledger does, and its list cost.
-func spentOf(rec ipc.UsageRecord) (Spent, bool) {
+// ledger does, its list cost, and the spent of each budget of snap it counts in (nil snap: none known).
+func spentOf(rec ipc.UsageRecord, snap *ipc.BudgetSnapshot) (Spent, bool) {
 	if rec.Cost <= 0 {
 		return Spent{}, false
 	}
@@ -63,8 +69,16 @@ func spentOf(rec ipc.UsageRecord) (Spent, bool) {
 	if rec.RoutedTo != nil {
 		m = *rec.RoutedTo
 	}
-	return Spent{Ts: rec.Ts, In: ipc.CheckInput{KeyID: rec.KeyID, Model: NormalizeModel(m), Provider: rec.Provider},
-		USD: float64(rec.Cost) / 1e9}, true
+	x := Spent{Ts: rec.Ts, In: ipc.CheckInput{KeyID: rec.KeyID, Model: NormalizeModel(m), Provider: rec.Provider},
+		USD: float64(rec.Cost) / 1e9, Base: map[string]float64{}}
+	if snap != nil {
+		for _, b := range snap.Budgets {
+			if b.SpentUSD != nil && ipc.AppliesTo(b, x.In, snap.KeyCenter) {
+				x.Base[b.ID] = *b.SpentUSD
+			}
+		}
+	}
+	return x, true
 }
 
 func quota(msg string) *Answer {
@@ -111,7 +125,10 @@ func (s *State) Budget(p *Plan, now, staleMs int64, own []Spent) (*Answer, bool)
 	return nil, d.Action == ipc.Unchecked
 }
 
-// ownRefusal: a budget the snapshot shows under its amount that the engine's own lines since then used up.
+// ownRefusal: a budget the engine's own recent lines used up. For each budget the estimate is the larger of the
+// snapshot's spent and the spent the oldest of those lines saw plus all of them: when the snapshot already holds the
+// lines the two agree (no double count), when it does not yet (the ingest lags), the second one counts them. A line
+// whose base is above today's spent belongs to an earlier period and is left out.
 func (s *State) ownRefusal(in ipc.CheckInput, own []Spent) string {
 	if s.Snapshot == nil || len(own) == 0 {
 		return ""
@@ -120,13 +137,19 @@ func (s *State) ownRefusal(in ipc.CheckInput, own []Spent) string {
 		if b.SpentUSD == nil || b.AmountUSD == nil || !ipc.AppliesTo(b, in, s.Snapshot.KeyCenter) {
 			continue
 		}
-		extra := 0.0
+		sum, base, any := 0.0, 0.0, false
 		for _, l := range own {
-			if ipc.AppliesTo(b, l.In, s.Snapshot.KeyCenter) {
-				extra += l.USD
+			v, ok := l.Base[b.ID]
+			if !ok || v > *b.SpentUSD+1e-12 {
+				continue
 			}
+			if !any || v < base {
+				base = v
+			}
+			sum += l.USD
+			any = true
 		}
-		if extra > 0 && *b.SpentUSD+extra >= *b.AmountUSD {
+		if any && max(*b.SpentUSD, base+sum) >= *b.AmountUSD {
 			return `budget "` + b.Name + `" is used up for this ` + b.Period
 		}
 	}
