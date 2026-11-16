@@ -42,18 +42,56 @@ func snapshotLine(seq int, at int64, budgets string) string {
 		seq, at, at, budgets)
 }
 
-// postChat is one call through the main port; a transport error is status -1 (it runs in goroutines: no t.Fatal).
+// hangClient is the tests' client: at most 20 connections to the gateway, each kept and reused. The property under test
+// is that no call waits for the control plane, not how an OS takes a burst of new dials: with
+// http.DefaultClient (2 idle connections per host) 300 calls opened up to 300 connections at once, and Windows' listen
+// backlog refused some of them (connectex: actively refused; seen on windows-latest and windows-11-arm).
+var hangClient = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{
+	MaxConnsPerHost: 20, MaxIdleConns: 20, MaxIdleConnsPerHost: 20, IdleConnTimeout: time.Minute}}
+
+// postChat is one call through the main port; a transport error is status -1 with its text (it runs in goroutines:
+// no t.Fatal).
 func postChat(t *testing.T, port int, model string) (int, string) {
 	req, _ := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", port),
 		strings.NewReader(`{"model":"`+model+`","messages":[]}`))
 	req.Header.Set("Authorization", "Bearer zp_hangTestSecret")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := hangClient.Do(req)
 	if err != nil {
 		return -1, err.Error()
 	}
 	b, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	return resp.StatusCode, string(b)
+}
+
+// callAll makes n calls to model through 20 clients and returns the answers by status and the first failures' text.
+func callAll(t *testing.T, port, n int, model string) (map[int]int, []string) {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	codes := map[int]int{}
+	var bad []string
+	next := make(chan struct{}, n)
+	for range n {
+		next <- struct{}{}
+	}
+	close(next)
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range next {
+				code, body := postChat(t, port, model)
+				mu.Lock()
+				codes[code]++
+				if code != 200 && len(bad) < 3 {
+					bad = append(bad, fmt.Sprintf("%d %s", code, body))
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return codes, bad
 }
 
 // TestCallsAnswerWhileTheControlPlaneHangs: 300 go-served calls answer while nothing reads the gateway's stdout; once
@@ -68,34 +106,19 @@ func TestCallsAnswerWhileTheControlPlaneHangs(t *testing.T) {
 	r, port := hungGateway(t, provider.URL, snapshotLine(4, now, ""), "--stale-ms", "600000")
 	const n = 300
 	done := make(chan struct{})
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	codes := map[int]int{}
+	var codes map[int]int
+	var bad []string
 	go func() {
-		for i := 0; i < n; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				code, _ := postChat(t, port, "pv/llama-9")
-				mu.Lock()
-				codes[code]++
-				mu.Unlock()
-			}()
-			if i%20 == 19 {
-				time.Sleep(5 * time.Millisecond)
-			}
-		}
-		wg.Wait()
+		codes, bad = callAll(t, port, n, "pv/llama-9")
 		close(done)
 	}()
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatalf("calls still waiting after 10 s while the control plane did not read (answered %v); stderr %s",
-			codes, r.stderr)
+		t.Fatalf("calls still waiting after 10 s while the control plane did not read; stderr %s", r.stderr)
 	}
 	if codes[200] != n {
-		t.Fatalf("answers %v, want %d × 200", codes, n)
+		t.Fatalf("answers %v, want %d × 200: %v", codes, n, bad)
 	}
 	// The control plane reads again: every report, in order, once.
 	var last int64
@@ -126,28 +149,10 @@ func TestHungControlPlaneBudgetsFailOpen(t *testing.T) {
 	r, port := hungGateway(t, provider.URL, snapshotLine(4, now, exceeded), "--stale-ms", "300")
 	time.Sleep(400 * time.Millisecond) // the snapshot is now stale, and no new one comes
 	const n = 300
-	var wg sync.WaitGroup
-	var bad []string
-	var mu sync.Mutex
 	start := time.Now()
-	// 20 clients of 15 calls each: a burst of 300 dials at once overflows the listen backlog on Windows (connection
-	// refused), which is not what this test is about.
-	for range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for range n / 20 {
-				if code, body := postChat(t, port, "pv/llama-9"); code != 200 {
-					mu.Lock()
-					bad = append(bad, fmt.Sprintf("%d %s", code, body))
-					mu.Unlock()
-				}
-			}
-		}()
-	}
-	wg.Wait()
-	if len(bad) > 0 || time.Since(start) > 10*time.Second {
-		t.Fatalf("%d calls failed (%v) or took %s; stderr %s", len(bad), bad[:min(3, len(bad))], time.Since(start), r.stderr)
+	codes, bad := callAll(t, port, n, "pv/llama-9")
+	if codes[200] != n || time.Since(start) > 10*time.Second {
+		t.Fatalf("answers %v (%v) in %s; stderr %s", codes, bad, time.Since(start), r.stderr)
 	}
 	if code, body := postChat(t, port, "pv/llama-x"); code != 402 ||
 		body != `{"error":{"message":"budget \"Spent\" is used up for this month","type":"insufficient_quota"}}` {
