@@ -245,9 +245,9 @@ jobs:
   # of the Go guard (gw/guard) on real text at 32 KB, 128 KB and 1 MB, all three checks on, against the absolute
   # targets and at most 3x the JS guard timed on the same slices on this runner (scripts/bench-guard.js), each size
   # judged on the median of three attempts. Then: the real-text corpus up to 20 MB, and legitimate 20 MB bodies under
-  # CPU load, never block (step budget and 10 s backstop); every adversarial input is stopped by the step budget
-  # within 2.5 s of CPU. Ubuntu only: the targets are set for this runner. Its own job, so other jobs' steps never
-  # mix with it.
+  # CPU load, never block (step budget and 10 s backstop); every adversarial input is stopped by the step budget (or
+  # the stack cap), its CPU time logged and bounded loosely at 8 s. Ubuntu only: the targets are set for this runner.
+  # Its own job, so other jobs' steps never mix with it.
   guard-bench:
     name: guard benchmark (Go vs JS)
     runs-on: ubuntu-latest
