@@ -7,12 +7,22 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // startMock({ delayMs, chunks, intervalMs }) -> { url, port, close() }. url is the base URL a provider is saved with.
 async function startMock({ delayMs = 20, chunks = 20, intervalMs = 25 } = {}) {
+  // Which engine called (P4c): Go's client says Go-http-client/…, the JS gateway's fetch something else. GET /_stats
+  // answers the counts and resets them.
+  const counts = { go: 0, js: 0, conns: 0 }; // conns: new TCP connections (reuse check)
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => {
       body += c;
     });
     req.on('end', async () => {
+      if (req.method === 'GET' && req.url === '/_stats') {
+        const out = { ...counts };
+        counts.go = counts.js = counts.conns = 0;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify(out));
+      }
+      if (req.method === 'POST') counts[/^Go-http-client\//.test(req.headers['user-agent'] || '') ? 'go' : 'js']++;
       if (req.method === 'GET' && req.url === '/v1/models') {
         res.writeHead(200, { 'content-type': 'application/json' });
         return res.end(JSON.stringify({ object: 'list', data: [{ id: 'bench-1', object: 'model', created: 0 }] }));
@@ -54,6 +64,7 @@ async function startMock({ delayMs = 20, chunks = 20, intervalMs = 25 } = {}) {
       res.end('data: [DONE]\n\n');
     });
   });
+  server.on('connection', () => counts.conns++);
   server.keepAliveTimeout = 60000;
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();

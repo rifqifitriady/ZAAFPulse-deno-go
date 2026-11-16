@@ -204,7 +204,7 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["chat", "messages", "responses", "embeddings", "models", "gemini", "mcp", "a2a", "skills", "agents"]
+                "enum": ["chat", "chat-stream", "messages", "responses", "embeddings", "models", "gemini", "mcp", "a2a", "skills", "agents"]
               }
             }
           }

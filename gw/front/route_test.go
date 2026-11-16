@@ -5,10 +5,14 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -189,5 +193,131 @@ func TestShadowMarkSurvivesAConnectionHeader(t *testing.T) {
 	}
 	if id := <-got; id != "0123456789abcdef" {
 		t.Fatalf("mark %q", id)
+	}
+}
+
+// recEngine records which entry the front called and the modes it was given.
+type recEngine struct {
+	calls chan string
+	modes func(string) (bool, bool)
+}
+
+func (e *recEngine) Serve(string, http.ResponseWriter, *http.Request, string, http.Handler) {
+	e.calls <- "serve"
+}
+func (e *recEngine) Shadow(string, http.ResponseWriter, *http.Request, string, http.Handler,
+	func(string, string, []byte) (int, []byte, error)) {
+	e.calls <- "shadow"
+}
+func (e *recEngine) SetModes(f func(string) (bool, bool)) { e.modes = f }
+
+// P4c: chat reaches the engine when chat or its sub-class chat-stream is on go (Serve) or shadowed (Shadow); the
+// engine reads the per-sub-class modes from the front.
+func TestChatStreamSubClassDispatch(t *testing.T) {
+	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "js") })
+	for _, c := range []struct {
+		engines map[string]string
+		shadow  []string
+		want    string
+	}{
+		{map[string]string{"chat": "js"}, nil, "js"},
+		{map[string]string{"chat": "js", "chat-stream": "go"}, nil, "serve"},
+		{map[string]string{"chat": "go", "chat-stream": "js"}, nil, "serve"},
+		{map[string]string{"chat": "js", "chat-stream": "js"}, []string{"chat-stream"}, "shadow"},
+		{map[string]string{"chat": "js"}, []string{"chat"}, "shadow"},
+	} {
+		s := startFront(t, up.port(), func(cfg *Config) { cfg.Engines = c.engines })
+		e := &recEngine{calls: make(chan string, 1)}
+		s.SetGoEngine(e)
+		s.SetShadow(c.shadow)
+		resp, err := http.Post(frontURL(s)+"/v1/chat/completions", "application/json", strings.NewReader("{}"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		got := "js"
+		select {
+		case got = <-e.calls:
+		default:
+		}
+		if got != c.want {
+			t.Errorf("%v %v: %s, want %s", c.engines, c.shadow, got, c.want)
+		}
+		if e.modes == nil {
+			t.Fatal("the engine got no modes")
+		}
+		onGo, shadowed := e.modes("chat-stream")
+		if onGo != (c.engines["chat-stream"] == "go") || shadowed != (c.engines["chat-stream"] != "go" && slices.Contains(c.shadow, "chat-stream")) {
+			t.Errorf("%v %v: modes(chat-stream) = %v %v", c.engines, c.shadow, onGo, shadowed)
+		}
+	}
+}
+
+// P4c M4 root cause, front side: requests forwarded to the control plane that end together put their connections back
+// at once; past the proxy transport's idle limit they were closed and the next wave dialled the internal port again.
+// A second wave of 150 concurrent requests must reuse the first wave's connections.
+func TestForwardedWavesReuseUpstreamConnections(t *testing.T) {
+	const n = 150 // within Windows' accept backlog (about 200)
+	var conns atomic.Int64
+	var release atomic.Pointer[chan struct{}]
+	first := make(chan struct{})
+	release.Store(&first)
+	up := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		<-*release.Load()
+		_, _ = io.WriteString(w, "done")
+	}))
+	up.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	up.Start()
+	t.Cleanup(up.Close)
+	s := startFront(t, up.Listener.Addr().(*net.TCPAddr).Port, nil)
+	tr := &http.Transport{MaxIdleConnsPerHost: n}
+	client := &http.Client{Transport: tr}
+	defer tr.CloseIdleConnections()
+	wave := func() {
+		errs := make(chan error, n)
+		ready := make(chan error, n) // nil: the answer started; else why it did not
+		for i := 0; i < n; i++ {
+			go func() {
+				resp, err := client.Get(frontURL(s) + "/api/x")
+				if err != nil {
+					ready <- err
+					return
+				}
+				ready <- nil
+				_, err = io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				errs <- err
+			}()
+		}
+		failed := 0
+		for i := 0; i < n; i++ {
+			if err := <-ready; err != nil {
+				t.Error(err)
+				failed++
+			}
+		}
+		close(*release.Load())
+		for i := 0; i < n-failed; i++ {
+			if err := <-errs; err != nil {
+				t.Error(err)
+			}
+		}
+		if failed > 0 {
+			t.FailNow()
+		}
+	}
+	wave()
+	opened := conns.Load()
+	second := make(chan struct{})
+	release.Store(&second)
+	wave()
+	if again := conns.Load() - opened; again > n/10 {
+		t.Fatalf("the second wave opened %d new upstream connections (first wave %d)", again, opened)
 	}
 }

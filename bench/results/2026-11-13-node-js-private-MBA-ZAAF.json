@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "date": "2026-11-13",
+  "runtime": "node",
+  "runtimeVersion": "v24.16.0",
+  "git": {
+    "sha": "1a62f2b469c18dccdfb902f0c639a823b4b7cf5b",
+    "dirty": false
+  },
+  "host": {
+    "name": "MBA-ZAAF",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "cores": 10,
+    "memGB": 16,
+    "osRelease": "25.6.0"
+  },
+  "config": {
+    "runtime": "node",
+    "requests": 2000,
+    "levels": [
+      50,
+      200,
+      500
+    ],
+    "seconds": 10,
+    "delayMs": 20,
+    "chunks": 20,
+    "intervalMs": 25,
+    "starts": 5,
+    "tier": "private",
+    "engine": "js"
+  },
+  "startup": {
+    "ms": [
+      233.8,
+      198.6,
+      200.5,
+      198.2,
+      198
+    ],
+    "p50": 198.6
+  },
+  "idleRssMB": 109.8,
+  "nonStream": {
+    "gateway": {
+      "n": 2000,
+      "p50": 25.97,
+      "p95": 27.65,
+      "p99": 28.89
+    },
+    "direct": {
+      "n": 2000,
+      "p50": 22.49,
+      "p95": 23.28,
+      "p99": 23.82
+    },
+    "overhead": {
+      "n": 2000,
+      "p50": 3.45,
+      "p95": 4.91,
+      "p99": 5.84
+    },
+    "servedBy": {
+      "go": 0,
+      "js": 4000,
+      "conns": 0
+    }
+  },
+  "streams": [
+    {
+      "level": 50,
+      "seconds": 10,
+      "gateway": {
+        "completed": 954,
+        "errors": 0,
+        "ttfbP95": 41.38,
+        "durP50": 535.99,
+        "durP95": 543.52
+      },
+      "direct": {
+        "completed": 1000,
+        "errors": 0,
+        "ttfbP95": 25.33,
+        "durP50": 514.15,
+        "durP95": 524.96
+      },
+      "servedBy": {
+        "go": 0,
+        "js": 954,
+        "conns": 49
+      },
+      "overheadP95": 18.56,
+      "ttfbOverheadP95": 16.05
+    },
+    {
+      "level": 200,
+      "seconds": 10,
+      "gateway": {
+        "completed": 3945,
+        "errors": 0,
+        "ttfbP95": 63.66,
+        "durP50": 516.1,
+        "durP95": 565.37
+      },
+      "direct": {
+        "completed": 4000,
+        "errors": 0,
+        "ttfbP95": 30.5,
+        "durP50": 511.56,
+        "durP95": 532.03
+      },
+      "servedBy": {
+        "go": 0,
+        "js": 3945,
+        "conns": 150
+      },
+      "overheadP95": 33.34,
+      "ttfbOverheadP95": 33.16
+    },
+    {
+      "level": 500,
+      "seconds": 10,
+      "gateway": {
+        "completed": 9249,
+        "errors": 0,
+        "ttfbP95": 193.98,
+        "durP50": 529.26,
+        "durP95": 683.89
+      },
+      "direct": {
+        "completed": 9929,
+        "errors": 0,
+        "ttfbP95": 47.28,
+        "durP50": 508.25,
+        "durP95": 561.44
+      },
+      "servedBy": {
+        "go": 0,
+        "js": 9249,
+        "conns": 300
+      },
+      "overheadP95": 122.45,
+      "ttfbOverheadP95": 146.7
+    }
+  ],
+  "peakRssMB": 447.1,
+  "gatewayIdleRssMB": null,
+  "gatewayPeakRssMB": null,
+  "durationS": 168
+}

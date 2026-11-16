@@ -2,8 +2,10 @@ package engine
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +20,11 @@ type Engine struct {
 	emit     func(*ipc.UsageReport) error
 	now      func() int64
 	logf     func(string, ...any)
+	modes    atomic.Pointer[func(sub string) (onGo, shadowed bool)]
+	own      atomic.Pointer[func(method, path string, body []byte) (int, []byte, error)]
+	streams  sync.WaitGroup // streams being served, until their usage line is handed to emit
+	closeMu  sync.Mutex     // closing and streams.Add: no Add once Wait has begun (final review m5)
+	closing  bool
 }
 
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
@@ -31,6 +38,71 @@ func (e *Engine) SetState(s *State) { e.state.Store(s) }
 
 // State is the current generation, or nil.
 func (e *Engine) State() *State { return e.state.Load() }
+
+// streamFeedHook, when set (tests only), runs before each read is rewritten: a panic there shows the stream's usage
+// line is still written once.
+var streamFeedHook func()
+
+// StreamsBody is whether chatCompletion streams a provider answer of this status: a 2xx with a body. fetch gives no
+// body for 204 and 205, and chatCompletion then answers whole (`!r.body`; final review m3).
+func StreamsBody(status int) bool {
+	return status >= 200 && status <= 299 && status != http.StatusNoContent && status != http.StatusResetContent
+}
+
+// StreamReadSize is how much of the provider's stream is read at once (P4c Decision 11; 4 KiB, the size of the
+// transport's own read buffer, after the memory gate of 2026-11-13).
+const StreamReadSize = 4 << 10
+
+// SetOwn gives the engine the front's call to the control plane's internal port (the shadow's capture and line) for
+// requests it reads in Serve but shadows (P4c: chat on go, chat-stream shadowed).
+func (e *Engine) SetOwn(own func(method, path string, body []byte) (int, []byte, error)) {
+	e.own.Store(&own)
+}
+
+func (e *Engine) ownFn() func(method, path string, body []byte) (int, []byte, error) {
+	if f := e.own.Load(); f != nil {
+		return *f
+	}
+	return nil
+}
+
+// SetModes tells the engine, per sub-class ("chat", "chat-stream"), whether it serves it and whether it shadows it
+// (the front's engines and shadow classes; Task 3).
+func (e *Engine) SetModes(f func(sub string) (onGo, shadowed bool)) { e.modes.Store(&f) }
+
+func (e *Engine) mode(sub string) (bool, bool) {
+	if f := e.modes.Load(); f != nil {
+		return (*f)(sub)
+	}
+	return sub == "chat", false // P4b: chat on go, streams handed off
+}
+
+// track counts a stream about to be served, unless the shutdown already waits for the streams (false: hand it off).
+func (e *Engine) track() bool {
+	e.closeMu.Lock()
+	defer e.closeMu.Unlock()
+	if e.closing {
+		return false
+	}
+	e.streams.Add(1)
+	return true
+}
+
+// Wait waits at most d for the streams in flight and their usage lines (the gateway's shutdown, before the outbox
+// closes); false when d passed first.
+func (e *Engine) Wait(d time.Duration) bool {
+	e.closeMu.Lock()
+	e.closing = true // from now on a new stream goes to the control plane (track)
+	e.closeMu.Unlock()
+	done := make(chan struct{})
+	go func() { e.streams.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
 
 // ReadRequest reads what the engine needs of r: at most MaxBody + 1 bytes of its body. The body r keeps is the whole
 // one again (what was read, then the rest), so a hand-off forwards it unchanged.
@@ -58,12 +130,32 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	req := ReadRequest(r, rawPath)
 	started := time.Now()
 	p := s.PlanChat(req, e.now())
-	if p.Handoff != "" {
+	// The sub-class (P4c): a stream is chat-stream, with its own engine entry.
+	sub := subOf(&p, req)
+	onGo, shadowed := e.mode(sub)
+	if p.Handoff != "" && onGo {
+		js.ServeHTTP(w, r)
+		return
+	}
+	if !onGo {
+		// Its sub-class is on js: forwarded, compared when shadowed (a hand-off gets its line there; final review m2).
+		if shadowed {
+			e.shadowRead(sub, w, r, s, &p, js, e.ownFn())
+			return
+		}
 		js.ServeHTTP(w, r)
 		return
 	}
 	if wait := e.limits.Take(p.Key.ID, p.Key.RPM, e.now()); wait > 0 {
 		write(w, RateLimited(p.Key, wait))
+		return
+	}
+	if p.Stream {
+		if !e.track() {
+			js.ServeHTTP(w, r) // the gateway is shutting down
+			return
+		}
+		e.serveStream(w, r, s, &p, req, started)
 		return
 	}
 	res := e.upstream.Call(r.Context(), &p)
@@ -99,3 +191,89 @@ func write(w http.ResponseWriter, a Answer) {
 }
 
 func itoa(n int) string { return NumberString(float64(n)) }
+
+// serveStream answers a planned stream (P4c D3): the provider's headers, then each read rewritten and flushed at once,
+// written synchronously (a slow client slows the provider read), and one usage line when it ends, whatever ended it,
+// handed to emit after the response's last byte.
+func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p *Plan, req *Request, started time.Time) {
+	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
+	var line func() ipc.UsageRecord
+	defer func() {
+		if line == nil {
+			e.streams.Done()
+			return
+		}
+		rec := line()
+		rec.Ts = e.now()
+		go func() {
+			defer e.streams.Done()
+			if err := e.emit(&ipc.UsageReport{Record: rec}); err != nil {
+				e.logf("go engine: the usage line could not be stored: %v", err)
+			}
+		}()
+	}()
+	resp, why := e.upstream.Start(r.Context(), p)
+	if why != "" {
+		a := s.Failed(p, why, elapsed())
+		line = func() ipc.UsageRecord { return a.Usage }
+		if r.Context().Err() == nil {
+			write(w, a)
+		}
+		return
+	}
+	if !StreamsBody(resp.StatusCode) {
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		a := s.Respond(p, resp.StatusCode, body, elapsed())
+		line = func() ipc.UsageRecord { return a.Usage }
+		if r.Context().Err() == nil {
+			write(w, a)
+		}
+		return
+	}
+	defer resp.Body.Close()
+	// The client's body and the plan's copies are no longer needed (Decision 11); the provider request keeps its own
+	// in-memory body until the call ends (net/http writes headers and body in one go only for such a body).
+	p.Body, req.Body, r.Body = nil, nil, http.NoBody
+	cs := NewChatStream(p.Model, p.WantsUsage, elapsed)
+	line = func() ipc.UsageRecord { return s.StreamLine(p, cs, elapsed()) }
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-store")
+	for _, c := range CORS {
+		h.Set(c[0], c[1])
+	}
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+	if rc.Flush() != nil {
+		return
+	}
+	buf := make([]byte, StreamReadSize)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if streamFeedHook != nil {
+				streamFeedHook()
+			}
+			out, ferr := cs.Feed(buf[:n])
+			if len(out) > 0 {
+				if _, werr := w.Write(out); werr != nil || rc.Flush() != nil {
+					return
+				}
+			}
+			if ferr != nil {
+				return // a line past 16 MiB: ended as a cut
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			if out := cs.End(); len(out) > 0 {
+				_, _ = w.Write(out)
+				_ = rc.Flush()
+			}
+			return
+		}
+		if err != nil {
+			return // the provider broke off, or the client left (its context cancelled the call)
+		}
+	}
+}

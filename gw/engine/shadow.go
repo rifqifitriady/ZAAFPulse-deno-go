@@ -26,15 +26,20 @@ type Capture struct {
 		Headers map[string]string `json:"headers"`
 		Body    *string           `json:"body"`
 	} `json:"providerRequests"`
-	ProviderResponse *struct {
-		Status int    `json:"status"`
-		Body   string `json:"body"`
-	} `json:"providerResponse"`
-	Client *struct {
+	ProviderResponse *ProviderAnswer `json:"providerResponse"`
+	Client           *struct {
 		Status int    `json:"status"`
 		Body   string `json:"body"`
 	} `json:"client"`
 	Usage map[string]any `json:"usage"`
+}
+
+// ProviderAnswer is the provider's answer in a capture.
+type ProviderAnswer struct {
+	Status    int    `json:"status"`
+	Body      string `json:"body"`
+	Ended     string `json:"ended"`     // a stream (P4c): "eof" or "cut"
+	Truncated bool   `json:"truncated"` // a stream: the capture passed its cap
 }
 
 // Diff is one field that differs.
@@ -105,7 +110,23 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 		if jsBody != string(p.Body) {
 			dt("providerRequest.body", jsBody, string(p.Body))
 		}
-		a := s.Respond(p, c.ProviderResponse.Status, []byte(c.ProviderResponse.Body), 0)
+		var a Answer
+		if p.Stream && StreamsBody(c.ProviderResponse.Status) {
+			// A stream (P4c): the provider's text as the control plane decoded it, replayed through the rewriter; the
+			// last partial line only after a clean end.
+			if c.ProviderResponse.Truncated {
+				l.Outcome, l.Reason = "skipped", "the stream's capture is over its limit"
+				return l
+			}
+			cs := NewChatStream(p.Model, p.WantsUsage, func() float64 { return 0 })
+			out, _ := cs.Feed([]byte(c.ProviderResponse.Body))
+			if c.ProviderResponse.Ended == "eof" {
+				out = append(out, cs.End()...)
+			}
+			a = Answer{Status: http.StatusOK, Body: out, Usage: s.StreamLine(p, cs, 0)}
+		} else {
+			a = s.Respond(p, c.ProviderResponse.Status, []byte(c.ProviderResponse.Body), 0)
+		}
 		if a.Status != c.Client.Status {
 			d("client.status", c.Client.Status, a.Status)
 		}
@@ -206,10 +227,11 @@ type Own func(method, path string, body []byte) (int, []byte, error)
 // shadowSlots bounds the compares running at once; a request past it is not compared.
 var shadowSlots = make(chan struct{}, 8)
 
-// Shadow forwards a request of a class on js to the control plane, marked for the compare when the engine would serve
-// it and a compare slot is free, then compares in the background once the client has its answer. A request the engine
-// would hand off is not marked (the control plane keeps no capture for it) and gets a "handoff" line; a request past
-// the slots is forwarded unmarked and gets no line (final review m9': captures only for compares that run).
+// Shadow forwards a chat request whose sub-class is on js to the control plane, marked for the compare when that
+// sub-class is shadowed, the engine would serve it and a compare slot is free, then compares in the background once
+// the client has its answer. A request the engine would hand off is not marked (the control plane keeps no capture for
+// it) and gets a "handoff" line; a request past the slots is forwarded unmarked and gets no line (final review m9':
+// captures only for compares that run).
 func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler,
 	own func(method, path string, body []byte) (int, []byte, error)) {
 	s := e.state.Load()
@@ -219,6 +241,41 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	}
 	req := ReadRequest(r, rawPath)
 	p := s.PlanChat(req, e.now())
+	sub := subOf(&p, req)
+	_, shadowed := e.mode(sub)
+	if e.modes.Load() == nil {
+		shadowed = sub == "chat" // P4b: the front calls Shadow for a shadowed chat
+	}
+	if !shadowed {
+		js.ServeHTTP(w, r)
+		return
+	}
+	e.shadowRead(sub, w, r, s, &p, js, own)
+}
+
+// subOf is the sub-class of chat a request belongs to: chat-stream when it asks for a stream (P4c). A plan the engine
+// would serve says so itself; for a hand-off the body is read again, so its hand-off line is filed under the sub-class
+// it asked for (final review m1).
+func subOf(p *Plan, r *Request) string {
+	if p.Handoff == "" {
+		if p.Stream {
+			return "chat-stream"
+		}
+		return "chat"
+	}
+	if b, err := Parse(r.Body); err == nil && b.Get("stream").Truthy() {
+		return "chat-stream"
+	}
+	return "chat"
+}
+
+// shadowRead is Shadow after the request is read and planned: sub is the line's class.
+func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, s *State, p *Plan, js http.Handler,
+	own func(method, path string, body []byte) (int, []byte, error)) {
+	if own == nil {
+		js.ServeHTTP(w, r)
+		return
+	}
 	select {
 	case shadowSlots <- struct{}{}:
 	default:
@@ -233,7 +290,29 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 		id = NewShadowID()
 		r = front.WithShadowID(r, id) // set by the proxy's Rewrite, after the hop-by-hop headers are gone
 	}
+	// The front's ReverseProxy panics with http.ErrAbortHandler when the client leaves mid-answer (the stop button of
+	// a stream). The slot is released and a "skipped" line posted on that path too, then the panic goes on to net/http
+	// (final review I1: otherwise 8 leaves held every slot and the shadow compared nothing more).
+	compared := false
+	defer func() {
+		if compared {
+			return
+		}
+		v := recover()
+		go func() {
+			defer func() { <-shadowSlots }()
+			l := ShadowLine{Class: sub, Outcome: "skipped", Reason: "the client left before the answer ended"}
+			line, _ := json.Marshal(l)
+			if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
+				e.logf("shadow: the compare line could not be posted: %v", err)
+			}
+		}()
+		if v != nil {
+			panic(v)
+		}
+	}()
 	js.ServeHTTP(w, r)
+	compared = true
 	go func() {
 		defer func() { <-shadowSlots }()
 		var c *Capture
@@ -245,9 +324,9 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 				}
 			}
 		}
-		l := s.Compare(class, &p, c)
+		l := s.Compare(sub, p, c)
 		if wait > 0 {
-			l = rateLimitedLine(class, l.Status) // the engine would have answered 429 itself
+			l = rateLimitedLine(sub, l.Status) // the engine would have answered 429 itself
 		}
 		line, _ := json.Marshal(l)
 		if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
