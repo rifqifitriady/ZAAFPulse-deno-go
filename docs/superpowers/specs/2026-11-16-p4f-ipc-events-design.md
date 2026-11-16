@@ -175,7 +175,7 @@ S8 equality test (D18) diffs the governance chain and the MCP audit log and prov
 its corpus, which has no stale snapshot; the D24 entry has its own test. The P3 minor "`audit.gap` over-counted while
 the audit key is unreadable" stays deferred to S9, the first slice that sends governance events from Go.
 
-**D14. The crash gap is closed by a call journal in the outbox folder.** `gw-outbox/calls.jsonl`, append only, same
+**D14. The crash gap is closed by a call journal in the outbox folder.** `gw-outbox/calls.journal`, append only, same
 writer lock and durability target as the outbox (a killed process, no fsync; the owner's decision of 2026-11-12):
 - `{"o": <id>, "ts": <start ms>, "r": <base usage record>}` is appended when a go-served call starts (before the
   provider call);

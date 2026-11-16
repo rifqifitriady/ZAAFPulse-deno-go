@@ -73,7 +73,7 @@ merges `migrate/deno-go`; adapt their `serve.go`, `main.go`, outbox and ingest s
 11. D11: `trace.span.otlp {traceState, remote, message}` makes the OTLP export equal.
 12. D12: n2 closed by `otel.status({ fresh: true })`.
 13. D13 (corrected 2026-11-16): no audit event per go-served chat call, as in JS; the one new audit entry is D24's, written by the control plane.
-14. D14: the call journal `gw-outbox/calls.jsonl` closes the crash gap, for streams and non-stream calls.
+14. D14: the call journal `gw-outbox/calls.journal` closes the crash gap, for streams and non-stream calls.
 15. D15: the recovered line: base, status 599, the fixed error text, no token counts, cost 0, `ts` = start, `ms` 0.
 16. D16: the window is replicated with `ratelimit.take` both ways and seeded with `ratelimit.window`.
 17. D17: money compared at nano-USD.
@@ -1062,7 +1062,7 @@ git push origin migrate/p4f-ipc-events
 **Interfaces:**
 - Consumes: `ipc.Outbox` (`Next`, `append`, `sendMu`), `ipc.UsageRecord`, `ipc.TypeUsageReport`.
 - Produces (package `ipc`):
-  - `const CallsFile = "calls.jsonl"`, `const RecoveredError = "the gateway stopped before the call ended"`
+  - `const CallsFile = "calls.journal"`, `const RecoveredError = "the gateway stopped before the call ended"`
   - `func OpenCallJournal(dir string) (*CallJournal, error)`
   - `func (j *CallJournal) Open(ts int64, base UsageRecord) int64` (0 when the line could not be written)
   - `func (j *CallJournal) NoteClose(id, seq int64) error` (seq 0: closed with no line)
@@ -1170,7 +1170,7 @@ func TestJournalExactlyOneLineAtEveryCrashPoint(t *testing.T) {
 segment line (`Replay(1, ...)`, collecting `usage.report` bodies by `record.model`) and adds the models of the seqs
 the snapshot's `stream.json` shows as acknowledged; those lines were sent in the original run, so the test records the
 model of each acknowledged seq (`acked`) up front and counts them once. `openedBy(snap)` is the number of `"o"` lines
-in the snapshot's `calls.jsonl` before recovery. Add a second test, `TestRecoverTwiceRecoversOnce`: a journal with two
+in the snapshot's `calls.journal` before recovery. Add a second test, `TestRecoverTwiceRecoversOnce`: a journal with two
 open calls, `Recover` interrupted after its first append (a hook that returns an error from the second `NoteClose`),
 then `Recover` again: each call has exactly one recovered line. A third, `TestRecoveredLine`: the recovered record is
 the base with `status` 599, `ms` 0, `ts` the open's ts, `error` `RecoveredError`, no token fields, `cost` 0, no
@@ -1199,7 +1199,7 @@ import (
 	"sync"
 )
 
-// CallJournal records the go engine's calls in flight (P4f D14), next to the outbox in calls.jsonl: append only, one
+// CallJournal records the go engine's calls in flight (P4f D14), next to the outbox in calls.journal: append only, one
 // writer (the outbox's lock covers the folder), no fsync (the target is a killed process, as for the outbox).
 //   {"o": id, "ts": start ms, "r": base record}  a call starts, before its provider call;
 //   {"c": id, "seq": n}                         its usage line takes seq n (noted under the outbox's send lock, right
@@ -1230,13 +1230,13 @@ type journalLine struct {
 }
 
 const (
-	CallsFile      = "calls.jsonl"
+	CallsFile      = "calls.journal"
 	RecoveredError = "the gateway stopped before the call ended"
 	// journalCompactAt: with no call open, a journal past this size is emptied.
 	journalCompactAt = 64 << 10
 )
 
-// OpenCallJournal opens dir's calls.jsonl for appending (created when missing). The caller holds the outbox's lock.
+// OpenCallJournal opens dir's calls.journal for appending (created when missing). The caller holds the outbox's lock.
 func OpenCallJournal(dir string) (*CallJournal, error) {
 	p := filepath.Join(dir, CallsFile)
 	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE, 0o600)
@@ -2715,3 +2715,17 @@ Task 1 (2026-11-16):
    ignores the value and gives the same bytes as before.
 6. The fixtures carry `providerSpan` (what `config.push` will push for the case's provider) next to the request, since
    the Go side reads it from the push, not from config.json.
+
+After the P4e merge (`e41e2ea`, 2026-11-17), re-checked against the merged code:
+7. **The emit returns a seq** (P4e's own-spend tracking) and every event goes through P4e's sender (`g.out.enqueue`,
+   never blocking). Task 2 keeps `engine.New`'s emit as it is and adds `SetCalls(c Calls, emitCall func(r, call)
+   (int64, error))`; `emitLine(rec, unchecked, call)` uses `emitCall` for a journalled call. `AppendSendNoted` takes
+   the sender's `enqueue` as its send. The guard's refusal (P4e) is not journalled: it never reaches a provider.
+8. **The journal is `calls.journal`, not `calls.jsonl`**: the outbox reads every `*.jsonl` name in its folder as a
+   segment (`anySegment`, `loadSegments`), and the P3 kill test checks that no `*.jsonl` is left after the drain.
+9. **Close order**: the journal closes after the outbox (`box.Close` takes the send lock, so no close is noted after
+   it; the second `box.Close` of the existing defer does nothing).
+10. T1-c is `TestPruneDuringReplay` in `gw/ipc/journal_test.go`; the crash-point test uses one-event segments so the
+    ack really prunes.
+11. Task 4 must keep P4e's order in `Serve`: rate limit, budget, guard (a guard refusal writes its line and, from
+    Task 4, its spans), then the provider call.

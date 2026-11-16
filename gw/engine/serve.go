@@ -30,6 +30,30 @@ type Engine struct {
 	failAt   map[string]time.Time // when each check's log-mode failure was last logged
 	spend    *Spend               // the engine's own lines since the newest snapshot (P4e)
 	staleMs  int64                // the age at which a budget snapshot no longer checks a call
+	calls    Calls                // the call journal (P4f D14); nil: none
+	emitCall func(r *ipc.UsageReport, call int64) (int64, error)
+}
+
+// Calls is the call journal (gw/ipc CallJournal, P4f D14): a served call is opened before its provider call, and its
+// usage line is emitted with its id, so the outbox notes the line's seq first and a gateway that dies during the call
+// leaves exactly one line for it (written at the next start).
+type Calls interface {
+	Open(ts int64, base ipc.UsageRecord) int64
+	NoteClose(id, seq int64) error
+}
+
+// SetCalls gives the engine the call journal and the emit that notes a call's close under the outbox's send lock;
+// call it before serving.
+func (e *Engine) SetCalls(c Calls, emit func(r *ipc.UsageReport, call int64) (int64, error)) {
+	e.calls, e.emitCall = c, emit
+}
+
+// open records a call about to reach its provider (0: no journal, or it could not be written).
+func (e *Engine) open(p *Plan) int64 {
+	if e.calls == nil || e.emitCall == nil {
+		return 0
+	}
+	return e.calls.Open(e.now(), p.Base)
 }
 
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
@@ -179,7 +203,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 			}
 			rec := a.Usage
 			rec.Ts = e.now()
-			e.emitLine(rec, false) // a refusal was not metered: no unchecked mark (P4e Decision 14)
+			e.emitLine(rec, false, 0) // a refusal was not metered: no unchecked mark (P4e Decision 14)
 			if r.Context().Err() == nil {
 				write(w, *a)
 			}
@@ -195,6 +219,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		e.serveStream(w, r, s, &p, req, started)
 		return
 	}
+	call := e.open(&p)
 	res := e.upstream.Call(r.Context(), &p)
 	ms := float64(time.Since(started).Microseconds()) / 1000
 	var a Answer
@@ -210,14 +235,15 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	// (it is stored a few milliseconds later, through the outbox and the ingest), as the JS gateway records before it ends.
 	rec := a.Usage
 	rec.Ts = e.now()
-	e.emitLine(rec, p.Unchecked)
+	e.emitLine(rec, p.Unchecked, call)
 	if r.Context().Err() == nil {
 		write(w, a)
 	}
 }
 
-// emitLine hands one usage line to the outbox, marked when no fresh snapshot checked the call.
-func (e *Engine) emitLine(rec ipc.UsageRecord, unchecked bool) {
+// emitLine hands one usage line to the outbox, marked when no fresh snapshot checked the call; with a journalled call,
+// the outbox notes its close first (P4f D14).
+func (e *Engine) emitLine(rec ipc.UsageRecord, unchecked bool, call int64) {
 	rep := &ipc.UsageReport{Record: rec}
 	if unchecked {
 		u := ipc.Unchecked
@@ -228,7 +254,13 @@ func (e *Engine) emitLine(rec ipc.UsageRecord, unchecked bool) {
 		snap = st.Snapshot
 	}
 	sp, priced := spentOf(rec, snap) // the bases before the line goes out
-	seq, err := e.emit(rep)
+	var seq int64
+	var err error
+	if call != 0 {
+		seq, err = e.emitCall(rep, call)
+	} else {
+		seq, err = e.emit(rep)
+	}
 	if err != nil {
 		e.logf("go engine: the usage line could not be stored: %v", err)
 	}
@@ -280,8 +312,12 @@ func itoa(n int) string { return NumberString(float64(n)) }
 func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p *Plan, req *Request, started time.Time) {
 	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
 	var line func() ipc.UsageRecord
+	call := e.open(p)
 	defer func() {
 		if line == nil {
+			if call != 0 {
+				_ = e.calls.NoteClose(call, 0) // it ends with no line
+			}
 			e.streams.Done()
 			return
 		}
@@ -289,7 +325,7 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 		rec.Ts = e.now()
 		go func() {
 			defer e.streams.Done()
-			e.emitLine(rec, p.Unchecked)
+			e.emitLine(rec, p.Unchecked, call)
 		}()
 	}()
 	resp, why := e.upstream.Start(r.Context(), p)
