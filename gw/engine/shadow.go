@@ -241,7 +241,7 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	}
 	req := ReadRequest(r, rawPath)
 	p := s.PlanChat(req, e.now())
-	sub := subOf(&p)
+	sub := subOf(&p, req)
 	_, shadowed := e.mode(sub)
 	if e.modes.Load() == nil {
 		shadowed = sub == "chat" // P4b: the front calls Shadow for a shadowed chat
@@ -253,9 +253,17 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	e.shadowRead(sub, w, r, s, &p, js, own)
 }
 
-// subOf is the sub-class of chat a plan belongs to: chat-stream for a stream the engine would plan (P4c).
-func subOf(p *Plan) string {
-	if p.Handoff == "" && p.Stream {
+// subOf is the sub-class of chat a request belongs to: chat-stream when it asks for a stream (P4c). A plan the engine
+// would serve says so itself; for a hand-off the body is read again, so its hand-off line is filed under the sub-class
+// it asked for (final review m1).
+func subOf(p *Plan, r *Request) string {
+	if p.Handoff == "" {
+		if p.Stream {
+			return "chat-stream"
+		}
+		return "chat"
+	}
+	if b, err := Parse(r.Body); err == nil && b.Get("stream").Truthy() {
 		return "chat-stream"
 	}
 	return "chat"

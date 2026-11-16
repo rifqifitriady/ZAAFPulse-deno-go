@@ -104,16 +104,15 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	req := ReadRequest(r, rawPath)
 	started := time.Now()
 	p := s.PlanChat(req, e.now())
-	if p.Handoff != "" {
+	// The sub-class (P4c): a stream is chat-stream, with its own engine entry.
+	sub := subOf(&p, req)
+	onGo, shadowed := e.mode(sub)
+	if p.Handoff != "" && onGo {
 		js.ServeHTTP(w, r)
 		return
 	}
-	// The sub-class (P4c): a stream is chat-stream, with its own engine entry.
-	sub := "chat"
-	if p.Stream {
-		sub = "chat-stream"
-	}
-	if onGo, shadowed := e.mode(sub); !onGo {
+	if !onGo {
+		// Its sub-class is on js: forwarded, compared when shadowed (a hand-off gets its line there; final review m2).
 		if shadowed {
 			e.shadowRead(sub, w, r, s, &p, js, e.ownFn())
 			return
