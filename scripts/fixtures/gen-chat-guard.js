@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { writeCases, ROOT, FIXED_NOW } = require('./lib');
 const { createGateway } = require('../../lib/gateway');
+const G = require('../../lib/gateway/guardrails');
 const { createSecrets } = require('../../lib/secrets');
 const { createGuard } = require('../../lib/cost/guard');
 const { configPush, secretsPush, snapshotPush } = require('../../lib/front/push');
@@ -239,6 +240,26 @@ const CASES = [
     { model: 'oa/m1', messages: user(`key ${ANT}`) },
     ok(),
   ],
+  // Review m5: the 500 when a check fails in redact mode (the checks are made to throw, on both sides: failChecks),
+  // the price rule before an exceeded budget, and a guarded call whose provider answers 500.
+  [
+    'checks-fail-500',
+    { guardrails: { ...OFF, secrets: 'redact' }, failChecks: true },
+    { model: 'oa/m1', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'price-rule-before-budget',
+    { key: 'k3', budgets: [budget('b1', 'global', 'exceeded')] },
+    { model: 'oa/nopr', messages: user('hi') },
+    ok(),
+  ],
+  [
+    'redact-upstream-500',
+    { guardrails: { ...OFF, secrets: 'redact' } },
+    { model: 'oa/m1', messages: user(`key ${ANT}`) },
+    { status: 500, body: '{"error":{"message":"upstream exploded","type":"server_error"}}' },
+  ],
 ];
 
 // A request as gateway.handle reads it: headers, the target, a loopback client, the body as one chunk.
@@ -329,6 +350,7 @@ function main() {
         snapshot,
         request: { headers, body: JSON.stringify(body) },
         provider,
+        ...(opt.failChecks ? { failChecks: true } : {}),
       },
     ];
     return {
@@ -341,7 +363,16 @@ function main() {
         const before = gateway.usage.recent(2000).length;
         const res = responseOf();
         const req = requestOf(headers, JSON.stringify(body));
-        await gateway.handle(req, res, new URL(req.url, 'http://localhost'));
+        const checkBody = G.checkBody;
+        if (opt.failChecks)
+          G.checkBody = () => {
+            throw new Error('a check failed');
+          };
+        try {
+          await gateway.handle(req, res, new URL(req.url, 'http://localhost'));
+        } finally {
+          G.checkBody = checkBody;
+        }
         const lines = gateway.usage.recent(2000);
         let usage = null;
         if (lines.length > before) {
