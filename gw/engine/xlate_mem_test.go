@@ -24,12 +24,13 @@ func TestMemoryPerHeldTranslatedStream(t *testing.T) {
 	first := f.In.Provider.Chunks[0] + f.In.Provider.Chunks[1]
 	var writers []*io.PipeWriter
 	started := make(chan struct{}, streams)
-	measure := func() uint64 {
+	measure := func() int64 {
 		time.Sleep(100 * time.Millisecond)
+		runtime.GC()
 		runtime.GC()
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-		return m.HeapInuse
+		return int64(m.HeapInuse)
 	}
 	plans := make([]Plan, streams)
 	states := make([]*State, streams)
@@ -51,6 +52,7 @@ func TestMemoryPerHeldTranslatedStream(t *testing.T) {
 		<-started
 	}
 	after := measure()
+	// Signed: the heap can shrink between the two readings (garbage of the planning collected), which is no cost.
 	per := (after - before) / streams
 	t.Logf("translated heap per held stream: %d bytes", per)
 	for _, w := range writers {
