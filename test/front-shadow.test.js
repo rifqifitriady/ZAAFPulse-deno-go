@@ -225,3 +225,37 @@ test('noteStream keeps the provider text, how it ended and the client text; capt
   assert.equal(c.providerResponse.truncated, false);
   assert.equal(c.client.body, 'data: x\n');
 });
+
+// P4f final review m3: a refusal's capture is stored when the answer ends, not when the handler's promise settles
+// later (the gateway may ask for it the moment it has the answer; on Deno that came first).
+test('a refusal capture is stored before the answer ends, while the handler is still awaiting (P4f m3)', async () => {
+  let release;
+  const later = new Promise((r) => (release = r));
+  let seenAtEnd;
+  const res = {
+    statusCode: 429,
+    end() {
+      seenAtEnd = 'pending';
+      return this;
+    },
+  };
+  const done = withShadow(
+    '00112233445566dd',
+    async () => {
+      noteClient('{"error":{"message":"rate"}}');
+      res.end('{"error":{"message":"rate"}}');
+      seenAtEnd = takeCapture('00112233445566dd');
+      await later; // the route goes on awaiting after the answer ended
+    },
+    res,
+  );
+  assert.deepEqual(seenAtEnd, {
+    providerRequests: [],
+    providerResponse: null,
+    client: { status: 429, body: '{"error":{"message":"rate"}}' },
+    usage: null,
+  });
+  release();
+  await done;
+  assert.equal(takeCapture('00112233445566dd'), null, 'stored once');
+});

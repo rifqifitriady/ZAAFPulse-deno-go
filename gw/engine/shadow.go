@@ -284,8 +284,17 @@ func hashPrefix(s string) string {
 // rateLimitedLine is the line of a call the engine's own rate limit would have answered: nothing of the serving path
 // was compared, so both sides at 429 is "skipped", which the switch rule does not count (final review I3); the server
 // answering anything else is a diff.
-func rateLimitedLine(class string, status int) ShadowLine {
+//
+// P4f final review m2: with one window for both engines (D16) the engine looks at the window a moment before the server
+// does; a take that leaves the minute in between (the engine's wait is 1 s, the least it rounds to) lets the server admit
+// the call. That is the window's edge, not a diff: skipped, as the other side of the race already is (the engine at 0,
+// the server at 429: Compare's "the control plane's rate limit answered").
+func rateLimitedLine(class string, status int, wait int64) ShadowLine {
 	l := ShadowLine{Class: class, Outcome: "skipped", Reason: "rate limit: both engines answered 429", Status: status}
+	if status != http.StatusTooManyRequests && wait <= 1 {
+		l.Reason = "rate limit boundary: the window freed a take while the server answered"
+		return l
+	}
 	if status != http.StatusTooManyRequests {
 		l.Outcome, l.Reason = "diff", ""
 		l.Diffs = []Diff{{Field: "rateLimit", JS: status, Go: http.StatusTooManyRequests}}
@@ -408,10 +417,10 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		defer func() { <-shadowSlots }()
 		var c *Capture
 		if id != "" {
-			// The server stores a refusal's capture when its handler's promise settles, which on Deno can come a moment
-			// after the answer reached the gateway: a 404 is asked again, a few times, before the line goes without one
-			// (seen in CI as a rateLimit diff with the server's status 0).
-			for try := 0; try < 5; try++ {
+			// The server stores a refusal's capture as its answer ends (lib/gateway/shadow.js, final review m3); a call
+			// whose provider request failed is still stored when its handler settles, a moment after the answer: one 404
+			// is asked again once, 20 ms later, before the line goes without a capture.
+			for try := 0; try < 2; try++ {
 				code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil)
 				if err == nil && code == http.StatusOK {
 					c = &Capture{}
@@ -437,7 +446,7 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 			l = s.Compare(sub, p, c)
 		}
 		if wait > 0 {
-			l = rateLimitedLine(sub, l.Status) // the engine would have answered 429 itself
+			l = rateLimitedLine(sub, l.Status, wait) // the engine would have answered 429 itself
 		}
 		line, _ := json.Marshal(l)
 		if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
