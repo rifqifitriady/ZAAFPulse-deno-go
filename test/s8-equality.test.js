@@ -329,6 +329,18 @@ test(
       assert.ok(a.traces.length >= 22, `trace records: ${a.traces.length}`);
       assert.ok(a.otlp.length >= 22, `OTLP spans: ${a.otlp.length}`);
       assert.ok(a.governance.length > 0 && a.ledger.length > 0, 'the governance chain and the ledger have rows');
+      // The diffs above read the corpus' traces only (final review m5): the raw counts match too, and the unsampled call
+      // left no span in either run.
+      assert.equal(go.traces.length, js.traces.length, 'trace records in all');
+      assert.equal(go.otlp.length, js.otlp.length, 'OTLP spans in all');
+      for (const run of [js, go]) {
+        assert.equal(run.traces.filter((r) => r.t === TRACE(3)).length, 0, 'no stored span of the unsampled call');
+        assert.equal(
+          run.otlp.filter((x) => x.traceId === TRACE(3)).length,
+          0,
+          'no exported span of the unsampled call',
+        );
+      }
       for (const store of ['usage', 'ledger', 'governance', 'mcp', 'traces', 'otlp'])
         assert.deepEqual(b[store], a[store], `${store}: the go run differs from the js run`);
     } finally {
