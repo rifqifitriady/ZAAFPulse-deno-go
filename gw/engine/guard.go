@@ -166,6 +166,10 @@ func (s *State) Guard(p *Plan, ms float64) *Answer {
 		return nil
 	}
 	res, err := p.check()
+	if err != nil && p.Upstream == UpCount {
+		p.pending = nil
+		return p.Self // countTokens: a block or a failure answers the estimate, with no line (J7)
+	}
 	if err != nil {
 		p.pending = nil
 		var b *guard.Block

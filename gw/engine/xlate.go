@@ -203,8 +203,3 @@ func hasToolResultBlock(body *Value) bool {
 	}
 	return false
 }
-
-// Planners of the paths ported in later P4d tasks: each hands its requests to the control plane until then.
-func (s *State) PlanCount(r *Request, now int64) Plan       { return handoff("not ported yet") }
-func (s *State) planGeminiCount(r *Request, now int64) Plan { return handoff("not ported yet") }
-func (s *State) PlanEmbeddings(r *Request, now int64) Plan  { return handoff("not ported yet") }
