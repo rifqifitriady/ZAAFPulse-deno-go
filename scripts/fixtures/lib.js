@@ -37,11 +37,12 @@ function encodeSecrets(fixture, secrets) {
 }
 
 // cases: [{ name, fn, args, call(args) }]. `call` gets a JSON copy of args, so JS and Go see the same input; it may
-// return a promise (readSse).
+// return a promise (readSse). Returns the written files' texts by file name (a drift check compares them).
 async function writeCases(lib, cases, { secrets = new Set() } = {}) {
   const dir = path.join(ROOT, 'gw', 'testdata', lib);
   fs.mkdirSync(dir, { recursive: true });
   const written = new Set();
+  const texts = new Map();
   for (const c of cases) {
     if (!/^[\w.-]+$/.test(c.name)) throw new Error(`bad case name ${c.name}`);
     if (written.has(`${c.name}.json`)) throw new Error(`duplicate case ${c.name}`);
@@ -57,11 +58,14 @@ async function writeCases(lib, cases, { secrets = new Set() } = {}) {
       if (err.hits) fixture.hits = JSON.parse(JSON.stringify(err.hits));
     }
     const file = `${c.name}.json`;
-    fs.writeFileSync(path.join(dir, file), encodeSecrets(fixture, secrets));
+    const text = encodeSecrets(fixture, secrets);
+    fs.writeFileSync(path.join(dir, file), text);
     written.add(file);
+    texts.set(file, text);
   }
   for (const f of fs.readdirSync(dir)) if (f.endsWith('.json') && !written.has(f)) fs.unlinkSync(path.join(dir, f));
   console.log(`${written.size} fixtures in gw/testdata/${lib}`);
+  return texts;
 }
 
 module.exports = { writeCases, FIXED_NOW, ROOT };

@@ -6,7 +6,9 @@
 // the gateway's side there).
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const http = require('http');
+const path = require('path');
 const { startServer, clientFor, SEED_CONFIG } = require('./contract/harness');
 const { stubBin } = require('./ipc-stub');
 
@@ -128,5 +130,33 @@ test(
       'the unchecked calls counted',
     );
     assert.ok(st.alert === true, JSON.stringify(st));
+    // P4f D24 (design rule 2: mark, alert and audit): the alert window's "opened" entry, written as the system when its
+    // first call is stored.
+    const audit = () =>
+      fs
+        .readdirSync(path.join(s.data, '.data', 'audit'))
+        .filter((f) => f.endsWith('.jsonl'))
+        .flatMap((f) =>
+          fs
+            .readFileSync(path.join(s.data, '.data', 'audit', f), 'utf8')
+            .split('\n')
+            .filter(Boolean),
+        )
+        .map((l) => JSON.parse(l))
+        .filter((e) => e.action === 'gateway.budget_unchecked');
+    const entries = await until(async () => (audit().length ? audit() : null), 10000, 'the audit entry');
+    assert.equal(entries.length, 1, JSON.stringify(entries));
+    assert.deepEqual(
+      [
+        entries[0].phase,
+        entries[0].outcome,
+        entries[0].actor,
+        entries[0].target,
+        entries[0].calls,
+        typeof entries[0].since,
+      ],
+      ['opened', 'error', { via: 'system' }, { type: 'gateway' }, 1, 'string'],
+    );
+    // The "closed" entry, with the window's count, comes a minute later or at stop (test/ipc-supervisor.test.js).
   },
 );

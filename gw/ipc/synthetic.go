@@ -42,7 +42,7 @@ func Synthetic(seq, base int64) (string, any) {
 		return TypeTraceSpan, &TraceSpanBody{Span: SpanRecord{
 			T: fmt.Sprintf("%032x", round), S: fmt.Sprintf("%016x", round), N: "chat stub/model-a", K: "client",
 			St: ts * 1000, D: 12000, OK: true, Src: "gateway", Svc: "zaafpulse",
-			A: map[string]any{"gen_ai.request.model": "model-a"},
+			A: json.RawMessage(`{"gen_ai.request.model":"model-a"}`),
 		}}
 	}
 }

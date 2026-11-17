@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "trace.span (gateway to control plane): one finished span as the local trace store keeps it (microseconds, no content)",
+  "title": "trace.span (gateway to control plane): one finished span as the local trace store keeps it (microseconds, no content), and what OTLP export needs beyond it (otlp, added in v1 by P4f)",
   "type": "object",
   "required": ["span"],
   "additionalProperties": false,
@@ -22,6 +22,15 @@
         "src": { "type": "string" },
         "svc": { "type": "string" },
         "a": { "type": "object" }
+      }
+    },
+    "otlp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "traceState": { "type": "string" },
+        "remote": { "type": "boolean", "const": true },
+        "message": { "type": "string" }
       }
     }
   }

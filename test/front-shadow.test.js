@@ -105,12 +105,18 @@ test('the shadow log: counts per class, and the switch rule (owner: 1 clean day 
   assert.ok(!fs.readFileSync(path.join(dir, 's.jsonl'), 'utf8').includes('undefined'));
 });
 
-test('routing: go only when asked, the gate met and OTLP export off; shadow only for a class on js', () => {
+test('routing: go only when asked and the gate met, and not while OTLP export captures content; shadow only for a class on js', () => {
   const gw = { engines: { chat: 'go' }, shadow: ['chat', 'messages'] };
   assert.equal(routing(gw, { gate: () => ({ ok: true }) }).engines.chat, 'go');
   const no = routing(gw, { gate: () => ({ ok: false, reason: 'not yet' }) });
   assert.deepEqual([no.engines.chat, no.notes.chat], ['js', 'not yet']);
-  assert.match(routing(gw, { otel: true }).notes.chat, /OpenTelemetry/);
+  // P4f D10: the go engine sends its spans, so OTLP export alone keeps nothing on js; capturing content still does.
+  assert.equal(routing(gw, { otel: true }).engines.chat, 'go');
+  assert.equal(routing(gw, { otel: { enabled: true } }).engines.chat, 'go');
+  assert.equal(routing(gw, { otel: { enabled: true, captureContent: false } }).engines.chat, 'go');
+  const content = routing(gw, { otel: { enabled: true, captureContent: true } });
+  assert.deepEqual([content.engines.chat, /captureContent/.test(content.notes.chat)], ['js', true]);
+  assert.equal(routing(gw, { otel: { enabled: false, captureContent: true } }).engines.chat, 'go');
   let rule = null;
   routing(gw, { gate: (c, r) => ((rule = r), { ok: true }) });
   assert.deepEqual(rule, { days: 1, min: 20 }, 'the owner defaults');
@@ -218,4 +224,38 @@ test('noteStream keeps the provider text, how it ended and the client text; capt
   assert.equal(c.providerResponse.ended, 'eof');
   assert.equal(c.providerResponse.truncated, false);
   assert.equal(c.client.body, 'data: x\n');
+});
+
+// P4f final review m3: a refusal's capture is stored when the answer ends, not when the handler's promise settles
+// later (the gateway may ask for it the moment it has the answer; on Deno that came first).
+test('a refusal capture is stored before the answer ends, while the handler is still awaiting (P4f m3)', async () => {
+  let release;
+  const later = new Promise((r) => (release = r));
+  let seenAtEnd;
+  const res = {
+    statusCode: 429,
+    end() {
+      seenAtEnd = 'pending';
+      return this;
+    },
+  };
+  const done = withShadow(
+    '00112233445566dd',
+    async () => {
+      noteClient('{"error":{"message":"rate"}}');
+      res.end('{"error":{"message":"rate"}}');
+      seenAtEnd = takeCapture('00112233445566dd');
+      await later; // the route goes on awaiting after the answer ended
+    },
+    res,
+  );
+  assert.deepEqual(seenAtEnd, {
+    providerRequests: [],
+    providerResponse: null,
+    client: { status: 429, body: '{"error":{"message":"rate"}}' },
+    usage: null,
+  });
+  release();
+  await done;
+  assert.equal(takeCapture('00112233445566dd'), null, 'stored once');
 });

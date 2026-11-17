@@ -1,8 +1,10 @@
 // Kill test of the Go front (P4a T6): the gateway is killed while a streamed chat answer goes through it. The client
 // sees the stream cut, the supervisor restarts the gateway and the main port answers again, and the call is recorded
 // once in the usage log (the server answered it; the gateway records nothing in P4a): no line lost, none twice.
-// P4c: the same with the stream served by the go engine (chat and chat-stream on go): the gateway dies with the call, so
-// its line is lost (the gap the owner accepted until P4f, 2026-11-13), and it is never written twice.
+// P4c: the same with the stream served by the go engine (chat and chat-stream on go). P4f D14: the gateway dies with the
+// call, and the restarted gateway writes its line from the call journal (status 599, "the gateway stopped before the
+// call ended"): exactly one line, never two. Also for a whole (non-streamed) answer the gateway dies waiting for. The
+// call after the restart has exactly one line too (P4a T6-2).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
@@ -11,17 +13,25 @@ const { stubBin, killHard } = require('./ipc-stub');
 
 const RUNTIME = process.versions && process.versions.deno ? 'deno' : 'node';
 
-/** A provider that streams one chunk, then waits for release() before the rest. */
+/** A provider that streams one chunk (slowm), or answers nothing (slowwhole), until release(); arrived resolves when a
+ * slow call reached it. */
 async function slowProvider(t) {
   let release;
+  let arrive;
   const released = new Promise((r) => (release = r));
+  const arrived = new Promise((r) => (arrive = r));
   const server = http.createServer(async (req, res) => {
     let body = '';
     for await (const c of req) body += c;
     const model = JSON.parse(body || '{}').model;
     const chunk = (delta, extra = {}) =>
       `data: ${JSON.stringify({ id: 's1', object: 'chat.completion.chunk', model, choices: [{ index: 0, delta, ...extra }] })}\n\n`;
+    if (model === 'slowwhole') {
+      arrive();
+      await released;
+    }
     if (model === 'slowm') {
+      arrive();
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write(chunk({ role: 'assistant', content: 'Hel' }));
       await released;
@@ -46,7 +56,7 @@ async function slowProvider(t) {
     server.closeAllConnections?.();
     return new Promise((r) => server.close(r));
   });
-  return { url: `http://127.0.0.1:${server.address().port}`, release };
+  return { url: `http://127.0.0.1:${server.address().port}`, release, arrived };
 }
 
 async function until(check, ms, what) {
@@ -66,7 +76,7 @@ const GO_GATEWAY = {
   shadowMinCompares: 0,
 };
 
-async function killDuringStream(t, { goEngine }) {
+async function killDuringStream(t, { goEngine, stream = true }) {
   if (!stubBin(t)) return;
   const up = await slowProvider(t);
   const gateway = goEngine ? GO_GATEWAY : { engine: 'front' };
@@ -86,33 +96,48 @@ async function killDuringStream(t, { goEngine }) {
     baseUrl: up.url,
     tier: 'external',
     approved: true,
-    models: ['slowm', 'm1'],
+    models: ['slowm', 'slowwhole', 'm1'],
     secret: { mode: 'store', value: 'sk-slow' },
   });
   const key = await c.newKey({ scopes: ['llm'] });
 
-  const r = await fetch(`${s.base}/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key.secret}` },
-    body: JSON.stringify({ model: 'sl/slowm', stream: true, messages: [{ role: 'user', content: 'hi' }] }),
-  });
-  assert.equal(r.status, 200);
-  const reader = r.body.getReader();
-  const first = new TextDecoder().decode((await reader.read()).value);
-  assert.match(first, /Hel/);
-  killHard(pid);
-  // The cut: the stream ends early or errors; it never brings the rest of the answer.
-  let rest = '';
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      rest += new TextDecoder().decode(value);
+  if (stream) {
+    const r = await fetch(`${s.base}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key.secret}` },
+      body: JSON.stringify({ model: 'sl/slowm', stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    assert.equal(r.status, 200);
+    const reader = r.body.getReader();
+    const first = new TextDecoder().decode((await reader.read()).value);
+    assert.match(first, /Hel/);
+    killHard(pid);
+    // The cut: the stream ends early or errors; it never brings the rest of the answer.
+    let rest = '';
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        rest += new TextDecoder().decode(value);
+      }
+    } catch {
+      /* cut */
     }
-  } catch {
-    /* cut */
+    assert.ok(!rest.includes('[DONE]'), `the stream was not cut: ${rest}`);
+  } else {
+    // A whole answer: the provider holds the call; the gateway dies while it waits.
+    const pending = fetch(`${s.base}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key.secret}` },
+      body: JSON.stringify({ model: 'sl/slowwhole', messages: [{ role: 'user', content: 'hi' }] }),
+    }).then(
+      (r) => r.status,
+      () => 'cut',
+    );
+    await up.arrived;
+    killHard(pid);
+    assert.equal(await pending, 'cut');
   }
-  assert.ok(!rest.includes('[DONE]'), `the stream was not cut: ${rest}`);
   up.release(); // the server's own call to the provider ends now and is recorded
 
   await until(
@@ -141,15 +166,26 @@ async function killDuringStream(t, { goEngine }) {
     15000,
     'the usage line of the call after the restart',
   );
-  const cut = logs.filter((e) => String(e.model).endsWith('slowm') || String(e.routedTo || '').endsWith('slowm'));
-  // Served by the go engine, the call dies with the gateway: no line (the accepted gap), never two. A line here would mean
-  // the server answered it, so the go engine did not serve the stream.
-  if (goEngine) assert.equal(cut.length, 0, JSON.stringify(logs));
-  else assert.equal(cut.length, 1, JSON.stringify(logs));
+  const slow = stream ? 'slowm' : 'slowwhole';
+  const cut = logs.filter((e) => String(e.model).endsWith(slow) || String(e.routedTo || '').endsWith(slow));
+  assert.equal(cut.length, 1, `exactly one line for the cut call: ${JSON.stringify(logs)}`);
+  if (goEngine) {
+    // Written by the restarted gateway from its call journal (P4f D14, D15): through the IPC ingest, status 599.
+    assert.ok(cut[0].ipc, `the go engine's journal wrote it: ${JSON.stringify(cut[0])}`);
+    assert.equal(cut[0].status, 599);
+    assert.equal(cut[0].error, 'the gateway stopped before the call ended');
+    assert.equal(cut[0].cost, 0);
+  }
+  // P4a T6-2: the call after the restart has exactly one line, not just one.
+  const again = logs.filter((e) => String(e.model).endsWith('/m1') || String(e.routedTo || '').endsWith('/m1'));
+  assert.equal(again.length, 1, JSON.stringify(logs));
 }
 
 test('the gateway killed during a stream: the client sees the cut, the port returns, the call is recorded once', (t) =>
   killDuringStream(t, { goEngine: false }));
 
-test('the gateway killed during a stream it serves itself: the cut, the port returns, the line never twice (P4c)', (t) =>
+test('the gateway killed during a stream it serves itself: the cut, the port returns, exactly one line (P4f D14)', (t) =>
   killDuringStream(t, { goEngine: true }));
+
+test('the gateway killed while it waits for a whole answer it serves: exactly one line, from the journal (P4f D14)', (t) =>
+  killDuringStream(t, { goEngine: true, stream: false }));
