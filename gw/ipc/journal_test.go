@@ -33,6 +33,28 @@ func snapshotDir(t *testing.T, dir string) string {
 	return out
 }
 
+// mustBox and mustJournal open an outbox and a journal and close them when the test ends, on failure too (final review
+// m9: on Windows an open handle makes the temp folder's removal fail and hides the real failure).
+func mustBox(t *testing.T, dir string) *Outbox {
+	t.Helper()
+	box, err := OpenOutbox(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = box.Close() })
+	return box
+}
+
+func mustJournal(t *testing.T, dir string) *CallJournal {
+	t.Helper()
+	j, err := OpenCallJournal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = j.Close() })
+	return j
+}
+
 func modelRecord(i int) UsageRecord {
 	return UsageRecord{KeyID: "k", Provider: "p", Model: fmt.Sprintf("m%d", i)}
 }
@@ -74,15 +96,9 @@ func openedIn(t *testing.T, dir string) int {
 // every call opened before the kill, and never two for any call.
 func TestJournalExactlyOneLineAtEveryCrashPoint(t *testing.T) {
 	dir := t.TempDir()
-	box, err := OpenOutbox(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	box := mustBox(t, dir)
 	box.SetPerSegment(1) // every line its own segment: an ack prunes them
-	j, err := OpenCallJournal(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	j := mustJournal(t, dir)
 	var snaps []string
 	hook := func() { snaps = append(snaps, snapshotDir(t, dir)) }
 	j.afterWrite, box.afterWrite = hook, hook
@@ -97,7 +113,7 @@ func TestJournalExactlyOneLineAtEveryCrashPoint(t *testing.T) {
 		id, rec := ids[i], modelRecord(i)
 		rec.Status = 200
 		seq, err := box.AppendSendNoted(TypeUsageReport, &UsageReport{Record: rec}, 2000,
-			func(s int64) error { return j.NoteClose(id, s) }, func() { j.Reopen(id) }, nil)
+			func(s int64) error { return j.NoteClose(id, s) }, func() { j.Reopen(id) }, func() { j.Done(id) }, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,14 +131,8 @@ func TestJournalExactlyOneLineAtEveryCrashPoint(t *testing.T) {
 	}
 	for n, snap := range snaps {
 		opened := openedIn(t, snap)
-		rbox, err := OpenOutbox(snap)
-		if err != nil {
-			t.Fatalf("crash point %d: %v", n, err)
-		}
-		rj, err := OpenCallJournal(snap)
-		if err != nil {
-			t.Fatal(err)
-		}
+		rbox := mustBox(t, snap)
+		rj := mustJournal(t, snap)
 		if _, err := rj.Recover(rbox, 9999); err != nil {
 			t.Fatalf("crash point %d: recover: %v", n, err)
 		}
@@ -147,15 +157,15 @@ func TestJournalExactlyOneLineAtEveryCrashPoint(t *testing.T) {
 // A kill during Recover (after it noted a close and appended that line) does not recover the call again.
 func TestRecoverTwiceRecoversOnce(t *testing.T) {
 	dir := t.TempDir()
-	box, _ := OpenOutbox(dir)
-	j, _ := OpenCallJournal(dir)
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
 	j.Open(1, modelRecord(0))
 	j.Open(2, modelRecord(1))
 	_ = j.Close()
 	_ = box.Close()
 	// First recovery, killed after its first line: a snapshot taken at the outbox write of call 0's line.
-	box, _ = OpenOutbox(dir)
-	j, _ = OpenCallJournal(dir)
+	box = mustBox(t, dir)
+	j = mustJournal(t, dir)
 	var snap string
 	box.afterWrite = func() {
 		if snap == "" {
@@ -167,8 +177,8 @@ func TestRecoverTwiceRecoversOnce(t *testing.T) {
 	}
 	_ = j.Close()
 	_ = box.Close()
-	box, _ = OpenOutbox(snap)
-	j, _ = OpenCallJournal(snap)
+	box = mustBox(t, snap)
+	j = mustJournal(t, snap)
 	n, err := j.Recover(box, 6)
 	if err != nil || n != 1 {
 		t.Fatalf("second recovery wrote %d (%v), want 1: call 1 only", n, err)
@@ -192,11 +202,11 @@ func TestRecoveredLine(t *testing.T) {
 
 func TestNoteFailureAppendsNothing(t *testing.T) {
 	dir := t.TempDir()
-	box, _ := OpenOutbox(dir)
+	box := mustBox(t, dir)
 	defer box.Close()
 	next := box.Next()
 	_, err := box.AppendSendNoted(TypeUsageReport, &UsageReport{Record: modelRecord(0)}, 1,
-		func(int64) error { return errors.New("disk full") }, func() { t.Fatal("undo after a failed note") }, nil)
+		func(int64) error { return errors.New("disk full") }, func() { t.Fatal("undo after a failed note") }, func() {}, nil)
 	if err == nil || box.Next() != next {
 		t.Fatalf("err %v, next %d -> %d", err, next, box.Next())
 	}
@@ -204,22 +214,22 @@ func TestNoteFailureAppendsNothing(t *testing.T) {
 
 func TestAppendFailureReopens(t *testing.T) {
 	dir := t.TempDir()
-	box, _ := OpenOutbox(dir)
-	j, _ := OpenCallJournal(dir)
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
 	id := j.Open(1, modelRecord(0))
 	box.write = func(*os.File, []byte) (int, error) { return 0, errors.New("disk full") }
 	reopened := false
 	_, err := box.AppendSendNoted(TypeUsageReport, &UsageReport{Record: modelRecord(0)}, 1,
-		func(s int64) error { return j.NoteClose(id, s) }, func() { reopened = true; j.Reopen(id) }, nil)
+		func(s int64) error { return j.NoteClose(id, s) }, func() { reopened = true; j.Reopen(id) }, func() {}, nil)
 	if err == nil || !reopened {
 		t.Fatalf("err %v reopened %v", err, reopened)
 	}
 	box.write = (*os.File).Write
 	_ = j.Close()
 	_ = box.Close()
-	box, _ = OpenOutbox(dir)
+	box = mustBox(t, dir)
 	defer box.Close()
-	j, _ = OpenCallJournal(dir)
+	j = mustJournal(t, dir)
 	defer j.Close()
 	if n, err := j.Recover(box, 2); err != nil || n != 1 {
 		t.Fatalf("recovered %d (%v), want 1", n, err)
@@ -229,13 +239,14 @@ func TestAppendFailureReopens(t *testing.T) {
 // With no call open, a journal past 64 KiB is emptied at the next open.
 func TestJournalCompacts(t *testing.T) {
 	dir := t.TempDir()
-	j, _ := OpenCallJournal(dir)
+	j := mustJournal(t, dir)
 	defer j.Close()
 	for i := 0; i < 2000; i++ {
 		id := j.Open(int64(i), modelRecord(i))
 		if err := j.NoteClose(id, int64(i+1)); err != nil {
 			t.Fatal(err)
 		}
+		j.Done(id)
 	}
 	st, _ := os.Stat(filepath.Join(dir, CallsFile))
 	if st.Size() > 2*journalCompactAt {
@@ -247,7 +258,7 @@ func TestJournalCompacts(t *testing.T) {
 // skips a pruned segment (its events are stored); never twice, never a panic.
 func TestPruneDuringReplay(t *testing.T) {
 	dir := t.TempDir()
-	box, _ := OpenOutbox(dir)
+	box := mustBox(t, dir)
 	defer box.Close()
 	box.SetPerSegment(2)
 	for i := 0; i < 6; i++ {
@@ -282,5 +293,147 @@ func TestPruneDuringReplay(t *testing.T) {
 	}
 	if seqs[len(seqs)-1] != 6 {
 		t.Fatalf("the last line was not sent: %v", seqs)
+	}
+}
+
+// emitOne stores call id's line through the journal as the gateway does.
+func emitOne(t *testing.T, j *CallJournal, box *Outbox, id int64, i int) {
+	t.Helper()
+	rec := modelRecord(i)
+	rec.Status, rec.Cost = 200, 7
+	if _, err := j.Emit(box, id, TypeUsageReport, &UsageReport{Record: rec}, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// recoverAt reopens a crash snapshot, recovers it and returns the usage lines per model and record.
+func recoverAt(t *testing.T, snap string) (map[string]int, []UsageRecord) {
+	t.Helper()
+	rbox := mustBox(t, snap)
+	rj := mustJournal(t, snap)
+	if _, err := rj.Recover(rbox, 9999); err != nil {
+		t.Fatal(err)
+	}
+	var recs []UsageRecord
+	_ = rbox.ReadFrom(1, func(_ int64, line []byte) error {
+		var env struct {
+			Body struct {
+				Record UsageRecord `json:"record"`
+			} `json:"body"`
+		}
+		_ = json.Unmarshal(line, &env)
+		recs = append(recs, env.Body.Record)
+		return nil
+	})
+	return usageModels(t, rbox, 1), recs
+}
+
+// Final review I1: call A's close is noted, then call B opens and compacts the journal before A's line is appended; a
+// kill right there must still leave A exactly one line (before the fix: zero), and B one.
+func TestCompactionBetweenCloseAndAppendKeepsTheCall(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	a := j.Open(1, modelRecord(0))
+	j.limit = 0 // the next Open compacts
+	var snap string
+	var b int64
+	_, err := box.AppendSendNoted(TypeUsageReport, &UsageReport{Record: modelRecord(0)}, 1,
+		func(s int64) error {
+			if err := j.NoteClose(a, s); err != nil {
+				return err
+			}
+			b = j.Open(2, modelRecord(1)) // a concurrent request, inside A's note
+			snap = snapshotDir(t, dir)    // the kill
+			return nil
+		}, func() { j.Reopen(a) }, func() { j.Done(a) }, nil)
+	if err != nil || b == 0 {
+		t.Fatal(err, b)
+	}
+	counts, _ := recoverAt(t, snap)
+	if counts["m0"] != 1 || counts["m1"] != 1 {
+		t.Fatalf("lines after recovery: %v (want m0 1, m1 1)", counts)
+	}
+}
+
+// Final review I1, second path: A's append fails after a compaction; Reopen must leave A recoverable (before the fix
+// the u line had no o line before it and A got zero lines).
+func TestFailedAppendAfterCompactionRecoversTheCall(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	a := j.Open(1, modelRecord(0))
+	j.limit = 0
+	box.write = func(*os.File, []byte) (int, error) { return 0, errors.New("disk full") }
+	_, err := box.AppendSendNoted(TypeUsageReport, &UsageReport{Record: modelRecord(0)}, 1,
+		func(s int64) error {
+			if err := j.NoteClose(a, s); err != nil {
+				return err
+			}
+			_ = j.Open(2, modelRecord(1)) // compacts
+			return nil
+		}, func() { j.Reopen(a) }, func() { j.Done(a) }, nil)
+	if err == nil {
+		t.Fatal("the append should fail")
+	}
+	box.write = (*os.File).Write
+	counts, _ := recoverAt(t, snapshotDir(t, dir))
+	if counts["m0"] != 1 {
+		t.Fatalf("call A has %d lines after recovery, want 1 (%v)", counts["m0"], counts)
+	}
+}
+
+// Final review I2: with one call held open for the whole run, 5,000 calls keep the journal bounded (before: 624,566 B).
+func TestJournalStaysBoundedWithACallHeldOpen(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	held := j.Open(1, modelRecord(0))
+	for i := 0; i < 5000; i++ {
+		emitOne(t, j, box, j.Open(int64(i), modelRecord(i)), i)
+	}
+	st, err := os.Stat(filepath.Join(dir, CallsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Size() > 2*journalCompactAt {
+		t.Fatalf("journal is %d bytes with one call held open", st.Size())
+	}
+	// The held call is still in it: a crash now recovers it, and only it.
+	counts, _ := recoverAt(t, snapshotDir(t, dir))
+	if counts["m0"] != 2 || len(counts) != 5000 { // m0: its emitted line plus the held call's recovered one
+		t.Fatalf("held %d: %d models, m0 %d", held, len(counts), counts["m0"])
+	}
+}
+
+// Final review m6: a stream that ends with no line whose c line cannot be written leaves no spurious 599 at the next
+// start (the journal is rewritten without it).
+func TestEndWithAFailedWriteLeavesNoLine(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	id := j.Open(1, modelRecord(0))
+	j.failWrite = func() error { return errors.New("disk full") }
+	j.End(id)
+	j.failWrite = nil
+	if counts, _ := recoverAt(t, snapshotDir(t, dir)); len(counts) != 0 {
+		t.Fatalf("lines after recovery: %v (want none)", counts)
+	}
+	_ = box
+}
+
+// Final review m6: a close that cannot be noted does not turn the call's real line into a cost-0 599: the journal is
+// rewritten without the call and the real line is stored plainly; after a restart there is exactly that line.
+func TestEmitWhenTheNoteFailsStoresTheRealLine(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	id := j.Open(1, modelRecord(0))
+	j.failWrite = func() error { return errors.New("disk full") }
+	emitOne(t, j, box, id, 0)
+	j.failWrite = nil
+	counts, recs := recoverAt(t, snapshotDir(t, dir))
+	if counts["m0"] != 1 || len(recs) != 1 || recs[0].Status != 200 || recs[0].Cost != 7 {
+		t.Fatalf("lines %v %+v (want one real line)", counts, recs)
 	}
 }

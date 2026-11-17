@@ -127,7 +127,7 @@ func provSpan(p *Plan) *ipc.ProviderSpan {
 // leaves exactly one line for it (written at the next start).
 type Calls interface {
 	Open(ts int64, base ipc.UsageRecord) int64
-	NoteClose(id, seq int64) error
+	End(id int64) // the call ends with no usage line
 }
 
 // SetCalls gives the engine the call journal and the emit that notes a call's close under the outbox's send lock;
@@ -438,7 +438,7 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 	defer func() {
 		if line == nil {
 			if call != 0 {
-				_ = e.calls.NoteClose(call, 0) // it ends with no line
+				e.calls.End(call) // it ends with no line
 			}
 			e.streams.Done()
 			return
