@@ -109,7 +109,7 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 | M13 | Soak | n/a | ~~7 days on the owner's live dashboard~~ dropped (§11.7): the owner tests v2 in the browser instead |
 
 P4c (2026-11-13), go engine, 500 streams, private tier, owner's laptop with apps open: 10000 done, 0 errors, stream overhead p95 −15.67 ms, gateway peak RSS 69.5 MB, non-streaming overhead p95 2.06 ms (M3); `bench/results/2026-11-13-node-go-private-MBA-ZAAF.json`. A 4-vCPU CI runner (`m4-bench`) is CPU-bound at 500 streams and is a reference only.
-Owed at the program's final quiet-machine step (owner deferral 2026-11-16, P4e): M3 and M4 on the **external** tier (`ZP_BENCH_TIER=external`) with the default guardrail policy, now that the go engine serves guarded calls.
+Owed at the program's final quiet-machine step (owner deferral 2026-11-16, P4e): M3 and M4 on the **external** tier (`ZP_BENCH_TIER=external`) with the default guardrail policy, now that the go engine serves guarded calls. P4d adds the translated path: M3 for `/v1/messages` whole and M4 for its streams at 500, with `ZP_BENCH_FORMAT=anthropic`, same tier and policy.
 
 ## 5. Phases
 
@@ -245,7 +245,7 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 | S2 | OpenAI-compatible pass-through, non-streaming | Contract cases green; M3 met: **chat on go behind the shadow in P4b** (2026-11-12, `docs/migration/2026-11-12-p4b-results.md`); M3 is re-measured in P4c |
 | S3 | Streaming SSE | M4 met at 500 streams: **met in P4c** for OpenAI-format chat streams (2026-11-13, `docs/migration/2026-11-13-p4c-results.md`; local run on the owner's laptop, private tier; a quiet-machine confirmation and the external tier after P4e to follow) |
 | S4 | API-key auth, per-key allow-lists and modes | Contract cases green: **met in P4b** (2026-11-12, `docs/migration/2026-11-12-p4b-results.md`) |
-| S5 | Translate (Anthropic, OpenAI, Gemini, routers, Ollama/local) | Fixtures from `translate` tests pass byte-for-byte |
+| S5 | Translate (Anthropic, OpenAI, Gemini, routers, Ollama/local) | Fixtures from `translate` tests pass byte-for-byte: **met in P4d** (2026-11-17, `docs/migration/2026-11-17-p4d-results.md`) for /v1/messages (with count_tokens), /v1/responses, Gemini, /v1/embeddings and chat to Anthropic-format providers, whole and streamed; router presets and Ollama/local served; `router/*` routes, the token saver acting and names only the model cache maps stay on js (G3 prerequisites) |
 | S6 | Guardrails: secrets, PII and injection; block → 400 `guardrail_blocked` | Fixtures from the guardrail tests pass: **met in P4e** for OpenAI-format chat, whole and streamed (2026-11-16, `docs/migration/2026-11-16-p4e-results.md`; the other formats come with P4d) |
 | S7 | Budget guard, fail open (§11.6) | Kill-IPC test: metered calls pass, each marked `budget_unchecked` and alerted; a spent budget in the snapshot is still refused: **met in P4e** (2026-11-16, `docs/migration/2026-11-16-p4e-results.md`) |
 | S8 | Usage, audit events and trace spans over IPC | Ledger and audit identical to JS for the same run: **met in P4f** (2026-11-17, `docs/migration/2026-11-17-p4f-results.md`) |
