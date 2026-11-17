@@ -159,6 +159,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	g.engine = engine.New(engine.NewUpstream(os.Getenv), g.emitUsage, g.log.Printf)
 	g.calls = calls
 	g.engine.SetCalls(calls, g.emitCallUsage)
+	// The go engine's trace spans (P4f D1): stored, then sent after the call's usage line, like every event.
+	g.engine.SetSpanEmitter(func(b *ipc.TraceSpanBody) error { return g.appendAndSend(ipc.TypeTraceSpan, b) })
 	g.engine.SetStaleMs(o.staleMs)
 	return g.serve(protocols)
 }
