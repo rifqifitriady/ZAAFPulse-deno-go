@@ -180,6 +180,15 @@ Each one line, with the evidence that settled it.
     line without `error` on a non-2xx and without any line on a thrown fetch; the Anthropic passthrough's `requested`
     on every line. Equality first; a fix goes into both engines later.
 
+## Owner answers (2026-11-17)
+
+28. **The token saver gets its own Go slice before G3**, not part of P4d (question 1). P4d keeps the hand-off of
+    Decision 16; the program plan lists the slice as a G3 prerequisite.
+29. **Routes (`router/*`) stay on js until G3** (question 3). Decision 9 stands; the program plan lists routes on go
+    as a G3 prerequisite.
+30. **The model cache stays handed off for now** (question 2). Decision 8 stands.
+31. **JS quirks are copied now and fixed in both engines after G3** (question 4). Decision 27 stands.
+
 ## Design
 
 ### D1. Planning (`gw/engine/xlate.go`, `mapmodel.go`, `anthropic.go`, `passthrough.go`, `count.go`, `embeddings.go`)
@@ -276,6 +285,8 @@ JS: `shadow.teeProvider(r)` in `providers.request`; `withShadow` wraps the respo
 - Model-output guardrails (owner answer 26 of P4e: input only).
 
 ## Open questions for the owner
+
+Answered on 2026-11-17 (Decisions 28–31); kept as asked.
 
 1. **Token saver in Go.** It is on by default and acts on every request with tool results, which is nearly every
    Claude Code and Codex turn after the first; P4d hands those to JS, so most coding-agent traffic stays on js until
