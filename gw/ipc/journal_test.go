@@ -578,3 +578,37 @@ func TestCompactionBacksOffAfterAFailure(t *testing.T) {
 		t.Fatalf("%d compaction attempts in 500 opens while the rename fails", tries)
 	}
 }
+
+// Re-review 2, r5: the c line cannot be appended, the rewrite's rename succeeds but reopening the journal fails (EMFILE,
+// a scanner holding the file). The close is on disk then: the note succeeds and the call's line is stored, with exactly
+// one line after a restart, and the journal opens again on its next write.
+func TestRenamedButNotReopenedIsANote(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	a := j.Open(1, modelRecord(0))
+	j.failWrite = func() error { return errors.New("disk full") }
+	fails := 1
+	j.reopen = func(p string) (*os.File, error) {
+		if fails > 0 {
+			fails--
+			return nil, errors.New("too many open files")
+		}
+		return openJournalFile(p)
+	}
+	emitOne(t, j, box, a, 0)
+	j.failWrite = nil
+	// The journal is usable again: the next call is journalled and gets its line.
+	b := j.Open(2, modelRecord(1))
+	if b == 0 {
+		t.Fatal("the journal did not open again")
+	}
+	emitOne(t, j, box, b, 1)
+	counts, recs := recoverAt(t, snapshotDir(t, dir))
+	if counts["m0"] != 1 || counts["m1"] != 1 {
+		t.Fatalf("lines %v (want m0 1, m1 1)", counts)
+	}
+	if recs[0].Status != 200 || recs[0].Cost != 7 {
+		t.Fatalf("call A's real line was not stored: %+v", recs[0])
+	}
+}

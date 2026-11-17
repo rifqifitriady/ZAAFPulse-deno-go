@@ -38,11 +38,13 @@ type CallJournal struct {
 	f          *os.File
 	size       int64
 	next       int64
-	limit      int64                      // compact once the journal passes this size
-	calls      map[int64]*journalCall     // calls whose line is not appended yet
-	afterWrite func()                     // tests: runs after each completed write (a crash point)
-	failWrite  func() error               // tests: makes the next line writes fail
-	rename     func(string, string) error // os.Rename; a test makes it fail
+	limit      int64                          // compact once the journal passes this size
+	calls      map[int64]*journalCall         // calls whose line is not appended yet
+	afterWrite func()                         // tests: runs after each completed write (a crash point)
+	failWrite  func() error                   // tests: makes the next line writes fail
+	rename     func(string, string) error     // os.Rename; a test makes it fail
+	reopen     func(string) (*os.File, error) // openJournalFile; a test makes it fail
+	closed     bool                           // Close ran: the journal is never opened again
 }
 
 type journalCall struct {
@@ -83,8 +85,36 @@ func OpenCallJournal(dir string) (*CallJournal, error) {
 		return nil, fmt.Errorf("the call journal: %w", err)
 	}
 	return &CallJournal{path: p, f: f, size: size, next: 1, limit: journalCompactAt, calls: map[int64]*journalCall{},
-		rename: os.Rename}, nil
+		rename: os.Rename, reopen: openJournalFile}, nil
 }
+
+// errNotReopened: a compaction's rename succeeded (the rewritten journal is on disk) but the journal could not be
+// opened again (re-review r5); it is opened again on the next write.
+var errNotReopened = errors.New("the call journal was rewritten but could not be opened again")
+
+// ensureOpen opens the journal again after a compaction that could not (re-review r5). Under mu.
+func (j *CallJournal) ensureOpen() error {
+	if j.f != nil {
+		return nil
+	}
+	if j.closed {
+		return errors.New("the call journal is closed")
+	}
+	f, err := j.reopen(j.path)
+	if err != nil {
+		return err
+	}
+	size, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	j.f, j.size = f, size
+	return nil
+}
+
+// openJournalFile opens the journal for reading and appending (created when missing).
+func openJournalFile(p string) (*os.File, error) { return os.OpenFile(p, os.O_RDWR|os.O_CREATE, 0o600) }
 
 func lineOf(l journalLine) ([]byte, error) {
 	b, err := json.Marshal(l)
@@ -93,6 +123,9 @@ func lineOf(l journalLine) ([]byte, error) {
 
 // write appends one line; a write that fails part-way is cut back, so no fragment is followed by another line. Under mu.
 func (j *CallJournal) write(b []byte) error {
+	if err := j.ensureOpen(); err != nil {
+		return err
+	}
 	if j.failWrite != nil {
 		if err := j.failWrite(); err != nil {
 			return err
@@ -157,7 +190,9 @@ func (j *CallJournal) noteClose(id, seq int64) error {
 		prev := c.seq
 		c.seq = seq
 		if err != nil {
-			if cerr := j.compact(); cerr != nil {
+			// A rewrite that reached the disk is the close even when the journal could not be opened again (re-review
+			// r5): refusing it would let the next event take the noted seq, and the call would have no line.
+			if cerr := j.compact(); cerr != nil && !errors.Is(cerr, errNotReopened) {
 				c.seq = prev
 				return errors.Join(err, cerr)
 			}
@@ -241,11 +276,20 @@ func (j *CallJournal) compact() error {
 		return err
 	}
 	// Windows renames over an open file only when no handle holds it: the journal is closed first, then opened again.
-	_ = j.f.Close()
+	if j.f != nil {
+		_ = j.f.Close()
+		j.f = nil
+	}
 	renameErr := j.rename(tmp, j.path)
-	f, err := os.OpenFile(j.path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := j.reopen(j.path)
 	if err != nil {
-		return err
+		if renameErr != nil {
+			_ = os.Remove(tmp)
+			backOff()
+			return errors.Join(renameErr, err)
+		}
+		j.limit = j.size + journalCompactAt
+		return fmt.Errorf("%w: %w", errNotReopened, err) // the rewrite is on disk; the next write opens it
 	}
 	size, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
@@ -268,6 +312,9 @@ func (j *CallJournal) compact() error {
 func (j *CallJournal) Recover(box *Outbox, now int64) (int, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	if err := j.ensureOpen(); err != nil {
+		return 0, err
+	}
 	if _, err := j.f.Seek(0, io.SeekStart); err != nil {
 		return 0, err
 	}
@@ -331,8 +378,9 @@ func (j *CallJournal) Recover(box *Outbox, now int64) (int, error) {
 		todo = append(todo, id)
 	}
 	// Then the journal holds exactly those calls, open with no stale close, before any line is appended: a kill during
-	// this recovery leaves each one either open (recovered by the next start) or closed at the seq its line took.
-	if err := j.compact(); err != nil {
+	// this recovery leaves each one either open (recovered by the next start) or closed at the seq its line took. A
+	// rewrite that could not be opened again is on disk (re-review r5): the next write opens it.
+	if err := j.compact(); err != nil && !errors.Is(err, errNotReopened) {
 		return 0, err
 	}
 	n := 0
@@ -346,7 +394,9 @@ func (j *CallJournal) Recover(box *Outbox, now int64) (int, error) {
 		n++
 	}
 	clear(j.calls)
-	if err := j.compact(); err != nil || j.size != 0 {
+	if err := j.compact(); errors.Is(err, errNotReopened) {
+		return n, nil // emptied on disk; opened again on the next write
+	} else if err != nil || j.size != 0 {
 		return n, errors.Join(errors.New("the call journal could not be emptied"), err)
 	}
 	return n, nil
@@ -367,5 +417,11 @@ func Recovered(base UsageRecord, ts int64) UsageRecord {
 func (j *CallJournal) Close() error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return j.f.Close()
+	j.closed = true
+	if j.f == nil {
+		return nil
+	}
+	err := j.f.Close()
+	j.f = nil
+	return err
 }
