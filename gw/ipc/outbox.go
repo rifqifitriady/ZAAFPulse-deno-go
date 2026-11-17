@@ -49,6 +49,7 @@ type Outbox struct {
 	remove     func(string) error                  // os.Remove; a test watches the order of writes
 	write      func(*os.File, []byte) (int, error) // (*os.File).Write; a test makes it fail part-way
 	truncate   func(*os.File, int64) error         // truncateAndSeek; a test makes it fail
+	afterWrite func()                              // tests: runs after each completed file write (a crash point)
 }
 
 type streamState struct {
@@ -267,6 +268,7 @@ func (o *Outbox) append(typ string, body any, ts int64) ([]byte, int64, error) {
 	}
 	o.curSize += int64(len(line))
 	o.curCount++
+	o.wrote()
 	o.state.Next = seq + 1
 	return line, seq, nil
 }
@@ -402,6 +404,7 @@ func (o *Outbox) prune() error {
 		if err := o.remove(o.segPath(first)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
+		o.wrote()
 	}
 	o.segs = keep
 	return nil
@@ -416,7 +419,59 @@ func (o *Outbox) save() error {
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(o.dir, "stream.json"))
+	if err := os.Rename(tmp, filepath.Join(o.dir, "stream.json")); err != nil {
+		return err
+	}
+	o.wrote()
+	return nil
+}
+
+// wrote runs the test hook after a completed file write.
+func (o *Outbox) wrote() {
+	if o.afterWrite != nil {
+		o.afterWrite()
+	}
+}
+
+// NoteError is AppendSendNoted's error when note failed: nothing was appended.
+type NoteError struct{ Err error }
+
+func (e *NoteError) Error() string {
+	return "outbox: the note before the event failed: " + e.Err.Error()
+}
+func (e *NoteError) Unwrap() error { return e.Err }
+
+// AppendSendNoted is AppendSend with note(seq) first, under the send lock, given the seq the event will take (P4f D14:
+// the call journal's close). A note that fails stops it: nothing is appended, and the error is a *NoteError. An append
+// that fails after the note runs undo, so the note does not claim a seq the event never took; one that succeeds runs
+// done (the call journal drops the call only then: final review I1). send nil appends only (the journal's recovery,
+// before hello).
+func (o *Outbox) AppendSendNoted(typ string, body any, ts int64, note func(seq int64) error, undo, done func(),
+	send func(line []byte) error) (int64, error) {
+	o.sendMu.Lock()
+	defer o.sendMu.Unlock()
+	o.mu.Lock()
+	seq, closed := o.state.Next, o.closed
+	o.mu.Unlock()
+	if closed {
+		return 0, ErrOutboxClosed
+	}
+	if err := note(seq); err != nil {
+		return 0, &NoteError{Err: err}
+	}
+	line, got, err := o.append(typ, body, ts)
+	if err != nil {
+		undo()
+		return 0, err
+	}
+	done()
+	if got != seq {
+		return got, fmt.Errorf("outbox: the event took seq %d where %d was noted", got, seq)
+	}
+	if send == nil {
+		return seq, nil
+	}
+	return seq, send(line)
 }
 
 func (o *Outbox) Stream() string {

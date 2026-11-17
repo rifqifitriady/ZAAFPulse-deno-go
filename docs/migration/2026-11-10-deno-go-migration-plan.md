@@ -248,7 +248,7 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 | S5 | Translate (Anthropic, OpenAI, Gemini, routers, Ollama/local) | Fixtures from `translate` tests pass byte-for-byte |
 | S6 | Guardrails: secrets, PII and injection; block → 400 `guardrail_blocked` | Fixtures from the guardrail tests pass: **met in P4e** for OpenAI-format chat, whole and streamed (2026-11-16, `docs/migration/2026-11-16-p4e-results.md`; the other formats come with P4d) |
 | S7 | Budget guard, fail open (§11.6) | Kill-IPC test: metered calls pass, each marked `budget_unchecked` and alerted; a spent budget in the snapshot is still refused: **met in P4e** (2026-11-16, `docs/migration/2026-11-16-p4e-results.md`) |
-| S8 | Usage, audit events and trace spans over IPC | Ledger and audit identical to JS for the same run |
+| S8 | Usage, audit events and trace spans over IPC | Ledger and audit identical to JS for the same run: **met in P4f** (2026-11-17, `docs/migration/2026-11-17-p4f-results.md`) |
 | S9 | `/mcp` `tools/call` path, gateway keys | Contract cases green |
 | S10 | Google service-account JWT (`createSign` RSA-SHA256) and other provider auth | Live provider smoke tests (owner keys, manual) |
 

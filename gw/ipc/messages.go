@@ -24,6 +24,9 @@ const (
 	TypeAuditEvent     = "audit.event"
 	TypeTraceSpan      = "trace.span"
 	TypeError          = "error"
+	// P4f D16: one rate-limit window across the engines (control messages, not outbox events).
+	TypeRateLimitTake   = "ratelimit.take"
+	TypeRateLimitWindow = "ratelimit.window"
 )
 
 // Hello is the gateway's first message: the protocols it speaks, its version, its durable event stream and the
@@ -54,6 +57,13 @@ type ConfigPush struct {
 	Keys    []GatewayKeyAuth      `json:"keys"`
 	Pricing map[string]PriceEntry `json:"pricing"`
 	Front   *FrontConfig          `json:"front,omitzero"` // P4a: present when the gateway holds the main port
+	Trace   *TraceSwitch          `json:"trace,omitzero"` // P4f D8: whether a span is recorded anywhere
+}
+
+// TraceSwitch says whether the control plane records gateway spans (the local trace store on, or OTLP export on;
+// lib/otel.js live()). Without it, or with spans false, the engine emits no span and no usage line names a trace.
+type TraceSwitch struct {
+	Spans bool `json:"spans"`
 }
 
 // FrontConfig puts the gateway in front (P4a spec D1): it listens on the main port and forwards each route class to
@@ -137,6 +147,15 @@ type ProviderConfig struct {
 	Responses  *bool             `json:"responses,omitzero"`
 	Reasoning  *bool             `json:"reasoning,omitzero"`
 	TokenParam *string           `json:"tokenParam,omitzero" ipc:"enum=max_tokens|max_completion_tokens"`
+	Span       *ProviderSpan     `json:"span,omitzero"` // P4f D4: lib/otel.js providerSpanAttrs, computed by the control plane
+}
+
+// ProviderSpan is a provider's model-span attributes (P4f D4): gen_ai.provider.name, server.address and server.port, as
+// lib/otel.js providerSpanAttrs computes them from the provider's preset and its baseUrl (WHATWG URL).
+type ProviderSpan struct {
+	Name    string  `json:"name" ipc:"minlen=1"`
+	Address *string `json:"address,omitzero"`
+	Port    *int64  `json:"port,omitzero" ipc:"min=0"`
 }
 
 type ProviderAuth struct {
@@ -463,27 +482,57 @@ type MCPAuditEntry struct {
 	KeyID       *string  `json:"keyId,omitzero"`
 }
 
-// TraceSpanBody is one finished span as the local trace store keeps it.
+// TraceSpanBody is one finished span as the local trace store keeps it, and what OTLP export needs beyond it (P4f D11).
 type TraceSpanBody struct {
 	Span SpanRecord `json:"span"`
+	OTLP *SpanOTLP  `json:"otlp,omitzero"`
+}
+
+// SpanOTLP is what OTLP export needs beyond the stored record (P4f D11): the span's tracestate, whether its parent is
+// remote (a server span continuing an incoming traceparent), and its status message (up to 500 UTF-16 units; the
+// stored err keeps 200).
+type SpanOTLP struct {
+	TraceState *string `json:"traceState,omitzero"`
+	Remote     *bool   `json:"remote,omitzero" ipc:"enum=true"`
+	Message    *string `json:"message,omitzero"`
 }
 
 type SpanRecord struct {
-	T   string         `json:"t" ipc:"pattern=hex32"`
-	S   string         `json:"s" ipc:"pattern=hex16"`
-	P   *string        `json:"p" ipc:"pattern=hex16"`
-	N   string         `json:"n" ipc:"minlen=1"`
-	K   string         `json:"k" ipc:"enum=internal|server|client"`
-	St  int64          `json:"st" ipc:"min=0"`
-	D   int64          `json:"d" ipc:"min=0"`
-	OK  bool           `json:"ok"`
-	Err *string        `json:"err,omitzero"`
-	Src string         `json:"src"`
-	Svc string         `json:"svc"`
-	A   map[string]any `json:"a"`
+	T   string  `json:"t" ipc:"pattern=hex32"`
+	S   string  `json:"s" ipc:"pattern=hex16"`
+	P   *string `json:"p" ipc:"pattern=hex16"`
+	N   string  `json:"n" ipc:"minlen=1"`
+	K   string  `json:"k" ipc:"enum=internal|server|client"`
+	St  int64   `json:"st" ipc:"min=0"`
+	D   int64   `json:"d" ipc:"min=0"`
+	OK  bool    `json:"ok"`
+	Err *string `json:"err,omitzero"`
+	Src string  `json:"src"`
+	Svc string  `json:"svc"`
+	// A holds the attributes' exact JSON, in the order they were built (P4f D3): encoding/json sorts a map's keys, while
+	// the JS store keeps insertion order, so a stored line from Go is byte-equal to the JS one only with the raw bytes.
+	A json.RawMessage `json:"a" ipc:"object"`
 }
 
 type ErrorBody struct {
 	Code    string `json:"code" ipc:"minlen=1"`
 	Message string `json:"message"`
+}
+
+// RateLimitTake is one request admitted under a key's requests-per-minute window, for the other engine (P4f D16; both
+// directions, a control message: a lost take changes a window, never a ledger).
+type RateLimitTake struct {
+	KeyID string `json:"keyId" ipc:"minlen=1"`
+	At    int64  `json:"at" ipc:"min=0"`
+}
+
+// RateLimitWindow seeds a new gateway with the last minute's takes per key (P4f D16), before budget.snapshot.
+type RateLimitWindow struct {
+	Windows []RateWindow `json:"windows"`
+}
+
+// RateWindow is one key's takes, epoch ms.
+type RateWindow struct {
+	KeyID string  `json:"keyId" ipc:"minlen=1"`
+	At    []int64 `json:"at"`
 }

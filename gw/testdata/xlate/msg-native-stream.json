@@ -18,6 +18,11 @@
               "tier": "external",
               "auth": {
                 "type": "key"
+              },
+              "span": {
+                "name": "oa",
+                "address": "127.0.0.1",
+                "port": 9
               }
             },
             {
@@ -27,6 +32,11 @@
               "approved": true,
               "auth": {
                 "type": "key"
+              },
+              "span": {
+                "name": "anthropic",
+                "address": "127.0.0.1",
+                "port": 10
               }
             },
             {
@@ -36,6 +46,11 @@
               "approved": true,
               "auth": {
                 "type": "key"
+              },
+              "span": {
+                "name": "openai",
+                "address": "127.0.0.1",
+                "port": 8
               }
             },
             {
@@ -44,6 +59,11 @@
               "baseUrl": "http://127.0.0.1:11434/v1",
               "aliases": {
                 "fast": "llama-9"
+              },
+              "span": {
+                "name": "ollama",
+                "address": "127.0.0.1",
+                "port": 11434
               }
             },
             {
@@ -53,12 +73,22 @@
               "approved": true,
               "auth": {
                 "type": "key"
+              },
+              "span": {
+                "name": "openrouter",
+                "address": "127.0.0.1",
+                "port": 11
               }
             },
             {
               "id": "lt",
               "preset": "litellm",
-              "baseUrl": "http://127.0.0.1:4000/v1"
+              "baseUrl": "http://127.0.0.1:4000/v1",
+              "span": {
+                "name": "litellm",
+                "address": "127.0.0.1",
+                "port": 4000
+              }
             },
             {
               "id": "gm",
@@ -67,6 +97,11 @@
               "approved": true,
               "auth": {
                 "type": "key"
+              },
+              "span": {
+                "name": "gcp.gemini",
+                "address": "127.0.0.1",
+                "port": 12
               }
             }
           ],
