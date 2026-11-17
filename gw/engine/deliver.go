@@ -45,6 +45,7 @@ func (s *State) Deliver(p *Plan, res ProviderResult, elapsed func() float64, w C
 		if !p.Stream || res.Why != "" || !ok2xx(res.Status) {
 			return s.deliverTranslated(p, res, elapsed, w)
 		}
+		return s.deliverTranslatedStream(p, res, elapsed, w)
 	}
 	panic(errNotServed)
 }

@@ -70,8 +70,8 @@ func anthropicWhole(env *translate.Env, raw []byte, clientModel string) ([]byte,
 // closing it stops the conversion (its next write fails).
 func AnthropicToChatText(model string, body io.Reader, env *translate.Env) io.ReadCloser {
 	pr, pw := io.Pipe()
+	conv := env.NewAnthropicEvents(model) // now: its id is drawn when callChat returns, before the client's writer
 	go func() {
-		conv := env.NewAnthropicEvents(model)
 		err := translate.ReadSSE(body, func(_, data string) error {
 			o, err := jsv.Parse([]byte(data))
 			if err != nil {
