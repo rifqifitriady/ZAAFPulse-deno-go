@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -435,5 +436,145 @@ func TestEmitWhenTheNoteFailsStoresTheRealLine(t *testing.T) {
 	counts, recs := recoverAt(t, snapshotDir(t, dir))
 	if counts["m0"] != 1 || len(recs) != 1 || recs[0].Status != 200 || recs[0].Cost != 7 {
 		t.Fatalf("lines %v %+v (want one real line)", counts, recs)
+	}
+}
+
+// recoverChain recovers snap, and also every state a kill during that recovery could leave (a snapshot after each of
+// its writes), recovering each of those again: every call opened in snap must end with exactly one line in all of them.
+func recoverChain(t *testing.T, snap string, models []string) {
+	t.Helper()
+	check := func(where string, counts map[string]int) {
+		for _, m := range models {
+			if counts[m] != 1 {
+				t.Fatalf("%s: %s has %d lines, want 1 (%v)", where, m, counts[m], counts)
+			}
+		}
+	}
+	// The recovery itself, with a kill after each of its writes.
+	work := snapshotDir(t, snap)
+	rbox := mustBox(t, work)
+	rj := mustJournal(t, work)
+	var kills []string
+	rbox.afterWrite = func() { kills = append(kills, snapshotDir(t, work)) }
+	rj.afterWrite = rbox.afterWrite
+	if _, err := rj.Recover(rbox, 9999); err != nil {
+		t.Fatal(err)
+	}
+	check("after recovery", usageModels(t, rbox, rbox.Acked()+1))
+	for i, k := range kills {
+		counts, _ := recoverAt(t, k)
+		check(fmt.Sprintf("after a kill at write %d of the recovery", i), counts)
+	}
+}
+
+// Re-review R1: a long call L is in flight and a later call S has its close noted at seq n when the gateway is killed
+// before S's line is stored. Recovering L first moved Next past n, and S was skipped as written: zero lines.
+func TestRecoverAnOpenCallBeforeANotedUnwrittenOne(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	l := j.Open(1, modelRecord(0))
+	s := j.Open(2, modelRecord(1))
+	_ = l
+	if err := j.NoteClose(s, box.Next()); err != nil { // noted under the send lock, then the kill: no line
+		t.Fatal(err)
+	}
+	recoverChain(t, snapshotDir(t, dir), []string{"m0", "m1"})
+}
+
+// Re-review r4: every ordering of two and three calls, each in flight, noted but unwritten (at most one: the send lock
+// holds one note at a time), or written, killed there; recovery (and a kill during it) leaves each exactly one line.
+func TestRecoverEveryOrderingOfCallStates(t *testing.T) {
+	states := []string{"open", "noted", "written"}
+	var plans [][]string
+	for _, n := range []int{2, 3} {
+		var walk func(prefix []string)
+		walk = func(prefix []string) {
+			if len(prefix) == n {
+				noted := 0
+				for _, s := range prefix {
+					if s == "noted" {
+						noted++
+					}
+				}
+				if noted <= 1 {
+					plans = append(plans, append([]string(nil), prefix...))
+				}
+				return
+			}
+			for _, s := range states {
+				walk(append(prefix, s))
+			}
+		}
+		walk(nil)
+	}
+	for _, plan := range plans {
+		t.Run(strings.Join(plan, "-"), func(t *testing.T) {
+			dir := t.TempDir()
+			box := mustBox(t, dir)
+			j := mustJournal(t, dir)
+			ids := make([]int64, len(plan))
+			models := make([]string, len(plan))
+			for i := range plan {
+				ids[i] = j.Open(int64(i+1), modelRecord(i))
+				models[i] = fmt.Sprintf("m%d", i)
+			}
+			noted := -1
+			for i, st := range plan {
+				switch st {
+				case "written":
+					emitOne(t, j, box, ids[i], i)
+				case "noted":
+					noted = i
+				}
+			}
+			if noted >= 0 {
+				if err := j.NoteClose(ids[noted], box.Next()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			recoverChain(t, snapshotDir(t, dir), models)
+		})
+	}
+}
+
+// Re-review r2: when the c line cannot be appended, the close is written by rewriting the journal, before the line is
+// stored: a kill at any write of that path leaves the call exactly one line (never none, never two).
+func TestNoteByRewriteNeverLosesTheCall(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	id := j.Open(1, modelRecord(0))
+	var snaps []string
+	j.failWrite = func() error { return errors.New("disk full") }
+	j.afterWrite = func() { snaps = append(snaps, snapshotDir(t, dir)) }
+	box.afterWrite = j.afterWrite
+	emitOne(t, j, box, id, 0)
+	j.failWrite = nil
+	snaps = append(snaps, snapshotDir(t, dir))
+	for i, snap := range snaps {
+		counts, recs := recoverAt(t, snap)
+		if counts["m0"] != 1 {
+			t.Fatalf("kill %d: %d lines, want 1", i, counts["m0"])
+		}
+		if i == len(snaps)-1 && (recs[0].Status != 200 || recs[0].Cost != 7) {
+			t.Fatalf("the real line was replaced: %+v", recs[0])
+		}
+	}
+}
+
+// Re-review r3: a compaction whose rename keeps failing (a Windows sharing violation) is not retried on every open.
+func TestCompactionBacksOffAfterAFailure(t *testing.T) {
+	dir := t.TempDir()
+	box := mustBox(t, dir)
+	j := mustJournal(t, dir)
+	tries := 0
+	j.rename = func(string, string) error { tries++; return errors.New("sharing violation") }
+	j.limit = 0
+	for i := 0; i < 500; i++ {
+		emitOne(t, j, box, j.Open(int64(i), modelRecord(i)), i)
+	}
+	if tries > 5 {
+		t.Fatalf("%d compaction attempts in 500 opens while the rename fails", tries)
 	}
 }
