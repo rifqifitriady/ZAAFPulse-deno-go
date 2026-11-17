@@ -38,10 +38,11 @@ type CallJournal struct {
 	f          *os.File
 	size       int64
 	next       int64
-	limit      int64                  // compact once the journal passes this size
-	calls      map[int64]*journalCall // calls whose line is not appended yet
-	afterWrite func()                 // tests: runs after each completed write (a crash point)
-	failWrite  func() error           // tests: makes the next line writes fail
+	limit      int64                      // compact once the journal passes this size
+	calls      map[int64]*journalCall     // calls whose line is not appended yet
+	afterWrite func()                     // tests: runs after each completed write (a crash point)
+	failWrite  func() error               // tests: makes the next line writes fail
+	rename     func(string, string) error // os.Rename; a test makes it fail
 }
 
 type journalCall struct {
@@ -81,7 +82,8 @@ func OpenCallJournal(dir string) (*CallJournal, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("the call journal: %w", err)
 	}
-	return &CallJournal{path: p, f: f, size: size, next: 1, limit: journalCompactAt, calls: map[int64]*journalCall{}}, nil
+	return &CallJournal{path: p, f: f, size: size, next: 1, limit: journalCompactAt, calls: map[int64]*journalCall{},
+		rename: os.Rename}, nil
 }
 
 func lineOf(l journalLine) ([]byte, error) {
@@ -137,15 +139,29 @@ func (j *CallJournal) Open(ts int64, base UsageRecord) int64 {
 func (j *CallJournal) NoteClose(id, seq int64) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	return j.noteClose(id, seq)
+}
+
+// noteClose is NoteClose under mu. When the c line cannot be appended, the close is written by rewriting the journal
+// with it (re-review r2: never a real line stored with its call still open in the journal, nor dropped from it).
+func (j *CallJournal) noteClose(id, seq int64) error {
 	b, err := lineOf(journalLine{C: id, Seq: seq})
 	if err == nil {
 		err = j.write(b)
 	}
-	if err != nil {
+	c := j.calls[id]
+	if err != nil && c == nil {
 		return err
 	}
-	if c := j.calls[id]; c != nil {
+	if c != nil {
+		prev := c.seq
 		c.seq = seq
+		if err != nil {
+			if cerr := j.compact(); cerr != nil {
+				c.seq = prev
+				return errors.Join(err, cerr)
+			}
+		}
 	}
 	return nil
 }
@@ -189,42 +205,14 @@ func (j *CallJournal) End(id int64) {
 	}
 }
 
-// Forget drops call id from the journal by rewriting it without the call; an error when the rewrite failed (the call is
-// then still in it).
-func (j *CallJournal) Forget(id int64) error {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	c := j.calls[id]
-	if c == nil {
-		return nil
-	}
-	delete(j.calls, id)
-	if err := j.compact(); err != nil {
-		j.calls[id] = c
-		return err
-	}
-	return nil
-}
-
 // Emit stores a journalled call's usage line in box and sends it (P4f D14): its close is noted under the outbox's send
-// lock right before the append, and the call leaves the table once the line is stored. When the close cannot be noted,
-// the call is dropped from the journal (rewritten without it) and the real line stored plainly, so a refused note never
-// turns the call's real line into a cost-0 599 at the next start (final review m6); only when the journal cannot be
-// rewritten either is the line left to the next start (the residual case of a disk that refuses every write).
+// lock right before the append (by a rewrite of the journal when the c line cannot be appended: re-review r2), and the
+// call leaves the table once the line is stored. When the close cannot be noted at all, nothing is appended: the call
+// stays open and the next start writes its line (status 599, cost 0). A line is never stored while the journal still
+// shows its call open, so a crash never leaves it with two lines, nor with none.
 func (j *CallJournal) Emit(box *Outbox, call int64, typ string, body any, ts int64, send func([]byte) error) (int64, error) {
-	seq, err := box.AppendSendNoted(typ, body, ts, func(seq int64) error { return j.NoteClose(call, seq) },
+	return box.AppendSendNoted(typ, body, ts, func(seq int64) error { return j.NoteClose(call, seq) },
 		func() { j.Reopen(call) }, func() { j.Done(call) }, send)
-	var ne *NoteError
-	if errors.As(err, &ne) {
-		if j.Forget(call) == nil {
-			if send == nil {
-				_, seq, err := box.Append(typ, body, ts)
-				return seq, err
-			}
-			return box.AppendSend(typ, body, ts, send)
-		}
-	}
-	return seq, err
 }
 
 // compact rewrites the journal with the calls of the table only, through a temp file renamed over it. Under mu.
@@ -244,13 +232,17 @@ func (j *CallJournal) compact() error {
 		}
 	}
 	tmp := j.path + ".tmp"
+	// Re-review r3: a compaction that fails is tried again only after the journal grows by another threshold, not on
+	// every open while the failure lasts.
+	backOff := func() { j.limit = j.size + journalCompactAt }
 	if err := os.WriteFile(tmp, buf.Bytes(), 0o600); err != nil {
 		_ = os.Remove(tmp)
+		backOff()
 		return err
 	}
 	// Windows renames over an open file only when no handle holds it: the journal is closed first, then opened again.
 	_ = j.f.Close()
-	renameErr := os.Rename(tmp, j.path)
+	renameErr := j.rename(tmp, j.path)
 	f, err := os.OpenFile(j.path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
@@ -263,6 +255,7 @@ func (j *CallJournal) compact() error {
 	j.f, j.size = f, size
 	if renameErr != nil {
 		_ = os.Remove(tmp)
+		backOff()
 		return renameErr
 	}
 	j.limit = max(journalCompactAt, 4*size)
@@ -319,20 +312,34 @@ func (j *CallJournal) Recover(box *Outbox, now int64) (int, error) {
 	if err := sc.Err(); err != nil {
 		return 0, err
 	}
-	n := 0
+	// Re-review R1: which calls have no line is decided once, against the Next of the reopened outbox, before any
+	// recovered line moves it (a line recovered for an earlier call would take the seq a later call's unwritten close
+	// names, and that call would look written).
+	next := box.Next()
+	clear(j.calls)
+	var todo []int64
 	for _, id := range order {
 		c := calls[id]
-		if c.closed && (c.seq == 0 || c.seq < box.Next()) {
+		if c.closed && (c.seq == 0 || c.seq < next) {
 			continue
 		}
+		b, err := lineOf(journalLine{O: id, Ts: c.ts, R: &c.base})
+		if err != nil {
+			return 0, err
+		}
+		j.calls[id] = &journalCall{open: b}
+		todo = append(todo, id)
+	}
+	// Then the journal holds exactly those calls, open with no stale close, before any line is appended: a kill during
+	// this recovery leaves each one either open (recovered by the next start) or closed at the seq its line took.
+	if err := j.compact(); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, id := range todo {
+		c := calls[id]
 		_, err := box.AppendSendNoted(TypeUsageReport, &UsageReport{Record: Recovered(c.base, c.ts)}, now,
-			func(seq int64) error {
-				b, err := lineOf(journalLine{C: id, Seq: seq})
-				if err != nil {
-					return err
-				}
-				return j.write(b)
-			}, func() {}, func() {}, nil)
+			func(seq int64) error { return j.noteClose(id, seq) }, func() {}, func() { delete(j.calls, id) }, nil)
 		if err != nil {
 			return n, err
 		}
