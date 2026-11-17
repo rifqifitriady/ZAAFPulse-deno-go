@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ratelimit.window (control plane to gateway, P4f D16): the takes of the last minute per key, sent before budget.snapshot when a session starts",
+  "type": "object",
+  "required": [
+    "windows"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "keyId",
+          "at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "keyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}

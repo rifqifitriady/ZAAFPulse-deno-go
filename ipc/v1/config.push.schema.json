@@ -41,7 +41,17 @@
               "format": { "type": "string", "enum": ["openai", "anthropic"] },
               "responses": { "type": "boolean" },
               "reasoning": { "type": "boolean" },
-              "tokenParam": { "type": "string", "enum": ["max_tokens", "max_completion_tokens"] }
+              "tokenParam": { "type": "string", "enum": ["max_tokens", "max_completion_tokens"] },
+              "span": {
+                "type": "object",
+                "required": ["name"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "address": { "type": "string" },
+                  "port": { "type": "integer", "minimum": 0 }
+                }
+              }
             }
           }
         },
@@ -163,6 +173,12 @@
           "estimate": { "type": "boolean" }
         }
       }
+    },
+    "trace": {
+      "type": "object",
+      "required": ["spans"],
+      "additionalProperties": false,
+      "properties": { "spans": { "type": "boolean" } }
     },
     "front": {
       "description": "P4a: the gateway holds the main port and forwards each route class to an engine; js is the control plane's internal port on 127.0.0.1",

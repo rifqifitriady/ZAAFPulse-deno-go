@@ -35,20 +35,22 @@ type Message struct {
 }
 
 var bodies = map[string]func() any{
-	TypeHello:          func() any { return new(Hello) },
-	TypeHelloOK:        func() any { return new(HelloOK) },
-	TypeHelloRefused:   func() any { return new(HelloRefused) },
-	TypeConfigPush:     func() any { return new(ConfigPush) },
-	TypeSecretsHandoff: func() any { return new(SecretsHandoff) },
-	TypeBudgetSnapshot: func() any { return new(BudgetSnapshot) },
-	TypeShutdown:       func() any { return new(Shutdown) },
-	TypeAck:            func() any { return new(Ack) },
-	TypeReady:          func() any { return new(Ready) },
-	TypeHealth:         func() any { return new(Health) },
-	TypeUsageReport:    func() any { return new(UsageReport) },
-	TypeAuditEvent:     func() any { return new(AuditEventBody) },
-	TypeTraceSpan:      func() any { return new(TraceSpanBody) },
-	TypeError:          func() any { return new(ErrorBody) },
+	TypeHello:           func() any { return new(Hello) },
+	TypeHelloOK:         func() any { return new(HelloOK) },
+	TypeHelloRefused:    func() any { return new(HelloRefused) },
+	TypeConfigPush:      func() any { return new(ConfigPush) },
+	TypeSecretsHandoff:  func() any { return new(SecretsHandoff) },
+	TypeBudgetSnapshot:  func() any { return new(BudgetSnapshot) },
+	TypeShutdown:        func() any { return new(Shutdown) },
+	TypeAck:             func() any { return new(Ack) },
+	TypeReady:           func() any { return new(Ready) },
+	TypeHealth:          func() any { return new(Health) },
+	TypeUsageReport:     func() any { return new(UsageReport) },
+	TypeAuditEvent:      func() any { return new(AuditEventBody) },
+	TypeTraceSpan:       func() any { return new(TraceSpanBody) },
+	TypeError:           func() any { return new(ErrorBody) },
+	TypeRateLimitTake:   func() any { return new(RateLimitTake) },
+	TypeRateLimitWindow: func() any { return new(RateLimitWindow) },
 }
 
 // Types lists the v1 message types, sorted.

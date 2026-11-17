@@ -67,7 +67,7 @@ async function smoke(binary) {
     const doctor = execFileSync(bin, ['doctor'], { env, encoding: 'utf8', timeout: 60000 });
     if (!/\(single-file build\)/.test(doctor) || !/Deno\s+\d/.test(doctor)) throw new Error(`doctor:\n${doctor}`);
     // The binary carries the IPC v1 schemas (P4a E5).
-    if (!/Gateway IPC\s+v1, 15 schemas/.test(doctor)) throw new Error(`doctor: no IPC schemas:\n${doctor}`);
+    if (!/Gateway IPC\s+v1, 17 schemas/.test(doctor)) throw new Error(`doctor: no IPC schemas:\n${doctor}`);
     out.ok = true;
   } catch (err) {
     out.error = String(err.message || err).slice(0, 2000);

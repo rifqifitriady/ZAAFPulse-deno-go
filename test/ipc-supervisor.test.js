@@ -398,3 +398,119 @@ test('the health watchdog neither re-arms nor kills once stop() has begun', asyn
   s.exit(0);
   assert.deepEqual(await stopping, { code: 0, signal: null });
 });
+
+// P4f D16: a new session gets the rate-limit window in its first messages, a take from the gateway reaches onControl,
+// and control() sends a take only while a session is ready.
+test('the rate-limit window goes with each session; takes travel both ways (P4f D16)', async (t) => {
+  const { sessions, start } = fakeStart();
+  const controls = [];
+  const windows = [{ windows: [{ keyId: 'k1', at: [5, 6] }] }];
+  const sup = createSupervisor(
+    fakeOpts(
+      start,
+      [],
+      { t: 0 },
+      {
+        sources: {
+          config: () => ({}),
+          secrets: () => ({}),
+          snapshot: () => ({ budgets: [], keyCenter: {} }),
+          window: () => windows,
+        },
+        onControl: (msg) => controls.push(msg),
+      },
+    ),
+  );
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  assert.deepEqual(sessions[0].opts.initial.window(), windows, 'built when the hello comes (review m1)');
+  const sent = [];
+  sessions[0].send = (type, body) => sent.push([type, body]);
+  assert.equal(sup.control('ratelimit.take', { keyId: 'k1', at: 7 }), false, 'no handshake yet: nothing sent');
+  sessions[0].handshaken = true; // the window went with the hello: takes may follow before ready (review m1)
+  assert.equal(sup.control('ratelimit.take', { keyId: 'k1', at: 8 }), true);
+  assert.deepEqual(sent, [['ratelimit.take', { keyId: 'k1', at: 8 }]]);
+  sessions[0].opts.onControl({ type: 'ratelimit.take', body: { keyId: 'k2', at: 9 } });
+  assert.deepEqual(controls, [{ type: 'ratelimit.take', body: { keyId: 'k2', at: 9 } }]);
+});
+
+// P4f D24 (owner decision, design rule 2: mark, alert and audit; final review I5): each alert window gives two audit
+// calls: "opened" when its first unchecked call is stored, and "closed" when it ends (a minute later, at the first call
+// past it, or at stop) with the true count of the window's calls. A resend is a duplicate and adds nothing.
+const uncheckedRig = (t, clock, alerts) => {
+  const { sessions, start } = fakeStart();
+  const ingest = createIngest({
+    recordUsage: () => {},
+    recordGovernance: () => {},
+    recordMcp: () => {},
+    writeSpans: () => {},
+    log: () => {},
+  });
+  const sup = createSupervisor(fakeOpts(start, [], clock, { ingest, onUncheckedAlert: (a) => alerts.push(a) }));
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  const base = JSON.parse(fs.readFileSync(path.join(DIR, 'fixtures', 'usage.report', 'valid-unchecked.json'), 'utf8'));
+  const at = (seq, ms) => {
+    clock.t = ms;
+    sessions[0].opts.onEvent({ ...base, seq }, 'gw-1');
+  };
+  return { sup, sessions, at };
+};
+
+test('1,000 unchecked calls in one episode: one window opened, then closed with calls 1000 (P4f D24, review I5)', async (t) => {
+  const clock = { t: 1000 };
+  const alerts = [];
+  const { sup, sessions, at } = uncheckedRig(t, clock, alerts);
+  for (let i = 1; i <= 1000; i++) at(i, 1000 + i * 40); // 40 s
+  at(1000, 50_000); // a resend: not counted
+  assert.deepEqual(alerts, [{ phase: 'opened', calls: 1, since: 1040, at: 1040 }]);
+  await stopFake(sup, sessions); // the stop closes the window
+  assert.deepEqual(alerts[1], { phase: 'closed', calls: 1000, since: 1040, at: 41_000 });
+  assert.equal(alerts.length, 2);
+});
+
+test('a call past the window closes it and opens the next (P4f D24, review I5)', async (t) => {
+  const clock = { t: 1000 };
+  const alerts = [];
+  const { at } = uncheckedRig(t, clock, alerts);
+  at(1, 1000);
+  at(2, 20_000);
+  at(3, 40_000);
+  at(4, 61_000); // past 1000 + 60 s
+  assert.deepEqual(alerts, [
+    { phase: 'opened', calls: 1, since: 1000, at: 1000 },
+    { phase: 'closed', calls: 3, since: 1000, at: 40_000 },
+    { phase: 'opened', calls: 1, since: 61_000, at: 61_000 },
+  ]);
+});
+
+test('an unchecked-alert hook that throws changes nothing for the ingest (P4f D24)', async (t) => {
+  const { sessions, start } = fakeStart();
+  const logs = [];
+  const ingest = createIngest({
+    recordUsage: () => {},
+    recordGovernance: () => {},
+    recordMcp: () => {},
+    writeSpans: () => {},
+    log: () => {},
+  });
+  const sup = createSupervisor(
+    fakeOpts(
+      start,
+      logs,
+      { t: 5 },
+      {
+        ingest,
+        onUncheckedAlert: () => {
+          throw new Error('audit down');
+        },
+      },
+    ),
+  );
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  const msg = JSON.parse(fs.readFileSync(path.join(DIR, 'fixtures', 'usage.report', 'valid-unchecked.json'), 'utf8'));
+  sessions[0].opts.onEvent(msg, 'gw-1');
+  assert.equal(sup.status().unchecked.count, 1);
+  assert.ok(logs.some((l) => l.includes('audit down')));
+});

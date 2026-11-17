@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const { startServer, clientFor } = require('../test/contract/harness');
+const { startServer, clientFor, SEED_CONFIG } = require('../test/contract/harness');
 
 const ROOT = path.join(__dirname, '..');
 const num = (name, def) => {
@@ -182,7 +182,11 @@ async function main() {
       await s.stop();
     }
     mock = await startMockProcess();
-    server = await startServer({ runtime: CFG.runtime });
+    // ZP_BENCH_TRACING=off: the local trace store off (P4f: the gateway then emits no spans), to measure their cost.
+    server = await startServer({
+      runtime: CFG.runtime,
+      ...(process.env.ZP_BENCH_TRACING === 'off' ? { config: { ...SEED_CONFIG, tracing: { enabled: false } } } : {}),
+    });
     const c = clientFor(server.base);
     await c.admin('providers', {
       action: 'save',

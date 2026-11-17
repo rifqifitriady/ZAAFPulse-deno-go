@@ -364,4 +364,14 @@ function sseEvents(text) {
     });
 }
 
-module.exports = { start, startServer, clientFor, sseEvents, SEED_CONFIG, PRICES, UPSTREAM_SECRET, ROUTES };
+module.exports = {
+  start,
+  startServer,
+  clientFor,
+  providerList,
+  sseEvents,
+  SEED_CONFIG,
+  PRICES,
+  UPSTREAM_SECRET,
+  ROUTES,
+};
