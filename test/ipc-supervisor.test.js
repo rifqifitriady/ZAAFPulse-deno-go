@@ -435,12 +435,11 @@ test('the rate-limit window goes with each session; takes travel both ways (P4f 
   assert.deepEqual(controls, [{ type: 'ratelimit.take', body: { keyId: 'k2', at: 9 } }]);
 });
 
-// P4f D24 (owner decision, design rule 2: mark, alert and audit): one unchecked-budget audit call per alert window, with
-// the calls stored since the previous one and when the first of them came; a resend is a duplicate and adds nothing.
-test('one unchecked-budget audit call per alert window, with the calls since the last one (P4f D24)', async (t) => {
+// P4f D24 (owner decision, design rule 2: mark, alert and audit; final review I5): each alert window gives two audit
+// calls: "opened" when its first unchecked call is stored, and "closed" when it ends (a minute later, at the first call
+// past it, or at stop) with the true count of the window's calls. A resend is a duplicate and adds nothing.
+const uncheckedRig = (t, clock, alerts) => {
   const { sessions, start } = fakeStart();
-  const clock = { t: 1000 };
-  const alerts = [];
   const ingest = createIngest({
     recordUsage: () => {},
     recordGovernance: () => {},
@@ -456,16 +455,34 @@ test('one unchecked-budget audit call per alert window, with the calls since the
     clock.t = ms;
     sessions[0].opts.onEvent({ ...base, seq }, 'gw-1');
   };
-  at(1, 1000); // opens a window: one entry at once
+  return { sup, sessions, at };
+};
+
+test('1,000 unchecked calls in one episode: one window opened, then closed with calls 1000 (P4f D24, review I5)', async (t) => {
+  const clock = { t: 1000 };
+  const alerts = [];
+  const { sup, sessions, at } = uncheckedRig(t, clock, alerts);
+  for (let i = 1; i <= 1000; i++) at(i, 1000 + i * 40); // 40 s
+  at(1000, 50_000); // a resend: not counted
+  assert.deepEqual(alerts, [{ phase: 'opened', calls: 1, since: 1040, at: 1040 }]);
+  await stopFake(sup, sessions); // the stop closes the window
+  assert.deepEqual(alerts[1], { phase: 'closed', calls: 1000, since: 1040, at: 41_000 });
+  assert.equal(alerts.length, 2);
+});
+
+test('a call past the window closes it and opens the next (P4f D24, review I5)', async (t) => {
+  const clock = { t: 1000 };
+  const alerts = [];
+  const { at } = uncheckedRig(t, clock, alerts);
+  at(1, 1000);
   at(2, 20_000);
   at(3, 40_000);
-  assert.deepEqual(alerts, [{ calls: 1, since: 1000, at: 1000 }]);
-  at(4, 61_000); // the next window: the calls since the last entry, from the first of them
-  assert.deepEqual(alerts[1], { calls: 3, since: 20_000, at: 61_000 });
-  at(4, 62_000); // a resend: a duplicate, not counted
-  at(5, 200_000);
-  assert.deepEqual(alerts[2], { calls: 1, since: 200_000, at: 200_000 });
-  assert.equal(alerts.length, 3);
+  at(4, 61_000); // past 1000 + 60 s
+  assert.deepEqual(alerts, [
+    { phase: 'opened', calls: 1, since: 1000, at: 1000 },
+    { phase: 'closed', calls: 3, since: 1000, at: 40_000 },
+    { phase: 'opened', calls: 1, since: 61_000, at: 61_000 },
+  ]);
 });
 
 test('an unchecked-alert hook that throws changes nothing for the ingest (P4f D24)', async (t) => {

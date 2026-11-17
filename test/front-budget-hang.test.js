@@ -130,9 +130,8 @@ test(
       'the unchecked calls counted',
     );
     assert.ok(st.alert === true, JSON.stringify(st));
-    // P4f D24 (design rule 2: mark, alert and audit): one governance entry for the alert window, written as the system.
-    // The three calls arrive in one window (the first opens it and writes the entry at once; the next two wait for the
-    // next window), so the entry counts the first.
+    // P4f D24 (design rule 2: mark, alert and audit): the alert window's "opened" entry, written as the system when its
+    // first call is stored.
     const audit = () =>
       fs
         .readdirSync(path.join(s.data, '.data', 'audit'))
@@ -148,8 +147,16 @@ test(
     const entries = await until(async () => (audit().length ? audit() : null), 10000, 'the audit entry');
     assert.equal(entries.length, 1, JSON.stringify(entries));
     assert.deepEqual(
-      [entries[0].outcome, entries[0].actor, entries[0].target, entries[0].calls >= 1, typeof entries[0].since],
-      ['error', { via: 'system' }, { type: 'gateway' }, true, 'string'],
+      [
+        entries[0].phase,
+        entries[0].outcome,
+        entries[0].actor,
+        entries[0].target,
+        entries[0].calls,
+        typeof entries[0].since,
+      ],
+      ['opened', 'error', { via: 'system' }, { type: 'gateway' }, 1, 'string'],
     );
+    // The "closed" entry, with the window's count, comes a minute later or at stop (test/ipc-supervisor.test.js).
   },
 );
