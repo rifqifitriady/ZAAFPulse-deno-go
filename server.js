@@ -2382,6 +2382,14 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'])
       front
         .stop(1000)
         .catch(() => {})
-        .finally(() => otel.shutdown(2000).finally(() => process.exit(0)));
+        .finally(() => {
+          // The gateway's spans the ingest still holds (P4f D25, final review m4): written and exported before the exit.
+          try {
+            if (fi) fi.ingest.flushSpans();
+          } catch {
+            /* spans only */
+          }
+          return otel.shutdown(2000).finally(() => process.exit(0));
+        });
     }
   });

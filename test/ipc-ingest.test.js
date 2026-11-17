@@ -546,7 +546,7 @@ test('an export hook that throws neither fails the event nor stops the next one 
 // P4f D25: with spanBatch the spans of a batch of events are written in one writeSpans call, before the batch's ack
 // (flushSpans, from the server's beforeAck), then exported; a failed batch write drops those spans (logged, counted), as
 // the JS recorder drops spans it cannot write, and never fails the session: a span is not a ledger line.
-test('spanBatch: spans are written together at flushSpans, then exported; a failed write drops them (P4f D25)', () => {
+test('spanBatch: spans are written together at flushSpans, then exported; a failed write drops them from the store, not the export (P4f D25, m4)', () => {
   const writes = [];
   const exported = [];
   const lines = [];
@@ -572,7 +572,7 @@ test('spanBatch: spans are written together at flushSpans, then exported; a fail
   fail = true;
   ingest.handle({ type: 'trace.span', seq: 4, body: { span: SPAN } }, 's');
   assert.equal(ingest.flushSpans(), 0);
-  assert.equal(exported.length, 3, 'a span that was not written is not exported');
+  assert.equal(exported.length, 4, 'a span the store could not write is still exported (review m4)');
   assert.equal(ingest.spansDropped(), 1);
   assert.equal(lines.length, 1);
 });
