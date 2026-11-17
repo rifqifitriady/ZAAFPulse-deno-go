@@ -35,6 +35,21 @@ type Engine struct {
 	emitCall func(r *ipc.UsageReport, call int64) (int64, error)
 	emitSpan func(*ipc.TraceSpanBody) error // the trace spans (P4f D1); nil: none
 	ids      SpanIDs
+	onTake   func(keyID string, at int64) // a request admitted under a key's window, for the control plane (P4f D16)
+}
+
+// SetOnTake gives the engine where to tell each request it admits under a key's window (P4f D16); call it before
+// serving.
+func (e *Engine) SetOnTake(f func(keyID string, at int64)) { e.onTake = f }
+
+// NoteTake counts a request the control plane admitted under key id's window (P4f D16).
+func (e *Engine) NoteTake(id string, at int64) { e.limits.Note(id, at) }
+
+// SeedWindows replaces the windows with the control plane's (a new session, before ready; P4f D16).
+func (e *Engine) SeedWindows(ws []ipc.RateWindow) {
+	for _, w := range ws {
+		e.limits.Seed(w.KeyID, w.At)
+	}
 }
 
 // SetSpanEmitter gives the engine the outbox for its trace spans (P4f D1); call it before serving.
@@ -243,13 +258,17 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	}
 	tc, traced := e.trace(s, r)
 	facts := factsOf(r, rawPath)
-	if wait := e.limits.Take(p.Key.ID, p.Key.RPM, e.now()); wait > 0 {
+	takeAt := e.now()
+	if wait := e.limits.Take(p.Key.ID, p.Key.RPM, takeAt); wait > 0 {
 		a := RateLimited(p.Key, wait)
 		write(w, a)
 		if traced {
 			e.spans(s, tc, facts, a.Status, started, time.Now(), nil, nil, nil) // no usage line: the server span only
 		}
 		return
+	}
+	if e.onTake != nil {
+		e.onTake(p.Key.ID, takeAt) // the control plane's copy of the window (P4f D16)
 	}
 	// The budget (P4e Decision 13): the price rule, the snapshot, and the engine's own spend since it.
 	ref, unchecked := s.Budget(&p, e.now(), e.staleMs, e.spend.Live())
