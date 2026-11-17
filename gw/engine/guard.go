@@ -135,7 +135,9 @@ func refusal(p *Plan, status int, msg, typ, code string, ms float64, lineErr str
 	rec.Status, rec.Ms, rec.Cost = int64(status), ms, 0
 	rec.Input, rec.Output, rec.Cached = nil, nil, nil
 	rec.Error = &lineErr
-	return &Answer{Status: status, Header: answerHeader(), Body: errorBody(msg, typ, code), Usage: rec}
+	a := shapeError(p.Shape, status, msg, typ, code, "")
+	a.Usage, a.NoLine = rec, false
+	return &a
 }
 
 // check runs the checks; a panic out of them (a runtime error the library re-panics) is an error, kept for the log, so
@@ -147,7 +149,11 @@ func (p *Plan) check() (res guard.Result, err error) {
 			err = fmt.Errorf("guardrails: %v", v)
 		}
 	}()
-	return checkBody(toJSV(p.pending), *p.Policy, "openai-chat")
+	format := p.GuardFormat
+	if format == "" {
+		format = "openai-chat"
+	}
+	return checkBody(toJSV(p.pending), *p.Policy, format)
 }
 
 // Guard runs the checks of a plan that has them and finishes its provider body; it returns the client's answer when
@@ -173,7 +179,11 @@ func (s *State) Guard(p *Plan, ms float64) *Answer {
 		body = fromJSV(res.Body)
 	}
 	p.pending = nil
-	p.Body = finishBody(p.Target, body)
+	if p.build != nil {
+		p.Body = p.build(p.Target, body)
+	} else {
+		p.Body = finishBody(p.Target, body)
+	}
 	p.Failures = res.Failures
 	if res.Action != "" {
 		p.Base.Guard = outcome(res.Action, res.Hits, res.Error)

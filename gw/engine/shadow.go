@@ -331,21 +331,10 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	e.shadowRead(sub, w, r, s, &p, js, own)
 }
 
-// subOf is the sub-class of chat a request belongs to: chat-stream when it asks for a stream (P4c). A plan the engine
-// would serve says so itself; for a hand-off the body is read again, so its hand-off line is filed under the sub-class
-// it asked for (final review m1).
-func subOf(p *Plan, r *Request) string {
-	if p.Handoff == "" {
-		if p.Stream {
-			return "chat-stream"
-		}
-		return "chat"
-	}
-	if b, err := Parse(r.Body); err == nil && b.Get("stream").Truthy() {
-		return "chat-stream"
-	}
-	return "chat"
-}
+// subOf is the sub-class of chat a request belongs to (SubClass): chat-stream when it asks for a stream (P4c), and
+// chat-anthropic or chat-anthropic-stream for an Anthropic-format target (P4d). For a hand-off the body is read again,
+// so its hand-off line is filed under the sub-class it asked for (final review m1).
+func subOf(p *Plan, r *Request) string { return SubClass("chat", p, r) }
 
 // shadowRead is Shadow after the request is read and planned: sub is the line's class.
 func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, s *State, p *Plan, js http.Handler,
