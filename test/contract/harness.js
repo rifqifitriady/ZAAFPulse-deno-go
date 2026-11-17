@@ -7,10 +7,11 @@
 //   ZP_CONTRACT_KEY        with ZP_CONTRACT_URL: the main key to use instead of creating one
 //   ZP_ENGINE=front        gateway.engine "front": the Go gateway (built by scripts/ipc/build-stub.js, or ZP_GW_BIN)
 //                          holds the port and forwards every case to the server (P4a T6)
-//   ZP_ENGINE=go           front, with chat and chat-stream on the go engine (P4b, P4c): the gateway serves the chat calls it can itself
-//                          and hands the others to the server (gateway.shadowDays 0: no shadow gate)
-//   ZP_ENGINE=shadow       front, chat and chat-stream on js and shadowed (P4b, P4c): the gateway compares each chat call with the go
-//                          engine; stop() fails when the server's .data/gateway-shadow.jsonl holds a diff
+//   ZP_ENGINE=go           front, with every go class on the go engine (P4b, P4c, P4d: chat, messages, responses, gemini,
+//                          embeddings and their sub-classes): the gateway serves the calls it can itself and hands the
+//                          others to the server (gateway.shadowDays 0: no shadow gate)
+//   ZP_ENGINE=shadow       front, every go class on js and shadowed: the gateway compares each call with the go engine;
+//                          stop() fails when the server's .data/gateway-shadow.jsonl holds a diff
 // Nothing here reaches the network: the providers point at the fake upstream on 127.0.0.1, price sync is off, and
 // the judge ports, notifications and runtime polling are off (as test/helpers.js NO_JUDGE_PORTS).
 const fs = require('fs');
@@ -22,6 +23,9 @@ const { NO_JUDGE_PORTS } = require('../helpers');
 const { startUpstream } = require('./upstream');
 const { buildStub } = require('../../scripts/ipc/build-stub');
 const permissions = require('../../lib/permissions');
+// Every class the go engine has (P4b chat, P4c chat-stream, the P4d classes): on go under ZP_ENGINE=go, shadowed under
+// ZP_ENGINE=shadow.
+const { GO_CLASSES } = require('../../lib/front');
 
 const ROOT = path.join(__dirname, '..', '..');
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -42,13 +46,13 @@ const SEED_CONFIG = {
     ? {
         gateway: {
           engine: 'front',
-          engines: { chat: 'go', 'chat-stream': 'go' },
+          engines: Object.fromEntries(GO_CLASSES.map((c) => [c, 'go'])),
           shadowDays: 0,
           shadowMinCompares: 0,
         },
       }
     : {}),
-  ...(process.env.ZP_ENGINE === 'shadow' ? { gateway: { engine: 'front', shadow: ['chat', 'chat-stream'] } } : {}),
+  ...(process.env.ZP_ENGINE === 'shadow' ? { gateway: { engine: 'front', shadow: [...GO_CLASSES] } } : {}),
 };
 
 // The environment a front-mode server needs: the gateway binary. Throws without Go: a front run is asked for.

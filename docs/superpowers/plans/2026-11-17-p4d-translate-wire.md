@@ -2249,3 +2249,16 @@ Re-check of the steps marked "re-check after P4f merges":
     final quiet-machine step.
 22. **TDD order in Task 8:** the serve tests were written after the serving code (the code came from the merge
     re-check); each was then run under `-race -count=3`.
+
+### Task 9
+
+23. **A contract file of its own, `test/contract/go-formats.test.js`**, instead of a `served` flag on every case of
+    `formats.test.js`, `guardrails.test.js` and `budgets.test.js`: thirteen calls covering every new sub-class, each
+    asserting under `ZP_ENGINE=go` that its line came from the gateway (`ipc`), a route call that it did not, and
+    count_tokens that no line is written. The existing format, guardrail and budget cases run unchanged in go and
+    shadow mode with every go class on (`GO_CLASSES` from `lib/front`), which proves their answers equal.
+24. **`go-ratelimit.test.js`'s server-side call is now `GET /v1/models`**: its embeddings call is the go engine's since
+    P4d, and the test needs one request each engine answers.
+25. **`shadow.noteAnswer` keeps the head's headers too** (the P4c chat capture): the chat-anthropic compare reads the
+    content type, which the explicit chat capture did not have (7 diffs in the first shadow run, 0 after).
+
