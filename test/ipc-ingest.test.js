@@ -542,3 +542,51 @@ test('an export hook that throws neither fails the event nor stops the next one 
   assert.equal(ingest.handle({ type: 'trace.span', seq: 2, body: { span: SPAN } }, 's'), true);
   assert.equal(lines.length, 1);
 });
+
+// P4f D25: with spanBatch the spans of a batch of events are written in one writeSpans call, before the batch's ack
+// (flushSpans, from the server's beforeAck), then exported; a failed batch write drops those spans (logged, counted), as
+// the JS recorder drops spans it cannot write, and never fails the session: a span is not a ledger line.
+test('spanBatch: spans are written together at flushSpans, then exported; a failed write drops them (P4f D25)', () => {
+  const writes = [];
+  const exported = [];
+  const lines = [];
+  let fail = false;
+  const ingest = createIngest({
+    ...noSinks,
+    spanBatch: true,
+    writeSpans: (list) => {
+      if (fail) throw new Error('disk full');
+      writes.push(list.map((s) => s.ipc.seq));
+    },
+    afterSpan: (span) => exported.push(span.s),
+    log: (l) => lines.push(l),
+  });
+  for (const seq of [1, 2, 3])
+    assert.equal(ingest.handle({ type: 'trace.span', seq, body: { span: SPAN } }, 's'), true);
+  assert.deepEqual(writes, [], 'nothing written before the flush');
+  assert.equal(ingest.mark('s'), 3);
+  assert.equal(ingest.flushSpans(), 3);
+  assert.deepEqual(writes, [[1, 2, 3]]);
+  assert.equal(exported.length, 3);
+  assert.equal(ingest.flushSpans(), 0, 'nothing pending');
+  fail = true;
+  ingest.handle({ type: 'trace.span', seq: 4, body: { span: SPAN } }, 's');
+  assert.equal(ingest.flushSpans(), 0);
+  assert.equal(exported.length, 3, 'a span that was not written is not exported');
+  assert.equal(ingest.spansDropped(), 1);
+  assert.equal(lines.length, 1);
+});
+
+test('spanBatch: a batch is written once it holds 500 spans, without waiting for the ack (P4f D25)', () => {
+  const writes = [];
+  const ingest = createIngest({
+    ...noSinks,
+    spanBatch: true,
+    writeSpans: (list) => writes.push(list.length),
+    log: () => {},
+  });
+  for (let seq = 1; seq <= 501; seq++) ingest.handle({ type: 'trace.span', seq, body: { span: SPAN } }, 's');
+  assert.deepEqual(writes, [500]);
+  ingest.flushSpans();
+  assert.deepEqual(writes, [500, 1]);
+});
