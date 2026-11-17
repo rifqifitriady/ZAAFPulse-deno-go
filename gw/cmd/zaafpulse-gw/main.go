@@ -475,8 +475,7 @@ func (g *gateway) emitUsage(r *ipc.UsageReport) (int64, error) {
 // emitCallUsage is emitUsage for a journalled call: the journal notes the line's seq under the outbox's send lock, right
 // before the line is stored (P4f D14), so a crash never leaves the call with no line or two.
 func (g *gateway) emitCallUsage(r *ipc.UsageReport, call int64) (int64, error) {
-	return g.box.AppendSendNoted(ipc.TypeUsageReport, r, time.Now().UnixMilli(),
-		func(seq int64) error { return g.calls.NoteClose(call, seq) }, func() { g.calls.Reopen(call) }, g.out.enqueue)
+	return g.calls.Emit(g.box, call, ipc.TypeUsageReport, r, time.Now().UnixMilli(), g.out.enqueue)
 }
 
 // appendAndSend stores an event in the outbox and hands it to the sender (D4: stored before sent; E10: one lock for the
