@@ -111,7 +111,7 @@ func TestClassify(t *testing.T) {
 		"/api/gateway/status":          "",
 		"/":                            "",
 		"/mcp/extra":                   "",
-		"/v1/chat%2Fcompletions":       "",
+		"/v1/chat%2Fcompletions":       "agents", // its pathname keeps the escape: not the chat route (P4d)
 		"/v1/./chat/completions":       "",
 		"//v1/chat/completions":        "",
 	} {

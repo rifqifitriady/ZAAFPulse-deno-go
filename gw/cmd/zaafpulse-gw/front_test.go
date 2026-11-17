@@ -125,12 +125,13 @@ func TestFrontPortInUseExits4(t *testing.T) {
 	}
 }
 
-// P4b: only chat may be on the go engine; any other class there is a config this gateway cannot apply.
+// Only the go engine's classes (P4b chat, P4d messages, responses, gemini, embeddings and their sub-classes) may be on
+// go; any other class there is a config this gateway cannot apply.
 func TestFrontGoEngineIsRefusedWithExit2(t *testing.T) {
-	code, stderr, _ := handshake(t, frontJSON(freePort(t), 1, `{"chat":"go","messages":"go"}`))
+	code, stderr, _ := handshake(t, frontJSON(freePort(t), 1, `{"chat":"go","messages":"go","models":"go"}`))
 	select {
 	case c := <-code:
-		if c != 2 || !strings.Contains(stderr.String(), `fatal: config.push: route class "messages" is on engine "go"`) {
+		if c != 2 || !strings.Contains(stderr.String(), `fatal: config.push: route class "models" is on engine "go"`) {
 			t.Fatalf("exit %d, stderr %s", c, stderr)
 		}
 	case <-time.After(10 * time.Second):

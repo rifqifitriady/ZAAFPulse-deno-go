@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { engineOf, enginesOf, frontSection, configBody, CLASSES } = require('../lib/front');
+const { engineOf, enginesOf, frontSection, configBody, CLASSES, SUB_CLASSES } = require('../lib/front');
 const { gwBinary, existingGwBinary } = require('../lib/front/bin');
 const permissions = require('../lib/permissions');
 const { check } = require('../lib/ipc/schema');
@@ -18,7 +18,8 @@ test('engineOf: "front" only when config.json asks for it; js otherwise', () => 
 
 test('the config.push body with its front section is a valid v1 message; a go engine is refused', () => {
   const front = frontSection({ host: '127.0.0.1', port: 4777, upstreamPort: 53120 });
-  assert.deepEqual(Object.keys(front.engines), [...CLASSES, 'chat-stream']); // chat-stream: a sub-class (P4c)
+  // The sub-classes (P4c chat-stream, the P4d ones) after the path classes.
+  assert.deepEqual(Object.keys(front.engines), [...CLASSES, ...SUB_CLASSES]);
   assert.ok(Object.values(front.engines).every((e) => e === 'js'));
   assert.equal(front.tls, undefined);
   const msg = { v: 1, type: 'config.push', seq: 2, ts: 0, body: { ...configBody(front), gen: 1 } };
@@ -26,15 +27,17 @@ test('the config.push body with its front section is a valid v1 message; a go en
   const tls = frontSection({ host: '0.0.0.0', port: 443, upstreamPort: 1, tls: { certPath: '/c', keyPath: '/k' } });
   assert.deepEqual(tls.tls, { certPath: '/c', keyPath: '/k' });
   assert.equal(frontSection({ host: 'h', port: 1, upstreamPort: 1, engines: { chat: 'go' } }).engines.chat, 'go');
+  assert.equal(frontSection({ host: 'h', port: 1, upstreamPort: 1, engines: { 'messages-stream': 'go' } }).engines['messages-stream'], 'go');
   assert.throws(
-    () => frontSection({ host: 'h', port: 1, upstreamPort: 1, engines: { messages: 'go' } }),
-    /engine "go" for messages is not available: only chat, chat-stream can run on go/,
+    () => frontSection({ host: 'h', port: 1, upstreamPort: 1, engines: { models: 'go' } }),
+    /engine "go" for models is not available: only chat, chat-stream, chat-anthropic, .*embeddings can run on go/,
   );
 });
 
-test('enginesOf: go only for chat, the one class the go engine has (P4b)', () => {
+test('enginesOf: go only for the classes the go engine has (P4b chat, P4d messages and the other translated classes)', () => {
   assert.equal(enginesOf({ engines: { chat: 'go', messages: 'go' } }).chat, 'go');
-  assert.equal(enginesOf({ engines: { chat: 'go', messages: 'go' } }).messages, 'js');
+  assert.equal(enginesOf({ engines: { chat: 'go', messages: 'go' } }).messages, 'go');
+  assert.equal(enginesOf({ engines: { chat: 'go', models: 'go' } }).models, 'js');
   for (const g of [undefined, {}, { engines: 'go' }, { engines: { chat: 'GO' } }])
     assert.ok(
       Object.values(enginesOf(g)).every((e) => e === 'js'),
