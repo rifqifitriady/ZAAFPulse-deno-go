@@ -49,6 +49,8 @@ a reply (`hello`) and `"re"` on the reply (`hello.ok`, `hello.refused`).
 | `audit.event` | gw → cp | `log: "governance"` + AuditEvent, or `log: "mcp"` + the MCP audit entry |
 | `trace.span` | gw → cp | `span`: the stored trace record `{t, s, p, n, k, st, d, ok, err?, src, svc, a}` |
 | `error` | gw → cp | `code`, `message` (a protocol problem, before the gateway exits 3) |
+| `ratelimit.take` | both | `keyId`, `at` (P4f: one request admitted under a key's window; a control message, not stored) |
+| `ratelimit.window` | cp → gw | `windows[{keyId, at[]}]` (P4f: the last minute's takes per key, before `budget.snapshot`) |
 
 Budget rule: no snapshot, or `now - at > 5000`: the call passes and its usage record carries `budget: "unchecked"`,
 except that a blocking budget in scope that the snapshot shows as `exceeded` is always refused (402
@@ -65,3 +67,18 @@ client sent), where `<hmac>` is the lowercase hex HMAC-SHA256 of `"<client-ip> <
 `secrets.handoff.frontToken` (its hex text as UTF-8), new on every control-plane start. Exit codes of the gateway: 1 damaged outbox, 2 refused
 (handshake or config), 3 protocol error, 4 main port not opened, 5 outbox in use; before 1, 2, 4 and 5 it logs a line
 starting with `fatal: `.
+
+## Spans, the call journal and one rate-limit window (added in v1 by P4f, all optional or new types)
+
+- `config.push.trace` `{ spans }`: whether the control plane records gateway spans (the local trace store on, or OTLP
+  export on). Without it, or `false`, the gateway emits no `trace.span` and names no trace on a usage line.
+- `config.push.gateway.providers[].span` `{ name, address?, port? }`: a provider's model-span attributes as
+  `lib/otel.js providerSpanAttrs` computes them (the semconv provider name, the WHATWG host and port of its base URL).
+- `trace.span.otlp` `{ traceState?, remote?, message? }`: what OTLP export needs beyond the stored record (the span's
+  tracestate, a remote parent, the status message up to 500 UTF-16 units). The stored record's `a` keeps its key order.
+- `ratelimit.take` (both directions) and `ratelimit.window` (control plane to gateway, after `secrets.handoff` and
+  before `budget.snapshot`): each engine tells the other the requests it admits under a key's requests-per-minute
+  window, so both decide from one window. Control messages, never stored in the outbox.
+- The gateway keeps `calls.journal` next to its outbox segments (not a message): each served call's start and the seq
+  its usage line took; on start, before `hello`, a call that never got its line gets one (status 599, `error` "the
+  gateway stopped before the call ended", cost 0), so a crash leaves exactly one line per call.
