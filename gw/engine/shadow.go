@@ -360,11 +360,17 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		js.ServeHTTP(w, r)
 		return
 	}
-	// The engine counts what it would serve, as when it serves (the control plane counts every request of the key).
+	// The engine's decision on the key's window for a call the server answers. With one window across the engines
+	// (P4f D16) the server's take of this call reaches the window as a note, so the engine only looks (Wait): counting it
+	// too would count the call twice. Without the shared window (no SetOnTake: tests) it counts what it would serve.
 	var wait int64
 	id := ""
 	if p.Handoff == "" {
-		wait = e.limits.Take(p.Key.ID, p.Key.RPM, e.now())
+		if e.onTake != nil {
+			wait = e.limits.Wait(p.Key.ID, p.Key.RPM, e.now())
+		} else {
+			wait = e.limits.Take(p.Key.ID, p.Key.RPM, e.now())
+		}
 		// The budget, decided now on the snapshot (cheap); the guardrail checks run after the answer, off this path.
 		if ref, unchecked := s.Budget(p, e.now(), e.staleMs, nil); ref != nil {
 			p.refused = ref
