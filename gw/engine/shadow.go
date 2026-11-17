@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/front"
 )
@@ -407,11 +408,22 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		defer func() { <-shadowSlots }()
 		var c *Capture
 		if id != "" {
-			if code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil); err == nil && code == http.StatusOK {
-				c = &Capture{}
-				if json.Unmarshal(body, c) != nil {
-					c = nil
+			// The server stores a refusal's capture when its handler's promise settles, which on Deno can come a moment
+			// after the answer reached the gateway: a 404 is asked again, a few times, before the line goes without one
+			// (seen in CI as a rateLimit diff with the server's status 0).
+			for try := 0; try < 5; try++ {
+				code, body, err := own(http.MethodGet, "/_zp/shadow/"+id, nil)
+				if err == nil && code == http.StatusOK {
+					c = &Capture{}
+					if json.Unmarshal(body, c) != nil {
+						c = nil
+					}
+					break
 				}
+				if err != nil || code != http.StatusNotFound {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
 			}
 		}
 		var l ShadowLine
