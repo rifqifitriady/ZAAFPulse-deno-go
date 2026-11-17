@@ -58,6 +58,7 @@ test('configPush: a valid config.push with keys by hash, prices in nano-USD, no 
     baseUrl: 'http://127.0.0.1:9/v1',
     models: ['m1'],
     auth: { type: 'key' },
+    span: { name: 'oa', address: '127.0.0.1', port: 9 },
   });
   assert.deepEqual(body.gateway.providers[2].auth, { type: 'oauth2', clientId: 'c', grant: 'client_credentials' });
   assert.equal('tokenParam' in body.gateway.providers[3], false);
@@ -313,4 +314,28 @@ test('configPush: a hash JS reads leniently refuses the clean key with the same 
       [],
       JSON.stringify(odd),
     );
+});
+
+// P4f D4, D8: each pushed provider carries the span attributes lib/otel.js computes from the raw config.json entry (its
+// semconv name, the WHATWG host and port of its baseUrl), and the push says whether tracing is live.
+test('configPush: provider span attributes from the raw provider, and the trace switch (P4f D4, D8)', () => {
+  const { providerSpanAttrs } = require('../lib/otel');
+  const providers = [
+    { id: 'op', preset: 'openai', baseUrl: 'https://api.openai.com/v1' },
+    { id: 'v6', preset: 'ollama', baseUrl: 'http://[::1]:11434/v1' },
+    { id: 'cu', preset: 'custom', baseUrl: 'http://user:pw@127.0.0.1:9/v1?x=1' },
+    { id: 'bad', preset: 'mistral', baseUrl: 'not a url' },
+  ];
+  const body = configPush({ gateway: { providers }, keys: [], pricing: {}, trace: { spans: true } });
+  assert.deepEqual(
+    body.gateway.providers.map((p) => p.span),
+    providers.map((p) => providerSpanAttrs(p, p.id)),
+  );
+  assert.deepEqual(body.gateway.providers[1].span, { name: 'ollama', address: '[::1]', port: 11434 });
+  assert.equal(body.gateway.providers[2].baseUrl, 'http://127.0.0.1:9/v1', 'the pushed URL is cut');
+  assert.equal(body.gateway.providers[2].span.address, '127.0.0.1');
+  assert.deepEqual(body.trace, { spans: true });
+  assert.deepEqual(check(msg('config.push', body)), { errors: [], unknownType: false });
+  assert.equal('trace' in configPush({ gateway: { providers }, keys: [], pricing: {} }), false);
+  assert.deepEqual(configPush({ gateway: {}, keys: [], pricing: {}, trace: { spans: 'yes' } }).trace, { spans: false });
 });

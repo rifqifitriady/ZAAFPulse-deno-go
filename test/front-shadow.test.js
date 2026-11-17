@@ -105,12 +105,18 @@ test('the shadow log: counts per class, and the switch rule (owner: 1 clean day 
   assert.ok(!fs.readFileSync(path.join(dir, 's.jsonl'), 'utf8').includes('undefined'));
 });
 
-test('routing: go only when asked, the gate met and OTLP export off; shadow only for a class on js', () => {
+test('routing: go only when asked and the gate met, and not while OTLP export captures content; shadow only for a class on js', () => {
   const gw = { engines: { chat: 'go' }, shadow: ['chat', 'messages'] };
   assert.equal(routing(gw, { gate: () => ({ ok: true }) }).engines.chat, 'go');
   const no = routing(gw, { gate: () => ({ ok: false, reason: 'not yet' }) });
   assert.deepEqual([no.engines.chat, no.notes.chat], ['js', 'not yet']);
-  assert.match(routing(gw, { otel: true }).notes.chat, /OpenTelemetry/);
+  // P4f D10: the go engine sends its spans, so OTLP export alone keeps nothing on js; capturing content still does.
+  assert.equal(routing(gw, { otel: true }).engines.chat, 'go');
+  assert.equal(routing(gw, { otel: { enabled: true } }).engines.chat, 'go');
+  assert.equal(routing(gw, { otel: { enabled: true, captureContent: false } }).engines.chat, 'go');
+  const content = routing(gw, { otel: { enabled: true, captureContent: true } });
+  assert.deepEqual([content.engines.chat, /captureContent/.test(content.notes.chat)], ['js', true]);
+  assert.equal(routing(gw, { otel: { enabled: false, captureContent: true } }).engines.chat, 'go');
   let rule = null;
   routing(gw, { gate: (c, r) => ((rule = r), { ok: true }) });
   assert.deepEqual(rule, { days: 1, min: 20 }, 'the owner defaults');

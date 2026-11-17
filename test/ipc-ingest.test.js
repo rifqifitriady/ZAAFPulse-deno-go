@@ -479,3 +479,66 @@ test('stored through the IPC equals the same events recorded in process (stub)',
   assert.deepEqual(gov(b.files.governanceDir), gov(a.files.governanceDir), 'governance entries');
   assert.equal(b.governance.verify().ok, true, 'the chain written from IPC events verifies');
 });
+
+// P4f D9: a trace.span is stored only where JS would store it (the store exists and tracing is on); otherwise it is
+// skipped like the recorder drops a span, and still marked and acknowledged. Once stored (or skipped), it goes to the
+// OTLP export hook once: a resend at or below the mark is neither stored nor exported again.
+const SPAN = {
+  t: 'a'.repeat(32),
+  s: 'b'.repeat(16),
+  p: null,
+  n: 'POST /v1/chat/completions',
+  k: 'server',
+  st: 1,
+  d: 2,
+  ok: true,
+  src: 'gateway',
+  svc: 'zaafpulse',
+  a: {},
+};
+const noSinks = { recordUsage: () => ({}), recordGovernance: () => ({}), recordMcp: () => {} };
+
+test('a trace.span while the store is off is skipped, marked and acknowledged, and still exported (P4f D9)', () => {
+  const written = [];
+  const exported = [];
+  let storeOn = false;
+  const ingest = createIngest({
+    ...noSinks,
+    writeSpans: (list) => written.push(...list),
+    spanStoreOn: () => storeOn,
+    afterSpan: (span, otlp) => exported.push([span.s, otlp]),
+    log: () => {},
+  });
+  assert.equal(ingest.handle({ type: 'trace.span', seq: 1, body: { span: SPAN } }, 'st1'), true);
+  assert.deepEqual(written, []);
+  assert.equal(ingest.mark('st1'), 1);
+  storeOn = true;
+  const second = { ...SPAN, s: 'c'.repeat(16) };
+  assert.equal(
+    ingest.handle({ type: 'trace.span', seq: 2, body: { span: second, otlp: { remote: true } } }, 'st1'),
+    true,
+  );
+  assert.equal(written.length, 1);
+  assert.deepEqual(written[0].ipc, { stream: 'st1', seq: 2 });
+  assert.deepEqual(exported, [
+    ['b'.repeat(16), {}],
+    ['c'.repeat(16), { remote: true }],
+  ]);
+  assert.equal(ingest.handle({ type: 'trace.span', seq: 2, body: { span: SPAN } }, 'st1'), false);
+  assert.equal(exported.length, 2);
+});
+
+test('an export hook that throws neither fails the event nor stops the next one (P4f D9)', () => {
+  const lines = [];
+  const ingest = createIngest({
+    ...noSinks,
+    writeSpans: () => {},
+    afterSpan: () => {
+      throw new Error('exporter down');
+    },
+    log: (l) => lines.push(l),
+  });
+  assert.equal(ingest.handle({ type: 'trace.span', seq: 1, body: { span: SPAN } }, 's'), true);
+  assert.equal(ingest.handle({ type: 'trace.span', seq: 2, body: { span: SPAN } }, 's'), true);
+  assert.equal(lines.length, 1);
+});

@@ -353,7 +353,9 @@ function configChanged(before, after) {
     config = loadConfig(); // the owner's prices are merged into config.pricing, which the push reads
     front.push();
   } else if (front && JSON.stringify((before || {}).otel) !== JSON.stringify((after || {}).otel)) {
-    front.push(); // OTLP export on or off moves chat between the engines (final review I2)
+    front.push(); // OTLP export on or off moves chat between the engines (final review I2), and the trace switch
+  } else if (front && JSON.stringify((before || {}).tracing) !== JSON.stringify((after || {}).tracing)) {
+    front.push(); // the local trace store on or off: the gateway's trace switch (P4f D8)
   }
   try {
     const d = govDiff(before, after);
@@ -534,6 +536,10 @@ const tracingOn = () => {
   }
   return tracingOnValue;
 };
+// Whether a gateway span is recorded anywhere (P4f D8): the local store exists and tracing is on, or OTLP export is on
+// (lib/otel.js live()). Pushed to the gateway in front with each generation (pushedTrace: the last value pushed).
+const traceLive = () => (!!traceStore && tracingOn()) || otel.status({ fresh: true }).enabled === true;
+let pushedTrace = null;
 const recorder = traceStore
   ? createRecorder({ store: traceStore, enabled: tracingOn })
   : createRecorder({ store: { writeSpans: () => 0 }, enabled: () => false });
@@ -599,6 +605,9 @@ function frontIngest() {
     mcpAudit: audit,
     traceStore,
     traceDir: files.traceDir,
+    // P4f D9: a span is stored only while tracing is on, then exported when OTLP export is on.
+    traceOn: tracingOn,
+    exportSpan: (span, extra) => otel.exportRecord(span, extra),
   });
   const markFile = createMarkFile(files.marksFile);
   return {
@@ -2270,12 +2279,15 @@ const frontRouting = () =>
   routing(rawConfig().gateway, {
     gate: (c, rule) => shadowLog.gate(c, rule),
     // As otel itself sees it: config.json, or an OTEL_EXPORTER_OTLP_* variable (final review I1).
-    otel: otel.status().enabled === true,
+    otel: otel.status({ fresh: true }),
   });
 // A class whose shadow gate is met (or broken) switches at the next push: looked at once a minute, against the engines
 // the gateway was last pushed (final review I2).
+// The trace switch too (P4f D8): tracing or OTLP export turned on or off without a save (an environment variable read at
+// start, a store that failed to open) reaches the gateway within a minute.
 setInterval(() => {
-  if (front) front.pushIfChanged(frontRouting().engines);
+  if (front && !front.pushIfChanged(frontRouting().engines) && pushedTrace !== null && traceLive() !== pushedTrace)
+    front.push();
 }, 60000).unref();
 // gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
 const ENGINE = DEMO ? 'js' : engineOf(rawConfig());
@@ -2303,7 +2315,15 @@ front = createFront({
   // Each generation, from the state the JS gateway reads (P4b): config.json, keys.json, the effective prices, the
   // provider credentials, the blocking budgets and the keys' cost centers.
   sources: {
-    config: () => configPush({ gateway: rawConfig().gateway, keys: gateway.rawKeys(), pricing: config.pricing }),
+    config: () => {
+      pushedTrace = traceLive();
+      return configPush({
+        gateway: rawConfig().gateway,
+        keys: gateway.rawKeys(),
+        pricing: config.pricing,
+        trace: { spans: pushedTrace },
+      });
+    },
     secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
     snapshot: () => snapshotPush({ service: costBudgets, keyIds: gateway.rawKeys().map((k) => k.id) }),
   },

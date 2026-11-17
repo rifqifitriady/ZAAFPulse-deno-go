@@ -97,7 +97,7 @@ test('serverSinks refuses to start without the gateway writer', () => {
   assert.throws(() => serverSinks({ budgetRecord: () => {} }), /recordUsage \(gateway\.ingestUsage\) is required/);
 });
 
-test('a write that fails is not marked: governance null, an unwritable usage log, no trace store', (t) => {
+test('a write that fails is not marked: governance null, an unwritable usage log; no trace store skips the span (P4f D9)', (t) => {
   const dir = tmpDir(t, 'sinks-fail');
   const gateway = gatewayIn(dir);
   fs.mkdirSync(path.join(dir, 'gateway-usage.jsonl')); // a folder: the append fails
@@ -135,6 +135,11 @@ test('a write that fails is not marked: governance null, an unwritable usage log
       },
     },
   };
-  assert.throws(() => createIngest({ ...sinks, log: () => {} }).handle(span, STREAM), /trace store is off/);
+  // P4f D9: with no trace store a span is skipped, as the recorder drops it, and marked: never a store failure (which
+  // would restart the gateway and fail again on the replay). The strict writer itself still refuses.
+  const spans = createIngest({ ...sinks, log: () => {} });
+  assert.equal(spans.handle(span, STREAM), true);
+  assert.equal(spans.mark(STREAM), 1);
+  assert.throws(() => sinks.writeSpans([span.body.span]), /trace store is off/);
   assert.equal(ingest.mark(STREAM), 0);
 });

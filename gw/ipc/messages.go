@@ -54,6 +54,13 @@ type ConfigPush struct {
 	Keys    []GatewayKeyAuth      `json:"keys"`
 	Pricing map[string]PriceEntry `json:"pricing"`
 	Front   *FrontConfig          `json:"front,omitzero"` // P4a: present when the gateway holds the main port
+	Trace   *TraceSwitch          `json:"trace,omitzero"` // P4f D8: whether a span is recorded anywhere
+}
+
+// TraceSwitch says whether the control plane records gateway spans (the local trace store on, or OTLP export on;
+// lib/otel.js live()). Without it, or with spans false, the engine emits no span and no usage line names a trace.
+type TraceSwitch struct {
+	Spans bool `json:"spans"`
 }
 
 // FrontConfig puts the gateway in front (P4a spec D1): it listens on the main port and forwards each route class to
