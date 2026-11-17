@@ -88,11 +88,16 @@ func TestShadowCompare(t *testing.T) {
 // Final review I3: when the engine would have answered 429 itself, the call compares nothing of the serving path. Both
 // sides at 429 is "skipped" (not one of the owner's 20 compares); the server answering anything else is a diff.
 func TestRateLimitedShadowLine(t *testing.T) {
-	if l := rateLimitedLine("chat", 429); l.Outcome != "skipped" || l.Reason == "" {
+	if l := rateLimitedLine("chat", 429, 30); l.Outcome != "skipped" || l.Reason == "" {
 		t.Errorf("429 both: %+v", l)
 	}
-	if l := rateLimitedLine("chat", 200); l.Outcome != "diff" || l.Diffs[0].Field != "rateLimit" {
+	if l := rateLimitedLine("chat", 200, 30); l.Outcome != "diff" || l.Diffs[0].Field != "rateLimit" {
 		t.Errorf("server 200: %+v", l)
+	}
+	// P4f final review m2: the window shared with the server (D16) frees its oldest take within the second the engine
+	// would wait; the server, checking a moment later, admits the call. A boundary, not a diff.
+	if l := rateLimitedLine("chat", 200, 1); l.Outcome != "skipped" || !strings.Contains(l.Reason, "boundary") {
+		t.Errorf("server 200 at the window's edge: %+v", l)
 	}
 }
 
