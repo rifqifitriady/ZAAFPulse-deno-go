@@ -355,7 +355,7 @@ func deliverXlate(t *testing.T, f xlateFixture, wrap func(io.Reader) io.Reader) 
 }
 
 // xlateStreams: the translated stream answers are ported (P4d Task 4).
-var xlateStreams = false
+var xlateStreams = true
 
 func init() {
 	for _, fn := range []string{"chatAnthropic", "messages", "responses", "gemini"} {
