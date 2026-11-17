@@ -246,6 +246,8 @@ const CASES = [
   ['msg-native-headers-dropped', 'messages', '/v1/messages', { headers: { 'anthropic-beta': 'x'.repeat(1001) } }, msgs('an/claude-x'), anMsg()],
   ['msg-native-400-masked', 'messages', '/v1/messages', {}, msgs('an/claude-x'), json(400, { type: 'error', error: { type: 'invalid_request_error', message: `bad key ${AN_KEY}` } })],
   ['msg-native-no-usage', 'messages', '/v1/messages', {}, msgs('an/claude-x'), json(200, { id: 'msg_up', type: 'message', model: 'claude-x', content: [] })],
+  ['msg-native-throw', 'messages', '/v1/messages', {}, msgs('an/claude-x'), { throw: 'ECONNREFUSED' }],
+  ['msg-native-stream-cut', 'messages', '/v1/messages', {}, msgs('an/claude-x', { stream: true }), { ...anStream(), chunks: anStream().chunks.slice(0, 4), cut: true }],
   ['msg-native-guard-redact', 'messages', '/v1/messages', { guardrails: { ...OFF, secrets: 'redact' } }, msgs('an/claude-x', { messages: user(`key ${ANT}`) }), anMsg()],
 
   /* /v1/responses */
@@ -262,6 +264,7 @@ const CASES = [
   ['resp-native-modelmap', 'responses', '/v1/responses', {}, { model: 'gpt-codex-9', input: 'hi' }, respOk()],
   ['resp-native-stream', 'responses', '/v1/responses', {}, { model: 'op/gpt-6.1', input: 'hi', stream: true }, respStream()],
   ['resp-native-400', 'responses', '/v1/responses', {}, { model: 'op/gpt-6.1', input: 'hi' }, json(400, { error: { message: 'no such thing', type: 'invalid_request_error' } })],
+  ['resp-native-throw', 'responses', '/v1/responses', {}, { model: 'gpt-codex-9', input: 'hi' }, { throw: 'ECONNRESET' }],
   ['resp-native-guard-redact', 'responses', '/v1/responses', { guardrails: { ...OFF, secrets: 'redact' } }, { model: 'op/gpt-6.1', input: `key ${ANT}` }, respOk()],
 
   /* Gemini */

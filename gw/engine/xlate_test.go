@@ -362,3 +362,5 @@ func init() {
 		xlatePorted[fn] = runXlate
 	}
 }
+
+func nopBody(s string) io.ReadCloser { return io.NopCloser(strings.NewReader(s)) }
