@@ -358,7 +358,7 @@ func deliverXlate(t *testing.T, f xlateFixture, wrap func(io.Reader) io.Reader) 
 var xlateStreams = true
 
 func init() {
-	for _, fn := range []string{"chatAnthropic", "messages", "responses", "gemini"} {
+	for _, fn := range []string{"chatAnthropic", "messages", "responses", "gemini", "count", "geminiCount", "embeddings"} {
 		xlatePorted[fn] = runXlate
 	}
 }

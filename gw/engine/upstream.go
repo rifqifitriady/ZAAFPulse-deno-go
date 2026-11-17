@@ -88,7 +88,11 @@ type Result struct {
 func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) {
 	ctx, cancel := context.WithCancel(ctx)
 	var timedOut atomic.Bool
-	timer := time.AfterFunc(u.timeout, func() { timedOut.Store(true); cancel() })
+	limit := u.timeout
+	if p.Timeout > 0 {
+		limit = p.Timeout // a plan's own limit (count_tokens: 15 s, P4d)
+	}
+	timer := time.AfterFunc(limit, func() { timedOut.Store(true); cancel() })
 	fail := func(why string) (*http.Response, string) {
 		timer.Stop()
 		cancel()
