@@ -81,7 +81,7 @@ const { serverSinks } = require('./lib/ipc/server-sinks');
 const { gwEnv } = require('./lib/ipc/env');
 const { createFront, engineOf, routing, shadowOf, gwArgs } = require('./lib/front');
 const { createShadowLog, shadowEndpoints } = require('./lib/front/shadow-log');
-const { configPush, secretsPush, snapshotPush } = require('./lib/front/push');
+const { configPush, secretsPush, snapshotPush, windowPush } = require('./lib/front/push');
 const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
 const { createReceiver } = require('./lib/trace/otlp');
@@ -592,6 +592,10 @@ const gateway = createGateway({
   audit: (e) => govRecord(e), // key changes, run approvals and cancels
   onKeysChange: () => front && front.push(), // the gateway in front enforces keys too (P4b)
 });
+
+// One rate-limit window across the engines (P4f D16): a request this server admits under a key goes to the gateway in
+// front (a control message; nothing while no gateway is ready).
+gateway.onRateTake((keyId, at) => front && front.sendControl('ratelimit.take', { keyId, at }));
 
 // The IPC ingest of the Go gateway (P4a E3, E4): strict writers of its own (lib/ipc/server-sinks.js), never the
 // wrapped ones (the gateway's usage.record, govRecord, the trace recorder), and the marks from the stores' tails and
@@ -2326,6 +2330,11 @@ front = createFront({
     },
     secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
     snapshot: () => snapshotPush({ service: costBudgets, keyIds: gateway.rawKeys().map((k) => k.id) }),
+    window: () => windowPush(gateway.rateWindows()), // P4f D16: the rate-limit window a new gateway starts with
+  },
+  // P4f D16: a request the go engine admitted counts in the key's window here.
+  onControl: (msg) => {
+    if (msg.type === 'ratelimit.take' && msg.body) gateway.noteRateTake(msg.body.keyId, msg.body.at);
   },
   beforeAck: fi ? fi.beforeAck : undefined,
   log: (line) => console.error(line),

@@ -148,3 +148,35 @@ func TestUnitsTheRuntimesFoldDifferently(t *testing.T) {
 		t.Error("U+A7CF matched U+A7CE")
 	}
 }
+
+// P4f D16: the control plane's takes count in the window, in time order, as keys.js note does.
+func TestNoteCountsTheOtherEnginesTakes(t *testing.T) {
+	r := NewRateLimiter()
+	if w := r.Take("k", 3, 1_000_000); w != 0 {
+		t.Fatal(w)
+	}
+	r.Note("k", 1_000_005)
+	r.Note("k", 999_990)
+	if w := r.Take("k", 3, 1_000_020); w != 60 {
+		t.Fatalf("wait %d, want 60 (the oldest take is 30 ms old)", w)
+	}
+	r.mu.Lock()
+	got := append([]int64(nil), r.windows["k"]...)
+	r.mu.Unlock()
+	if len(got) != 3 || got[0] != 999_990 || got[1] != 1_000_000 || got[2] != 1_000_005 {
+		t.Fatalf("window %v", got)
+	}
+}
+
+// A new session's window replaces the key's: a seeded full window refuses the next take with JS's wait.
+func TestSeedThenTake(t *testing.T) {
+	r := NewRateLimiter()
+	r.Take("k", 2, 50) // an old take of a previous session, replaced by the seed
+	r.Seed("k", []int64{2_000, 1_000})
+	if w := r.Take("k", 2, 1_500); w != 60 {
+		t.Fatalf("wait %d", w)
+	}
+	if w := r.Take("k", 2, 61_001); w != 0 {
+		t.Fatalf("after the first seeded take aged out: wait %d", w)
+	}
+}

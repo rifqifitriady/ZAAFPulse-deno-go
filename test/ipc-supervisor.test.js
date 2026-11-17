@@ -398,3 +398,39 @@ test('the health watchdog neither re-arms nor kills once stop() has begun', asyn
   s.exit(0);
   assert.deepEqual(await stopping, { code: 0, signal: null });
 });
+
+// P4f D16: a new session gets the rate-limit window in its first messages, a take from the gateway reaches onControl,
+// and control() sends a take only while a session is ready.
+test('the rate-limit window goes with each session; takes travel both ways (P4f D16)', async (t) => {
+  const { sessions, start } = fakeStart();
+  const controls = [];
+  const windows = [{ windows: [{ keyId: 'k1', at: [5, 6] }] }];
+  const sup = createSupervisor(
+    fakeOpts(
+      start,
+      [],
+      { t: 0 },
+      {
+        sources: {
+          config: () => ({}),
+          secrets: () => ({}),
+          snapshot: () => ({ budgets: [], keyCenter: {} }),
+          window: () => windows,
+        },
+        onControl: (msg) => controls.push(msg),
+      },
+    ),
+  );
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  assert.deepEqual(sessions[0].opts.initial.window, windows);
+  const sent = [];
+  sessions[0].send = (type, body) => sent.push([type, body]);
+  assert.equal(sup.control('ratelimit.take', { keyId: 'k1', at: 7 }), false, 'not ready: nothing sent');
+  sessions[0].becomeReady();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(sup.control('ratelimit.take', { keyId: 'k1', at: 8 }), true);
+  assert.deepEqual(sent, [['ratelimit.take', { keyId: 'k1', at: 8 }]]);
+  sessions[0].opts.onControl({ type: 'ratelimit.take', body: { keyId: 'k2', at: 9 } });
+  assert.deepEqual(controls, [{ type: 'ratelimit.take', body: { keyId: 'k2', at: 9 } }]);
+});

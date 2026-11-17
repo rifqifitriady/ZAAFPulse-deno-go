@@ -339,3 +339,24 @@ test('configPush: provider span attributes from the raw provider, and the trace 
   assert.equal('trace' in configPush({ gateway: { providers }, keys: [], pricing: {} }), false);
   assert.deepEqual(configPush({ gateway: {}, keys: [], pricing: {}, trace: { spans: 'yes' } }).trace, { spans: false });
 });
+
+test('windowPush: valid ratelimit.window bodies of at most about 1 MiB, bad entries left out (P4f D16)', () => {
+  const { windowPush } = require('../lib/front/push');
+  assert.deepEqual(windowPush([]), []);
+  const big = Array.from({ length: 200 }, (_, i) => ({
+    keyId: `k${i}`,
+    at: Array.from({ length: 1000 }, (_, j) => 1767225600000 + j),
+  }));
+  const bodies = windowPush([...big, { keyId: '', at: [1] }, { keyId: 'x', at: [1.5, -1, 2] }]);
+  assert.ok(bodies.length > 1);
+  for (const b of bodies) {
+    assert.ok(JSON.stringify(b).length <= 1024 * 1024 + 100);
+    assert.deepEqual(check({ v: 1, type: 'ratelimit.window', seq: 2, ts: 0, body: b }), {
+      errors: [],
+      unknownType: false,
+    });
+  }
+  const all = bodies.flatMap((b) => b.windows);
+  assert.equal(all.length, 201);
+  assert.deepEqual(all.at(-1), { keyId: 'x', at: [2] });
+});

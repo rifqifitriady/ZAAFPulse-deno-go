@@ -24,6 +24,9 @@ const (
 	TypeAuditEvent     = "audit.event"
 	TypeTraceSpan      = "trace.span"
 	TypeError          = "error"
+	// P4f D16: one rate-limit window across the engines (control messages, not outbox events).
+	TypeRateLimitTake   = "ratelimit.take"
+	TypeRateLimitWindow = "ratelimit.window"
 )
 
 // Hello is the gateway's first message: the protocols it speaks, its version, its durable event stream and the
@@ -514,4 +517,22 @@ type SpanRecord struct {
 type ErrorBody struct {
 	Code    string `json:"code" ipc:"minlen=1"`
 	Message string `json:"message"`
+}
+
+// RateLimitTake is one request admitted under a key's requests-per-minute window, for the other engine (P4f D16; both
+// directions, a control message: a lost take changes a window, never a ledger).
+type RateLimitTake struct {
+	KeyID string `json:"keyId" ipc:"minlen=1"`
+	At    int64  `json:"at" ipc:"min=0"`
+}
+
+// RateLimitWindow seeds a new gateway with the last minute's takes per key (P4f D16), before budget.snapshot.
+type RateLimitWindow struct {
+	Windows []RateWindow `json:"windows"`
+}
+
+// RateWindow is one key's takes, epoch ms.
+type RateWindow struct {
+	KeyID string  `json:"keyId" ipc:"minlen=1"`
+	At    []int64 `json:"at"`
 }

@@ -20,7 +20,7 @@ test('the binary embeds the app, never the tests, docs or build scripts', () => 
   assert.deepEqual(build.ARCHIVE, [...build.INCLUDE, 'deno.json']);
 });
 
-test('the binary carries the 15 IPC v1 schemas lib/ipc/schema.js reads (P4a E5)', () => {
+test('the binary carries the 17 IPC v1 schemas lib/ipc/schema.js reads (P4a E5)', () => {
   const { TYPES } = require('../lib/ipc/schema');
   assert.deepEqual(build.SCHEMAS, ['envelope', ...TYPES].map((t) => `ipc/v1/${t}.schema.json`).sort());
 });

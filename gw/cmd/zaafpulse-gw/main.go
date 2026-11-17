@@ -161,6 +161,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	g.engine.SetCalls(calls, g.emitCallUsage)
 	// The go engine's trace spans (P4f D1): stored, then sent after the call's usage line, like every event.
 	g.engine.SetSpanEmitter(func(b *ipc.TraceSpanBody) error { return g.appendAndSend(ipc.TypeTraceSpan, b) })
+	// One rate-limit window across the engines (P4f D16): each request the engine admits is told to the control plane, a
+	// control message, not stored (a lost take changes a window, never a ledger). A goroutine sends them: a call never
+	// waits for the control plane to read (P4e Decision 19); a take that does not fit the queue is dropped.
+	takes := make(chan ipc.RateLimitTake, 4096)
+	go func() {
+		for tk := range takes {
+			_ = g.ch.Send(ipc.TypeRateLimitTake, tk, "", "")
+		}
+	}()
+	g.engine.SetOnTake(func(id string, at int64) {
+		select {
+		case takes <- ipc.RateLimitTake{KeyID: id, At: at}:
+		default:
+		}
+	})
 	g.engine.SetStaleMs(o.staleMs)
 	return g.serve(protocols)
 }
@@ -306,6 +321,10 @@ func (g *gateway) handle(msg ipc.Message) int {
 			g.sendHealth()
 		}
 		return g.maybeReady()
+	case *ipc.RateLimitTake:
+		g.engine.NoteTake(b.KeyID, b.At) // P4f D16: a request the control plane admitted
+	case *ipc.RateLimitWindow:
+		g.engine.SeedWindows(b.Windows) // P4f D16: the window of a new session, before budget.snapshot
 	case *ipc.Ack:
 		if b.Stream != g.box.Stream() {
 			g.log.Printf("ack for another stream %s, ignored", b.Stream)

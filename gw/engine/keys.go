@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"unicode"
@@ -233,8 +234,33 @@ func (r *RateLimiter) take(id string, rpm, now int64, count bool) int64 {
 		return (60000 - (now - w[0]) + 999) / 1000
 	}
 	if count {
-		w = append(w, now)
+		w = insertTake(w, now)
 	}
 	r.windows[id] = w
 	return 0
+}
+
+// insertTake puts at into w in time order (a take the other engine told may come a moment late; the wait reads w[0]).
+func insertTake(w []int64, at int64) []int64 {
+	i := len(w)
+	for i > 0 && w[i-1] > at {
+		i--
+	}
+	return slices.Insert(w, i, at)
+}
+
+// Note counts a take the control plane admitted under key id's window (P4f D16: one window across the engines).
+func (r *RateLimiter) Note(id string, at int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.windows[id] = insertTake(r.windows[id], at)
+}
+
+// Seed replaces key id's window with the control plane's (a new gateway session, P4f D16).
+func (r *RateLimiter) Seed(id string, at []int64) {
+	w := slices.Clone(at)
+	slices.Sort(w)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.windows[id] = w
 }
