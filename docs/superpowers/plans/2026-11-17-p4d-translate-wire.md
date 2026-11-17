@@ -2207,3 +2207,45 @@ Recorded while building Tasks 1–7 (2026-11-17). Tasks 8–10 wait for P4f to m
     draws exactly once). A one-byte change, a short tape and a truncated capture are each proven to compare as
     `diff` or `skipped`; an inserted ping compares `same`.
 14. **A gofmt-only commit** (`5608b86`) follows Task 3's: the formatter was run after the commit.
+
+### After P4f merged (2026-11-17, `636944a`, merged into this branch as `39a7ad7`)
+
+Re-check of the steps marked "re-check after P4f merges":
+
+- `gw/engine/serve.go`: one conflict (the 429): P4f's `trace`/`spans`/`onTake` kept, the refusal shaped by the plan
+  (`RateLimited(key, wait, p.Shape)`). P4f's journal interface is `Calls{Open, End}` (not `NoteClose`), the emit with
+  a call id is `emitLine(rec, unchecked, call)`; there is no single `finish` helper: chat calls `e.spans(s, tr, status,
+  started, ended, rec, provSpan(p), obs)` after `flushAnswer`. The P4d serve path uses exactly these.
+- `gw/engine/chat.go` (`State.spans`): merged without conflict.
+- `lib/gateway/shadow.js`: conflict with P4f's final review m3 (a refusal's capture is stored at `res.end`, before the
+  handler settles). Merged: the P4d capture fields go into P4f's `unanswered()` store, and the client writer is
+  wrapped after P4f's `end` wrapper so the last bytes are kept before a refusal's capture is stored.
+- `test/front-shadow.test.js`: P4f's new m3 test asserts the capture shape; it now lists the P4d fields.
+- `gw/testdata/xlate`: regenerated (P4f's provider `span` in every pushed config: 92 files, the same bytes on Node and
+  Deno).
+- `lib/front/index.js`: P4f changed the OTLP note only (`captureContent`); the class lists merge cleanly.
+- `test/contract/harness.js`: see Task 9.
+
+### Task 8
+
+15. **An IPC enum grew (Decision 22 corrected):** `config.push` `front.shadow.classes` and `gw/ipc` `RouteClass` list
+    route classes and sub-classes, so the eleven sub-classes were added (additive; `ipc/v1` keeps 17 schema files; new
+    fixture `valid-front-shadow-p4d-sub-classes.json`). `front.engines` keys were already free.
+16. **The front reads its sub-class table from `front.Subs`**, a copy of `engine.Subs` (the engine imports the front, so
+    not the other way round); `TestFrontSubsMatchTheEngine` keeps them equal. `chatToEngine` became `toEngine(class)`.
+17. **`/v1/chat%2Fcompletions` now classifies as `agents`** (it was `""`): its WHATWG pathname keeps the escape, so it is
+    not the chat route on either side; `gw/front/front_test.go` updated. Route fixtures: 41 (7 new), renumbered.
+18. **Serving: one function, `serveDeliver`** (`gw/engine/serve_xlate.go`), after `Serve`'s shared rate limit, budget
+    and guardrail steps; an `httpWriter` holds a whole answer until its usage line is out (as chat emits before it
+    writes) and streams flush per write, pings under the same lock, every byte fed to P4f's observer.
+19. **The journal opens every P4d call that writes a usage line**; count_tokens writes none in JS, so a count call is
+    not journalled (a crash would otherwise recover a line JS never writes). A call that ends with no line (the native
+    Anthropic failure) is `End`ed.
+20. **A panic inside `Deliver`** ends the call through the same `finish` (journal `End` when no line was produced, the
+    server span), then the panic goes on to net/http. Unlike P4c's chat stream, a panicking translated stream writes no
+    usage line (its state is inside `Deliver`); JS has no such path.
+21. **The held translated stream through HTTP was not measured separately**: Task 4's heap test (7–9 KB of translated
+    state) stands, plus one ping goroutine (~8 KB of stack) for each held Anthropic-format stream. Owed with M4 at the
+    final quiet-machine step.
+22. **TDD order in Task 8:** the serve tests were written after the serving code (the code came from the merge
+    re-check); each was then run under `-race -count=3`.
