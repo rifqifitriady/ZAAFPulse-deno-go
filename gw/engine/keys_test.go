@@ -180,3 +180,27 @@ func TestSeedThenTake(t *testing.T) {
 		t.Fatalf("after the first seeded take aged out: wait %d", w)
 	}
 }
+
+// Final review I3: a key the engine never takes for (its class on js, a hand-off) gets only notes; they are pruned to
+// the last minute and capped at 10,000 (the largest rpm), not kept for the life of the gateway.
+func TestNotesArePrunedAndCapped(t *testing.T) {
+	r := NewRateLimiter()
+	for i := int64(0); i < 100_000; i++ {
+		r.Note("k", 1_000_000+i*1000) // one a second for 27 h
+	}
+	r.mu.Lock()
+	n := len(r.windows["k"])
+	r.mu.Unlock()
+	if n > 60 {
+		t.Fatalf("%d notes kept, want at most a minute's worth (60)", n)
+	}
+	for i := int64(0); i < 100_000; i++ {
+		r.Note("burst", 5_000_000+i/10) // ten a millisecond: inside one minute
+	}
+	r.mu.Lock()
+	n = len(r.windows["burst"])
+	r.mu.Unlock()
+	if n != maxTakes {
+		t.Fatalf("%d notes kept in one minute, want the cap %d", n, maxTakes)
+	}
+}
