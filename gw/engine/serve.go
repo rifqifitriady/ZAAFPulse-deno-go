@@ -273,6 +273,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		a := RateLimited(p.Key, wait)
 		write(w, a)
 		if tr != nil {
+			flushAnswer(w)
 			e.spans(s, tr, a.Status, started, time.Now(), nil, nil, nil) // no usage line: the server span only
 		}
 		return
@@ -287,6 +288,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 			write(w, *ref) // allowedTargets throws before any record: no line
 		}
 		if tr != nil {
+			flushAnswer(w)
 			e.spans(s, tr, ref.Status, started, time.Now(), nil, nil, nil)
 		}
 		return
@@ -311,6 +313,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 				write(w, *a)
 			}
 			if tr != nil {
+				flushAnswer(w)
 				obs := NewObserver()
 				obs.Feed(a.Body)
 				e.spans(s, tr, a.Status, started, time.Now(), &rec, provSpan(&p), obs)
@@ -351,6 +354,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		write(w, a)
 	}
 	if tr != nil {
+		flushAnswer(w)
 		obs := NewObserver()
 		obs.Feed(a.Body) // what JS's observer sees: the body res.end writes, also to a client that left
 		e.spans(s, tr, a.Status, started, time.Now(), &rec, provSpan(&p), obs)
@@ -419,6 +423,10 @@ func write(w http.ResponseWriter, a Answer) {
 	w.WriteHeader(a.Status)
 	_, _ = w.Write(a.Body)
 }
+
+// flushAnswer sends what the handler wrote before the span work runs, so the client has the whole answer first (P4f D1,
+// final review I4: net/http holds a small body in its buffer until the handler returns). A client that left: no-op.
+func flushAnswer(w http.ResponseWriter) { _ = http.NewResponseController(w).Flush() }
 
 func itoa(n int) string { return NumberString(float64(n)) }
 

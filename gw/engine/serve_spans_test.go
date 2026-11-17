@@ -176,3 +176,50 @@ func TestBlockedCallEmitsBothSpans(t *testing.T) {
 		t.Fatalf("spans %+v", got)
 	}
 }
+
+// Final review I4 (D1: spans after the last byte): the client has the whole answer before the span work runs. The
+// span emitter waits until the client has read the body; if the answer were held in net/http's buffer until the handler
+// returns, the client would wait for the emitter and the emitter for the client.
+func TestClientHasTheAnswerBeforeTheSpans(t *testing.T) {
+	for _, c := range []struct {
+		name, body string
+		rpm        int64
+	}{
+		{"served", `{"model":"oa/m1","messages":[{"role":"user","content":"hi"}]}`, 0},
+		{"blocked", `{"model":"oa/m1","messages":[{"role":"user","content":"key ` + antKey + `"}]}`, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rig, _ := spanRig(t, http.HandlerFunc(wholeProvider), true)
+			if c.name == "blocked" {
+				st := *rig.e.State()
+				st.Gateway.Guardrails.Secrets = "block"
+				rig.e.SetState(&st)
+			}
+			read := make(chan struct{})
+			waited := make(chan bool, 4)
+			rig.e.SetSpanEmitter(func(*ipc.TraceSpanBody) error {
+				select {
+				case <-read:
+					waited <- true
+				case <-time.After(3 * time.Second):
+					waited <- false
+				}
+				return nil
+			})
+			go func() {
+				resp := rig.postTraced(t, c.body, "")
+				_ = resp
+				close(read)
+			}()
+			select {
+			case ok := <-waited:
+				if !ok {
+					t.Fatal("the span work ran before the client had the answer")
+				}
+			case <-time.After(6 * time.Second):
+				t.Fatal("no span")
+			}
+			rig.oneLine(t)
+		})
+	}
+}

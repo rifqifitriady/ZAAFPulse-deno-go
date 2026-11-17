@@ -249,17 +249,37 @@ func insertTake(w []int64, at int64) []int64 {
 	return slices.Insert(w, i, at)
 }
 
-// Note counts a take the control plane admitted under key id's window (P4f D16: one window across the engines).
+// maxTakes is the most takes a key's window keeps: the largest rpm a key may have (lib/gateway/keys.js cleanKeyInput).
+const maxTakes = 10000
+
+// Note counts a take the control plane admitted under key id's window (P4f D16: one window across the engines). Takes
+// more than a minute older than the newest are dropped and the window keeps at most maxTakes (final review I3: a key the
+// engine never takes for, a class on js or a hand-off, would otherwise grow for the life of the gateway).
 func (r *RateLimiter) Note(id string, at int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.windows[id] = insertTake(r.windows[id], at)
+	w := insertTake(r.windows[id], at)
+	newest := w[len(w)-1]
+	drop := 0
+	for drop < len(w) && newest-w[drop] >= 60000 {
+		drop++
+	}
+	if len(w)-drop > maxTakes {
+		drop = len(w) - maxTakes
+	}
+	if drop > 0 {
+		w = append(w[:0:0], w[drop:]...)
+	}
+	r.windows[id] = w
 }
 
 // Seed replaces key id's window with the control plane's (a new gateway session, P4f D16).
 func (r *RateLimiter) Seed(id string, at []int64) {
 	w := slices.Clone(at)
 	slices.Sort(w)
+	if len(w) > maxTakes {
+		w = w[len(w)-maxTakes:]
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.windows[id] = w
