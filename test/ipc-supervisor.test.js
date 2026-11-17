@@ -423,12 +423,11 @@ test('the rate-limit window goes with each session; takes travel both ways (P4f 
   );
   t.after(() => stopFake(sup, sessions));
   sup.start();
-  assert.deepEqual(sessions[0].opts.initial.window, windows);
+  assert.deepEqual(sessions[0].opts.initial.window(), windows, 'built when the hello comes (review m1)');
   const sent = [];
   sessions[0].send = (type, body) => sent.push([type, body]);
-  assert.equal(sup.control('ratelimit.take', { keyId: 'k1', at: 7 }), false, 'not ready: nothing sent');
-  sessions[0].becomeReady();
-  await new Promise((r) => setImmediate(r));
+  assert.equal(sup.control('ratelimit.take', { keyId: 'k1', at: 7 }), false, 'no handshake yet: nothing sent');
+  sessions[0].handshaken = true; // the window went with the hello: takes may follow before ready (review m1)
   assert.equal(sup.control('ratelimit.take', { keyId: 'k1', at: 8 }), true);
   assert.deepEqual(sent, [['ratelimit.take', { keyId: 'k1', at: 8 }]]);
   sessions[0].opts.onControl({ type: 'ratelimit.take', body: { keyId: 'k2', at: 9 } });
