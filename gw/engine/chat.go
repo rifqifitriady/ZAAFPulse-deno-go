@@ -120,7 +120,7 @@ type Plan struct {
 	Tagged      bool
 	Custom      []string
 	GuardFormat string
-	build       func(t *Target, body *Value) []byte
+	build       func(p *Plan, body *Value) []byte
 	Self        *Answer
 	Timeout     time.Duration
 	Detached    bool
@@ -189,26 +189,15 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 		return handoff("token saver: tool results")
 	}
 	stream := body.Get("stream").Truthy()
-	out := body.Clone()
-	if stream && StreamUsageOf(t.Provider) {
-		// proxyChat: { ...body, stream_options: { ...(body.stream_options || {}), include_usage: true } }. Spreading a
-		// non-empty string or array gives indexed keys, which the engine does not build: the control plane answers.
-		so := body.Get("stream_options")
-		merged := NewObject()
-		switch {
-		case so != nil && so.Kind == Object:
-			merged = so.Clone()
-		case so != nil && (so.Kind == String && so.S != "" || so.Kind == Array && len(so.A) > 0):
-			return handoff("stream: stream_options is not an object")
-		}
-		merged.Set("include_usage", &Value{Kind: Bool, B: true})
-		out.Set("stream_options", merged)
+	out, why := upstreamBody(body, t, stream)
+	if why != "" {
+		return handoff(why)
 	}
 	so := body.Get("stream_options")
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: model, URL: t.Provider.BaseURL + "/chat/completions",
 		Header: providerHeader(t, cred), Base: s.base(key, t, model, r), Stream: stream,
 		WantsUsage: so.Truthy() && so.Get("include_usage").Truthy(), Format: "openai", Shape: ShapeOpenAI,
-		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: finishBody}
+		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild}
 	if FormatOf(t.Provider) == "anthropic" {
 		if why := planAnthropicLeg(&p, cred, out); why != "" {
 			return handoff(why)
@@ -217,7 +206,7 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
 		p.Policy, p.pending = &pol, out // State.Guard builds Body (P4e)
 	} else {
-		p.Body = p.build(t, out)
+		p.Body = p.build(&p, out)
 	}
 	if stream {
 		v := true
@@ -225,6 +214,27 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	}
 	p.Class = SubClass("chat", &p, nil)
 	return p
+}
+
+// upstreamBody is proxyChat's upstreamBody: { ...body, stream_options: { ...(body.stream_options || {}), include_usage:
+// true } } for a stream to a provider that reports stream usage, else a copy of body. Spreading a non-empty string or
+// array gives indexed keys, which the engine does not build: the control plane answers.
+func upstreamBody(body *Value, t *Target, stream bool) (*Value, string) {
+	out := body.Clone()
+	if !stream || !StreamUsageOf(t.Provider) {
+		return out, ""
+	}
+	so := body.Get("stream_options")
+	merged := NewObject()
+	switch {
+	case so != nil && so.Kind == Object:
+		merged = so.Clone()
+	case so != nil && (so.Kind == String && so.S != "" || so.Kind == Array && len(so.A) > 0):
+		return nil, "stream: stream_options is not an object"
+	}
+	merged.Set("include_usage", &Value{Kind: Bool, B: true})
+	out.Set("stream_options", merged)
+	return out, ""
 }
 
 // StreamLine is chatCompletion's line after a stream: status 200, the tokens of the last usage chunk, the time to the
@@ -377,14 +387,13 @@ func (s *State) Respond(p *Plan, status int, raw []byte, ms float64) Answer {
 func (s *State) Failed(p *Plan, why string, ms float64) Answer {
 	msg := s.mask(p.Target.Provider.ID + ": " + why)
 	rec := p.Base
-	rec.RoutedTo, rec.Guard = nil, nil // a target that failed carries no guardrail outcome (G8)
+	// proxyChat's 599 line: the attempt's own fields, without routedTo, requested, savedTokens or a guardrail outcome
+	// (a target that failed carries none, G8).
+	rec.RoutedTo, rec.Guard, rec.Requested, rec.SavedTokens = nil, nil, nil, nil
 	rec.Status, rec.Ms, rec.Error = 599, ms, &msg
-	b := NewObject()
-	e := NewObject()
-	e.Set("message", Str(msg))
-	e.Set("type", Str("upstream_error"))
-	b.Set("error", e)
-	return Answer{Status: http.StatusBadGateway, Header: answerHeader(), Body: b.Stringify(), Usage: rec}
+	a := shapeError(p.Shape, http.StatusBadGateway, msg, "upstream_error", "", "")
+	a.Usage, a.NoLine = rec, false
+	return a
 }
 
 // RateLimited is authed's 429 for a key past its requests per minute, in the client's shape.

@@ -242,12 +242,24 @@ func usageOfRecord(rec *ipc.UsageRecord) any {
 	return m
 }
 
+// classOfPath is the front's class of a path; a Gemini path with a percent escape is classified as gemini (the front
+// does so from P4d Task 8, P4d Decision 23).
+func classOfPath(raw string) string {
+	if strings.HasPrefix(raw, "/v1beta/") {
+		return "gemini"
+	}
+	return front.Classify(raw)
+}
+
 // planXlate plans a fixture's request with the generator's determinism; it fails the test on a hand-off.
 func planXlate(t *testing.T, f xlateFixture) (*State, Plan) {
 	t.Helper()
 	s := xlateStateOf(t, f.In)
 	r := xlateRequestOf(f.In)
-	p := s.PlanFor(front.Classify(r.RawPath), r, fixtureNow)
+	p := s.PlanFor(classOfPath(r.RawPath), r, fixtureNow)
+	if strings.HasSuffix(p.Handoff, "not ported yet") {
+		t.Skip(p.Handoff)
+	}
 	if p.Handoff != "" {
 		t.Fatalf("handed off: %s", p.Handoff)
 	}
@@ -330,6 +342,9 @@ func deliverXlate(t *testing.T, f xlateFixture, wrap func(io.Reader) io.Reader) 
 			gotH[strings.ToLower(k)] = p.Header.Get(k)
 		}
 		sameJSON(t, "provider headers", gotH, mustJSON(want.Headers))
+		if pr := f.In.Provider; p.Stream && p.Format != "openai" && !xlateStreams && pr != nil && pr.Throw == "" && ok2xx(pr.Status) {
+			t.Skip("translated streams: not ported yet")
+		}
 		line = s.Deliver(&p, providerOf(f.In, wrap), func() float64 { return 1 }, w)
 	}
 	sameJSON(t, "usage", usageOfRecord(line), f.Out.Usage)
@@ -339,6 +354,11 @@ func deliverXlate(t *testing.T, f xlateFixture, wrap func(io.Reader) io.Reader) 
 	return w
 }
 
+// xlateStreams: the translated stream answers are ported (P4d Task 4).
+var xlateStreams = false
+
 func init() {
-	xlatePorted["chatAnthropic"] = runXlate
+	for _, fn := range []string{"chatAnthropic", "messages", "responses", "gemini"} {
+		xlatePorted[fn] = runXlate
+	}
 }
