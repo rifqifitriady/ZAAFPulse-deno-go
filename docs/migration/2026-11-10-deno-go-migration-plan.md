@@ -258,6 +258,12 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 - M3 and M4 are met;
 - the JS hot path is deleted.
 
+Prerequisites of G3 (owner decisions 2026-11-17, P4d spec Decisions 28–29):
+- the token saver (`lib/gateway/rtk.js`) is ported to Go in a slice of its own, proven by fixtures from the JS; until
+  then every request it would act on is handed to js;
+- routes (`router/*`: round-robin and cooldowns from provider headers) move to go, with the provider quota readings;
+  until then every route call is handed to js.
+
 Agents, orchestrator, collab, a2a, workflows, knowledge, memory and skills **stay in Deno**. They call the gateway
 like any client.
 
