@@ -310,7 +310,7 @@ test('I2: status shows the pushed engines; pushIfChanged pushes when the routing
 // variables), a routing look against the pushed engines, and a push on an otel save.
 test('I1, I2: server.js reads otel.status(), compares with the pushed engines, pushes on an otel save', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-  assert.match(src, /otel: otel\.status\(\)\.enabled === true,/);
+  assert.match(src, /otel: otel\.status\(\{ fresh: true \}\),/); // P4f D10, D12: the whole status, read fresh
   assert.doesNotMatch(src, /otel: \(\(rawConfig\(\) \|\| \{\}\)\.otel/);
   assert.match(src, /front\.pushIfChanged\(frontRouting\(\)\.engines\)/);
   assert.match(src, /JSON\.stringify\(\(before \|\| \{\}\)\.otel\) !== JSON\.stringify\(\(after \|\| \{\}\)\.otel\)/);

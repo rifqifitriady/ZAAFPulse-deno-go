@@ -239,3 +239,19 @@ func TestScrubIsJavaScriptSemantics(t *testing.T) {
 		t.Fatalf("scrub: %q", got)
 	}
 }
+
+func TestStateSpansFollowsTheTraceSwitch(t *testing.T) {
+	sec := &ipc.SecretsHandoff{Gen: 1}
+	for _, c := range []struct {
+		tr   *ipc.TraceSwitch
+		want bool
+	}{{nil, false}, {&ipc.TraceSwitch{Spans: false}, false}, {&ipc.TraceSwitch{Spans: true}, true}} {
+		if got := NewState(&ipc.ConfigPush{Gen: 1, Trace: c.tr}, sec).Spans(); got != c.want {
+			t.Fatalf("trace %+v: spans %v", c.tr, got)
+		}
+	}
+	var none *State
+	if none.Spans() {
+		t.Fatal("a nil state records no span")
+	}
+}
