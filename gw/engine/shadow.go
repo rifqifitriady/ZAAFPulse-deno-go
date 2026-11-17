@@ -27,19 +27,32 @@ type Capture struct {
 		Body    *string           `json:"body"`
 	} `json:"providerRequests"`
 	ProviderResponse *ProviderAnswer `json:"providerResponse"`
-	Client           *struct {
-		Status int    `json:"status"`
-		Body   string `json:"body"`
-	} `json:"client"`
-	Usage map[string]any `json:"usage"`
+	Client           *CaptureClient  `json:"client"`
+	Usage            map[string]any  `json:"usage"`
+	// P4d: every provider answer as it was read (lib/gateway/shadow.js teeResponse), and the tape of the random bytes
+	// (hex) and clock reads (epoch ms) the translation drew.
+	Upstream []ProviderAnswer `json:"upstream"`
+	Tape     *struct {
+		Random []string `json:"random"`
+		Now    []int64  `json:"now"`
+	} `json:"tape"`
+}
+
+// CaptureClient is the control plane's answer in a capture.
+type CaptureClient struct {
+	Status    int               `json:"status"`
+	Headers   map[string]string `json:"headers"` // content-type and x-zp-dropped of the head (P4d)
+	Body      string            `json:"body"`
+	Truncated bool              `json:"truncated"` // the client's bytes passed the cap (P4d)
 }
 
 // ProviderAnswer is the provider's answer in a capture.
 type ProviderAnswer struct {
-	Status    int    `json:"status"`
-	Body      string `json:"body"`
-	Ended     string `json:"ended"`     // a stream (P4c): "eof" or "cut"
-	Truncated bool   `json:"truncated"` // a stream: the capture passed its cap
+	Status      int    `json:"status"`
+	ContentType string `json:"contentType"` // the tee (P4d)
+	Body        string `json:"body"`
+	Ended       string `json:"ended"`     // a stream (P4c): "eof" or "cut"
+	Truncated   bool   `json:"truncated"` // a stream: the capture passed its cap
 }
 
 // Diff is one field that differs.
@@ -313,13 +326,13 @@ var shadowSlots = make(chan struct{}, 8)
 func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler,
 	own func(method, path string, body []byte) (int, []byte, error)) {
 	s := e.state.Load()
-	if s == nil || class != "chat" {
+	if s == nil || Subs[class] == nil {
 		js.ServeHTTP(w, r)
 		return
 	}
 	req := ReadRequest(r, rawPath)
-	p := s.PlanChat(req, e.now())
-	sub := subOf(&p, req)
+	p := s.PlanFor(class, req, e.now())
+	sub := SubClass(class, &p, req)
 	_, shadowed := e.mode(sub)
 	if e.modes.Load() == nil {
 		shadowed = sub == "chat" // P4b: the front calls Shadow for a shadowed chat
@@ -355,10 +368,13 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 	if p.Handoff == "" {
 		wait = e.limits.Take(p.Key.ID, p.Key.RPM, e.now())
 		// The budget, decided now on the snapshot (cheap); the guardrail checks run after the answer, off this path.
-		if ref, unchecked := s.Budget(p, e.now(), e.staleMs, nil); ref != nil {
-			p.refused = ref
-		} else {
-			p.Unchecked = unchecked
+		// count_tokens and the engine's own answers check no budget (P4d).
+		if p.Upstream != UpNone && p.Upstream != UpCount {
+			if ref, unchecked := s.Budget(p, e.now(), e.staleMs, nil); ref != nil {
+				p.refused = ref
+			} else {
+				p.Unchecked = unchecked
+			}
 		}
 		id = NewShadowID()
 		r = front.WithShadowID(r, id) // set by the proxy's Rewrite, after the hop-by-hop headers are gone
@@ -404,8 +420,10 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		}
 		if ref != nil {
 			l = s.CompareRefusal(sub, p, ref, c)
-		} else {
+		} else if sub == SubChat || sub == SubChatStream {
 			l = s.Compare(sub, p, c)
+		} else {
+			l = s.CompareTranslated(sub, p, c)
 		}
 		if wait > 0 {
 			l = rateLimitedLine(sub, l.Status) // the engine would have answered 429 itself

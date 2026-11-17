@@ -2163,4 +2163,47 @@ Task 1. Tasks 8 and 9 are expected after P4f merges; if P4f has not merged when 
 
 ## Plan deviations
 
-(Filled in while building: each change from this plan with its evidence.)
+Recorded while building Tasks 1–7 (2026-11-17). Tasks 8–10 wait for P4f to merge (coordinator).
+
+1. **One answer path: `State.Deliver(p, ProviderResult, elapsed, ClientWriter)`** (`gw/engine/deliver.go`), not one
+   `Respond*` per kind called by the serve loop. The fixtures replay it with a recording writer and the shadow with a
+   buffer; Task 8's HTTP writer (flush per write, the ping goroutine behind `Pinger`) is the third user. Evidence: the
+   same function proves the bytes in `TestXlateFixtures`, `TestTranslatedStreamSplits` and
+   `TestShadowTranslatedFixtures`, so serving cannot drift from what the fixtures prove.
+2. **The refusal shapes landed in Task 2**, not Task 3: `RateLimited`, `quota`, `refusal` and `Failed` take the
+   plan's `Shape`, because the chat-anthropic plan already needed them. The OpenAI shape gives the bytes it gave
+   (`TestChatFixtures`, `TestChatGuardFixtures`, `TestRateLimitedAnswer` unchanged). `Failed` also drops
+   `requested` and `savedTokens` from its 599 line, as proxyChat's line has neither.
+3. **A plan's provider-body builder takes the plan** (`build func(p *Plan, body *Value) []byte`): a closure over a
+   local plan would have written `Dropped` into a copy (plans are returned by value).
+4. **`[DONE]` only after a clean end** in `AnthropicToChatText`: callChat enqueues it inside the `try`, so a provider
+   cut or a conversion that throws ends the synthesized stream without it (fixture `chat-an-stream-cut`). The plan's
+   sketch wrote it always.
+5. **The Anthropic leg's id is drawn before the client's stream writer**: `AnthropicToChatText` creates its converter
+   synchronously and the stream path builds it before `NewTranslatedStream`, as callChat returns before translated()
+   calls `out.stream()` (fixture `resp-an-stream`; with the other order the ids swap).
+6. **After an error event a translated stream's line has no time to the first token and no tokens**: translated()
+   keeps its first `result` when `pumpChunks` or the whole-JSON branch throws (fixtures `msg-stream-error-chunk`,
+   `msg-stream-cut`; `TestTranslatedStreamErrorLine`). The native passthroughs keep what they saw (their catch is
+   inside).
+7. **`gw/translate.ReadSSE` reads 4 KiB at a time** (was 32 KiB): a held translated stream kept 36 KB of heap, past the
+   13 KiB the 80 KiB budget leaves next to P4c's 67 KiB; now 7 KB (`TestMemoryPerHeldTranslatedStream`, heap only;
+   the whole held stream through HTTP is measured in Task 8). The events do not depend on the split (stream B's
+   fixtures and `TestTranslatedStreamSplits` unchanged).
+8. **More fixtures than listed**: 92 cases, including `msg-native-throw` (no line, the Anthropic 502),
+   `resp-native-throw` (a 599 line that keeps `requested` and `routedTo`) and `msg-native-stream-cut`. There is no
+   `out.whole` TypeError case: `openAIToAnthropic` answers `{"choices":null}` without throwing; the 502 branch stays,
+   untested by a fixture.
+9. **`hasToolResultBlock` also hands off a `null` message or content block**: `saveTokens(body, 'anthropic')` throws a
+   TypeError there and JS answers 500; the engine leaves it to JS.
+10. **The capture keeps `client.body` `null` when nothing was written** (`clientBody ?? (text || null)`), so P4e's
+    refusal capture reads as before; `test/front-shadow.test.js` asserts the new fields (`upstream`, `tape`,
+    `client.headers`, `client.truncated`). **(re-check after P4f merges: P4f edits that test file too.)**
+11. **`Capture.Client` is a named type (`CaptureClient`)**, so tests build it without repeating the struct.
+12. **The fixture harness classifies `/v1beta/*` as `gemini` itself** (`classOfPath`) until Task 8 lets the front
+    classify `%XX` paths (Decision 23).
+13. **The Go shadow test builds the tape from the engine's own counter draws** (`xlateCapture`); the JS tape itself is
+    proven by `test/shadow-capture.test.js` (every `msg_` id of the client text is on the tape; an unshadowed request
+    draws exactly once). A one-byte change, a short tape and a truncated capture are each proven to compare as
+    `diff` or `skipped`; an inserted ping compares `same`.
+14. **A gofmt-only commit** (`5608b86`) follows Task 3's: the formatter was run after the commit.
