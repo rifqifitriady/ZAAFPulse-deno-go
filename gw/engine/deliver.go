@@ -46,6 +46,8 @@ func (s *State) Deliver(p *Plan, res ProviderResult, elapsed func() float64, w C
 			return s.deliverTranslated(p, res, elapsed, w)
 		}
 		return s.deliverTranslatedStream(p, res, elapsed, w)
+	case p.Upstream == UpAnthropicNative || p.Upstream == UpResponsesNative:
+		return s.deliverNative(p, res, elapsed, w)
 	}
 	panic(errNotServed)
 }

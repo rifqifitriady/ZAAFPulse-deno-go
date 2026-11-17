@@ -177,39 +177,6 @@ func (s *State) PlanGemini(r *Request, now int64) Plan {
 	return p
 }
 
-// planAnthropicNative: a passthrough when the mapped model's target is an Anthropic-format provider named by it
-// (messagesApi). done false: translate instead. Ported in P4d Task 5; until then a passthrough is handed off.
-func (s *State) planAnthropicNative(r *Request, key *ipc.GatewayKeyAuth, body *Value, name string) (Plan, bool) {
-	model, ok := s.MapModel(name)
-	if !ok {
-		return handoff("model: mapping needs the model list"), true
-	}
-	first, why := s.target(model, key)
-	if why == "model: a route" {
-		return handoff(why), true
-	}
-	if first == nil || FormatOf(first.Provider) != "anthropic" || model != first.Name {
-		return Plan{}, false
-	}
-	return handoff("passthrough: not ported yet"), true
-}
-
-// planResponsesNative: a passthrough when the target takes /responses (responsesApi). Ported in P4d Task 5.
-func (s *State) planResponsesNative(r *Request, key *ipc.GatewayKeyAuth, body *Value, name string) (Plan, bool) {
-	model, ok := s.MapModel(name)
-	if !ok {
-		return handoff("model: mapping needs the model list"), true
-	}
-	t, why := s.target(model, key)
-	if why == "model: a route" {
-		return handoff(why), true
-	}
-	if t == nil || !NativeResponses(t.Provider) {
-		return Plan{}, false
-	}
-	return handoff("passthrough: not ported yet"), true
-}
-
 // hasToolResultBlock is whether saveTokens(body, 'anthropic') would look at a tool result: a message content block of
 // type tool_result, or a message it could not read (JS throws a TypeError there, and answers itself).
 func hasToolResultBlock(body *Value) bool {
