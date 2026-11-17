@@ -143,6 +143,10 @@ func checkRules(v any, tag, path string) error {
 			if ok && utf8.RuneCountInString(s) < atoi(arg) {
 				return fmt.Errorf("%s: must be at least %s characters", path, arg)
 			}
+		case "object": // a json.RawMessage field that must hold a JSON object (it decodes itself, so checkShape skips it)
+			if _, ok := v.(map[string]any); !ok {
+				return fmt.Errorf("%s: must be an object", path)
+			}
 		case "minitems":
 			a, ok := v.([]any)
 			if ok && len(a) < atoi(arg) {

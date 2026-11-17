@@ -128,6 +128,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	defer box.Close()
 	box.SetPerSegment(o.segmentEvents)
+	// The call journal (P4f D14): a previous gateway's calls that never got their usage line get it now, before the
+	// handshake, so the replay sends it. It closes after the outbox: Close takes the send lock, so no close is noted
+	// after it (a second box.Close does nothing).
+	calls, err := ipc.OpenCallJournal(dir)
+	if err != nil {
+		return exitWith(logger, ipc.ExitDamaged, "%v", err)
+	}
+	defer func() {
+		_ = box.Close()
+		_ = calls.Close()
+	}()
+	if n, err := calls.Recover(box, time.Now().UnixMilli()); err != nil {
+		return exitWith(logger, ipc.ExitDamaged, "the call journal: %v", err)
+	} else if n > 0 {
+		logger.Printf("wrote the usage line of %d call(s) the last gateway left in flight (status 599)", n)
+	}
 	g := &gateway{
 		o:       o,
 		box:     box,
@@ -141,6 +157,25 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	g.out = newSender(box, g.ch.SendLine, logger.Printf)
 	defer g.out.stop(time.Second)
 	g.engine = engine.New(engine.NewUpstream(os.Getenv), g.emitUsage, g.log.Printf)
+	g.calls = calls
+	g.engine.SetCalls(calls, g.emitCallUsage)
+	// The go engine's trace spans (P4f D1): stored, then sent after the call's usage line, like every event.
+	g.engine.SetSpanEmitter(func(b *ipc.TraceSpanBody) error { return g.appendAndSend(ipc.TypeTraceSpan, b) })
+	// One rate-limit window across the engines (P4f D16): each request the engine admits is told to the control plane, a
+	// control message, not stored (a lost take changes a window, never a ledger). A goroutine sends them: a call never
+	// waits for the control plane to read (P4e Decision 19); a take that does not fit the queue is dropped.
+	takes := make(chan ipc.RateLimitTake, 4096)
+	go func() {
+		for tk := range takes {
+			_ = g.ch.Send(ipc.TypeRateLimitTake, tk, "", "")
+		}
+	}()
+	g.engine.SetOnTake(func(id string, at int64) {
+		select {
+		case takes <- ipc.RateLimitTake{KeyID: id, At: at}:
+		default:
+		}
+	})
 	g.engine.SetStaleMs(o.staleMs)
 	return g.serve(protocols)
 }
@@ -180,6 +215,7 @@ type gateway struct {
 	quiet   bool // --hang-after-ready
 
 	out        *sender          // sends the outbox's events to the control plane (P4e)
+	calls      *ipc.CallJournal // the go engine's calls in flight (P4f D14)
 	engine     *engine.Engine   // the go engine (P4b): its state is the newest generation with the newest snapshot
 	cfgBody    *ipc.ConfigPush  // under mu: the newest config.push, until its secrets arrive
 	frontCfg   *ipc.FrontConfig // under mu: the first config.push's front section, opened on ready
@@ -285,6 +321,10 @@ func (g *gateway) handle(msg ipc.Message) int {
 			g.sendHealth()
 		}
 		return g.maybeReady()
+	case *ipc.RateLimitTake:
+		g.engine.NoteTake(b.KeyID, b.At) // P4f D16: a request the control plane admitted
+	case *ipc.RateLimitWindow:
+		g.engine.SeedWindows(b.Windows) // P4f D16: the window of a new session, before budget.snapshot
 	case *ipc.Ack:
 		if b.Stream != g.box.Stream() {
 			g.log.Printf("ack for another stream %s, ignored", b.Stream)
@@ -430,6 +470,12 @@ func (g *gateway) checkBudget(body any) {
 // gateway's own usage writer, lib/ipc/server-sinks.js).
 func (g *gateway) emitUsage(r *ipc.UsageReport) (int64, error) {
 	return g.box.AppendSend(ipc.TypeUsageReport, r, time.Now().UnixMilli(), g.out.enqueue)
+}
+
+// emitCallUsage is emitUsage for a journalled call: the journal notes the line's seq under the outbox's send lock, right
+// before the line is stored (P4f D14), so a crash never leaves the call with no line or two.
+func (g *gateway) emitCallUsage(r *ipc.UsageReport, call int64) (int64, error) {
+	return g.calls.Emit(g.box, call, ipc.TypeUsageReport, r, time.Now().UnixMilli(), g.out.enqueue)
 }
 
 // appendAndSend stores an event in the outbox and hands it to the sender (D4: stored before sent; E10: one lock for the

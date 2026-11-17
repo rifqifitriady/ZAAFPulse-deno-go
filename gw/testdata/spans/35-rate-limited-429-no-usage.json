@@ -1,0 +1,40 @@
+{
+  "fn": "spans",
+  "in": {
+    "request": {},
+    "answer": {
+      "status": 429,
+      "chunks": [
+        "{\"error\":{\"message\":\"rate\"}}"
+      ]
+    },
+    "usage": null
+  },
+  "out": {
+    "traceId": null,
+    "spans": [
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0202020202020202",
+          "p": null,
+          "n": "POST /v1/chat/completions",
+          "k": "server",
+          "st": 0,
+          "d": 0,
+          "ok": true,
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "http.request.method": "POST",
+            "http.route": "/v1/chat/completions",
+            "url.path": "/v1/chat/completions",
+            "url.scheme": "http",
+            "network.protocol.version": "1.1",
+            "http.response.status_code": 429
+          }
+        }
+      }
+    ]
+  }
+}

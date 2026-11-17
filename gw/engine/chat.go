@@ -45,12 +45,16 @@ type State struct {
 	Pricer     *Pricer
 	Snapshot   *ipc.BudgetSnapshot
 	SnapshotAt int64 // epoch ms the snapshot says it was taken
+	spans      bool  // config.push trace.spans (P4f D8): a span is recorded somewhere
 }
+
+// Spans is whether this generation's calls get trace spans and a usage line naming their trace (P4f D8).
+func (s *State) Spans() bool { return s != nil && s.spans }
 
 // NewState builds a generation from config.push and secrets.handoff (same gen).
 func NewState(c *ipc.ConfigPush, s *ipc.SecretsHandoff) *State {
 	st := &State{Gen: c.Gen, Gateway: c.Gateway, Keys: NewKeys(c.Keys), Secrets: map[string]string{},
-		Mask: append([]string(nil), s.Mask...), Pricer: NewPricer(c.Pricing)}
+		Mask: append([]string(nil), s.Mask...), Pricer: NewPricer(c.Pricing), spans: c.Trace != nil && c.Trace.Spans}
 	for _, p := range s.Providers {
 		if p.Value != nil && *p.Value != "" {
 			st.Secrets[p.ID] = *p.Value

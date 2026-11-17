@@ -1,0 +1,40 @@
+{
+  "fn": "spans",
+  "in": {
+    "request": {
+      "headers": {
+        "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-00"
+      }
+    },
+    "answer": {
+      "status": 200,
+      "chunks": [
+        "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}"
+      ]
+    },
+    "usage": {
+      "ts": 1767225600000,
+      "ms": 12.345,
+      "status": 200,
+      "input": 1000,
+      "output": 500,
+      "cost": 0.002,
+      "keyId": "k1",
+      "provider": "oa",
+      "model": "oa/m1",
+      "kind": "chat",
+      "format": "openai",
+      "stream": false,
+      "local": true
+    },
+    "providerSpan": {
+      "name": "oa",
+      "address": "127.0.0.1",
+      "port": 9
+    }
+  },
+  "out": {
+    "traceId": null,
+    "spans": []
+  }
+}
