@@ -2338,17 +2338,20 @@ front = createFront({
     snapshot: () => snapshotPush({ service: costBudgets, keyIds: gateway.rawKeys().map((k) => k.id) }),
     window: () => windowPush(gateway.rateWindows()), // P4f D16: the rate-limit window a new gateway starts with
   },
-  // Design rule 2 (P4f D24, owner decision): calls that passed a stale budget snapshot are marked, alerted and audited:
-  // one governance entry per alert window, as the system, with the calls since the previous entry.
-  onUncheckedAlert: ({ calls, since }) =>
+  // Design rule 2 (P4f D24, owner decision; final review I5): calls that passed a stale budget snapshot are marked,
+  // alerted and audited: per alert window, an "opened" entry at the alert and a "closed" one with the window's count
+  // (a minute later, at the first call past it, or when the gateway stops), as the system.
+  onUncheckedAlert: ({ phase, calls, since, at }) =>
     govContext.runAs({ via: 'system' }, () =>
       govRecord({
         action: 'gateway.budget_unchecked',
         outcome: 'error',
         target: { type: 'gateway' },
         actor: { via: 'system' },
+        phase,
         calls,
         since: new Date(since).toISOString(),
+        ...(phase === 'closed' ? { until: new Date(at).toISOString() } : {}),
       }),
     ),
   // P4f D16: a request the go engine admitted counts in the key's window here.
