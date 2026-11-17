@@ -41,6 +41,10 @@ func (s *State) Deliver(p *Plan, res ProviderResult, elapsed func() float64, w C
 	switch {
 	case p.Upstream == UpAnthropic && p.Format == "openai":
 		return s.deliverChatAnthropic(p, res, elapsed, w)
+	case p.Upstream == UpChat || p.Upstream == UpAnthropic:
+		if !p.Stream || res.Why != "" || !ok2xx(res.Status) {
+			return s.deliverTranslated(p, res, elapsed, w)
+		}
 	}
 	panic(errNotServed)
 }
@@ -82,7 +86,7 @@ func (s *State) deliverChatAnthropic(p *Plan, res ProviderResult, elapsed func()
 		if !ok2xx(res.Status) {
 			return writeAnswer(w, s.Respond(p, res.Status, raw, elapsed()))
 		}
-		conv, why := anthropicWhole(p.Env, raw, p.Model)
+		conv, why := anthropicWhole(p.Env, raw, p.ClientModel)
 		if why != "" {
 			return writeAnswer(w, s.Failed(p, why, elapsed())) // P4d Decision 26a: JS writes V8's text
 		}
@@ -92,7 +96,7 @@ func (s *State) deliverChatAnthropic(p *Plan, res ProviderResult, elapsed func()
 	if w.Head(200, sseHeader()) != nil {
 		return lineOf(s.StreamLine(p, cs, elapsed()))
 	}
-	text := AnthropicToChatText(p.Model, res.Body, p.Env)
+	text := AnthropicToChatText(p.ClientModel, res.Body, p.Env)
 	defer text.Close()
 	buf := make([]byte, StreamReadSize)
 	for {

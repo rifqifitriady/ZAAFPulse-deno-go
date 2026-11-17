@@ -46,6 +46,9 @@ func checksApply(p guard.Policy, tier string) bool {
 	return (p.Scope == "all" || tier != "private") && (p.Secrets != "off" || p.PII != "off" || p.Injection != "off")
 }
 
+// chatBuild is finishBody as a plan's provider-body builder.
+func chatBuild(p *Plan, out *Value) []byte { return finishBody(p.Target, out) }
+
 // finishBody is callChat's provider body: { ...body, model: t.model } through adaptChat, as JSON.stringify writes it.
 func finishBody(t *Target, out *Value) []byte {
 	out.Set("model", Str(t.Model))
@@ -180,7 +183,7 @@ func (s *State) Guard(p *Plan, ms float64) *Answer {
 	}
 	p.pending = nil
 	if p.build != nil {
-		p.Body = p.build(p.Target, body)
+		p.Body = p.build(p, body)
 	} else {
 		p.Body = finishBody(p.Target, body)
 	}

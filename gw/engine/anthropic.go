@@ -15,7 +15,12 @@ import (
 
 // anthropicBuild is callChat's request: { ...rest, model: t.model } without stream_options, through
 // openAIToAnthropicRequest, as JSON.stringify writes it (no adaptChat). nil when the translation throws.
-func anthropicBuild(t *Target, body *Value) []byte {
+func anthropicBuild(p *Plan, body *Value) []byte {
+	return anthropicRequest(p.Target, body)
+}
+
+// anthropicRequest is anthropicBuild for a target.
+func anthropicRequest(t *Target, body *Value) []byte {
 	out := body.Clone()
 	out.Delete("stream_options")
 	out.Set("model", Str(t.Model))
@@ -33,7 +38,7 @@ func anthropicBuild(t *Target, body *Value) []byte {
 // planAnthropicLeg turns a plan's provider request into the Anthropic leg. The translation is tried once here: one
 // that throws would be callChat's throw (a 599 line and a 502); it is handed off instead, and JS answers it.
 func planAnthropicLeg(p *Plan, cred string, pending *Value) string {
-	if anthropicBuild(p.Target, pending.Clone()) == nil {
+	if anthropicRequest(p.Target, pending.Clone()) == nil {
 		return "translate: the request cannot be translated for an Anthropic provider"
 	}
 	p.Upstream = UpAnthropic
