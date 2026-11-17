@@ -84,6 +84,7 @@ merges `migrate/deno-go`; adapt their `serve.go`, `main.go`, outbox and ingest s
 22. D22: 17 schemas; `build-deno.js` and the `doctor` line updated.
 23. D23: the owner accepted the three defaults on 2026-11-16 (599 and cost 0; `captureContent` keeps js; the replicated window).
 24. D24: one governance entry `gateway.budget_unchecked` per unchecked-budget alert window, from the supervisor's alert (Task 9).
+25. D25 (found in Task 8): the ingest writes the gateway's spans in batches before each ack; a failed batch is dropped, as JS drops spans.
 
 ## Known deviations to record (found while writing this plan)
 
@@ -2729,3 +2730,15 @@ After the P4e merge (`e41e2ea`, 2026-11-17), re-checked against the merged code:
     ack really prunes.
 11. Task 4 must keep P4e's order in `Serve`: rate limit, budget, guard (a guard refusal writes its line and, from
     Task 4, its spans), then the provider call.
+
+After Tasks 2–9 (2026-11-17):
+12. **The shadow and the shared window (Task 5 fix, `0e31ffc`)**: P4e's shadow counts each call it compares in the
+    engine's window (Take). With the window shared, the server's take of that call also reaches the engine as a note, so
+    it was counted twice (shadow diff `rateLimit` 200/429 in CI). With the shared window on (`SetOnTake`), the shadow
+    only looks (Wait).
+13. **Takes go through a goroutine**: a `ratelimit.take` sent synchronously on the channel blocked calls while the
+    control plane did not read (P4e's hang tests); a buffered queue (4096) sends them and drops what does not fit.
+14. **S8 corpus**: the provider that refuses the connection is left out (the engine writes `ECONNREFUSED`, Node's
+    fetch `fetch failed`: P4b's per-runtime network error text); `gen_ai.response.time_to_first_chunk` is a time and is
+    normalized like `st` and `d`; the stored lines' key order differs between engines (deep comparison).
+15. **D25**: see the spec; `bench/run.js` gained `ZP_BENCH_TRACING=off` to measure the spans' cost.

@@ -614,9 +614,15 @@ function frontIngest() {
     exportSpan: (span, extra) => otel.exportRecord(span, extra),
   });
   const markFile = createMarkFile(files.marksFile);
+  // P4f D25: the gateway's spans are written in batches, before each ack (every 100 ms or 256 events), as the JS
+  // recorder writes its own once a second: one trace-store write per span saturated the control plane at 500 streams.
+  const ingest = createIngest({ ...sinks, marks: recoverMarks(files), spanBatch: true });
   return {
-    ingest: createIngest({ ...sinks, marks: recoverMarks(files) }),
-    beforeAck: (b) => markFile.save(b.stream, b.upTo),
+    ingest,
+    beforeAck: (b) => {
+      ingest.flushSpans();
+      markFile.save(b.stream, b.upTo);
+    },
   };
 }
 

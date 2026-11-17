@@ -266,6 +266,14 @@ entry is written by the control plane, the chain's only writer (rule 1); Go send
 written (the audit key unreadable) is the chain's own `degraded` case (counted in its next `audit.gap`); the alert and
 the counter are unaffected.
 
+**D25. The control plane writes the gateway's spans in batches (found by the T8 bench, 2026-11-17).** One trace-store
+write per span made the control plane fall behind at 200–500 streams (a gateway restart at 200 streams, 505 ms overhead
+at 500). The ingest buffers the spans it marks (`spanBatch`) and writes them in one `writeSpans` call before each ack
+(`flushSpans` in the server's `beforeAck`, every 100 ms or 256 events, or at 500 buffered), then exports them. A batch
+whose write fails is dropped, logged once and counted (`spansDropped`), as the JS recorder drops spans it cannot write;
+a control-plane crash loses the spans not yet written (they are below the next usage line's mark), as JS loses its
+recorder's buffer. Usage and audit events keep their store-then-ack order; spans are telemetry, at most once.
+
 ## IPC v1 additions (additive only)
 
 | Message | Change | Direction |
