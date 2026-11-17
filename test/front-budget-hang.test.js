@@ -6,7 +6,9 @@
 // the gateway's side there).
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const http = require('http');
+const path = require('path');
 const { startServer, clientFor, SEED_CONFIG } = require('./contract/harness');
 const { stubBin } = require('./ipc-stub');
 
@@ -128,5 +130,26 @@ test(
       'the unchecked calls counted',
     );
     assert.ok(st.alert === true, JSON.stringify(st));
+    // P4f D24 (design rule 2: mark, alert and audit): one governance entry for the alert window, written as the system.
+    // The three calls arrive in one window (the first opens it and writes the entry at once; the next two wait for the
+    // next window), so the entry counts the first.
+    const audit = () =>
+      fs
+        .readdirSync(path.join(s.data, '.data', 'audit'))
+        .filter((f) => f.endsWith('.jsonl'))
+        .flatMap((f) =>
+          fs
+            .readFileSync(path.join(s.data, '.data', 'audit', f), 'utf8')
+            .split('\n')
+            .filter(Boolean),
+        )
+        .map((l) => JSON.parse(l))
+        .filter((e) => e.action === 'gateway.budget_unchecked');
+    const entries = await until(async () => (audit().length ? audit() : null), 10000, 'the audit entry');
+    assert.equal(entries.length, 1, JSON.stringify(entries));
+    assert.deepEqual(
+      [entries[0].outcome, entries[0].actor, entries[0].target, entries[0].calls >= 1, typeof entries[0].since],
+      ['error', { via: 'system' }, { type: 'gateway' }, true, 'string'],
+    );
   },
 );

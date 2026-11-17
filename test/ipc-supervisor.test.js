@@ -434,3 +434,67 @@ test('the rate-limit window goes with each session; takes travel both ways (P4f 
   sessions[0].opts.onControl({ type: 'ratelimit.take', body: { keyId: 'k2', at: 9 } });
   assert.deepEqual(controls, [{ type: 'ratelimit.take', body: { keyId: 'k2', at: 9 } }]);
 });
+
+// P4f D24 (owner decision, design rule 2: mark, alert and audit): one unchecked-budget audit call per alert window, with
+// the calls stored since the previous one and when the first of them came; a resend is a duplicate and adds nothing.
+test('one unchecked-budget audit call per alert window, with the calls since the last one (P4f D24)', async (t) => {
+  const { sessions, start } = fakeStart();
+  const clock = { t: 1000 };
+  const alerts = [];
+  const ingest = createIngest({
+    recordUsage: () => {},
+    recordGovernance: () => {},
+    recordMcp: () => {},
+    writeSpans: () => {},
+    log: () => {},
+  });
+  const sup = createSupervisor(fakeOpts(start, [], clock, { ingest, onUncheckedAlert: (a) => alerts.push(a) }));
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  const base = JSON.parse(fs.readFileSync(path.join(DIR, 'fixtures', 'usage.report', 'valid-unchecked.json'), 'utf8'));
+  const at = (seq, ms) => {
+    clock.t = ms;
+    sessions[0].opts.onEvent({ ...base, seq }, 'gw-1');
+  };
+  at(1, 1000); // opens a window: one entry at once
+  at(2, 20_000);
+  at(3, 40_000);
+  assert.deepEqual(alerts, [{ calls: 1, since: 1000, at: 1000 }]);
+  at(4, 61_000); // the next window: the calls since the last entry, from the first of them
+  assert.deepEqual(alerts[1], { calls: 3, since: 20_000, at: 61_000 });
+  at(4, 62_000); // a resend: a duplicate, not counted
+  at(5, 200_000);
+  assert.deepEqual(alerts[2], { calls: 1, since: 200_000, at: 200_000 });
+  assert.equal(alerts.length, 3);
+});
+
+test('an unchecked-alert hook that throws changes nothing for the ingest (P4f D24)', async (t) => {
+  const { sessions, start } = fakeStart();
+  const logs = [];
+  const ingest = createIngest({
+    recordUsage: () => {},
+    recordGovernance: () => {},
+    recordMcp: () => {},
+    writeSpans: () => {},
+    log: () => {},
+  });
+  const sup = createSupervisor(
+    fakeOpts(
+      start,
+      logs,
+      { t: 5 },
+      {
+        ingest,
+        onUncheckedAlert: () => {
+          throw new Error('audit down');
+        },
+      },
+    ),
+  );
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  const msg = JSON.parse(fs.readFileSync(path.join(DIR, 'fixtures', 'usage.report', 'valid-unchecked.json'), 'utf8'));
+  sessions[0].opts.onEvent(msg, 'gw-1');
+  assert.equal(sup.status().unchecked.count, 1);
+  assert.ok(logs.some((l) => l.includes('audit down')));
+});
