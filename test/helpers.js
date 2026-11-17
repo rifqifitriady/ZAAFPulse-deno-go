@@ -237,4 +237,35 @@ function stubGlobal(name) {
   return { set, restore };
 }
 
-module.exports = { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, winEnv, NODE, stubGlobal };
+// A dated trace fixture copied so that it is recent: every ISO time in its files (YYYY-MM-DDTHH:MM:SS[.sss]Z) moves by the
+// same whole number of days, so its newest day becomes yesterday and the gaps between times stay. The dashboard's
+// session list reaches back 30 days at most (server.js /api/trace/sessions), so a fixture copied as dated falls out of
+// it a month after it was written. File names are copied as they are.
+function copyRecent(src, dest) {
+  const ISO = /\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z/g;
+  const files = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else files.push(p);
+    }
+  };
+  walk(src);
+  let newest = -Infinity;
+  for (const f of files)
+    for (const m of fs.readFileSync(f, 'utf8').match(ISO) || []) newest = Math.max(newest, Date.parse(m));
+  const DAY = 86400e3;
+  const yesterday = Math.floor(Date.now() / DAY) * DAY - DAY;
+  const shift = Number.isFinite(newest) ? yesterday - Math.floor(newest / DAY) * DAY : 0;
+  for (const f of files) {
+    const out = path.join(dest, path.relative(src, f));
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(
+      out,
+      fs.readFileSync(f, 'utf8').replace(ISO, (m) => new Date(Date.parse(m) + shift).toISOString()),
+    );
+  }
+}
+
+module.exports = { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, winEnv, NODE, stubGlobal, copyRecent };
