@@ -156,7 +156,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		return
 	}
 	if wait := e.limits.Take(p.Key.ID, p.Key.RPM, e.now()); wait > 0 {
-		write(w, RateLimited(p.Key, wait))
+		write(w, RateLimited(p.Key, wait, p.Shape))
 		return
 	}
 	// The budget (P4e Decision 13): the price rule, the snapshot, and the engine's own spend since it.
