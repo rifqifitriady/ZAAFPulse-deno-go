@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,8 +26,23 @@ type xlateRig struct {
 	opened   []int64
 	ended    []int64
 	spans    []ipc.TraceSpanBody
-	js       int // requests handed to the control plane
+	js       int         // requests handed to the control plane
+	onLine   func()      // called as each usage line is emitted, before it is kept (tests of the order)
+	written  atomic.Bool // the gateway wrote the head or a byte of the current answer
 }
+
+// markWriter marks the rig's written flag on the first head or byte the engine writes to the client.
+type markWriter struct {
+	http.ResponseWriter
+	written *atomic.Bool
+}
+
+func (m *markWriter) WriteHeader(code int) { m.written.Store(true); m.ResponseWriter.WriteHeader(code) }
+func (m *markWriter) Write(b []byte) (int, error) {
+	m.written.Store(true)
+	return m.ResponseWriter.Write(b)
+}
+func (m *markWriter) Unwrap() http.ResponseWriter { return m.ResponseWriter }
 
 type recordedLine struct {
 	call int64
@@ -74,6 +90,9 @@ func newXlateRig(t *testing.T, provider http.Handler, modes func(sub string) (bo
 	}
 	g.e.SetModes(modes)
 	g.e.SetCalls(g, func(r *ipc.UsageReport, call int64) (int64, error) {
+		if g.onLine != nil {
+			g.onLine()
+		}
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		g.lines = append(g.lines, recordedLine{call: call, rec: r.Record})
@@ -93,7 +112,8 @@ func newXlateRig(t *testing.T, provider http.Handler, modes func(sub string) (bo
 	})
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw := front.RawPath(r.RequestURI)
-		g.e.Serve(front.Classify(raw), w, r, raw, js)
+		g.written.Store(false)
+		g.e.Serve(front.Classify(raw), &markWriter{ResponseWriter: w, written: &g.written}, r, raw, js)
 	}))
 	t.Cleanup(gw.Close)
 	g.url = gw.URL
@@ -358,5 +378,37 @@ func TestCountBodyStallFallsBackToTheEstimate(t *testing.T) {
 	resp, body := g.post(ctx, t, "/v1/messages/count_tokens", `{"model":"an/claude-x","messages":[{"role":"user","content":"hello"}]}`)
 	if resp == nil || resp.StatusCode != 200 || !strings.HasPrefix(body, `{"input_tokens":`) || time.Since(t0) > 3*time.Second {
 		t.Fatalf("%v %q after %v", resp, body, time.Since(t0))
+	}
+}
+
+// Review I2 (deviation 19): a native count_tokens call writes no usage line, so it opens no journal entry.
+func TestNativeCountHasNoJournalEntry(t *testing.T) {
+	g := newXlateRig(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/messages/count_tokens") {
+			t.Errorf("unexpected provider call %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"input_tokens":42}`)
+	}), nil)
+	resp, body := g.post(context.Background(), t, "/v1/messages/count_tokens", `{"model":"an/claude-x","messages":[{"role":"user","content":"hi"}]}`)
+	if resp.StatusCode != 200 || body != `{"input_tokens":42}` {
+		t.Fatalf("%d %q", resp.StatusCode, body)
+	}
+	lines := g.settle(t, 0)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(lines) != 0 || len(g.opened) != 0 || len(g.ended) != 0 {
+		t.Fatalf("lines %d journal %v %v", len(lines), g.opened, g.ended)
+	}
+}
+
+// Review I2 (deviation 18): a whole answer's usage line goes out before the engine writes the client a byte, as chat's
+// does.
+func TestWholeAnswerLineBeforeTheAnswer(t *testing.T) {
+	g := newXlateRig(t, http.HandlerFunc(chatWhole), nil)
+	var before atomic.Bool
+	g.onLine = func() { before.Store(!g.written.Load()) }
+	resp, _ := g.post(context.Background(), t, "/v1/messages", `{"model":"oa/m1","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}`)
+	if resp.StatusCode != 200 || len(g.settle(t, 1)) != 1 || !before.Load() {
+		t.Fatalf("%d: the usage line went out after the answer was written", resp.StatusCode)
 	}
 }
