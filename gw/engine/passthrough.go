@@ -233,6 +233,9 @@ func (s *State) deliverNative(p *Plan, res ProviderResult, elapsed func() float6
 			_ = translate.ReadSSE(res.Body, onEvent)
 		}
 		readEvents(func(ev, data string) error {
+			if translateHook != nil {
+				translateHook("native-event")
+			}
 			o, perr := jsv.Parse([]byte(data))
 			if perr != nil || !jsv.Truthy(o) {
 				o = nil // JSON.parse failed, or a falsy value: passed on as it came, nothing read from it

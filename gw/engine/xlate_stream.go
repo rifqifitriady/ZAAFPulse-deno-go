@@ -19,7 +19,9 @@ import (
 )
 
 // translateHook, when set (tests only), runs at a translation step ("push": each chunk of a stream; "whole": a whole
-// answer's translation): a panic there shows the call still ends with its line (review I3).
+// answer's translation; "anthropic-whole" and "anthropic-event": the Anthropic leg's whole answer and each provider
+// event; "native-event": each event of a native passthrough stream): a panic there shows the call still ends with its
+// line (review I3, re-review 2).
 var translateHook func(stage string)
 
 // PingEvery is translated()'s ping interval for Anthropic clients (10 s); tests shorten it.

@@ -89,6 +89,9 @@ func anthropicWhole(env *translate.Env, raw []byte, clientModel string) (out []b
 	if err != nil {
 		return nil, "the provider's answer is not JSON"
 	}
+	if translateHook != nil {
+		translateHook("anthropic-whole")
+	}
 	o, err := env.AnthropicResponseToOpenAI(j, clientModel)
 	if err != nil {
 		return nil, err.Error()
@@ -117,6 +120,9 @@ func AnthropicToChatText(model string, body io.Reader, env *translate.Env) io.Re
 			o, err := jsv.Parse([]byte(data))
 			if err != nil {
 				return nil
+			}
+			if translateHook != nil {
+				translateHook("anthropic-event")
 			}
 			chunks, err := conv.Next(o)
 			if err != nil {

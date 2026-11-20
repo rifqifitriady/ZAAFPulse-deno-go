@@ -517,3 +517,52 @@ func TestCountCompleteBodyThenStallIsTheEstimate(t *testing.T) {
 		t.Fatalf("%v %q", resp, body)
 	}
 }
+
+// Re-review 2: the other recovered translation steps end the call as JS's catch does, with its line: the Anthropic
+// leg's whole answer (callChat throws: the 599 line and the 502), its stream conversion (the synthesized stream ends
+// without [DONE]: the 200 line), and a native passthrough's event reader (the stream ends: the 200 line).
+func TestRecoveredStepsStillWriteTheLine(t *testing.T) {
+	defer func() { translateHook = nil }()
+	anthropicSSE := func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Content-Type"), "json") {
+			t.Errorf("content type %q", r.Header.Get("Content-Type"))
+		}
+		var b struct{ Stream bool }
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		if !b.Stream {
+			_, _ = io.WriteString(w, `{"id":"msg_up","type":"message","model":"claude-x","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"model\":\"claude-x\",\"usage\":{\"input_tokens\":3}}}\n\n"+
+			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	}
+	for _, c := range []struct {
+		stage, path, body string
+		status            int
+		line              int64
+		notIn             string
+	}{
+		{"anthropic-whole", "/v1/chat/completions", `{"model":"an/claude-x","messages":[{"role":"user","content":"x"}]}`, 502, 599, ""},
+		{"anthropic-event", "/v1/chat/completions", `{"model":"an/claude-x","stream":true,"messages":[{"role":"user","content":"x"}]}`, 200, 200, "[DONE]"},
+		{"native-event", "/v1/messages", `{"model":"an/claude-x","stream":true,"max_tokens":5,"messages":[{"role":"user","content":"x"}]}`, 200, 200, "message_stop"},
+	} {
+		t.Run(c.stage, func(t *testing.T) {
+			g := newXlateRig(t, http.HandlerFunc(anthropicSSE), nil)
+			stage := c.stage
+			translateHook = func(s string) {
+				if s == stage {
+					panic("a port bug")
+				}
+			}
+			defer func() { translateHook = nil }()
+			resp, body := g.post(context.Background(), t, c.path, c.body)
+			if resp == nil || resp.StatusCode != c.status || (c.notIn != "" && strings.Contains(body, c.notIn)) {
+				t.Fatalf("%v %q", resp, body)
+			}
+			if lines := g.settle(t, 1); len(lines) != 1 || lines[0].rec.Status != c.line || lines[0].call == 0 {
+				t.Fatalf("%+v", lines)
+			}
+		})
+	}
+}
