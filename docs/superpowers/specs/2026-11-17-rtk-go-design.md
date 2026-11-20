@@ -81,7 +81,7 @@ Each one line, with the evidence that settled it.
 10. **Translation (P4d)**: on translated calls `Save` runs on the translated chat body (`openai` format) before
     `p.build` (which, for an Anthropic target, translates the chat body again); on the Anthropic passthrough it runs
     on `{...body, model: t.model}` (`anthropic` format) before the guard. Same pointers, same pending body.
-11. **A step budget**: `Save` runs under a `jsre.Budget` of `64 × units + 2^20` steps (units: the tool-result texts it
+11. **A step budget**: `Save` runs under a `jsre.Budget` of `64 × units + 2^24` steps (units: the tool-result texts it
     looks at) and a 2 s deadline; an overrun hands off with "token saver: over its step budget". JS has no limit; the
     hand-off keeps the answer exact (JS answers, slowly, as today). The ANSI pattern on a text full of `ESC ]` without a
     terminator is quadratic in both engines. Owner question 1.
@@ -131,6 +131,13 @@ Each one line, with the evidence that settled it.
 21. **A step-budget overrun hands the call to JS** (question 1). Go never sends a text unshortened that JS would have
     shortened: exact parity over speed. Decision 11 stands.
 22. **One shared `token-saver` switch** for every class (question 2), not one per class. Decision 13 stands.
+
+23. **The step budget's constant is 2^24, not 2^20** (measured while building Task 5, 2026-11-20). Three head
+    patterns run on the first 2048 units, and the `m` ones are quadratic there in both engines:
+    `^\s*\d+[\t|→]` lets `\s*` run across every following line. A tool result of 2048 or more blank lines costs
+    4.24M steps in Go (≈ 25-48 ms; V8 takes 38 ms on the same text). Under `64 × units + 2^20` every such result
+    would be handed to JS. With 2^24 the measured cap uses a quarter of the limit, the same headroom as the rest.
+    The owner's rule (answer 21: an overrun hands off) and the 2 s deadline are unchanged.
 
 ## Design
 
@@ -218,7 +225,7 @@ The compare goroutine: `if why := s.Save(p); why != "" { handoff line }` before 
 
 Answered on 2026-11-20 (Decisions 21–22); kept as asked.
 
-1. **Step-budget overrun.** A tool result that runs the saver past `64 × units + 2^20` regex steps or 2 s is handed to
+1. **Step-budget overrun.** A tool result that runs the saver past `64 × units + 2^20` regex steps (2^24 since Decision 23) or 2 s is handed to
    JS (exact, and as slow as today). The alternative is to send that one text unshortened from Go (fast, but the body
    then differs from what JS would send, and the shadow reports it). Default: hand off.
 2. **One `token-saver` switch for every class.** The saver's switch rule is one record fed by every class's compares
