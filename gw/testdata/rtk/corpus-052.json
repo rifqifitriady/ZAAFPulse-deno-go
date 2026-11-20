@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "[0/40] building\n[1/40] building\nCompiling crate2 v0.2.0\n[3/40] building\nCompiling crate4 v0.4.0\nCompiling crate5 v0.5.0\n[6/40] building\nCompiling crate7 v0.7.0\n[8/40] building\nCompiling crate9 v0.9.0\n[10/40] building\n[11/40] building\nCompiling crate12 v0.12.0\nCompiling crate13 v0.13.0\nCompiling crate14 v0.14.0\n[15/40] building\nCompiling crate16 v0.16.0\n[17/40] building\n[18/40] building\n[19/40] building\n[20/40] building\n[21/40] building\nCompiling crate22 v0.22.0\n[23/40] building\nCompiling crate24 v0.24.0\nCompiling crate24 v0.24.0\nCompiling crate24 v0.24.0\nCompiling crate24 v0.24.0\nCompiling crate24 v0.24.0\nCompiling crate29 v0.29.0\nCompiling crate30 v0.30.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate44 v0.44.0\n[45/40] building\n[46/40] building\n[47/40] building\nCompiling crate48 v0.48.0\nCompiling crate48 v0.48.0\nCompiling crate48 v0.48.0\nCompiling crate48 v0.48.0",
+    "Bash find . -name x"
+  ],
+  "out": {
+    "text": "(52 progress lines)\nCompiling crate24 v0.24.0\nCompiling crate24 v0.24.0\nCompiling crate29 v0.29.0\nCompiling crate30 v0.30.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate31 v0.31.0\nCompiling crate44 v0.44.0\n[45/40] building\n[46/40] building\n[47/40] building\nCompiling crate48 v0.48.0\nCompiling crate48 v0.48.0\nCompiling crate48 v0.48.0\nCompiling crate48 v0.48.0",
+    "filter": "build",
+    "saved": 541
+  }
+}

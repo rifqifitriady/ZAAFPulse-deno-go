@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "\u001b]8;;http://x/0\u0007link 0\u001b]8;;\u0007\n\u001b]8;;http://x/1\u0007link 1\u001b]8;;\u0007\n\u001b]8;;http://x/2\u0007link 2\u001b]8;;\u0007\n\u001b]8;;http://x/3\u0007link 3\u001b]8;;\u0007\n\u001b]8;;http://x/4\u0007link 4\u001b]8;;\u0007\n\u001b]8;;http://x/5\u0007link 5\u001b]8;;\u0007\n\u001b]8;;http://x/6\u0007link 6\u001b]8;;\u0007\n\u001b]8;;http://x/7\u0007link 7\u001b]8;;\u0007\n\u001b]8;;http://x/8\u0007link 8\u001b]8;;\u0007\n\u001b]8;;http://x/9\u0007link 9\u001b]8;;\u0007\n\u001b]8;;http://x/10\u0007link 10\u001b]8;;\u0007\n\u001b]8;;http://x/11\u0007link 11\u001b]8;;\u0007\n\u001b]8;;http://x/12\u0007link 12\u001b]8;;\u0007\n\u001b]8;;http://x/13\u0007link 13\u001b]8;;\u0007\n\u001b]8;;http://x/14\u0007link 14\u001b]8;;\u0007\n\u001b]8;;http://x/15\u0007link 15\u001b]8;;\u0007\n\u001b]8;;http://x/16\u0007link 16\u001b]8;;\u0007\n\u001b]8;;http://x/17\u0007link 17\u001b]8;;\u0007\n\u001b]8;;http://x/18\u0007link 18\u001b]8;;\u0007\n\u001b]8;;http://x/19\u0007link 19\u001b]8;;\u0007\n\u001b]8;;http://x/20\u0007link 20\u001b]8;;\u0007\n\u001b]8;;http://x/21\u0007link 21\u001b]8;;\u0007\n\u001b]8;;http://x/22\u0007link 22\u001b]8;;\u0007\n\u001b]8;;http://x/23\u0007link 23\u001b]8;;\u0007\n\u001b]8;;http://x/24\u0007link 24\u001b]8;;\u0007\n\u001b]8;;http://x/25\u0007link 25\u001b]8;;\u0007\n\u001b]8;;http://x/26\u0007link 26\u001b]8;;\u0007\n\u001b]8;;http://x/27\u0007link 27\u001b]8;;\u0007\n\u001b]8;;http://x/28\u0007link 28\u001b]8;;\u0007\n\u001b]8;;http://x/29\u0007link 29\u001b]8;;\u0007\n\u001b]8;;http://x/30\u0007link 30\u001b]8;;\u0007\n\u001b]8;;http://x/31\u0007link 31\u001b]8;;\u0007\n\u001b]8;;http://x/32\u0007link 32\u001b]8;;\u0007\n\u001b]8;;http://x/33\u0007link 33\u001b]8;;\u0007\n\u001b]8;;http://x/34\u0007link 34\u001b]8;;\u0007\n\u001b]8;;http://x/35\u0007link 35\u001b]8;;\u0007\n\u001b]8;;http://x/36\u0007link 36\u001b]8;;\u0007\n\u001b]8;;http://x/37\u0007link 37\u001b]8;;\u0007\n\u001b]8;;http://x/38\u0007link 38\u001b]8;;\u0007\n\u001b]8;;http://x/39\u0007link 39\u001b]8;;\u0007",
+    ""
+  ],
+  "out": {
+    "text": "link 0\nlink 1\nlink 2\nlink 3\nlink 4\nlink 5\nlink 6\nlink 7\nlink 8\nlink 9\nlink 10\nlink 11\nlink 12\nlink 13\nlink 14\nlink 15\nlink 16\nlink 17\nlink 18\nlink 19\nlink 20\nlink 21\nlink 22\nlink 23\nlink 24\nlink 25\nlink 26\nlink 27\nlink 28\nlink 29\nlink 30\nlink 31\nlink 32\nlink 33\nlink 34\nlink 35\nlink 36\nlink 37\nlink 38\nlink 39",
+    "filter": "ansi",
+    "saved": 910
+  }
+}

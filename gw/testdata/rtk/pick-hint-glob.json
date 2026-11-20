@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "",
+    "Glob"
+  ],
+  "out": "listing"
+}

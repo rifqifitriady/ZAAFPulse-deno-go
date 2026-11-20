@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "10:00:00 event 0\n10:00:01 event 1\n10:00:02 event 2\n10:00:03 event 3\n10:00:04 event 4\n10:00:05 event 5\n10:00:06 event 6\n10:00:07 event 7\n10:00:08 event 8\n10:00:09 event 9\n10:00:10 event 10\n10:00:11 event 11\n10:00:12 event 12\n10:00:13 event 13\n10:00:14 event 14\n10:00:15 event 15\n10:00:16 event 16\n10:00:17 event 17\n10:00:18 event 18\n10:00:19 event 19\n10:00:20 event 20\n10:00:21 event 21\n10:00:22 event 22\n10:00:23 event 23\n10:00:24 event 24\n10:00:25 event 25\n10:00:26 event 26\n10:00:27 event 27\n10:00:28 event 28\n10:00:29 event 29\n10:00:30 event 30\n10:00:31 event 31\n10:00:32 event 32\n10:00:33 event 33\n10:00:34 event 34\n10:00:35 event 35\n10:00:36 event 36\n10:00:37 event 37\n10:00:38 event 38\n10:00:39 event 39\n10:00:40 event 40\n10:00:41 event 41\n10:00:42 event 42\n10:00:43 event 43\n10:00:44 event 44\n10:00:45 event 45\n10:00:46 event 46\n10:00:47 event 47\n10:00:48 event 48\n10:00:49 event 49",
+    ""
+  ],
+  "out": null
+}

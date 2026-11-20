@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "node_modules/p0/index.js\nnode_modules/p1/index.js\nnode_modules/p2/index.js\nnode_modules/p3/index.js\nnode_modules/p4/index.js\nnode_modules/p5/index.js\nnode_modules/p6/index.js\nnode_modules/p7/index.js\nnode_modules/p8/index.js\nnode_modules/p9/index.js\nnode_modules/p10/index.js\nnode_modules/p11/index.js\nnode_modules/p12/index.js\nnode_modules/p13/index.js\nnode_modules/p14/index.js\nnode_modules/p15/index.js\nnode_modules/p16/index.js\nnode_modules/p17/index.js\nnode_modules/p18/index.js\nnode_modules/p19/index.js\nnode_modules/p20/index.js\nnode_modules/p21/index.js\nnode_modules/p22/index.js\nnode_modules/p23/index.js\nnode_modules/p24/index.js\nnode_modules/p25/index.js\nnode_modules/p26/index.js\nnode_modules/p27/index.js\nnode_modules/p28/index.js\nnode_modules/p29/index.js\nnode_modules/p30/index.js\nnode_modules/p31/index.js\nnode_modules/p32/index.js\nnode_modules/p33/index.js\nnode_modules/p34/index.js\nnode_modules/p35/index.js\nnode_modules/p36/index.js\nnode_modules/p37/index.js\nnode_modules/p38/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p39/index.js\nnode_modules/p51/index.js\nnode_modules/p52/index.js\nnode_modules/p53/index.js\nnode_modules/p54/index.js\nnode_modules/p55/index.js\nnode_modules/p56/index.js\nnode_modules/p57/index.js\nnode_modules/p58/index.js\nnode_modules/p59/index.js\nnode_modules/p60/index.js\nnode_modules/p61/index.js\nnode_modules/p62/index.js\nnode_modules/p63/index.js",
+    "Bash rg foo | head"
+  ],
+  "out": {
+    "text": "node_modules/p0/index.js\nnode_modules/p1/index.js\nnode_modules/p2/index.js\nnode_modules/p3/index.js\nnode_modules/p4/index.js\nnode_modules/p5/index.js\nnode_modules/p6/index.js\nnode_modules/p7/index.js\nnode_modules/p8/index.js\nnode_modules/p9/index.js\nnode_modules/p10/index.js\nnode_modules/p11/index.js\nnode_modules/p12/index.js\nnode_modules/p13/index.js\nnode_modules/p14/index.js\nnode_modules/p15/index.js\nnode_modules/p16/index.js\nnode_modules/p17/index.js\nnode_modules/p18/index.js\nnode_modules/p19/index.js",
+    "filter": "grep",
+    "saved": 1144
+  }
+}

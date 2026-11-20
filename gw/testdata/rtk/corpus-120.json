@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "src/dir0/file0.js:0:0: match 0\ncommit f4119fe93cd790d05bd117c9a2217530be93c389\ncommit cc81a37e04ee117adbc76e000e8b5f4ced5c19d6\ncommit 9c724f17d7768cf0cd24c742ce60efa23489cae9\ncommit 55754ed7821d88d42a77d45adcd4704e87177f14\ncommit 54988b20e5e922856545b6cafe4ffa31cd03bebc\nsrc/dir1/file6.js:6:6: match 6\ncommit 91965f9457716169f787bd68f0a30e0adfccef38\nsrc/dir3/file8.js:8:8: match 8\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir4/file0.js:9:9: match 9\nsrc/dir0/file7.js:25:25: match 25\nsrc/dir1/file8.js:26:26: match 26\nsrc/dir2/file0.js:27:27: match 27\nsrc/dir3/file1.js:28:28: match 28\ncommit 90bb76655452ff12bf627b32301d24ef32e7b166\ncommit fdf4ada445018f3c632dd3924644e6ca188cb421\ncommit 2f1e05b084ff9b5c2073f4bf9d7200dffd33fc7b\nsrc/dir2/file5.js:32:32: match 32",
+    "cat"
+  ],
+  "out": {
+    "text": "commit f4119fe93cd790d05bd117c9a2217530be93c389\ncommit cc81a37e04ee117adbc76e000e8b5f4ced5c19d6\ncommit 9c724f17d7768cf0cd24c742ce60efa23489cae9\ncommit 55754ed7821d88d42a77d45adcd4704e87177f14\ncommit 54988b20e5e922856545b6cafe4ffa31cd03bebc\ncommit 91965f9457716169f787bd68f0a30e0adfccef38\ncommit 90bb76655452ff12bf627b32301d24ef32e7b166\ncommit fdf4ada445018f3c632dd3924644e6ca188cb421\ncommit 2f1e05b084ff9b5c2073f4bf9d7200dffd33fc7b",
+    "filter": "git-log",
+    "saved": 759
+  }
+}

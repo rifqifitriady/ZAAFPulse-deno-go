@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "[98014,\"wwwww\",[\"wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww\"]]",
+    ""
+  ],
+  "out": null
+}

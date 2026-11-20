@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "same repeated line\r\nsame repeated line\r\nsame repeated line\r\n nbsp 3 ls\r\n nbsp 4 ls\r\nsame repeated line\r\nsame repeated line\r\n nbsp 7 ls\r\n nbsp 8 ls\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\n nbsp 12 ls\r\n nbsp 13 ls\r\nsame repeated line\r\n nbsp 15 ls\r\nsame repeated line\r\nsame repeated line\r\n nbsp 18 ls\r\n nbsp 19 ls\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\n nbsp 23 ls\r\n nbsp 24 ls\r\nsame repeated line\r\nsame repeated line\r\n nbsp 27 ls\r\nsame repeated line\r\n nbsp 29 ls\r\n nbsp 30 ls\r\n nbsp 31 ls\r\nsame repeated line\r\nsame repeated line\r\n nbsp 34 ls\r\nsame repeated line\r\n nbsp 36 ls\r\n nbsp 37 ls\r\n nbsp 38 ls\r\n nbsp 39 ls\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\n nbsp 55 ls\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\n nbsp 87 ls\r\nsame repeated line\r\nsame repeated line\r\n nbsp 90 ls\r\n nbsp 91 ls\r\n nbsp 92 ls\r\n nbsp 93 ls\r\nsame repeated line\r\n nbsp 95 ls\r\nsame repeated line",
+    "Glob **/*.ts"
+  ],
+  "out": {
+    "text": "same repeated line\r\nsame repeated line\r\nsame repeated line\r\n nbsp 3 ls\r\n nbsp 4 ls\r\nsame repeated line\r\nsame repeated line\r\n nbsp 7 ls\r\n nbsp 8 ls\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\n  … 85 more in . omitted",
+    "filter": "listing",
+    "saved": 1331
+  }
+}
