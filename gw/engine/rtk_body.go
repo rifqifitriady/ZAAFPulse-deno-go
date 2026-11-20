@@ -206,7 +206,7 @@ func (j *saverJob) budget(now time.Time) *jsre.Budget {
 	for _, t := range j.targets {
 		n += int64(units(t.holder.Get(t.key).S))
 	}
-	return &jsre.Budget{Limit: 64*n + 1<<20, Deadline: now.Add(2 * time.Second)}
+	return &jsre.Budget{Limit: 64*n + 1<<24, Deadline: now.Add(2 * time.Second)}
 }
 
 // run shortens every target in place. A hand-off reason leaves the body half done: the plan is dropped then.

@@ -88,10 +88,20 @@ func headTail(ls [][]uint16, head, tail int) [][]uint16 {
 // line goes (also a leading one: rtk.js reads a[-1] as the empty string).
 func dedupe(ls [][]uint16, b *jsre.Budget) [][]uint16 {
 	hash, zero := u16("#"), u16("0")
+	toHash := func([]int) []uint16 { return hash }
+	toZero := func([]int) []uint16 { return zero }
+	// The keys are built in two scratch buffers reused for every line (prev keeps its own copy): a 10 MiB log would
+	// otherwise allocate two keys per line (spec D19).
+	var bufA, bufB []uint16
+	keep := func(buf *[]uint16, k, src []uint16) []uint16 {
+		if len(k) > 0 && (len(src) == 0 || &k[0] != &src[0]) {
+			*buf = k[:0] // a replacement wrote a new buffer: reuse its storage next time
+		}
+		return k
+	}
 	key := func(l []uint16) []uint16 {
-		k := rtkHexID.ReplaceAllB(l, func([]int) []uint16 { return hash }, b)
-		k = rtkDigits.ReplaceAllB(k, func([]int) []uint16 { return zero }, b)
-		return trim16(k)
+		k := keep(&bufA, rtkHexID.ReplaceAllInto(bufA, l, toHash, b), l)
+		return trim16(keep(&bufB, rtkDigits.ReplaceAllInto(bufB, k, toZero, b), k))
 	}
 	var out [][]uint16
 	var prev []uint16
@@ -110,7 +120,7 @@ func dedupe(ls [][]uint16, b *jsre.Budget) [][]uint16 {
 		}
 		flush()
 		out = append(out, l)
-		prev, have, run = k, true, 1
+		prev, have, run = append(prev[:0], k...), true, 1
 	}
 	flush()
 	res := make([][]uint16, 0, len(out))
@@ -218,13 +228,15 @@ func filterBuild(t []uint16, b *jsre.Budget) []uint16 {
 
 type group struct {
 	name  []uint16
-	lines [][]uint16
+	lines [][]uint16 // the first `keep` lines: the filters print no more of a group (spec D19)
+	n     int        // every line of the group
 }
 
-// groups keeps insertion order, as a JS Map does.
+// groups keeps insertion order, as a JS Map does. keep is how many lines of a group the filter prints.
 type groups struct {
 	order []*group
 	index map[string]*group
+	keep  int
 }
 
 func (g *groups) add(name, line []uint16) {
@@ -238,42 +250,50 @@ func (g *groups) add(name, line []uint16) {
 		g.index[k] = x
 		g.order = append(g.order, x)
 	}
-	x.lines = append(x.lines, line)
+	if x.n < g.keep {
+		x.lines = append(x.lines, line)
+	}
+	x.n++
 }
 
 func filterGrep(t []uint16, b *jsre.Budget) []uint16 {
-	var by groups
-	var other [][]uint16
-	for _, l := range splitNL(t) {
+	by := groups{keep: 10}
+	var other [][]uint16 // the first 20: the filter prints no more
+	eachLine(t, func(l []uint16) {
 		b.Charge(1)
-		if m := rtkGrepLine.ExecB(l, 0, b); m != nil {
-			by.add(l[m[2]:m[3]], l)
-		} else if !blank(l) {
+		matched := false
+		rtkGrepLine.EachB(l, b, func(m []int) { // ^ without m: at most one match, at 0
+			if !matched {
+				matched = true
+				by.add(l[m[2]:m[3]], l)
+			}
+		})
+		if !matched && !blank(l) && len(other) < 20 {
 			other = append(other, l)
 		}
-	}
+	})
 	var out [][]uint16
 	for i, g := range by.order {
 		if i+1 > 40 {
 			out = append(out, omitted(len(by.order)-40, "more files"))
 			break
 		}
-		out = append(out, g.lines[:min(len(g.lines), 10)]...)
-		if len(g.lines) > 10 {
-			out = append(out, omittedIn(len(g.lines)-10, cat(u16("more matches in "), g.name)))
+		out = append(out, g.lines...)
+		if g.n > 10 {
+			out = append(out, omittedIn(g.n-10, cat(u16("more matches in "), g.name)))
 		}
 	}
-	out = append(out, other[:min(len(other), 20)]...)
+	out = append(out, other...)
 	return joinNL(out)
 }
 
 func filterListing(t []uint16, b *jsre.Budget) []uint16 {
-	var by groups
-	for _, l := range splitNL(t) {
+	by := groups{keep: 12}
+	eachLine(t, func(l []uint16) {
 		b.Charge(1)
 		p := trim16(l)
 		if len(p) == 0 || rtkNoiseDirs.TestB(p, b) {
-			continue
+			return
 		}
 		if m := rtkListPrefix.ExecB(p, 0, b); m != nil {
 			p = cat(p[:m[0]], p[m[1]:])
@@ -283,16 +303,16 @@ func filterListing(t []uint16, b *jsre.Budget) []uint16 {
 			dir = p[:i]
 		}
 		by.add(dir, l)
-	}
+	})
 	var out [][]uint16
 	for i, g := range by.order {
 		if i+1 > 40 {
 			out = append(out, omitted(len(by.order)-40, "more folders"))
 			break
 		}
-		out = append(out, g.lines[:min(len(g.lines), 12)]...)
-		if len(g.lines) > 12 {
-			out = append(out, omittedIn(len(g.lines)-12, cat(u16("more in "), g.name)))
+		out = append(out, g.lines...)
+		if g.n > 12 {
+			out = append(out, omittedIn(g.n-12, cat(u16("more in "), g.name)))
 		}
 	}
 	return joinNL(out)

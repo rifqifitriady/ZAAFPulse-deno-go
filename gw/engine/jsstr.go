@@ -48,6 +48,18 @@ func splitNL(t []uint16) [][]uint16 {
 	return append(out, t[start:len(t):len(t)])
 }
 
+// eachLine calls f with each part of split('\n') in order, without building the list (spec D19).
+func eachLine(t []uint16, f func(l []uint16)) {
+	start := 0
+	for i, c := range t {
+		if c == '\n' {
+			f(t[start:i:i])
+			start = i + 1
+		}
+	}
+	f(t[start:len(t):len(t)])
+}
+
 // joinNL is Array.prototype.join('\n').
 func joinNL(ls [][]uint16) []uint16 {
 	n := 0
