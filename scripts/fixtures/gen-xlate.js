@@ -240,6 +240,10 @@ const CASES = [
   ['msg-price-402', 'messages', '/v1/messages', { key: 'k3' }, msgs('oa/nopr'), chatOk()],
   ['msg-rate-limited', 'messages', '/v1/messages', { key: 'k4', rateLimited: true }, msgs('oa/m1'), chatOk()],
 
+  ['msg-stream-204', 'messages', '/v1/messages', {}, msgs('oa/m1', { stream: true }), { status: 204, nullBody: true }],
+  ['msg-stream-205-json', 'messages', '/v1/messages', {}, msgs('oa/m1', { stream: true }), { status: 205, nullBody: true, headers: { 'content-type': 'application/json' } }],
+  ['chat-an-stream-204', 'chatAnthropic', '/v1/chat/completions', {}, { model: 'an/claude-x', stream: true, messages: user() }, { status: 204, nullBody: true }],
+
   /* /v1/messages native passthrough */
   ['msg-native-whole', 'messages', '/v1/messages', { headers: { 'anthropic-version': '2023-06-01', 'anthropic-beta': 'context-1m' } }, msgs('an/claude-x'), anMsg()],
   ['msg-native-stream', 'messages', '/v1/messages', {}, msgs('an/claude-x', { stream: true }), anStream('event: content_block_delta\ndata: not json\n\n')],
@@ -264,6 +268,8 @@ const CASES = [
   ['resp-native-modelmap', 'responses', '/v1/responses', {}, { model: 'gpt-codex-9', input: 'hi' }, respOk()],
   ['resp-native-stream', 'responses', '/v1/responses', {}, { model: 'op/gpt-6.1', input: 'hi', stream: true }, respStream()],
   ['resp-native-400', 'responses', '/v1/responses', {}, { model: 'op/gpt-6.1', input: 'hi' }, json(400, { error: { message: 'no such thing', type: 'invalid_request_error' } })],
+  ['resp-native-stream-204', 'responses', '/v1/responses', {}, { model: 'op/gpt-6.1', input: 'hi', stream: true }, { status: 204, nullBody: true }],
+  ['msg-native-stream-205', 'messages', '/v1/messages', {}, msgs('an/claude-x', { stream: true }), { status: 205, nullBody: true }],
   ['resp-native-throw', 'responses', '/v1/responses', {}, { model: 'gpt-codex-9', input: 'hi' }, { throw: 'ECONNRESET' }],
   ['resp-native-guard-redact', 'responses', '/v1/responses', { guardrails: { ...OFF, secrets: 'redact' } }, { model: 'op/gpt-6.1', input: `key ${ANT}` }, respOk()],
 
@@ -355,6 +361,7 @@ function main() {
     if (!p) throw new Error('no provider in this case');
     if (p.throw === 'timeout') throw Object.assign(new Error('aborted'), { name: 'AbortError' });
     if (p.throw) throw Object.assign(new TypeError('fetch failed'), { cause: { code: p.throw } });
+    if (p.nullBody) return new Response(null, { status: p.status, headers: p.headers || {} }); // 204, 205: no body
     if (p.chunks) {
       const pieces = p.chunks.map((c) => Buffer.from(c, 'utf8'));
       let i = 0;

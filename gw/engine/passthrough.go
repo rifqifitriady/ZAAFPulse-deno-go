@@ -215,7 +215,10 @@ func (s *State) deliverNative(p *Plan, res ProviderResult, elapsed func() float6
 		}
 		return writeAnswer(w, a)
 	}
-	if !p.Stream || !ok2xx(res.Status) {
+	// anthropicPassthrough streams any 2xx (its body may be null: the read throws inside its catch, an empty stream);
+	// responsesPassthrough answers whole when fetch gives no body (`!r.body`: 204, 205; review m2).
+	whole := !p.Stream || !ok2xx(res.Status) || (p.Upstream == UpResponsesNative && !StreamsBody(res.Status))
+	if whole {
 		raw, _ := io.ReadAll(res.Body)
 		return writeAnswer(w, s.RespondNative(p, res.Status, raw, elapsed()))
 	}

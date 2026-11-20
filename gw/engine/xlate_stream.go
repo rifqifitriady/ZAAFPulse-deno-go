@@ -201,6 +201,20 @@ func panicText(v any) string {
 	return fmt.Sprint(v)
 }
 
+// RunNoBody is translated()'s stream for a 2xx without a body (204, 205): r.json() of no body throws "Unexpected end
+// of JSON input" under a JSON content type, else pumpChunks' readSse(null) throws a TypeError reading getReader; the
+// client gets the error event, the line no tokens (review m2).
+func (t *TranslatedStream) RunNoBody(contentType string, write func(string) error) {
+	msg := "Cannot read properties of null (reading 'getReader')"
+	if strings.Contains(contentType, "json") {
+		msg = "Unexpected end of JSON input"
+	}
+	if t.beforeEnd != nil {
+		t.beforeEnd()
+	}
+	_ = write(t.out.Error(t.s.mask(msg)))
+}
+
 // readError is an error's message as the JS catch reads it; a provider that breaks off reads "terminated".
 func readError(err error) string {
 	var te *jsv.TypeError
@@ -232,7 +246,7 @@ func (t *TranslatedStream) Line(ms float64) ipc.UsageRecord {
 func (s *State) deliverTranslatedStream(p *Plan, res ProviderResult, elapsed func() float64, w ClientWriter) *ipc.UsageRecord {
 	body, contentType := io.Reader(res.Body), res.Header.Get("Content-Type")
 	if p.Upstream == UpAnthropic {
-		r := AnthropicToChatText(p.ClientModel, res.Body, p.Env)
+		r := anthropicText(res.Status, p.ClientModel, res.Body, p.Env)
 		defer r.Close()
 		body, contentType = r, "text/event-stream"
 	}
@@ -246,7 +260,11 @@ func (s *State) deliverTranslatedStream(p *Plan, res ProviderResult, elapsed fun
 				w.Pinger(ping)
 				ts.beforeEnd = w.StopPings
 			}
-			ts.Run(body, contentType, write)
+			if p.Upstream != UpAnthropic && !StreamsBody(res.Status) {
+				ts.RunNoBody(contentType, write) // 204, 205: fetch gives no body (review m2)
+			} else {
+				ts.Run(body, contentType, write)
+			}
 		}
 		w.StopPings()
 	}
