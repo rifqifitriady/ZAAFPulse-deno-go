@@ -22,12 +22,13 @@ type ProviderResult struct {
 }
 
 // ClientWriter is where Deliver writes: the head once, then the bytes (each Write is flushed). Pinger starts the
-// keep-alive events of a stream (ping gives the text): the writer sends one every PingEvery between writes, until the
-// stream ends; a writer that does not ping ignores it.
+// keep-alive events of a stream (ping gives the text): the writer sends one every PingEvery between writes until
+// StopPings, which Deliver calls before the stream's last event; a writer that does not ping ignores both.
 type ClientWriter interface {
 	Head(status int, h http.Header) error
 	Write(b []byte) error
 	Pinger(ping func() string)
+	StopPings()
 }
 
 // errNotServed: Deliver was given a plan it has no answer builder for (a bug: the planner and Deliver disagree).

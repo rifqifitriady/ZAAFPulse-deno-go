@@ -71,3 +71,42 @@ func (w *goneWriter) Write(b []byte) error {
 	}
 	return w.recordWriter.Write(b)
 }
+
+// eventWriter records the order of what Deliver does: the head, each write, the pinger's start and stop.
+type eventWriter struct {
+	recordWriter
+	events []string
+}
+
+func (w *eventWriter) Write(b []byte) error {
+	w.events = append(w.events, "write:"+strings.SplitN(string(b), "\n", 2)[0])
+	return w.recordWriter.Write(b)
+}
+func (w *eventWriter) Pinger(func() string) { w.events = append(w.events, "pinger") }
+func (w *eventWriter) StopPings()           { w.events = append(w.events, "stop") }
+
+// Review m1: the pings start after the opening event (JS writes open before any interval fires) and stop before the
+// final event (JS clears the interval as the stream ends), on the clean end and on an error.
+func TestPingerAfterOpenAndStoppedBeforeTheEnd(t *testing.T) {
+	for _, name := range []string{"msg-oa-stream.json", "msg-stream-error-chunk.json"} {
+		var f xlateFixture
+		for _, x := range loadXlate(t) {
+			if x.Name == name {
+				f = x
+			}
+		}
+		s, p := planXlate(t, f)
+		w := &eventWriter{}
+		s.Deliver(&p, providerOf(f.In, nil), func() float64 { return 1 }, w)
+		ev := w.events
+		last := -1
+		for i, e := range ev {
+			if strings.HasPrefix(e, "write:") {
+				last = i
+			}
+		}
+		if len(ev) < 4 || ev[0] != "write:event: message_start" || ev[1] != "pinger" || last < 1 || ev[last-1] != "stop" {
+			t.Fatalf("%s: %v", name, ev)
+		}
+	}
+}

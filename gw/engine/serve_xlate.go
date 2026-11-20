@@ -120,13 +120,17 @@ func (h *httpWriter) Pinger(ping func() string) {
 	}()
 }
 
-// end stops the pings.
-func (h *httpWriter) end() {
+// StopPings stops the pings and waits for a ping being written; calling it again does nothing.
+func (h *httpWriter) StopPings() {
 	if h.stop != nil {
 		close(h.stop)
 		h.pinged.Wait()
+		h.stop = nil
 	}
 }
+
+// end stops the pings (a stream that ended without its last event).
+func (h *httpWriter) end() { h.StopPings() }
 
 // commit writes a held whole answer.
 func (h *httpWriter) commit(gone bool) {
