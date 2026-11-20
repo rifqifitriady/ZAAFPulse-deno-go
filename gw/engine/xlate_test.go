@@ -196,6 +196,7 @@ func (w *recordWriter) Head(status int, h http.Header) error {
 }
 func (w *recordWriter) Write(b []byte) error { w.body.Write(b); return nil }
 func (w *recordWriter) Pinger(func() string) {}
+func (w *recordWriter) StopPings()           {}
 
 // xlateRequestOf is the fixture's client request, from a loopback client to a loopback Host.
 func xlateRequestOf(c xlateCase) *Request {

@@ -74,6 +74,7 @@ func (w *bufferWriter) Head(status int, h http.Header) error {
 }
 func (w *bufferWriter) Write(b []byte) error { w.body.Write(b); return nil }
 func (w *bufferWriter) Pinger(func() string) {}
+func (w *bufferWriter) StopPings()           {}
 
 // cutReader gives the captured text, then ErrCut when the provider broke off.
 func cutReader(a ProviderAnswer) io.Reader {

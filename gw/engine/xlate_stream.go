@@ -40,6 +40,8 @@ type TranslatedStream struct {
 	open    func() string
 	ping    func() string
 	elapsed func() float64
+	// beforeEnd runs before the stream's last event (the finish or an error): the pings stop there (review m1).
+	beforeEnd func()
 	// The line's facts: set only when the provider's answer was read to its end (JS keeps its first result
 	// otherwise: no ttft and no tokens after an error).
 	ttft           *float64
@@ -92,9 +94,15 @@ func (t *TranslatedStream) Run(body io.Reader, contentType string, write func(st
 	}
 	// A panic in a translation step (a port bug) ends the stream as JS's catch ends a TypeError: an error event, and
 	// the line without a time to the first token or tokens (review I3). The call stays metered.
+	end := func() {
+		if t.beforeEnd != nil {
+			t.beforeEnd()
+		}
+	}
 	defer func() {
 		if v := recover(); v != nil {
 			t.ttft, t.in, t.ou, t.cached = nil, 0, 0, 0
+			end()
 			_ = put(t.out.Error(t.s.mask(panicText(v))))
 		}
 	}()
@@ -171,11 +179,13 @@ func (t *TranslatedStream) Run(body io.Reader, contentType string, write func(st
 		return
 	}
 	if err != nil {
+		end()
 		_ = put(t.out.Error(t.s.mask(readError(err))))
 		return
 	}
 	t.ttft, t.in, t.ou, t.cached = ttft, in, ou, cached
 	f, ferr := t.out.Finish()
+	end()
 	if ferr != nil {
 		_ = put(t.out.Error(t.s.mask(ferr.Error())))
 		return
@@ -228,13 +238,17 @@ func (s *State) deliverTranslatedStream(p *Plan, res ProviderResult, elapsed fun
 	}
 	ts := s.NewTranslatedStream(p, elapsed)
 	if w.Head(http.StatusOK, droppedHeader(sseHeader(), p)) == nil {
-		if ping := ts.Ping(); ping != nil {
-			w.Pinger(ping)
-		}
 		write := func(s string) error { return w.Write([]byte(s)) }
+		// The opening event first, then the pings (JS's interval cannot fire before open is written); they stop before
+		// the last event (review m1).
 		if open := ts.Open(); open == "" || write(open) == nil {
+			if ping := ts.Ping(); ping != nil {
+				w.Pinger(ping)
+				ts.beforeEnd = w.StopPings
+			}
 			ts.Run(body, contentType, write)
 		}
+		w.StopPings()
 	}
 	return lineOf(ts.Line(elapsed()))
 }
