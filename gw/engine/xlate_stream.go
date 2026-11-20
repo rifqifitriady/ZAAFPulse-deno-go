@@ -103,6 +103,7 @@ func (t *TranslatedStream) Run(body io.Reader, contentType string, write func(st
 	}
 	defer func() {
 		if v := recover(); v != nil {
+			t.s.recovered("a translated stream", v)
 			t.ttft, t.in, t.ou, t.cached = nil, 0, 0, 0
 			end()
 			_ = put(t.out.Error(t.s.mask(panicText(v))))
@@ -248,7 +249,7 @@ func (t *TranslatedStream) Line(ms float64) ipc.UsageRecord {
 func (s *State) deliverTranslatedStream(p *Plan, res ProviderResult, elapsed func() float64, w ClientWriter) *ipc.UsageRecord {
 	body, contentType := io.Reader(res.Body), res.Header.Get("Content-Type")
 	if p.Upstream == UpAnthropic {
-		r := anthropicText(res.Status, p.ClientModel, res.Body, p.Env)
+		r := anthropicText(res.Status, p.ClientModel, res.Body, p.Env, s.onPanic("the Anthropic leg's stream"))
 		defer r.Close()
 		body, contentType = r, "text/event-stream"
 	}

@@ -155,7 +155,12 @@ func New(up *Upstream, emit func(*ipc.UsageReport) (int64, error), logf func(str
 func (e *Engine) SetStaleMs(ms int64) { e.staleMs = ms }
 
 // SetState installs a generation (nil: none yet; every request is handed to the control plane).
-func (e *Engine) SetState(s *State) { e.state.Store(s) }
+func (e *Engine) SetState(s *State) {
+	if s != nil {
+		s.logf = e.logf // the generation logs recovered panics through the engine's log (P4d re-review 3)
+	}
+	e.state.Store(s)
+}
 
 // State is the current generation, or nil.
 func (e *Engine) State() *State { return e.state.Load() }

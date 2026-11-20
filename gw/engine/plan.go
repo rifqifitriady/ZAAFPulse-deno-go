@@ -6,6 +6,7 @@ package engine
 
 import (
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -163,6 +164,17 @@ func utf16Units(s string) int {
 	}
 	return n
 }
+
+// recovered logs a panic a translation step recovered from, with its value and stack, so a port bug is not silent
+// (P4d re-review 3); the call itself ends as JS's catch ends it.
+func (s *State) recovered(where string, v any) {
+	if s != nil && s.logf != nil {
+		s.logf("go engine: a panic in %s was recovered; the call ended as JS's catch ends it: %v\n%s", where, v, debug.Stack())
+	}
+}
+
+// onPanic is recovered for one place, as a callback.
+func (s *State) onPanic(where string) func(any) { return func(v any) { s.recovered(where, v) } }
 
 // tokenSaverOn is lib/gateway/index.js tokenSaverOn.
 func (s *State) tokenSaverOn(r *Request) bool {

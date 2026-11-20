@@ -229,7 +229,11 @@ func (s *State) deliverNative(p *Plan, res ProviderResult, elapsed func() float6
 		// A panic in reading the events (a port bug) ends the stream as the passthrough's catch does: the line with
 		// what was seen (review I3).
 		readEvents := func(onEvent func(ev, data string) error) {
-			defer func() { _ = recover() }()
+			defer func() {
+				if v := recover(); v != nil {
+					s.recovered("a passthrough's event reader", v)
+				}
+			}()
 			_ = translate.ReadSSE(res.Body, onEvent)
 		}
 		readEvents(func(ev, data string) error {
