@@ -84,7 +84,7 @@ type Result struct {
 
 // Start sends the plan's request and returns the provider's answer once its headers are in, its body unread, or Why the
 // call failed. Closing the answer's body ends the call. ctx ends when the client goes away. The 120 s limit covers
-// the headers only; the body has none, as in JS.
+// the headers only; the body has none, as in JS. A plan's own limit (Plan.Timeout) covers the body too.
 func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) {
 	ctx, cancel := context.WithCancel(ctx)
 	var timedOut atomic.Bool
@@ -117,6 +117,12 @@ func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) 
 		}
 		loc := resp.Header.Get("Location")
 		if resp.StatusCode < 300 || resp.StatusCode >= 400 || loc == "" {
+			if p.Timeout > 0 {
+				// A plan's own limit bounds the whole call, its body included, as an AbortSignal.timeout passed to fetch
+				// does (count_tokens, P4d review I1): the timer runs on and is stopped when the body is closed.
+				resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: func() { timer.Stop(); cancel() }}
+				return resp, ""
+			}
 			timer.Stop() // the answer has started: the body has no time limit, as in JS
 			resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: cancel}
 			return resp, ""
