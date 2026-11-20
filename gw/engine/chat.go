@@ -128,6 +128,7 @@ type Plan struct {
 	Self        *Answer
 	Timeout     time.Duration
 	Detached    bool
+	buildErr    error // the provider body could not be built from the checked body (the Anthropic leg, review m3)
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }

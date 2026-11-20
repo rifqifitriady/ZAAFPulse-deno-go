@@ -7,7 +7,9 @@ package engine
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"net/http"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate/jsv"
@@ -16,23 +18,50 @@ import (
 // anthropicBuild is callChat's request: { ...rest, model: t.model } without stream_options, through
 // openAIToAnthropicRequest, as JSON.stringify writes it (no adaptChat). nil when the translation throws.
 func anthropicBuild(p *Plan, body *Value) []byte {
-	return anthropicRequest(p.Target, body)
+	b, err := anthropicTranslate(p.Target, body)
+	if err != nil {
+		p.buildErr = err // the guardrails' redacted body does not translate: answered without a provider call (m3)
+	}
+	return b
 }
 
-// anthropicRequest is anthropicBuild for a target.
+// anthropicRequest is anthropicBuild for a target (nil when the translation throws).
 func anthropicRequest(t *Target, body *Value) []byte {
+	b, _ := anthropicTranslate(t, body)
+	return b
+}
+
+func anthropicTranslate(t *Target, body *Value) ([]byte, error) {
 	out := body.Clone()
 	out.Delete("stream_options")
 	out.Set("model", Str(t.Model))
 	req, err := translate.OpenAIToAnthropicRequest(toJSV(out))
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	b, ok := jsv.Stringify(req)
 	if !ok {
-		return nil
+		return nil, errors.New("the request cannot be written as JSON")
 	}
-	return []byte(b)
+	return []byte(b), nil
+}
+
+// buildRefusal is callChat's throw when the body cannot be translated for the provider (review m3): a translation 400
+// is rethrown by proxyChat (the route's 400 in the client's shape, no line); any other error is a failed target (the 599
+// line with the error's text, then the 502 with it masked).
+func (s *State) buildRefusal(p *Plan, ms float64) Answer {
+	var bad *translate.BadRequest
+	if errors.As(p.buildErr, &bad) {
+		return shapeError(p.Shape, http.StatusBadRequest, bad.Message, "invalid_request_error", "", "")
+	}
+	msg := p.buildErr.Error()
+	rec := p.Base
+	rec.RoutedTo, rec.Guard, rec.Requested, rec.SavedTokens = nil, nil, nil, nil
+	rec.Status, rec.Ms, rec.Error = 599, ms, &msg
+	rec.Input, rec.Output, rec.Cached, rec.Cost = nil, nil, nil, 0
+	a := shapeError(p.Shape, http.StatusBadGateway, s.mask(msg), "upstream_error", "", "")
+	a.Usage, a.NoLine = rec, false
+	return a
 }
 
 // planAnthropicLeg turns a plan's provider request into the Anthropic leg. The translation is tried once here: one

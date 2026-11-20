@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/front"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate/jsv"
 )
 
 // xlateRig serves the P4d classes through Engine.Serve with every sub-class on go (unless modes says otherwise), its
@@ -445,5 +447,47 @@ func TestTranslatedPanicStillWritesTheLine(t *testing.T) {
 	}
 	if lines := whole.settle(t, 1); len(lines) != 1 || lines[0].rec.Status != 200 || lines[0].call == 0 {
 		t.Fatalf("%+v", lines)
+	}
+}
+
+// Review m3: when the Anthropic leg cannot translate the body the guardrails redacted, nothing is sent (never an empty
+// POST) and the client gets what callChat's throw gives in JS: a translation 400 in its shape with no line, or for any
+// other error the 599 line and the 502.
+func TestAnthropicLegUntranslatableAfterRedaction(t *testing.T) {
+	for _, c := range []struct {
+		name, add string
+		status    int
+		line      bool
+	}{
+		{"a translation 400", `{"type":"json_object"}`, 400, false},
+		{"a TypeError", "", 502, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := newXlateRig(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Errorf("the provider was called: %s", r.URL.Path)
+			}), nil)
+			st := *g.e.State()
+			st.Gateway.Guardrails = ipc.GuardrailsPolicy{Scope: "all", Secrets: "redact", PII: "off", Injection: "off"}
+			g.e.SetState(&st)
+			was := checkBody
+			defer func() { checkBody = was }()
+			checkBody = func(b jsv.Value, p guard.Policy, f string) (guard.Result, error) {
+				o := jsv.Obj(b).Clone()
+				if c.add != "" {
+					o.Set("response_format", jsv.MustParse(c.add))
+				} else {
+					o.Set("messages", jsv.MustParse(`[{"role":"assistant","tool_calls":[{"id":"a"}]}]`))
+				}
+				return guard.Result{Body: o, Action: "redacted", Hits: []guard.Hit{{Check: "secrets", Label: "x", Count: 1}}}, nil
+			}
+			resp, body := g.post(context.Background(), t, "/v1/chat/completions", `{"model":"an/claude-x","messages":[{"role":"user","content":"hi"}]}`)
+			if resp == nil || resp.StatusCode != c.status {
+				t.Fatalf("%v %q", resp, body)
+			}
+			lines := g.settle(t, 0)
+			if c.line != (len(lines) == 1) || (c.line && lines[0].rec.Status != 599) {
+				t.Fatalf("%+v", lines)
+			}
+		})
 	}
 }
