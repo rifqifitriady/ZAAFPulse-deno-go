@@ -6,6 +6,8 @@ package engine
 // *jsre.Budget means no limit; with one, a run past it panics with a jsre limit error that Budget.Run returns.
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard/jsre"
@@ -324,6 +326,26 @@ func filterLog(t []uint16, b *jsre.Budget) []uint16 {
 	return joinNL(headTail(dedupe(splitNL(t), b), 200, 80))
 }
 
+// jsonParse is JSON.parse as the saver needs it: the tree; or syntax (JSON.parse throws); or unsupported (JSON.parse
+// accepts it but engine.Parse cannot hold it: an escaped lone surrogate, nesting over MaxDepth). engine.Parse stops at
+// the first such thing, which may come before a syntax error JS throws on (review m1, m2), so an unsupported text is
+// checked with encoding/json's validator. Valid holds lone surrogate escapes and caps nesting at 10000; with more
+// brackets than that the answer is unknown and the text stays unsupported (the caller hands off: exact either way).
+func jsonParse(text []byte) (v *Value, syntax, unsupported bool) {
+	v, err := Parse(text)
+	switch {
+	case err == nil:
+		return v, false, false
+	case !errors.Is(err, ErrUnsupported):
+		return nil, true, false
+	case json.Valid(text):
+		return nil, false, true
+	case bytes.Count(text, []byte("["))+bytes.Count(text, []byte("{")) <= 10000:
+		return nil, true, false // not JSON: JSON.parse throws too
+	}
+	return nil, false, true
+}
+
 // pickFilter is rtk.js pickFilter. For json it also returns the parsed tree (rtkJSON writes from it). why is a hand-off
 // reason: JSON.parse accepts the text but the engine cannot hold it (spec D6).
 func pickFilter(text, hint []uint16, b *jsre.Budget) (string, *Value, string) {
@@ -343,13 +365,13 @@ func pickFilter(text, hint []uint16, b *jsre.Budget) (string, *Value, string) {
 	}
 	if headJSON.TestB(head, b) && tailJSON.TestB(text[max(0, len(text)-64):], b) {
 		b.Charge(len(text))
-		v, err := Parse([]byte(jsre.Str(text)))
+		v, syntax, unsupported := jsonParse([]byte(jsre.Str(text)))
 		switch {
-		case err == nil:
-			return "json", v, ""
-		case errors.Is(err, ErrUnsupported):
+		case unsupported:
 			return "", nil, saverJSON
-		} // ErrSyntax: JSON.parse throws, not json
+		case !syntax:
+			return "json", v, ""
+		} // a syntax error: JSON.parse throws, not json
 	}
 	switch {
 	case hintListing.TestB(h, b) || hintGlobName.TestB(hint, b):

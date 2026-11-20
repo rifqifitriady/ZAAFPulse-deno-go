@@ -5,7 +5,6 @@ package engine
 // and lists the texts the saver will look at, as pointers into the plan's pending body. run shortens them in place.
 
 import (
-	"errors"
 	"strings"
 	"time"
 
@@ -153,12 +152,12 @@ func scanSaver(body *Value, format string) (*saverJob, string) {
 				}
 				a := NewObject() // let a = {}; a parse error leaves it
 				if text, parse := argsText(f.Get("arguments")); parse {
-					v, err := Parse([]byte(text))
+					v, syntax, unsupported := jsonParse([]byte(text))
 					switch {
-					case err == nil:
-						a = v
-					case errors.Is(err, ErrUnsupported):
+					case unsupported:
 						return nil, saverArgs
+					case !syntax:
+						a = v
 					}
 				}
 				if a.Kind == Null {

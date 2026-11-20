@@ -107,6 +107,9 @@ const COMPRESS = [
   ['crlf', lines(200, (i) => `line ${i}\r`), ''],
   ['hint-dotted-I', diff(2, 40).replace(/^diff --git .*$/gm, 'x'), '\u0130git diff'],
   ['hint-fullwidth', 'z'.repeat(700), 'Bash \uff27\uff29\uff34 diff'],
+  // Review m1: engine.Parse stops at the lone surrogate or the depth before the syntax error JS throws on: not json.
+  ['json-lone-surrogate-then-syntax-error', `["\\ud800", oops,${'\n x'.repeat(1500)}]`, ''],
+  ['json-deep-then-syntax-error', `${'['.repeat(600)}${'\n x'.repeat(1500)}]`, ''],
   ['goHandoff-json-depth-513', deep(513), ''],
   ['goHandoff-json-lone-surrogate', `["\\ud800${'x'.repeat(700)}"]`, ''],
 ];
@@ -218,6 +221,8 @@ const SAVE = [
   ['an-throws-null-block', '{"messages":[{"role":"user","content":[null]}]}', 'anthropic'],
   ['an-throws-null-result-item', '{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"a","content":[null]}]}]}', 'anthropic'],
   ['an-throws-name-toString', '{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"a","name":{"toString":0},"input":{}}]}]}', 'anthropic'],
+  // Review m2: arguments with a lone surrogate escape that are not JSON leave a = {} in JS.
+  ['oa-args-lone-surrogate-bad-json', `{"messages":[{"role":"assistant","tool_calls":[{"id":"c1","function":{"name":"Bash","arguments":"{\\"command\\":\\"\\\\ud800\\" x"}}]},${JSON.stringify(tool('c1', GREP))}]}`, 'openai'],
   ['goHandoff-oa-args-lone-surrogate', `{"messages":[{"role":"assistant","tool_calls":[{"id":"c1","function":{"name":"Bash","arguments":"{\\"command\\":\\"\\\\ud800 git diff\\"}"}}]},${JSON.stringify(tool('c1', GREP))}]}`, 'openai'],
   ['goHandoff-body-lone-surrogate', `{"messages":[{"role":"tool","content":"\\ud800${'x'.repeat(700)}"}]}`, 'openai'],
 ];
