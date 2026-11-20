@@ -58,8 +58,9 @@ const (
 	UpNone            = "none"             // answered by the engine itself (Plan.Self)
 )
 
-// CountTimeout is countTokens' AbortSignal.timeout(15000).
-const CountTimeout = 15 * time.Second
+// CountTimeout is countTokens' AbortSignal.timeout(15000): it bounds the whole call, its body included (a variable:
+// tests shorten it).
+var CountTimeout = 15 * time.Second
 
 // admit is the checks every gateway path makes before it reads the model (PlanChat's first lines, P4b): a loopback Host
 // and client, no browser or proxy header, POST, a key, a JSON object body of at most 20 MB. scope "llm" is
