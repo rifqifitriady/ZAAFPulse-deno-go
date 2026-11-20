@@ -305,7 +305,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"choices\":null}"
+        "body": "{\"choices\":[{\"message\":{\"tool_calls\":[{\"id\":\"a\"}]}}]}"
       }
     }
   ],
@@ -322,7 +322,7 @@
       }
     ],
     "client": {
-      "status": 200,
+      "status": 502,
       "headers": {
         "content-type": "application/json",
         "cache-control": "no-store",
@@ -330,7 +330,7 @@
         "retry-after": null,
         "x-zp-dropped": null
       },
-      "body": "{\"id\":\"msg_010101010101010101010101\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"oa/m1\",\"content\":[],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}"
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Cannot read properties of undefined (reading 'name')\"}}"
     },
     "usage": {
       "keyId": "k1",

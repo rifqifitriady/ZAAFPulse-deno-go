@@ -229,7 +229,10 @@ const CASES = [
   ['msg-stream-provider-400', 'messages', '/v1/messages', {}, msgs('oa/m1', { stream: true }), json(400, { error: { message: { nested: true } } })],
   ['msg-throw', 'messages', '/v1/messages', {}, msgs('oa/m1'), { throw: 'ECONNRESET' }],
   ['msg-timeout', 'messages', '/v1/messages', {}, msgs('oa/m1'), { throw: 'timeout' }],
-  ['msg-whole-typeerror', 'messages', '/v1/messages', {}, msgs('oa/m1'), json(200, { choices: null })],
+  // A provider answer without choices translates (no throw); one whose tool call has no function makes out.whole throw
+  // a TypeError after the line: the route's 502 in the Anthropic shape (review m6).
+  ['msg-whole-no-choices', 'messages', '/v1/messages', {}, msgs('oa/m1'), json(200, { choices: null })],
+  ['msg-whole-typeerror', 'messages', '/v1/messages', {}, msgs('oa/m1'), json(200, { choices: [{ message: { tool_calls: [{ id: 'a' }] } }] })],
   ['msg-an-double', 'messages', '/v1/messages', {}, msgs('claude-sonnet-9'), chatOk()],
   ['msg-guard-redact', 'messages', '/v1/messages', { guardrails: { ...OFF, secrets: 'redact' } }, msgs('oa/m1', { messages: user(`key ${ANT}`) }), chatOk()],
   ['msg-guard-log', 'messages', '/v1/messages', { guardrails: { ...OFF, injection: 'log' } }, msgs('oa/m1', { messages: user(INJ) }), chatOk()],
