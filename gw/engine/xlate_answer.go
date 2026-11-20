@@ -4,6 +4,7 @@ package engine
 // for no stream or the provider answered with an error.
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -99,15 +100,7 @@ func (s *State) RespondTranslated(p *Plan, status int, raw []byte, ms float64) A
 	in, out, cached := tokensJSV(j)
 	rec.Input, rec.Output, rec.Cached = &in, &out, &cached
 	rec.Cost = s.costOf(&rec)
-	var whole *jsv.Object
-	switch p.Format {
-	case "anthropic":
-		whole, err = p.Env.OpenAIToAnthropic(j, p.ClientModel)
-	case "responses":
-		whole, err = p.Env.OpenAIToResponses(j, p.ClientModel, p.Custom)
-	default:
-		whole, err = p.Env.OpenAIToGemini(j, p.ClientModel)
-	}
+	whole, err := s.wholeAnswer(p, j)
 	if err != nil {
 		// out.whole threw after the line was written: the route's 502 with the error's text, in the client's shape.
 		a := shapeError(p.Shape, http.StatusBadGateway, s.mask(err.Error()), "upstream_error", "", "")
@@ -132,4 +125,24 @@ func (s *State) deliverTranslated(p *Plan, res ProviderResult, elapsed func() fl
 		raw = conv
 	}
 	return writeAnswer(w, s.RespondTranslated(p, res.Status, raw, elapsed()))
+}
+
+// wholeAnswer is out.whole(j); a panic in it (a port bug) is an error, as JS's TypeError reaches the route's catch
+// after the line was written (review I3).
+func (s *State) wholeAnswer(p *Plan, j jsv.Value) (whole *jsv.Object, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			whole, err = nil, fmt.Errorf("%s", panicText(v))
+		}
+	}()
+	if translateHook != nil {
+		translateHook("whole")
+	}
+	switch p.Format {
+	case "anthropic":
+		return p.Env.OpenAIToAnthropic(j, p.ClientModel)
+	case "responses":
+		return p.Env.OpenAIToResponses(j, p.ClientModel, p.Custom)
+	}
+	return p.Env.OpenAIToGemini(j, p.ClientModel)
 }

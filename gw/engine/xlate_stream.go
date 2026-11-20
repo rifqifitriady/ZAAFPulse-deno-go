@@ -7,6 +7,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -16,6 +17,10 @@ import (
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate/jsv"
 )
+
+// translateHook, when set (tests only), runs at a translation step ("push": each chunk of a stream; "whole": a whole
+// answer's translation): a panic there shows the call still ends with its line (review I3).
+var translateHook func(stage string)
 
 // PingEvery is translated()'s ping interval for Anthropic clients (10 s); tests shorten it.
 var PingEvery = 10 * time.Second
@@ -85,9 +90,20 @@ func (t *TranslatedStream) Run(body io.Reader, contentType string, write func(st
 		}
 		return nil
 	}
+	// A panic in a translation step (a port bug) ends the stream as JS's catch ends a TypeError: an error event, and
+	// the line without a time to the first token or tokens (review I3). The call stays metered.
+	defer func() {
+		if v := recover(); v != nil {
+			t.ttft, t.in, t.ou, t.cached = nil, 0, 0, 0
+			_ = put(t.out.Error(t.s.mask(panicText(v))))
+		}
+	}()
 	onChunk := func(c jsv.Value) error {
 		if e := jsv.Get(c, "error"); jsv.Truthy(e) {
 			return errors.New(jsv.ToString(jsv.Or(jsv.Get(e, "message"), "upstream error")))
+		}
+		if translateHook != nil {
+			translateHook("push")
 		}
 		w, err := t.out.Push(c)
 		if err != nil {
@@ -165,6 +181,14 @@ func (t *TranslatedStream) Run(body io.Reader, contentType string, write func(st
 		return
 	}
 	_ = put(f)
+}
+
+// panicText is a recovered panic's message: an error's text, or the value as text.
+func panicText(v any) string {
+	if err, ok := v.(error); ok {
+		return readError(err)
+	}
+	return fmt.Sprint(v)
 }
 
 // readError is an error's message as the JS catch reads it; a provider that breaks off reads "terminated".

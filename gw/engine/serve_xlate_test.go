@@ -412,3 +412,38 @@ func TestWholeAnswerLineBeforeTheAnswer(t *testing.T) {
 		t.Fatalf("%d: the usage line went out after the answer was written", resp.StatusCode)
 	}
 }
+
+// Review I3: a panic inside a translated answer still ends the call as JS's catch does: on a stream an error event and
+// the 200 line; on a whole answer the 200 line and the route's 502. The call is metered either way.
+func TestTranslatedPanicStillWritesTheLine(t *testing.T) {
+	defer func() { translateHook = nil }()
+	stream := newXlateRig(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, sseChunk("a")+sseChunk("b")+"data: [DONE]\n\n")
+	}), nil)
+	translateHook = func(stage string) {
+		if stage == "push" {
+			panic("a port bug")
+		}
+	}
+	resp, body := stream.post(context.Background(), t, "/v1/messages", `{"model":"oa/m1","stream":true,"max_tokens":5,"messages":[{"role":"user","content":"x"}]}`)
+	if resp == nil || resp.StatusCode != 200 || !strings.Contains(body, "event: error\n") {
+		t.Fatalf("%v %q", resp, body)
+	}
+	if lines := stream.settle(t, 1); len(lines) != 1 || lines[0].rec.Status != 200 || lines[0].call == 0 {
+		t.Fatalf("%+v", lines)
+	}
+	whole := newXlateRig(t, http.HandlerFunc(chatWhole), nil)
+	translateHook = func(stage string) {
+		if stage == "whole" {
+			panic("a port bug")
+		}
+	}
+	resp, body = whole.post(context.Background(), t, "/v1/messages", `{"model":"oa/m1","max_tokens":5,"messages":[{"role":"user","content":"x"}]}`)
+	if resp == nil || resp.StatusCode != 502 || !strings.Contains(body, `"type":"api_error"`) {
+		t.Fatalf("%v %q", resp, body)
+	}
+	if lines := whole.settle(t, 1); len(lines) != 1 || lines[0].rec.Status != 200 || lines[0].call == 0 {
+		t.Fatalf("%+v", lines)
+	}
+}
