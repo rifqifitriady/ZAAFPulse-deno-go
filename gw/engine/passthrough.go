@@ -223,7 +223,13 @@ func (s *State) deliverNative(p *Plan, res ProviderResult, elapsed func() float6
 	var in, out, cached int64
 	au := jsv.NewObject()
 	if w.Head(http.StatusOK, sseHeader()) == nil {
-		_ = translate.ReadSSE(res.Body, func(ev, data string) error {
+		// A panic in reading the events (a port bug) ends the stream as the passthrough's catch does: the line with
+		// what was seen (review I3).
+		readEvents := func(onEvent func(ev, data string) error) {
+			defer func() { _ = recover() }()
+			_ = translate.ReadSSE(res.Body, onEvent)
+		}
+		readEvents(func(ev, data string) error {
 			o, perr := jsv.Parse([]byte(data))
 			if perr != nil || !jsv.Truthy(o) {
 				o = nil // JSON.parse failed, or a falsy value: passed on as it came, nothing read from it

@@ -50,7 +50,12 @@ func planAnthropicLeg(p *Plan, cred string, pending *Value) string {
 
 // anthropicWhole is callChat's whole answer: the provider's JSON through anthropicResponseToOpenAI(j, body.model), as
 // the Response it becomes (JSON.stringify). ok false: r.json() or the conversion throws (callChat throws: 599, 502).
-func anthropicWhole(env *translate.Env, raw []byte, clientModel string) ([]byte, string) {
+func anthropicWhole(env *translate.Env, raw []byte, clientModel string) (out []byte, why string) {
+	defer func() {
+		if v := recover(); v != nil {
+			out, why = nil, panicText(v) // callChat's throw: the 599 line and the 502 (review I3)
+		}
+	}()
 	j, err := jsv.Parse([]byte(decodeWHATWG(raw)))
 	if err != nil {
 		return nil, "the provider's answer is not JSON"
@@ -72,6 +77,13 @@ func AnthropicToChatText(model string, body io.Reader, env *translate.Env) io.Re
 	pr, pw := io.Pipe()
 	conv := env.NewAnthropicEvents(model) // now: its id is drawn when callChat returns, before the client's writer
 	go func() {
+		// A panic in the conversion (a port bug) ends the stream as callChat's catch does: no [DONE], no error; it
+		// must not take the gateway down from this goroutine (review I3).
+		defer func() {
+			if v := recover(); v != nil {
+				_ = pw.Close()
+			}
+		}()
 		err := translate.ReadSSE(body, func(_, data string) error {
 			o, err := jsv.Parse([]byte(data))
 			if err != nil {
