@@ -97,11 +97,16 @@ func (s *State) planGeminiCount(r *Request, now int64) Plan {
 		Env: translate.Default, Self: estimateAnswer("totalTokens", translate.EstimateTokens(toJSV(v)))}
 }
 
-// deliverCount: a finite input_tokens in a 2xx JSON answer is returned re-serialized; anything else (a failed call
-// included) is the estimate.
+// deliverCount: a finite input_tokens in a 2xx JSON answer read to its end is returned re-serialized; anything else (a
+// failed call, a body that does not read to its end) is the estimate.
 func (s *State) deliverCount(p *Plan, res ProviderResult, w ClientWriter) *ipc.UsageRecord {
 	if res.Why == "" && ok2xx(res.Status) {
-		raw, _ := io.ReadAll(res.Body)
+		// A body that does not read to its end (the 15 s limit, a cut) is r.json() rejecting: the estimate, even when
+		// a whole JSON value had arrived before (re-review 1).
+		raw, rerr := io.ReadAll(res.Body)
+		if rerr != nil {
+			return writeAnswer(w, *p.Self)
+		}
 		if j, err := jsv.Parse([]byte(decodeWHATWG(raw))); err == nil && jsv.Truthy(j) {
 			if n, ok := field(j, "input_tokens").(float64); ok && !math.IsInf(n, 0) && !math.IsNaN(n) {
 				b, _ := jsv.Stringify(j)

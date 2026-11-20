@@ -491,3 +491,29 @@ func TestAnthropicLegUntranslatableAfterRedaction(t *testing.T) {
 		})
 	}
 }
+
+// Re-review 1: a whole JSON count arrives, then the body stalls past the limit: r.json() rejects on the abort in JS,
+// so the client gets the estimate, not the provider's count.
+func TestCountCompleteBodyThenStallIsTheEstimate(t *testing.T) {
+	old := CountTimeout
+	CountTimeout = 300 * time.Millisecond
+	defer func() { CountTimeout = old }()
+	release := make(chan struct{})
+	defer close(release)
+	g := newXlateRig(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `{"input_tokens":42}`)
+		w.(http.Flusher).Flush() // chunked: the body is not over until the handler returns
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, body := g.post(ctx, t, "/v1/messages/count_tokens", `{"model":"an/claude-x","messages":[{"role":"user","content":"hello"}]}`)
+	if resp == nil || resp.StatusCode != 200 || !strings.HasPrefix(body, `{"input_tokens":`) || body == `{"input_tokens":42}` {
+		t.Fatalf("%v %q", resp, body)
+	}
+}
