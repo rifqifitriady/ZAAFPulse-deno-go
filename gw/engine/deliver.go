@@ -104,7 +104,7 @@ func (s *State) deliverChatAnthropic(p *Plan, res ProviderResult, elapsed func()
 	if w.Head(200, sseHeader()) != nil {
 		return lineOf(s.StreamLine(p, cs, elapsed()))
 	}
-	text := AnthropicToChatText(p.ClientModel, res.Body, p.Env)
+	text := anthropicText(res.Status, p.ClientModel, res.Body, p.Env)
 	defer text.Close()
 	buf := make([]byte, StreamReadSize)
 	for {

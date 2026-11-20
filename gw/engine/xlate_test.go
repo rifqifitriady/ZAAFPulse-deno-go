@@ -22,12 +22,13 @@ import (
 // xlateProvider is the stubbed provider of one case: a whole answer, a stream of chunks (cut: it breaks off after the
 // last), or a call that throws (a code, or "timeout"). nil: the case makes no provider call.
 type xlateProvider struct {
-	Status  int               `json:"status"`
-	Headers map[string]string `json:"headers"`
-	Body    string            `json:"body"`
-	Chunks  []string          `json:"chunks"`
-	Cut     bool              `json:"cut"`
-	Throw   string            `json:"throw"`
+	Status   int               `json:"status"`
+	Headers  map[string]string `json:"headers"`
+	Body     string            `json:"body"`
+	Chunks   []string          `json:"chunks"`
+	Cut      bool              `json:"cut"`
+	Throw    string            `json:"throw"`
+	NullBody bool              `json:"nullBody"` // a 204 or 205: fetch gives no body
 }
 
 type xlateCase struct {

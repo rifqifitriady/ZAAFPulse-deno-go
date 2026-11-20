@@ -109,6 +109,18 @@ func AnthropicToChatText(model string, body io.Reader, env *translate.Env) io.Re
 	return pr
 }
 
+// noBodyStream is callChat's synthesized stream for a 2xx without a body (204, 205): readSse(null) throws inside its
+// try, so the stream closes empty, without [DONE] (review m2).
+func noBodyStream() io.ReadCloser { return io.NopCloser(bytes.NewReader(nil)) }
+
+// anthropicText is the synthesized stream for a provider's answer of status.
+func anthropicText(status int, model string, body io.Reader, env *translate.Env) io.ReadCloser {
+	if !StreamsBody(status) {
+		return noBodyStream()
+	}
+	return AnthropicToChatText(model, body, env)
+}
+
 // decodeWHATWG is Response.text(): a leading byte order mark dropped, each invalid sequence one U+FFFD per maximal
 // subpart (validText, P4c).
 func decodeWHATWG(b []byte) string { return validText(bytes.TrimPrefix(b, utf8BOM)) }
