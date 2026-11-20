@@ -126,6 +126,12 @@ Each one line, with the evidence that settled it.
     (a tool message of that size in each call) and the owed list adds "chat with a 64 KiB tool result". A Go benchmark
     of `Save` on 64 KiB, 1 MiB and 10 MiB records numbers in the results doc.
 
+## Owner answers (2026-11-20)
+
+21. **A step-budget overrun hands the call to JS** (question 1). Go never sends a text unshortened that JS would have
+    shortened: exact parity over speed. Decision 11 stands.
+22. **One shared `token-saver` switch** for every class (question 2), not one per class. Decision 13 stands.
+
 ## Design
 
 ### D1. String helpers (`gw/engine/jsstr.go`) and `jsre` (`gw/guard/jsre`)
@@ -209,6 +215,8 @@ The compare goroutine: `if why := s.Save(p); why != "" { handoff line }` before 
 - Model-output shortening: JS only shortens request tool results.
 
 ## Open questions for the owner
+
+Answered on 2026-11-20 (Decisions 21–22); kept as asked.
 
 1. **Step-budget overrun.** A tool result that runs the saver past `64 × units + 2^20` regex steps or 2 s is handed to
    JS (exact, and as slow as today). The alternative is to send that one text unshortened from Go (fast, but the body
