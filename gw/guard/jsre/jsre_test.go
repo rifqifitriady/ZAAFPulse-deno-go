@@ -43,8 +43,8 @@ func TestSyntaxErrors(t *testing.T) {
 			t.Errorf("/%s/ compiled", src)
 		}
 	}
-	if _, err := Compile("a", "m"); err == nil {
-		t.Error("flag m accepted")
+	if _, err := Compile("a", "s"); err == nil { // m is supported since the token saver (TestMultilineAgainstJS)
+		t.Error("flag s accepted")
 	}
 }
 
@@ -66,5 +66,42 @@ func TestLongRunDoesNotRecurse(t *testing.T) {
 	}
 	if m := MustCompile("^.+$", "").Exec(s, 0); m == nil || m[1] != len(s) {
 		t.Fatal("no match")
+	}
+}
+
+// The m flag (token saver, spec D4): measured with Node 24.16, matchAll with g added; one entry per match, group 0.
+const jsTruthM = `[{"src":"^a","flags":"gm","text":"a\nb\na\rb\u2028a\u2029a","ms":[[0,1],[4,5],[8,9],[10,11]]},{"src":"b$","flags":"gm","text":"ab\nb\rx\u2028b","ms":[[1,2],[3,4],[7,8]]},{"src":"^diff --git ","flags":"m","text":"x\ndiff --git a","ms":[[2,13]]},{"src":"^commit [0-9a-f]{7,40}$","flags":"m","text":"commit 1234567\ncommit 12345678z","ms":[[0,14]]},{"src":"^\\s*\\d+[\\t|→]","flags":"gm","text":"  1\tx\n\n  2|y\n3→z","ms":[[0,4],[6,11],[13,15]]},{"src":"^(?:[\\w.@-]*\\/)*[\\w.@-]+\\.\\w{1,10}:\\d+[:-]","flags":"gm","text":"a/b.js:1:x\nc.ts:22-y\n10:00:05 z","ms":[[0,9],[11,19]]},{"src":"^$","flags":"gm","text":"a\n\nb\n","ms":[[2,2],[5,5]]},{"src":"^","flags":"gm","text":"ab\ncd","ms":[[0,0],[3,3]]},{"src":"$","flags":"gm","text":"ab\ncd","ms":[[2,2],[5,5]]},{"src":"^x","flags":"g","text":"y\nx","ms":[]},{"src":"^.*\\s(?=\\S+$)","flags":"","text":"-rw-r--r-- 1 a b 12 src/x y.js","ms":[[0,26]]}]`
+
+func TestMultilineAgainstJS(t *testing.T) {
+	var cases []struct {
+		Src, Flags, Text string
+		Ms               [][]int
+	}
+	if err := json.Unmarshal([]byte(jsTruthM), &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		re, err := Compile(c.Src, c.Flags)
+		if err != nil {
+			t.Fatalf("/%s/%s: %v", c.Src, c.Flags, err)
+		}
+		got := [][]int{}
+		for _, m := range re.FindAll(U16(c.Text)) {
+			got = append(got, []int{m[0], m[1]})
+		}
+		want := c.Ms
+		if want == nil {
+			want = [][]int{}
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("/%s/%s on %q: got %v, want %v", c.Src, c.Flags, c.Text, got, want)
+		}
+	}
+	// Without m, ^ is anchored at 0 only (the prefilter may skip every other start); with m it is not.
+	if MustCompile(`^x`, "").Test(U16("y\nx")) || !MustCompile(`^x`, "m").Test(U16("y\nx")) {
+		t.Fatal("anchoring under m")
+	}
+	if _, err := Compile("a", "s"); err == nil {
+		t.Fatal("the s flag is still refused")
 	}
 }
