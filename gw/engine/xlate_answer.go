@@ -118,7 +118,7 @@ func (s *State) deliverTranslated(p *Plan, res ProviderResult, elapsed func() fl
 	}
 	raw, _ := io.ReadAll(res.Body)
 	if ok2xx(res.Status) && p.Upstream == UpAnthropic {
-		conv, why := anthropicWhole(p.Env, raw, p.ClientModel)
+		conv, why := anthropicWhole(p.Env, raw, p.ClientModel, s.onPanic("the Anthropic leg's whole answer"))
 		if why != "" {
 			return writeAnswer(w, s.Failed(p, why, elapsed())) // P4d Decision 26a
 		}
@@ -132,6 +132,7 @@ func (s *State) deliverTranslated(p *Plan, res ProviderResult, elapsed func() fl
 func (s *State) wholeAnswer(p *Plan, j jsv.Value) (whole *jsv.Object, err error) {
 	defer func() {
 		if v := recover(); v != nil {
+			s.recovered("a translated whole answer", v)
 			whole, err = nil, fmt.Errorf("%s", panicText(v))
 		}
 	}()

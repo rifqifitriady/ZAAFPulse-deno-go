@@ -79,9 +79,12 @@ func planAnthropicLeg(p *Plan, cred string, pending *Value) string {
 
 // anthropicWhole is callChat's whole answer: the provider's JSON through anthropicResponseToOpenAI(j, body.model), as
 // the Response it becomes (JSON.stringify). ok false: r.json() or the conversion throws (callChat throws: 599, 502).
-func anthropicWhole(env *translate.Env, raw []byte, clientModel string) (out []byte, why string) {
+func anthropicWhole(env *translate.Env, raw []byte, clientModel string, onPanic func(any)) (out []byte, why string) {
 	defer func() {
 		if v := recover(); v != nil {
+			if onPanic != nil {
+				onPanic(v)
+			}
 			out, why = nil, panicText(v) // callChat's throw: the 599 line and the 502 (review I3)
 		}
 	}()
@@ -106,6 +109,11 @@ func anthropicWhole(env *translate.Env, raw []byte, clientModel string) (out []b
 // catch does. The reader must be closed:
 // closing it stops the conversion (its next write fails).
 func AnthropicToChatText(model string, body io.Reader, env *translate.Env) io.ReadCloser {
+	return anthropicToChatText(model, body, env, nil)
+}
+
+// anthropicToChatText is AnthropicToChatText with onPanic told of a recovered panic.
+func anthropicToChatText(model string, body io.Reader, env *translate.Env, onPanic func(any)) io.ReadCloser {
 	pr, pw := io.Pipe()
 	conv := env.NewAnthropicEvents(model) // now: its id is drawn when callChat returns, before the client's writer
 	go func() {
@@ -113,6 +121,9 @@ func AnthropicToChatText(model string, body io.Reader, env *translate.Env) io.Re
 		// must not take the gateway down from this goroutine (review I3).
 		defer func() {
 			if v := recover(); v != nil {
+				if onPanic != nil {
+					onPanic(v)
+				}
 				_ = pw.Close()
 			}
 		}()
@@ -149,11 +160,11 @@ func AnthropicToChatText(model string, body io.Reader, env *translate.Env) io.Re
 func noBodyStream() io.ReadCloser { return io.NopCloser(bytes.NewReader(nil)) }
 
 // anthropicText is the synthesized stream for a provider's answer of status.
-func anthropicText(status int, model string, body io.Reader, env *translate.Env) io.ReadCloser {
+func anthropicText(status int, model string, body io.Reader, env *translate.Env, onPanic func(any)) io.ReadCloser {
 	if !StreamsBody(status) {
 		return noBodyStream()
 	}
-	return AnthropicToChatText(model, body, env)
+	return anthropicToChatText(model, body, env, onPanic)
 }
 
 // decodeWHATWG is Response.text(): a leading byte order mark dropped, each invalid sequence one U+FFFD per maximal

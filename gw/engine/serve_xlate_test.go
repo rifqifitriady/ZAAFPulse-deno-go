@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,7 @@ type xlateRig struct {
 	js       int         // requests handed to the control plane
 	onLine   func()      // called as each usage line is emitted, before it is kept (tests of the order)
 	written  atomic.Bool // the gateway wrote the head or a byte of the current answer
+	logs     []string    // what the engine logged
 }
 
 // markWriter marks the rig's written flag on the first head or byte the engine writes to the client.
@@ -85,7 +87,12 @@ func newXlateRig(t *testing.T, provider http.Handler, modes func(sub string) (bo
 		defer g.mu.Unlock()
 		g.lines = append(g.lines, recordedLine{rec: r.Record})
 		return 0, nil
-	}, t.Logf)
+	}, func(f string, a ...any) {
+		g.mu.Lock()
+		g.logs = append(g.logs, fmt.Sprintf(f, a...))
+		g.mu.Unlock()
+		t.Logf(f, a...)
+	})
 	g.e.SetState(s)
 	if modes == nil {
 		modes = func(string) (bool, bool) { return true, false }
@@ -120,6 +127,19 @@ func newXlateRig(t *testing.T, provider http.Handler, modes func(sub string) (bo
 	t.Cleanup(gw.Close)
 	g.url = gw.URL
 	return g
+}
+
+// panicLogged fails unless the engine logged a recovered panic with its value and stack (re-review 3).
+func (g *xlateRig) panicLogged(t *testing.T) {
+	t.Helper()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, l := range g.logs {
+		if strings.Contains(l, "a panic in") && strings.Contains(l, "a port bug") && strings.Contains(l, "goroutine ") {
+			return
+		}
+	}
+	t.Fatalf("no recovered panic logged: %q", g.logs)
 }
 
 // post sends body to path with the fixture key; ctx may cancel it.
@@ -435,6 +455,7 @@ func TestTranslatedPanicStillWritesTheLine(t *testing.T) {
 	if lines := stream.settle(t, 1); len(lines) != 1 || lines[0].rec.Status != 200 || lines[0].call == 0 {
 		t.Fatalf("%+v", lines)
 	}
+	stream.panicLogged(t)
 	whole := newXlateRig(t, http.HandlerFunc(chatWhole), nil)
 	translateHook = func(stage string) {
 		if stage == "whole" {
@@ -448,6 +469,7 @@ func TestTranslatedPanicStillWritesTheLine(t *testing.T) {
 	if lines := whole.settle(t, 1); len(lines) != 1 || lines[0].rec.Status != 200 || lines[0].call == 0 {
 		t.Fatalf("%+v", lines)
 	}
+	whole.panicLogged(t)
 }
 
 // Review m3: when the Anthropic leg cannot translate the body the guardrails redacted, nothing is sent (never an empty
@@ -563,6 +585,7 @@ func TestRecoveredStepsStillWriteTheLine(t *testing.T) {
 			if lines := g.settle(t, 1); len(lines) != 1 || lines[0].rec.Status != c.line || lines[0].call == 0 {
 				t.Fatalf("%+v", lines)
 			}
+			g.panicLogged(t)
 		})
 	}
 }

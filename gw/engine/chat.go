@@ -44,8 +44,9 @@ type State struct {
 	Mask       []string
 	Pricer     *Pricer
 	Snapshot   *ipc.BudgetSnapshot
-	SnapshotAt int64 // epoch ms the snapshot says it was taken
-	spans      bool  // config.push trace.spans (P4f D8): a span is recorded somewhere
+	SnapshotAt int64                // epoch ms the snapshot says it was taken
+	spans      bool                 // config.push trace.spans (P4f D8): a span is recorded somewhere
+	logf       func(string, ...any) // the engine's log, set by SetState (recovered panics, P4d)
 }
 
 // Spans is whether this generation's calls get trace spans and a usage line naming their trace (P4f D8).

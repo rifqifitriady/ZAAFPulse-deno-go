@@ -94,7 +94,7 @@ func (s *State) deliverChatAnthropic(p *Plan, res ProviderResult, elapsed func()
 		if !ok2xx(res.Status) {
 			return writeAnswer(w, s.Respond(p, res.Status, raw, elapsed()))
 		}
-		conv, why := anthropicWhole(p.Env, raw, p.ClientModel)
+		conv, why := anthropicWhole(p.Env, raw, p.ClientModel, s.onPanic("the Anthropic leg's whole answer"))
 		if why != "" {
 			return writeAnswer(w, s.Failed(p, why, elapsed())) // P4d Decision 26a: JS writes V8's text
 		}
@@ -104,7 +104,7 @@ func (s *State) deliverChatAnthropic(p *Plan, res ProviderResult, elapsed func()
 	if w.Head(200, sseHeader()) != nil {
 		return lineOf(s.StreamLine(p, cs, elapsed()))
 	}
-	text := anthropicText(res.Status, p.ClientModel, res.Body, p.Env)
+	text := anthropicText(res.Status, p.ClientModel, res.Body, p.Env, s.onPanic("the Anthropic leg's stream"))
 	defer text.Close()
 	buf := make([]byte, StreamReadSize)
 	for {
