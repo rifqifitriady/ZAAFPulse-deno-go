@@ -2262,3 +2262,16 @@ Re-check of the steps marked "re-check after P4f merges":
 25. **`shadow.noteAnswer` keeps the head's headers too** (the P4c chat capture): the chat-anthropic compare reads the
     content type, which the explicit chat capture did not have (7 diffs in the first shadow run, 0 after).
 
+### Final review fixes (2026-11-20)
+
+26. **Deviation 20 corrected (I3):** a panic in a translation step now ends the call as JS's catch does, with its line
+    (recovered in `TranslatedStream.Run`, `wholeAnswer`, `anthropicWhole`, the Anthropic leg's goroutine and the
+    passthrough's event reader). `translateHook` (tests only) injects the panic.
+27. **`ClientWriter` gained `StopPings`** (m1): the pinger starts after the opening event and stops before the finish or
+    error event.
+28. **A plan's own `Timeout` covers the body** (I1): `Upstream.Start` keeps the timer running and stops it when the body
+    is closed; `CountTimeout` is a variable so the test can shorten it.
+29. **`Plan.buildErr`** (m3): the Anthropic leg records a translation error of the redacted body; `serveDeliver` answers
+    it without a provider call (`State.buildRefusal`).
+30. **Fixtures: 98** (5 for 204/205 streams with a `nullBody` provider in the generator, 1 real `out.whole` TypeError).
+
