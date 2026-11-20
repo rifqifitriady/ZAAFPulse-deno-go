@@ -20,7 +20,11 @@ import (
 func anthropicBuild(p *Plan, body *Value) []byte {
 	b, err := anthropicTranslate(p.Target, body)
 	if err != nil {
-		p.buildErr = err // the guardrails' redacted body does not translate: answered without a provider call (m3)
+		// The guardrails' redacted body does not translate: answered without a provider call (m3). Nothing is fetched,
+		// but a TypeError's 599 line still gets its client span with the provider's attributes, as JS's otel.wrapUsage
+		// makes one from every usage line (lib/otel.js modelSpan reads the provider from config, not from a fetch); a
+		// translation 400 writes no line, so no client span.
+		p.buildErr = err
 	}
 	return b
 }

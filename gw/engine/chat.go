@@ -112,8 +112,9 @@ type Plan struct {
 	// times. ClientModel is the name the client used, which translated answers carry. Soft and Dropped are the
 	// translation's tags (Tagged says the body had them: Gemini's has none); Custom the Responses custom tool names.
 	// GuardFormat is the checks' format; build makes the provider body from the checked one. Self is an answer the
-	// engine gives without a provider (a count estimate); Timeout a header timeout of its own (count: 15 s); Detached a
-	// call the client's leaving does not cancel (embeddings).
+	// engine gives without a provider (a count estimate); Timeout a limit of its own over the whole provider call, its
+	// body included, as an AbortSignal.timeout passed to fetch (count: 15 s; without one, the 120 s limit covers the
+	// headers only); Detached a call the client's leaving does not cancel (embeddings).
 	Class       string
 	Format      string
 	Shape       Shape
