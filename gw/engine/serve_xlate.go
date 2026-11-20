@@ -196,6 +196,12 @@ func (e *Engine) serveDeliver(w http.ResponseWriter, r *http.Request, s *State, 
 			finish() // a panic in Deliver: the call still ends with what it has, then the panic goes on
 		}
 	}()
+	if p.buildErr != nil { // nothing is sent: callChat would have thrown before its fetch (review m3)
+		line = writeAnswer(hw, s.buildRefusal(p, elapsed()))
+		done = true
+		finish()
+		return
+	}
 	ctx := r.Context()
 	if p.Detached {
 		ctx = context.WithoutCancel(ctx) // embeddings: the client's leaving does not cancel the call (J8)
