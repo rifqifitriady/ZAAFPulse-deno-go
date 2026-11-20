@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "On branch x",
+    ""
+  ],
+  "out": "git-status"
+}

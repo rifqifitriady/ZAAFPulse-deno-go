@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    " nbsp 0 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\n nbsp 1 ls\nwarning: unused 21\nwarning: unused 22\n nbsp 23 ls\nwarning: unused 24\n nbsp 25 ls\nwarning: unused 26\nwarning: unused 27\n nbsp 28 ls\nwarning: unused 29\nwarning: unused 30\n nbsp 31 ls\n nbsp 32 ls\nwarning: unused 33\n nbsp 34 ls\nwarning: unused 35\n nbsp 36 ls\n nbsp 37 ls\nwarning: unused 38\n nbsp 39 ls",
+    "Bash find . -name x"
+  ],
+  "out": null
+}

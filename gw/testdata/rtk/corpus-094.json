@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    " M src/s0.ts\n M src/s1.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\nerror: boom 26\n M src/s27.ts\n M src/s28.ts\nerror: boom 29\nerror: boom 30\n M src/s31.ts\n M src/s32.ts\n M src/s33.ts\nerror: boom 34\n M src/s35.ts\n M src/s36.ts\n M src/s37.ts\n M src/s38.ts\n M src/s39.ts\nerror: boom 40\nerror: boom 41\n M src/s42.ts\nerror: boom 43\nerror: boom 44\nerror: boom 45\n M src/s46.ts\n M src/s47.ts\nerror: boom 48\n M src/s49.ts\n M src/s50.ts\nerror: boom 51\nerror: boom 52\nerror: boom 53\n M src/s54.ts\n M src/s55.ts\nerror: boom 56\n M src/s57.ts\n M src/s58.ts\nerror: boom 59\n M src/s60.ts\nerror: boom 61\n M src/s62.ts\nerror: boom 63\nerror: boom 64\nerror: boom 65\n M src/s66.ts\nerror: boom 67\n M src/s68.ts\nerror: boom 69\nerror: boom 70\n M src/s71.ts\nerror: boom 72\nerror: boom 73\n M src/s74.ts\n M src/s75.ts\n M src/s75.ts\n M src/s75.ts\n M src/s75.ts\n M src/s75.ts\n M src/s75.ts\n M src/s75.ts\n M src/s82.ts\n M src/s83.ts\n M src/s84.ts\nerror: boom 85\nerror: boom 86\n M src/s87.ts\n M src/s88.ts\nerror: boom 89\nerror: boom 90\nerror: boom 91\n M src/s92.ts\n M src/s93.ts\n M src/s94.ts\n M src/s95.ts\n M src/s96.ts\n M src/s97.ts\nerror: boom 98\n M src/s99.ts\n M src/s100.ts\nerror: boom 101\nerror: boom 102\nerror: boom 103\nerror: boom 104\nerror: boom 105\n M src/s106.ts\nerror: boom 107\nerror: boom 108\n M src/s109.ts\n M src/s110.ts\n M src/s111.ts\n M src/s112.ts\n M src/s113.ts\nerror: boom 114\n M src/s115.ts\nerror: boom 116\nerror: boom 117\nerror: boom 118\nerror: boom 119\nerror: boom 119",
+    "grep"
+  ],
+  "out": {
+    "text": " M src/s0.ts\n M src/s1.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts\n M src/s2.ts",
+    "filter": "grep",
+    "saved": 1472
+  }
+}

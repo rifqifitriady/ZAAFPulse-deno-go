@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "    message 0\nerror: boom 1\nerror: boom 1\nerror: boom 1\nerror: boom 1\nerror: boom 1\nerror: boom 1\nerror: boom 1\nerror: boom 1\nerror: boom 1",
+    "İgit diff"
+  ],
+  "out": null
+}

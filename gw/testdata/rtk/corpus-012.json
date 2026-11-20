@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "same repeated line\r\nsame repeated line\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\nsame repeated line\r\n\r\n\r\n M src/s16.ts\r\n\r\n\r\n M src/s19.ts\r\n M src/s20.ts\r\n M src/s21.ts\r\n M src/s22.ts\r\nsame repeated line\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\nsame repeated line\r\nsame repeated line\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\nsame repeated line\r\n M src/s58.ts\r\n M src/s59.ts\r\n M src/s60.ts\r\n\r\n\r\n M src/s63.ts\r\n M src/s64.ts\r\n\r\nsame repeated line\r\n M src/s67.ts\r\n\r\n M src/s69.ts\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line",
+    "Bash ls -R"
+  ],
+  "out": {
+    "text": "same repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\n  … 2 more in . omitted\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s2.ts\r\n M src/s16.ts\r\n  … 11 more in src omitted",
+    "filter": "listing",
+    "saved": 231
+  }
+}

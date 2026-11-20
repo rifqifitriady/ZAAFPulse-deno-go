@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "\u001b[30mcolored 0\u001b[0m\n nbsp 1 ls\ndiff --git a/x2 b/x2\ndiff --git a/x3 b/x3\nCompiling crate4 v0.4.0\n\u001b[35mcolored 5\u001b[0m\n\u001b[36mcolored 6\u001b[0m\nCompiling crate7 v0.7.0\n nbsp 8 ls\ndiff --git a/x9 b/x9\n nbsp 10 ls\n\u001b[33mcolored 11\u001b[0m\nCompiling crate12 v0.12.0\n\u001b[35mcolored 13\u001b[0m\n nbsp 14 ls\nCompiling crate15 v0.15.0\nCompiling crate16 v0.16.0\nCompiling crate17 v0.17.0\n\u001b[32mcolored 18\u001b[0m\nCompiling crate19 v0.19.0\ndiff --git a/x20 b/x20\n nbsp 21 ls\nCompiling crate22 v0.22.0\n\u001b[37mcolored 23\u001b[0m\nCompiling crate24 v0.24.0\n nbsp 25 ls\nCompiling crate26 v0.26.0\ndiff --git a/x27 b/x27\n\u001b[34mcolored 28\u001b[0m\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate38 v0.38.0\ndiff --git a/x39 b/x39\n\u001b[30mcolored 40\u001b[0m",
+    "İgit diff"
+  ],
+  "out": {
+    "text": "colored 0\n nbsp 1 ls\ndiff --git a/x2 b/x2\ndiff --git a/x3 b/x3\nCompiling crate4 v0.4.0\ncolored 5\ncolored 6\nCompiling crate7 v0.7.0\n nbsp 8 ls\ndiff --git a/x9 b/x9\n nbsp 10 ls\ncolored 11\nCompiling crate12 v0.12.0\ncolored 13\n nbsp 14 ls\nCompiling crate15 v0.15.0\nCompiling crate16 v0.16.0\nCompiling crate17 v0.17.0\ncolored 18\nCompiling crate19 v0.19.0\ndiff --git a/x20 b/x20\n nbsp 21 ls\nCompiling crate22 v0.22.0\ncolored 23\nCompiling crate24 v0.24.0\n nbsp 25 ls\nCompiling crate26 v0.26.0\ndiff --git a/x27 b/x27\ncolored 28\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate29 v0.29.0\nCompiling crate38 v0.38.0\ndiff --git a/x39 b/x39\ncolored 40",
+    "filter": "git-diff",
+    "saved": 81
+  }
+}

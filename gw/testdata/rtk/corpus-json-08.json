@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "[null,null,null]",
+    ""
+  ],
+  "out": null
+}

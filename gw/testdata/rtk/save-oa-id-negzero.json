@@ -1,0 +1,40 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"id\":-0,\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git log\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":0,\"content\":\"commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 1 10:00:00 2026 +0700\\n\\n    Fix thing 0\\n    more detail 0\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1eef\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 2 10:00:00 2026 +0700\\n\\n    Fix thing 1\\n    more detail 1\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3dde\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 3 10:00:00 2026 +0700\\n\\n    Fix thing 2\\n    more detail 2\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5ccd\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 4 10:00:00 2026 +0700\\n\\n    Fix thing 3\\n    more detail 3\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7bbc\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 5 10:00:00 2026 +0700\\n\\n    Fix thing 4\\n    more detail 4\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9aab\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 6 10:00:00 2026 +0700\\n\\n    Fix thing 5\\n    more detail 5\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab99a\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 7 10:00:00 2026 +0700\\n\\n    Fix thing 6\\n    more detail 6\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad889\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 8 10:00:00 2026 +0700\\n\\n    Fix thing 7\\n    more detail 7\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaf778\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 9 10:00:00 2026 +0700\\n\\n    Fix thing 8\\n    more detail 8\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa11667\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 10 10:00:00 2026 +0700\\n\\n    Fix thing 9\\n    more detail 9\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa13556\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 11 10:00:00 2026 +0700\\n\\n    Fix thing 10\\n    more detail 10\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa15445\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 12 10:00:00 2026 +0700\\n\\n    Fix thing 11\\n    more detail 11\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa17334\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 13 10:00:00 2026 +0700\\n\\n    Fix thing 12\\n    more detail 12\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa19223\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 14 10:00:00 2026 +0700\\n\\n    Fix thing 13\\n    more detail 13\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1b112\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 15 10:00:00 2026 +0700\\n\\n    Fix thing 14\\n    more detail 14\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1d001\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 16 10:00:00 2026 +0700\\n\\n    Fix thing 15\\n    more detail 15\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1eef0\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 17 10:00:00 2026 +0700\\n\\n    Fix thing 16\\n    more detail 16\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa20ddf\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 18 10:00:00 2026 +0700\\n\\n    Fix thing 17\\n    more detail 17\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa22cce\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 19 10:00:00 2026 +0700\\n\\n    Fix thing 18\\n    more detail 18\\n\\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa24bbd\\nAuthor: Dev <d@x.io>\\nDate:   Mon Nov 20 10:00:00 2026 +0700\\n\\n    Fix thing 19\\n    more detail 19\\n\"}]}",
+    "openai"
+  ],
+  "out": {
+    "body": {
+      "messages": [
+        {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "id": 0,
+              "function": {
+                "name": "Bash",
+                "arguments": "{\"command\":\"git log\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": 0,
+          "content": "commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 1 10:00:00 2026 +0700\n    Fix thing 0\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1eef\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 2 10:00:00 2026 +0700\n    Fix thing 1\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3dde\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 3 10:00:00 2026 +0700\n    Fix thing 2\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5ccd\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 4 10:00:00 2026 +0700\n    Fix thing 3\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7bbc\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 5 10:00:00 2026 +0700\n    Fix thing 4\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9aab\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 6 10:00:00 2026 +0700\n    Fix thing 5\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab99a\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 7 10:00:00 2026 +0700\n    Fix thing 6\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad889\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 8 10:00:00 2026 +0700\n    Fix thing 7\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaf778\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 9 10:00:00 2026 +0700\n    Fix thing 8\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa11667\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 10 10:00:00 2026 +0700\n    Fix thing 9\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa13556\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 11 10:00:00 2026 +0700\n    Fix thing 10\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa15445\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 12 10:00:00 2026 +0700\n    Fix thing 11\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa17334\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 13 10:00:00 2026 +0700\n    Fix thing 12\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa19223\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 14 10:00:00 2026 +0700\n    Fix thing 13\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1b112\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 15 10:00:00 2026 +0700\n    Fix thing 14\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1d001\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 16 10:00:00 2026 +0700\n    Fix thing 15\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1eef0\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 17 10:00:00 2026 +0700\n    Fix thing 16\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa20ddf\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 18 10:00:00 2026 +0700\n    Fix thing 17\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa22cce\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 19 10:00:00 2026 +0700\n    Fix thing 18\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa24bbd\nAuthor: Dev <d@x.io>\nDate:   Mon Nov 20 10:00:00 2026 +0700\n    Fix thing 19"
+        }
+      ]
+    },
+    "result": {
+      "savedChars": 410,
+      "savedTokens": 103,
+      "hits": [
+        {
+          "filter": "git-log",
+          "saved": 410
+        }
+      ]
+    }
+  }
+}

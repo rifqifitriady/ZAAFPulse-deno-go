@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "   \n   \nnode_modules/p2/index.js\nnode_modules/p3/index.js\n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \n   \nnode_modules/p36/index.js\nnode_modules/p37/index.js\n   \n   \n   \n   \n   \n   \nnode_modules/p44/index.js\nnode_modules/p45/index.js\n   \nnode_modules/p47/index.js\n   \nnode_modules/p49/index.js\nnode_modules/p50/index.js\n   \nnode_modules/p52/index.js\n   \nnode_modules/p54/index.js\n   \nnode_modules/p56/index.js\nnode_modules/p57/index.js\n   \nnode_modules/p59/index.js\nnode_modules/p60/index.js\nnode_modules/p61/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p62/index.js\nnode_modules/p77/index.js\nnode_modules/p78/index.js\nnode_modules/p79/index.js\n   \n   \nnode_modules/p82/index.js\nnode_modules/p83/index.js\n   \n   \nnode_modules/p86/index.js\nnode_modules/p87/index.js\n   \nnode_modules/p89/index.js\n   \n   \n   \n   \n   \n   ",
+    "Bash find . -name x"
+  ],
+  "out": null
+}

@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "[\n  \"wwwwwwwwwwwwwwwww😀\",\n  true,\n  null\n]",
+    ""
+  ],
+  "out": null
+}
