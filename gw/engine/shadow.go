@@ -453,6 +453,10 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 		_, sh := e.mode(AuthSwitch)
 		shadowed = shadowed || sh
 	}
+	if p.Route != nil { // a shadowed routes switch also compares the route calls (P4h spec Decision 2)
+		_, sh := e.mode(RouteSwitch)
+		shadowed = shadowed || sh
+	}
 	if !shadowed {
 		js.ServeHTTP(w, r)
 		return
@@ -471,6 +475,11 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 	if own == nil {
 		js.ServeHTTP(w, r)
 		return
+	}
+	if p.Route != nil {
+		// The compare of a route call (JS's route tape) is not there yet (P4h Task 7): its line stays today's hand-off.
+		h := handoff("model: a route")
+		p = &h
 	}
 	select {
 	case shadowSlots <- struct{}{}:

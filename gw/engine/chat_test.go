@@ -156,9 +156,19 @@ func TestChatHandoffs(t *testing.T) {
 			r.Body = []byte(`{"model":"oa/m1","stream":true,"stream_options":"x"}`)
 		}},
 		{"unknown model", "model: no usable", func(s *State, r *Request) { r.Body = []byte(`{"model":"zz/m1"}`) }},
-		{"route", "model: a route", func(s *State, r *Request) {
-			s.Gateway.Routes = []ipc.RouteConfig{{Name: "router/r", Targets: []string{"oa/m1"}}}
+		// P4h: a route of no usable target is the 404 JS answers; a leg's hand-off hands off the whole route call.
+		{"route of no usable target", "route: no usable target", func(s *State, r *Request) {
+			s.Gateway.Routes = []ipc.RouteConfig{{Name: "router/r", Targets: []string{"zz/m1"}}}
 			r.Body = []byte(`{"model":"router/r"}`)
+		}},
+		{"route leg without a credential", "route: provider: no credential", func(s *State, r *Request) {
+			s.Gateway.Routes = []ipc.RouteConfig{{Name: "router/r", Targets: []string{"zz/m1", "oa/m1"}}}
+			delete(s.Secrets, "oa")
+			r.Body = []byte(`{"model":"router/r"}`)
+		}},
+		{"route leg stream_options a string", "route: stream: stream_options", func(s *State, r *Request) {
+			s.Gateway.Routes = []ipc.RouteConfig{{Name: "router/r", Targets: []string{"oa/m1"}}}
+			r.Body = []byte(`{"model":"router/r","stream":true,"stream_options":"x"}`)
 		}},
 		{"oauth2", "provider: OAuth2", func(s *State, r *Request) { s.Gateway.Providers[0].Auth = &ipc.ProviderAuth{Type: "oauth2"} }},
 		{"credential missing", "provider: no credential", func(s *State, r *Request) { delete(s.Secrets, "oa") }},

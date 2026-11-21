@@ -322,6 +322,25 @@ func (s *State) Save(p *Plan, now time.Time) (handoffWhy string) {
 		p.Base.SavedTokens = &n
 		p.saverHits = len(hits)
 	}
+	if p.Route != nil { // a route call: every leg sends the shortened client body (P4h spec Decision 9)
+		body := p.pending
+		p.pending = nil
+		if len(hits) == 0 {
+			return ""
+		}
+		legs, why := p.relegs(body)
+		if why != "" {
+			p.saverWhy = RouteHandoff + why
+			return p.saverWhy
+		}
+		for _, l := range legs {
+			if l != nil {
+				l.Base.SavedTokens = p.Base.SavedTokens // only the answer's line keeps it (proxyChat's base)
+			}
+		}
+		p.Legs = legs
+		return ""
+	}
 	if p.Policy == nil && p.pending != nil {
 		body := p.pending
 		p.pending = nil

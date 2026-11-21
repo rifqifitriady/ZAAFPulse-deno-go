@@ -12,6 +12,7 @@ import (
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/provauth"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate"
 )
 
 // Sub-classes (P4d Decision 2): each has its own engine entry, shadow entry and switch-rule record.
@@ -110,6 +111,81 @@ func (s *State) target(model string, key *ipc.GatewayKeyAuth) (*Target, string) 
 		return nil, "model: no usable target"
 	}
 	return t, ""
+}
+
+// routeOf is the route named model, or nil.
+func (s *State) routeOf(model string) *ipc.RouteConfig {
+	for i := range s.Gateway.Routes {
+		if s.Gateway.Routes[i].Name == model {
+			return &s.Gateway.Routes[i]
+		}
+	}
+	return nil
+}
+
+// RouteHandoff prefixes the hand-off reasons of a route call (spec Decision 2: they count for the routes switch).
+const RouteHandoff = "route: "
+
+// routeLegs builds a route's legs with build, one per raw target (nil for a name that does not resolve, or an external
+// target of a private-only key: resolveAll drops it). A leg's hand-off hands off the whole call (spec Decision 8); a
+// route with no leg at all is targetsFor's 404 (whyNot), handed off too.
+func (s *State) routeLegs(rt *ipc.RouteConfig, key *ipc.GatewayKeyAuth, build func(t *Target) (Plan, string)) ([]*Plan, string) {
+	legs := make([]*Plan, len(rt.Targets))
+	usable := false
+	for i, name := range rt.Targets {
+		t := Resolve(s.Gateway.Providers, name)
+		if t == nil || (key.PrivateOnly && TierOf(t.Provider) != "private") {
+			continue
+		}
+		l, why := build(t)
+		if why != "" {
+			return nil, why
+		}
+		legs[i], usable = &l, true
+	}
+	if !usable {
+		return nil, "no usable target"
+	}
+	return legs, ""
+}
+
+// firstLeg is a route plan's first leg in the route's own order (its sub-class is the plan's, spec D2).
+func firstLeg(legs []*Plan) *Plan {
+	for _, l := range legs {
+		if l != nil {
+			return l
+		}
+	}
+	return nil
+}
+
+// planChatRoute is PlanChat for a route (proxyChat over targetsFor): one chat leg per target, built from the client's
+// body; the token saver, when on, scans the client's body once (Save shortens it and builds the legs again).
+func (s *State) planChatRoute(r *Request, body *Value, key *ipc.GatewayKeyAuth, rt *ipc.RouteConfig) Plan {
+	model := rt.Name
+	build := func(b *Value) ([]*Plan, string) {
+		return s.routeLegs(rt, key, func(t *Target) (Plan, string) { return s.chatLeg(r, b, key, t, model, false) })
+	}
+	legs, why := build(body)
+	if why != "" {
+		return handoff(RouteHandoff + why)
+	}
+	var job *saverJob
+	var pending *Value
+	if s.tokenSaverOn(r) {
+		pending = body.Clone()
+		if job, why = scanSaver(pending, "openai"); why != "" {
+			return handoff(why) // the saver's own reason: it counts for the token-saver switch
+		}
+		if job == nil {
+			pending = nil
+		}
+	}
+	first := firstLeg(legs)
+	p := Plan{Key: key, Model: model, ClientModel: model, Route: rt, Legs: legs, Takes: 1, Stream: first.Stream,
+		Format: "openai", Shape: ShapeOpenAI, Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default,
+		saver: job, pending: pending, relegs: build, Class: first.Class}
+	return p
 }
 
 // credential is the provider's API key ("" for none), or for an oauth2 or google-sa provider the engine's token source
