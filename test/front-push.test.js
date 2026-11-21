@@ -106,7 +106,59 @@ test('secretsPush: key-auth credentials that resolve, and the mask set; others l
     },
   });
   assert.deepEqual(body, { providers: [{ id: 'oa', value: 'sk-oa-123456' }], mask: ['sk-oa-123456'] });
-  assert.deepEqual(seen, ['oa credential', 'bad credential'], 'OAuth2 is not resolved here (P4g)');
+  assert.deepEqual(seen, ['oa credential', 'az credential', 'bad credential'], 'token auth is resolved too (P4g)');
+  assert.deepEqual(check(msg('secrets.handoff', body)), { errors: [], unknownType: false });
+});
+
+test('secretsPush: token-auth providers hand over their stored credential (P4g Decision 9)', () => {
+  const SA = JSON.stringify({ client_email: 'sa@p.example.test', private_key: 'not-a-real-key' });
+  const RT = JSON.stringify({ client_secret: 'cs-1', refresh_token: 'rt-1' });
+  const oauth = (grant) => ({ type: 'oauth2', tokenUrl: 'https://login.example.test/t', clientId: 'c', grant });
+  const gateway = {
+    providers: [
+      {
+        id: 'cc',
+        preset: 'azure-openai',
+        baseUrl: 'https://x/v1',
+        apiKey: { env: 'CC' },
+        auth: oauth('client_credentials'),
+      },
+      { id: 'rt', preset: 'custom', baseUrl: 'https://y/v1', apiKey: { env: 'RT' }, auth: oauth('refresh_token') },
+      {
+        id: 'vx',
+        preset: 'vertex',
+        baseUrl: 'https://z/v1',
+        apiKey: { env: 'SA' },
+        auth: { type: 'google-sa', scope: 's' },
+      },
+      { id: 'sh', preset: 'custom', baseUrl: 'https://s/v1', apiKey: { env: 'SH' }, auth: oauth('client_credentials') },
+      {
+        id: 'gone',
+        preset: 'custom',
+        baseUrl: 'https://g/v1',
+        apiKey: { env: 'GONE' },
+        auth: oauth('client_credentials'),
+      },
+      { id: 'none', preset: 'vertex', baseUrl: 'https://n/v1', auth: { type: 'google-sa', scope: 's' } },
+    ],
+  };
+  const env = { CC: 'client-secret-1', RT, SA, SH: 'abc' };
+  const body = secretsPush({
+    gateway,
+    resolve: (ref, field) => {
+      if (env[ref.env]) return env[ref.env];
+      throw new Error(`${field}: not set`);
+    },
+  });
+  assert.deepEqual(body, {
+    providers: [
+      { id: 'cc', value: 'client-secret-1' },
+      { id: 'rt', value: RT },
+      { id: 'vx', value: SA },
+      { id: 'sh', value: 'abc' },
+    ],
+    mask: ['client-secret-1', RT, SA],
+  });
   assert.deepEqual(check(msg('secrets.handoff', body)), { errors: [], unknownType: false });
 });
 
