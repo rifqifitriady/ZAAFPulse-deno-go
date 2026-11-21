@@ -37,6 +37,7 @@ var Subs = map[string][]string{
 	"responses":  {SubResponses, SubResponsesStream},
 	"gemini":     {SubGemini, SubGeminiStream, SubGeminiCount},
 	"embeddings": {SubEmbeddings},
+	"mcp":        {SubMCP},
 }
 
 // Shape is how the engine writes a refusal: lib/gateway/index.js fail (OpenAI), anthropicError, or the Google error.

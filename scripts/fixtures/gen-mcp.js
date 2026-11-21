@@ -103,6 +103,9 @@ const CASES = [
   ['call-thrown', { guardrails: ON, thrown: true }, call('dt_query', { q: `key ${ANT}` }), null],
   ['call-thrown-not-in-scope', { guardrails: ON, thrown: true }, call('acc_usage', {}), null],
   ['call-result-no-result', { guardrails: ON }, call('dt_query', { q: 'x' }), { other: 1 }],
+  // callTool's value undefined: the tool endpoint answers {} (JSON.stringify({ r: undefined })); handle throws on it.
+  ['call-result-undefined', { guardrails: ON }, call('dt_query', { q: 'x' }), undefined],
+  ['call-result-undefined-hits', { guardrails: ON }, call('dt_query', { q: `key ${ANT}` }), undefined],
   ['call-args-fail', { guardrails: ON, failBody: true }, call('dt_query', { q: 'x' }), OK],
   ['call-result-fail', { guardrails: ON, failText: true }, call('dt_query', { q: `key ${ANT}` }), OK],
   ['call-id-string', { guardrails: ON }, call('dt_query', { q: 'x' }, 'req-7'), OK],
@@ -167,7 +170,7 @@ function main() {
     callTool: async (name, args) => {
       calls.push({ name, args: JSON.stringify(args) });
       if (cur.thrown) throw new Error('the integration broke');
-      return JSON.parse(JSON.stringify(cur.tool));
+      return cur.tool === undefined ? undefined : JSON.parse(JSON.stringify(cur.tool));
     },
   };
   const gateway = createGateway({

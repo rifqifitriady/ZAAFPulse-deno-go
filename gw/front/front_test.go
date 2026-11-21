@@ -2,6 +2,7 @@ package front
 
 import (
 	"bufio"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -439,5 +440,54 @@ func TestProxyHeadersPassThrough(t *testing.T) {
 				t.Errorf("nominated in Connection %v: %s reached the control plane as %q", nominate, n, v)
 			}
 		}
+	}
+}
+
+// toolEngine records the tool call the front gives it (P4g: SetTools, as SetOwn).
+type toolEngine struct {
+	recEngine
+	call func(ctx context.Context, body []byte) (int, []byte, error)
+}
+
+func (e *toolEngine) SetTools(f func(ctx context.Context, body []byte) (int, []byte, error)) {
+	e.call = f
+}
+
+// P4g: an engine that calls tools gets the front's call: POST /_zp/mcp/call on the internal port as the gateway itself
+// (X-Zp-Own, the signed client header naming the gateway), with the caller's context and no 5 s limit of its own.
+func TestSetToolsCallsTheToolEndpoint(t *testing.T) {
+	type seen struct {
+		method, path, own, client, body string
+	}
+	got := make(chan seen, 1)
+	release := make(chan struct{})
+	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got <- seen{r.Method, r.URL.Path, r.Header.Get(OwnHeader), r.Header.Get(ClientHeader), string(b)}
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"r":{"result":{}}}`)
+	})
+	s := startFront(t, up.port(), nil)
+	e := &toolEngine{recEngine: recEngine{calls: make(chan string, 1)}}
+	s.SetGoEngine(e)
+	if e.call == nil {
+		t.Fatal("the engine got no tool call")
+	}
+	go func() { time.Sleep(5500 * time.Millisecond); close(release) }() // past own's 5 s
+	status, body, err := e.call(context.Background(), []byte(`{"name":"x","arguments":{}}`))
+	if err != nil || status != 200 || string(body) != `{"r":{"result":{}}}` {
+		t.Fatalf("%d %s %v", status, body, err)
+	}
+	r := <-got
+	want := ClientValue(token, s.Addr().String(), false)
+	if r.method != "POST" || r.path != "/_zp/mcp/call" || r.own != "1" || r.client != want || r.body != `{"name":"x","arguments":{}}` {
+		t.Fatalf("%+v", r)
+	}
+	// The caller's context ends the call.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := e.call(ctx, []byte(`{}`)); err == nil {
+		t.Fatal("a cancelled context still called")
 	}
 }

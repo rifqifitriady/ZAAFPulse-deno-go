@@ -50,13 +50,14 @@ const MaxHeaderBytes = 16384 - 4096
 
 // Subs are the go engine's path classes and their sub-classes, each sub-class with its own engine and shadow entry
 // (gw/engine Subs; TestFrontSubsMatchTheEngine keeps the two equal). The engine reads a request's body and picks the
-// sub-class: chat-stream (P4c), chat-anthropic, and the P4d classes' own.
+// sub-class: chat-stream (P4c), chat-anthropic, and the P4d classes' own; mcp (P4g) has one.
 var Subs = map[string][]string{
 	"chat":       {"chat", "chat-stream", "chat-anthropic", "chat-anthropic-stream"},
 	"messages":   {"messages", "messages-stream", "messages-count"},
 	"responses":  {"responses", "responses-stream"},
 	"gemini":     {"gemini", "gemini-stream", "gemini-count"},
 	"embeddings": {"embeddings"},
+	"mcp":        {"mcp"},
 }
 
 // GoClasses are the classes a config.push may put on go: every sub-class of Subs (a path class is also its own first
@@ -122,10 +123,21 @@ func (s *Server) SetShadow(classes []string) {
 	s.shadow.Store(&m)
 }
 
-// own calls the control plane's internal port as the gateway itself (the shadow endpoints under /_zp/).
+// own calls the control plane's internal port as the gateway itself (the shadow endpoints under /_zp/), within 5 s.
 func (s *Server) own(method, path string, body []byte) (int, []byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	return s.ownCall(ctx, method, path, body)
+}
+
+// callTool calls the control plane's tool endpoint for the go engine's /mcp tools/call (P4g, lib/front/tools.js) as the
+// gateway itself, with the caller's context and no time limit of its own (the tool's own timeouts apply).
+func (s *Server) callTool(ctx context.Context, body []byte) (int, []byte, error) {
+	return s.ownCall(ctx, http.MethodPost, "/_zp/mcp/call", body)
+}
+
+// ownCall is one request of the gateway's own to the internal port: X-Zp-Own and the signed client header.
+func (s *Server) ownCall(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, s.upstream.String()+path, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
@@ -146,7 +158,8 @@ func (s *Server) own(method, path string, body []byte) (int, []byte, error) {
 }
 
 // SetGoEngine installs the go engine before Serve (without one, a class on go is answered 501). An engine that reads
-// per-sub-class modes (SetModes) gets the front's.
+// per-sub-class modes (SetModes) gets the front's, and one that calls the control plane gets the front's calls (SetOwn,
+// SetTools).
 func (s *Server) SetGoEngine(e GoEngine) {
 	s.goEngine = e
 	if m, ok := e.(interface {
@@ -158,6 +171,11 @@ func (s *Server) SetGoEngine(e GoEngine) {
 		SetOwn(func(method, path string, body []byte) (int, []byte, error))
 	}); ok {
 		o.SetOwn(s.own)
+	}
+	if t, ok := e.(interface {
+		SetTools(func(ctx context.Context, body []byte) (int, []byte, error))
+	}); ok {
+		t.SetTools(s.callTool)
 	}
 }
 

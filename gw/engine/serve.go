@@ -24,6 +24,8 @@ type Engine struct {
 	logf     func(string, ...any)
 	modes    atomic.Pointer[func(sub string) (onGo, shadowed bool)]
 	own      atomic.Pointer[func(method, path string, body []byte) (int, []byte, error)]
+	// the control plane's tool endpoint (P4g, serve_mcp.go)
+	tools    atomic.Pointer[ToolCall]
 	streams  sync.WaitGroup // streams being served, until their usage line is handed to emit
 	closeMu  sync.Mutex     // closing and streams.Add: no Add once Wait has begun (final review m5)
 	closing  bool
@@ -278,7 +280,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	if wait := e.limits.Take(p.Key.ID, p.Key.RPM, takeAt); wait > 0 {
 		a := RateLimited(p.Key, wait, p.Shape)
 		write(w, a)
-		if tr != nil {
+		if tr != nil && p.Upstream != UpTool { // /mcp is no model endpoint: no span without a line (serve_mcp.go)
 			flushAnswer(w)
 			e.spans(s, tr, a.Status, started, time.Now(), nil, nil, nil) // no usage line: the server span only
 		}
@@ -286,6 +288,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	}
 	if e.onTake != nil {
 		e.onTake(p.Key.ID, takeAt) // the control plane's copy of the window (P4f D16)
+	}
+	if p.Upstream == UpTool { // /mcp tools/call (P4g): no budget, the tool run by the control plane
+		e.serveMCP(w, r, s, &p, started, tr)
+		return
 	}
 	if p.Upstream == UpNone { // an answer of the engine's own (a count estimate, P4d): no budget, no line
 		e.answerOwn(w, r, s, *p.Self, started, tr)

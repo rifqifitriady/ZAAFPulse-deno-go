@@ -160,13 +160,21 @@ func TestMCPFixtures(t *testing.T) {
 			if want := f.Out.ToolCalls[0]; p.Tool != want.Name || string(args) != want.Args {
 				t.Errorf("tool call\n got %s %s\nwant %s %s", p.Tool, args, want.Name, want.Args)
 			}
-			endpoint := []byte(`{"thrown":true}`)
-			if !f.In.Thrown {
-				endpoint = append(append([]byte(`{"r":`), f.In.Tool...), '}')
-			}
-			sameAnswer(t, s.ToolReply(&p, st, endpoint, 1), f.Out)
+			sameAnswer(t, s.ToolReply(&p, st, endpointOf(f.In), 1), f.Out)
 		})
 	}
+}
+
+// endpointOf is what lib/front/tools.js answers for a case: {"thrown":true}, or JSON.stringify({ r: <the tool's
+// value> }), which is {} for an undefined value (the case has no "tool").
+func endpointOf(c mcpCase) []byte {
+	switch {
+	case c.Thrown:
+		return []byte(`{"thrown":true}`)
+	case len(c.Tool) == 0:
+		return []byte(`{}`)
+	}
+	return append(append([]byte(`{"r":`), c.Tool...), '}')
 }
 
 // The control plane gone mid-call (no answer, or one that is not the endpoint's): -32603 Internal error, no line
