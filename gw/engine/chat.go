@@ -278,19 +278,6 @@ func (s *State) StreamLine(p *Plan, cs *ChatStream, ms float64) ipc.UsageRecord 
 	return rec
 }
 
-func hasToolMessage(body *Value) bool {
-	msgs := body.Get("messages")
-	if msgs == nil || msgs.Kind != Array {
-		return false
-	}
-	for _, m := range msgs.A {
-		if r := m.Get("role"); r != nil && r.Kind == String && r.S == "tool" {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *State) base(key *ipc.GatewayKeyAuth, t *Target, model string, r *Request) ipc.UsageRecord {
 	kind, format, stream := "chat", "openai", false
 	rec := ipc.UsageRecord{KeyID: key.ID, Provider: t.Provider.ID, Model: model, Kind: &kind, Format: &format,
