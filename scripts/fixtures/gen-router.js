@@ -11,12 +11,27 @@
 // - fn-resolve: in { providers, routes, sequences: [{ note, steps: [{ at, call?, privateOnly?, provider?, status?,
 //   headers? }] }] }, out per sequence per step { order: [{ name, provider, model }] } for a call, the cooldowns after
 //   a note.
+// - seq-<class>-<what> (fn "sequence"), route level: one real createGateway per file (as gen-xlate.js, a fetch stub,
+//   a fresh data folder) answers a sequence of client calls, so rotation and cooldowns carry from call to call. in
+//   { note, configPush, secretsPush, snapshot, start, steps: [{ advanceMs, request: { method, path, headers, body },
+//   answers: [{ status, headers, body } | { status, headers, chunks } | { throw: code }] }] }; out { steps: [{ now,
+//   requests: [{ url, method, headers, body }], client: { status, headers, body }, usage: [line, oldest first],
+//   events: [{ type: 'provider.note' | 'route.take', body }], state: routeState() }] }. The clock is start plus the
+//   advanceMs of every step so far; the random counter runs over the whole sequence. Each step must use every answer.
 // A number JSON cannot hold (NaN, Infinity) is written as its String(); -0 is written as 0. Headers are written as the
 // JS Headers object reads them (lower-case names, values trimmed). No date-time without an offset is written (its
 // value would depend on the machine's time zone).
 // Run: node scripts/fixtures/gen-router.js. No network, env, subprocess or sys access; writes only under gw/testdata.
-const { writeCases, FIXED_NOW } = require('./lib'); // first: the random counter and the fixed clock
+const fs = require('fs');
+const path = require('path');
+const { writeCases, ROOT, FIXED_NOW } = require('./lib'); // first: the random counter and the fixed clock
 const { createProviders, resetIn, readQuota } = require('../../lib/gateway/providers');
+const { createGateway } = require('../../lib/gateway');
+const { createSecrets } = require('../../lib/secrets');
+const { createGuard } = require('../../lib/cost/guard');
+const { configPush, secretsPush, snapshotPush } = require('../../lib/front/push');
+const { hash } = require('../../lib/gateway/keys');
+const { toNano } = require('../../lib/money');
 
 const T0 = FIXED_NOW;
 const S = 1000;
@@ -499,7 +514,618 @@ const normal = (sequences) =>
     steps: s.steps.map((st) => (st.provider ? { ...st, headers: headersOf(st.headers) } : st)),
   }));
 
+/* ---------- route level: call sequences through the real gateway ---------- */
+
+// The generator's clock for the sequences: lib.js's fixed time plus the offset the steps advance. Set before any gateway
+// is made, since createGateway and createProviders keep the Date.now they were made with.
+let clockOffset = 0;
+Date.now = () => FIXED_NOW + clockOffset;
+
+const SECRET = 'zp_routerFixtureSecret0123456789abcd';
+const OA_KEY = ['sk', 'oa', 'router', 'fixture', '123456'].join('-');
+const OB_KEY = ['sk', 'ob', 'router', 'fixture', '778899'].join('-');
+const AN_KEY = ['sk', 'an', 'router', 'fixture', '654321'].join('-');
+// A secret-shaped value for the guardrail case, built by concatenation (no scanner-shaped literal in this file).
+const ANT = ['sk', 'ant', 'api03', 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd'].join('-');
+const SEQ_SECRETS = new Set([SECRET, `${SECRET}3`, `${SECRET}5`, OA_KEY, OB_KEY, AN_KEY, ANT]);
+
+const OFF = { scope: 'external', secrets: 'off', pii: 'off', injection: 'off' };
+const SEQ_PROVIDERS = [
+  {
+    id: 'oa',
+    preset: 'custom',
+    baseUrl: 'http://127.0.0.1:9/v1',
+    tier: 'external',
+    approved: true,
+    apiKey: { env: 'OA_KEY' },
+  },
+  {
+    id: 'ob',
+    preset: 'custom',
+    baseUrl: 'http://127.0.0.1:13/v1',
+    tier: 'external',
+    approved: true,
+    apiKey: { env: 'OB_KEY' },
+  },
+  { id: 'op', preset: 'openai', baseUrl: 'http://127.0.0.1:8/v1', approved: true, apiKey: { env: 'OA_KEY' } },
+  { id: 'op2', preset: 'openai', baseUrl: 'http://127.0.0.1:7/v1', approved: true, apiKey: { env: 'OB_KEY' } },
+  { id: 'an', preset: 'anthropic', baseUrl: 'http://127.0.0.1:10/v1', approved: true, apiKey: { env: 'AN_KEY' } },
+  { id: 'pv', preset: 'ollama', baseUrl: 'http://127.0.0.1:11434/v1' },
+  {
+    id: 'gm',
+    preset: 'gemini',
+    baseUrl: 'http://127.0.0.1:12/v1beta/openai',
+    approved: true,
+    apiKey: { env: 'OA_KEY' },
+  },
+];
+const SEQ_ROUTES = [
+  { name: 'router/fb', targets: ['oa/m1', 'ob/m1'], strategy: 'fallback' },
+  { name: 'router/rr2', targets: ['oa/m1', 'ob/m1'], strategy: 'round-robin' },
+  { name: 'router/rr3', targets: ['oa/m1', 'ob/m1', 'op/gpt-6.1'], strategy: 'round-robin' },
+  { name: 'router/mix', targets: ['pv/llama-9', 'oa/m1'], strategy: 'fallback' },
+  { name: 'router/an', targets: ['an/claude-x', 'oa/m1'], strategy: 'fallback' },
+  { name: 'router/native', targets: ['op/gpt-6.1', 'op2/gpt-6.1'], strategy: 'fallback' },
+  { name: 'router/gem', targets: ['gm/gemini-2.5-pro', 'oa/m1'], strategy: 'fallback' },
+  { name: 'router/emb', targets: ['oa/e1', 'ob/e1'], strategy: 'fallback' },
+  { name: 'router/priced', targets: ['oa/nopr', 'ob/m1'], strategy: 'fallback' },
+  { name: 'router/unpriced', targets: ['oa/nopr', 'ob/nopr2'], strategy: 'fallback' },
+];
+const SEQ_MODEL_MAP = [{ match: 'claude-*', to: 'router/rr2' }];
+const SEQ_PRICING = {
+  m1: { input: 1, output: 2 },
+  'llama-9': { input: 0.1, output: 0.3, cacheRead: 0.01 },
+  'gpt-6.1': { input: 2, output: 8 },
+  'claude-x': { input: 3, output: 15, cacheRead: 0.3 },
+  e1: { input: 0.02, output: 0 },
+  'gemini-2.5-pro': { input: 1.25, output: 10 },
+};
+const seqKey = (id, extra = {}) => ({
+  id,
+  name: id,
+  prefix: 'zp_routerF…',
+  hash: hash(id === 'k1' ? SECRET : `${SECRET}${id.slice(1)}`),
+  scopes: ['llm'],
+  models: [],
+  agents: [],
+  budgetUSD: null,
+  rpm: 10000,
+  createdAt: 1,
+  ...extra,
+});
+const SEQ_KEYS = [
+  seqKey('k1'),
+  seqKey('k3', { budgetUSD: 1 }), // a limited key: priced or private targets only
+  seqKey('k5', { privateOnly: true }),
+];
+const secretOf = { k1: SECRET, k3: `${SECRET}3`, k5: `${SECRET}5` };
+const budget = (id, scope, state) => ({
+  id,
+  name: `Budget ${id}`,
+  scope,
+  period: 'month',
+  currency: 'USD',
+  measure: 'list',
+  enforce: 'block',
+  amount: 1,
+  from: '2026-01-01',
+  to: '2026-01-31',
+  state,
+  spentUSD: state === 'exceeded' ? 2 : 0.5,
+  amountUSD: 1,
+  reason: null,
+});
+// The budget service the guard and snapshotPush read: budgets with a fixed state, no cost centers.
+const fakeService = (budgets) => ({
+  list: () => ({ budgets }),
+  evaluateOne: (b) => ({ ...b }),
+  keyCenter: () => null,
+  reportGuard: () => {},
+});
+
+// Provider answers: { status, headers, body } whole, { status, headers, chunks } streamed, { throw: code } when fetch
+// rejects (a TypeError "fetch failed" with cause.code, as Node's and Deno's fetch give it).
+const json = (status, body, headers = {}) => ({
+  status,
+  headers: { 'content-type': 'application/json', ...headers },
+  body: JSON.stringify(body),
+});
+const chatOk = (content = 'hi') =>
+  json(200, {
+    id: 'chatcmpl-up',
+    object: 'chat.completion',
+    model: 'upstream-model',
+    choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 1000, completion_tokens: 500, prompt_tokens_details: { cached_tokens: 200 } },
+  });
+const chunk = (delta, finish = null) => ({
+  id: 'chatcmpl-up',
+  object: 'chat.completion.chunk',
+  model: 'upstream-model',
+  choices: [{ index: 0, delta, finish_reason: finish }],
+});
+const chatStream = () => ({
+  status: 200,
+  headers: { 'content-type': 'text/event-stream' },
+  chunks: [
+    chunk({ role: 'assistant', content: '' }),
+    chunk({ content: 'Hel' }),
+    chunk({ content: 'lo' }),
+    chunk({}, 'stop'),
+    {
+      id: 'chatcmpl-up',
+      object: 'chat.completion.chunk',
+      choices: [],
+      usage: { prompt_tokens: 12, completion_tokens: 3 },
+    },
+  ]
+    .map((c) => `data: ${JSON.stringify(c)}\n\n`)
+    .concat('data: [DONE]\n\n'),
+});
+const anMsg = () =>
+  json(200, {
+    id: 'msg_up',
+    type: 'message',
+    role: 'assistant',
+    model: 'claude-x',
+    content: [{ type: 'text', text: 'hi there' }],
+    stop_reason: 'end_turn',
+    usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 2 },
+  });
+const ev = (name, data) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+const respOk = () =>
+  json(200, {
+    id: 'resp_up',
+    object: 'response',
+    model: 'gpt-6.1',
+    status: 'completed',
+    output: [{ type: 'message', id: 'msg_1', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
+    usage: { input_tokens: 7, output_tokens: 3, input_tokens_details: { cached_tokens: 1 } },
+  });
+const respStream = () => ({
+  status: 200,
+  headers: { 'content-type': 'text/event-stream' },
+  chunks: [
+    ev('response.created', {
+      type: 'response.created',
+      response: { id: 'resp_up', model: 'gpt-6.1', status: 'in_progress' },
+    }),
+    ev('response.output_text.delta', { type: 'response.output_text.delta', delta: 'hi' }),
+    ev('response.completed', {
+      type: 'response.completed',
+      response: { id: 'resp_up', model: 'gpt-6.1', status: 'completed', usage: { input_tokens: 7, output_tokens: 3 } },
+    }),
+  ],
+});
+const embOk = () =>
+  json(200, {
+    object: 'list',
+    data: [{ object: 'embedding', index: 0, embedding: [0.1, -0.2] }],
+    model: 'e1-up',
+    usage: { prompt_tokens: 4, total_tokens: 4 },
+  });
+const THROW = { throw: 'ECONNREFUSED' };
+const err = (status, message, headers = {}) => json(status, { error: { message, type: 'upstream' } }, headers);
+const R429 = (headers) => err(429, 'slow down', headers);
+
+// Client calls: [path, body, answers, opt]; opt: { advanceMs, key, auth: 'bearer' | 'x-api-key' | 'goog', headers }.
+const user = (content = 'hi') => [{ role: 'user', content }];
+const CHAT = '/v1/chat/completions';
+const MSG = '/v1/messages';
+const COUNT = '/v1/messages/count_tokens';
+const RESP = '/v1/responses';
+const EMB = '/v1/embeddings';
+const chat = (model, extra = {}) => ({ model, messages: user(), ...extra });
+const msgs = (model, extra = {}) => ({ model, max_tokens: 64, messages: user(), ...extra });
+const XA = { auth: 'x-api-key' };
+// Token saver: a long tool result (rtk spec R2): every leg sends the shortened text.
+const SAVER_DIFF = Array.from({ length: 3 }, (_, f) =>
+  [
+    `diff --git a/f${f}.js b/f${f}.js`,
+    '@@ -1,90 +1,90 @@',
+    ...Array.from({ length: 90 }, (_, i) => `+ line ${i}`),
+  ].join('\n'),
+).join('\n');
+const saverTurn = [
+  { role: 'user', content: 'go' },
+  { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'git diff' } }] },
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: SAVER_DIFF }] },
+];
+
+// [name, note, steps, opt]; opt: { guardrails, budgets }.
+const SEQUENCES = [
+  [
+    'seq-chat-fallback-429',
+    'chat on a fallback route: a 429 (retry-after 30) falls back to the second target; the next call tries the cooling target last',
+    [
+      [CHAT, chat('router/fb'), [R429({ 'retry-after': '30' }), chatOk()]],
+      [CHAT, chat('router/fb'), [chatOk()], { advanceMs: 1000 }],
+    ],
+  ],
+  [
+    'seq-chat-fallback-500',
+    'chat on a fallback route: a 500 falls back without a cooldown; the next call tries the first target first',
+    [
+      [CHAT, chat('router/fb'), [err(500, 'down'), chatOk()]],
+      [CHAT, chat('router/fb'), [chatOk()]],
+    ],
+  ],
+  [
+    'seq-chat-fallback-throw',
+    'chat on a fallback route: a refused connection (599 line) falls back; no cooldown',
+    [
+      [CHAT, chat('router/fb'), [THROW, chatOk()]],
+      [CHAT, chat('router/fb'), [chatOk()]],
+    ],
+  ],
+  [
+    'seq-chat-last-408',
+    'chat on a fallback route: 503 on the first target, 408 on the last is answered as is; the first target cools down',
+    [
+      [CHAT, chat('router/fb'), [err(503, 'busy'), err(408, 'too slow')]],
+      [CHAT, chat('router/fb'), [chatOk()], { advanceMs: 500 }],
+    ],
+  ],
+  [
+    'seq-chat-all-throw',
+    'chat on a fallback route: every target refuses the connection: 502 with the last error',
+    [[CHAT, chat('router/fb'), [THROW, THROW]]],
+  ],
+  [
+    'seq-chat-rr3',
+    'chat on a round-robin route of three over four calls',
+    [
+      [CHAT, chat('router/rr3'), [chatOk('one')]],
+      [CHAT, chat('router/rr3'), [chatOk('two')]],
+      [CHAT, chat('router/rr3'), [chatOk('three')]],
+      [CHAT, chat('router/rr3'), [chatOk('four')]],
+    ],
+  ],
+  [
+    'seq-chat-cooldown',
+    'a 429 with remaining 0 and reset 20s cools the first target; it moves back while cooling, returns to the front once the clock passes until, a 2xx clears it, and a later 503 starts again at one strike',
+    [
+      [
+        CHAT,
+        chat('router/fb'),
+        [R429({ 'x-ratelimit-remaining-requests': '0', 'x-ratelimit-reset-requests': '20s' }), chatOk()],
+      ],
+      [CHAT, chat('router/fb'), [chatOk()], { advanceMs: 19999 }],
+      [CHAT, chat('router/rr2'), [chatOk()]],
+      [CHAT, chat('router/fb'), [chatOk()], { advanceMs: 1 }],
+      [CHAT, chat('router/fb'), [err(503, 'busy'), chatOk()], { advanceMs: 1000 }],
+    ],
+  ],
+  [
+    'seq-chat-private-only',
+    'a private-only key: a mixed route keeps its private target only; a route of external targets is 404',
+    [
+      [CHAT, chat('router/mix'), [chatOk()], { key: 'k5' }],
+      [CHAT, chat('router/fb'), [], { key: 'k5' }],
+      [CHAT, chat('router/rr2'), [], { key: 'k5' }],
+      [CHAT, chat('router/rr2'), [chatOk()]],
+    ],
+  ],
+  [
+    'seq-chat-key-budget',
+    'a key with a budget: the unpriced target is filtered out; a route of unpriced targets is 402',
+    [
+      [CHAT, chat('router/priced'), [chatOk()], { key: 'k3' }],
+      [CHAT, chat('router/unpriced'), [], { key: 'k3' }],
+      [CHAT, chat('router/priced'), [chatOk()]],
+    ],
+  ],
+  [
+    'seq-chat-provider-budget',
+    'a blocking provider budget used up refuses the first target; the second serves; a model of that provider alone is 402',
+    [
+      [CHAT, chat('router/fb'), [chatOk()]],
+      [CHAT, chat('oa/m1'), []],
+    ],
+    { budgets: [budget('b1', { dim: 'provider', value: 'oa' }, 'exceeded')] },
+  ],
+  [
+    'seq-chat-guard-second-leg',
+    'secrets blocked for the external tier only: the private first leg goes out as is, fails with 500, and the external second leg is blocked (400)',
+    [[CHAT, chat('router/mix', { messages: user(`key ${ANT}`) }), [err(500, 'down')]]],
+    { guardrails: { ...OFF, secrets: 'block' } },
+  ],
+  [
+    'seq-chat-stream-fallback',
+    'a chat stream on a fallback route: the 429 of the first target falls back before the first byte',
+    [
+      [CHAT, chat('router/fb', { stream: true }), [R429({ 'retry-after': '2' }), chatStream()]],
+      [CHAT, chat('router/fb', { stream: true, stream_options: { include_usage: true } }), [chatStream()]],
+    ],
+  ],
+  [
+    'seq-chat-an-route',
+    'chat on a route whose first target speaks Anthropic: served there; then its 529 falls back to the OpenAI target',
+    [
+      [CHAT, chat('router/an'), [anMsg()]],
+      [
+        CHAT,
+        chat('router/an'),
+        [json(529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }), chatOk()],
+      ],
+      [CHAT, chat('router/an'), [chatOk()], { advanceMs: 1000 }],
+    ],
+  ],
+  [
+    'seq-messages-modelmap-rr',
+    'messages with a modelMap to a two-target round-robin route take twice: the second target serves every call',
+    [
+      [MSG, msgs('claude-sonnet-9'), [chatOk('one')], XA],
+      [MSG, msgs('claude-sonnet-9'), [chatOk('two')], XA],
+      [CHAT, chat('router/rr2'), [chatOk('three')]],
+      [MSG, msgs('claude-sonnet-9'), [chatOk('four')], XA],
+    ],
+  ],
+  [
+    'seq-messages-stream',
+    'a messages stream on a fallback route: the 429 falls back before the first byte; messages on a route with an Anthropic first target is translated',
+    [
+      [MSG, msgs('router/fb', { stream: true }), [R429({ 'retry-after': '5' }), chatStream()], XA],
+      [MSG, msgs('router/an'), [anMsg()], XA],
+    ],
+  ],
+  [
+    'seq-count-route',
+    'count_tokens on a route: the first target speaks Anthropic and counts; once it cools, the first is OpenAI and the estimate answers; after the wait it counts again',
+    [
+      [COUNT, msgs('router/an'), [json(200, { input_tokens: 42 })], XA],
+      [CHAT, chat('router/an'), [R429({ 'retry-after': '5' }), chatOk()]],
+      [COUNT, msgs('router/an'), [], XA],
+      [COUNT, msgs('router/an'), [json(200, { input_tokens: 43 })], { ...XA, advanceMs: 5000 }],
+    ],
+  ],
+  [
+    'seq-responses-native',
+    'responses on a route of native Responses targets: passthrough with its own fallback; the cooling target goes last; a stream',
+    [
+      [RESP, { model: 'router/native', input: 'hi' }, [R429({ 'retry-after': '10' }), respOk()]],
+      [RESP, { model: 'router/native', input: 'hi', stream: true }, [respStream()], { advanceMs: 1000 }],
+      [RESP, { model: 'router/native', input: 'hi' }, [THROW, err(500, 'down')], { advanceMs: 10000 }],
+    ],
+  ],
+  [
+    'seq-responses-translated',
+    'responses on a route of chat targets: translated, with proxyChat fallback; a round-robin route takes twice',
+    [
+      [RESP, { model: 'router/fb', input: 'hi' }, [err(500, 'down'), chatOk()]],
+      [RESP, { model: 'router/rr2', input: 'hi', stream: true }, [chatStream()]],
+      [RESP, { model: 'router/rr2', input: 'hi' }, [chatOk()]],
+    ],
+  ],
+  [
+    'seq-gemini-route',
+    'gemini generateContent on a route: the 503 of the first target falls back',
+    [
+      [
+        '/v1beta/models/router%2Fgem:generateContent',
+        { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+        [err(503, 'busy'), chatOk()],
+        { auth: 'goog' },
+      ],
+      [
+        '/v1beta/models/router%2Fgem:streamGenerateContent?alt=sse',
+        { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+        [chatStream()],
+        { auth: 'goog', advanceMs: 1000 },
+      ],
+    ],
+  ],
+  [
+    'seq-embeddings-route',
+    'embeddings on a route: the first target only, a 429 answered without fallback; the cooling target goes last on the next call',
+    [
+      [EMB, { model: 'router/emb', input: 'hello' }, [embOk()]],
+      [EMB, { model: 'router/emb', input: 'hello' }, [R429({ 'retry-after': '3' })]],
+      [EMB, { model: 'router/emb', input: 'hello' }, [embOk()], { advanceMs: 1000 }],
+    ],
+  ],
+  [
+    'seq-messages-saver',
+    'the token saver on a route call with a tool result: run once; both legs send the shortened text',
+    [[MSG, msgs('router/fb', { messages: saverTurn }), [err(500, 'down'), chatOk()], XA]],
+  ],
+];
+
+const SEQ_HEADERS = ['content-type', 'cache-control', 'access-control-allow-origin', 'retry-after', 'x-zp-dropped'];
+const lower = (h) => Object.fromEntries(Object.entries(h || {}).map(([k, v]) => [k.toLowerCase(), String(v)]));
+// A request as gateway.handle reads it: headers, the target, a loopback client, the body as one chunk.
+const requestOf = (url, headers, text) => ({
+  method: 'POST',
+  url,
+  headers,
+  socket: { remoteAddress: '127.0.0.1', encrypted: false },
+  on() {},
+  once() {},
+  async *[Symbol.asyncIterator]() {
+    yield Buffer.from(text, 'utf8');
+  },
+});
+// A response that keeps what the gateway writes.
+function responseOf() {
+  const res = {
+    statusCode: 200,
+    headers: {},
+    body: '',
+    headersSent: false,
+    writableEnded: false,
+    writeHead(status, h = {}) {
+      res.statusCode = status;
+      res.headersSent = true;
+      for (const [k, v] of Object.entries(h)) res.headers[k.toLowerCase()] = String(v);
+      return res;
+    },
+    setHeader: (k, v) => (res.headers[k.toLowerCase()] = String(v)),
+    write: (c) => ((res.body += String(c)), true),
+    end(c) {
+      if (c !== undefined && typeof c !== 'function') res.body += String(c);
+      res.writableEnded = true;
+      return res;
+    },
+    on() {},
+    once() {},
+  };
+  return res;
+}
+// A usage line as the fixtures compare it: no ts or ms; cost in nano-dollars; ttft as absent, null or set.
+const lineOf = ({ ts: _ts, ms: _ms, ttft, cost, ...rest }) => ({
+  ...rest,
+  cost: toNano(cost),
+  ttft: ttft === undefined ? 'absent' : ttft === null ? null : 'set',
+});
+
+const seqSecrets = () =>
+  createSecrets({
+    env: { OA_KEY, OB_KEY, AN_KEY },
+    exec: () => {
+      throw new Error('no keychain');
+    },
+  });
+
+// One gateway per sequence, fresh data folder and clock: its steps share the rotation counters and the cooldowns.
+async function runSequence(dataDir, gw, service, steps) {
+  fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify({ keys: SEQ_KEYS }));
+  clockOffset = 0;
+  let queue = [];
+  let sent = [];
+  let problem = null;
+  const fetchImpl = async (url, init = {}) => {
+    sent.push({
+      url: String(url),
+      method: init.method || 'GET',
+      headers: lower(init.headers),
+      body: init.body === undefined ? null : String(init.body),
+    });
+    const a = queue[sent.length - 1];
+    if (!a) {
+      problem = problem || `request ${sent.length} (${url}) has no answer`;
+      throw new Error(problem);
+    }
+    if (a.throw) throw Object.assign(new TypeError('fetch failed'), { cause: { code: a.throw } });
+    if (a.chunks) {
+      const pieces = a.chunks.map((c) => new Uint8Array(Buffer.from(c, 'utf8')));
+      let i = 0;
+      const body = new ReadableStream({
+        pull(ctrl) {
+          if (i < pieces.length) ctrl.enqueue(pieces[i++]);
+          else ctrl.close();
+        },
+      });
+      return new Response(body, { status: a.status, headers: a.headers });
+    }
+    return new Response(Buffer.from(a.body, 'utf8'), { status: a.status, headers: a.headers });
+  };
+  const guard = createGuard({ service, now: () => FIXED_NOW });
+  const gateway = createGateway({
+    dataDir,
+    getConfig: () => ({ gateway: gw }),
+    writeGatewayConfig: () => {},
+    secrets: seqSecrets(),
+    resolveSecret: () => undefined,
+    getPricing: () => SEQ_PRICING,
+    getIntegrations: () => ({ listTools: async () => [], callTool: async () => ({}) }),
+    fetchImpl,
+    toolsHome: dataDir,
+    budgetGuard: {
+      check: (ctx) => guard.check(ctx),
+      keyLimited: (id) => guard.keyLimited(id),
+      record: () => {},
+      failed: () => {},
+    },
+  });
+  let events = [];
+  gateway.onRouteEvent((type, body) => events.push({ type, body: JSON.parse(JSON.stringify(body)) }));
+  const out = [];
+  try {
+    for (const [i, step] of steps.entries()) {
+      clockOffset += step.advanceMs;
+      queue = step.answers;
+      sent = [];
+      events = [];
+      const before = gateway.usage.recent(2000).length;
+      const res = responseOf();
+      const r = step.request;
+      await gateway.handle(requestOf(r.path, r.headers, r.body), res, new URL(r.path, 'http://localhost'));
+      if (problem) throw new Error(`step ${i}: ${problem}`);
+      if (sent.length !== queue.length)
+        throw new Error(`step ${i}: ${queue.length} answers given, ${sent.length} provider requests made`);
+      const lines = gateway.usage.recent(2000);
+      out.push({
+        now: FIXED_NOW + clockOffset,
+        requests: sent,
+        client: {
+          status: res.statusCode,
+          headers: Object.fromEntries(SEQ_HEADERS.map((h) => [h, res.headers[h] ?? null])),
+          body: res.body,
+        },
+        usage: lines
+          .slice(0, lines.length - before)
+          .reverse()
+          .map(lineOf),
+        events,
+        state: gateway.routeState(),
+      });
+    }
+  } finally {
+    gateway.flush();
+    clockOffset = 0;
+  }
+  return { steps: out };
+}
+
+function sequenceCases(dataDir) {
+  const sec = seqSecrets();
+  return SEQUENCES.map(([name, note, calls, opt = {}]) => {
+    const gw = {
+      providers: SEQ_PROVIDERS,
+      routes: SEQ_ROUTES,
+      guardrails: opt.guardrails || OFF,
+      defaults: { model: '', plannerModel: '', codeModel: '' },
+      tokenSaver: true,
+      modelMap: SEQ_MODEL_MAP,
+    };
+    const service = fakeService(opt.budgets || []);
+    const steps = calls.map(([url, body, answers, o = {}]) => {
+      const secret = secretOf[o.key || 'k1'];
+      const auth = o.auth || 'bearer';
+      return {
+        advanceMs: o.advanceMs || 0,
+        request: {
+          method: 'POST',
+          path: url,
+          headers: {
+            'content-type': 'application/json',
+            'user-agent': 'claude-cli/9.9.9',
+            ...(auth === 'bearer' ? { authorization: `Bearer ${secret}` } : {}),
+            ...(auth === 'x-api-key' ? { 'x-api-key': secret } : {}),
+            ...(auth === 'goog' ? { 'x-goog-api-key': secret } : {}),
+            ...(o.headers || {}),
+          },
+          body: JSON.stringify(body),
+        },
+        answers,
+      };
+    });
+    const args = {
+      note,
+      configPush: configPush({ gateway: gw, keys: SEQ_KEYS, pricing: SEQ_PRICING }),
+      secretsPush: secretsPush({ gateway: gw, resolve: (ref, f) => sec.resolve(ref, f) }),
+      snapshot: { ...snapshotPush({ service, keyIds: SEQ_KEYS.map((k) => k.id), now: FIXED_NOW }), at: FIXED_NOW },
+      start: FIXED_NOW,
+      steps,
+    };
+    return { name, fn: 'sequence', args, call: (a) => runSequence(dataDir, gw, service, a.steps) };
+  });
+}
+
 async function main() {
+  const dataDir = path.join(ROOT, 'gw', 'testdata', '.gen-router-data');
   const cases = [
     {
       name: 'fn-resetin',
@@ -525,8 +1151,13 @@ async function main() {
       args: { providers: PROVIDERS, routes: ROUTES, sequences: normal(RESOLVE_SEQUENCES) },
       call: runResolve,
     },
+    ...sequenceCases(dataDir),
   ];
-  await writeCases('router', cases);
+  try {
+    await writeCases('router', cases, { secrets: SEQ_SECRETS });
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
 }
 
 main().catch((err) => {
