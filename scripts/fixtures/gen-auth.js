@@ -283,6 +283,13 @@ const CASES = [
     [{ status: 302, headers: { location: 'https://elsewhere.example.test/token' }, body: '' }],
   ],
   [
+    'az-token-fetch-failed',
+    'chat',
+    'the token endpoint cannot be reached: fetch rejects with TypeError "fetch failed", the call fails with no provider request',
+    [chat('az/gpt-6.1')],
+    [{ throws: 'fetch failed' }],
+  ],
+  [
     'az-token-no-access',
     'chat',
     'the token endpoint answers 200 JSON without access_token',
@@ -333,8 +340,9 @@ function responseOf() {
 const HEADERS = ['content-type', 'cache-control', 'access-control-allow-origin', 'retry-after', 'x-zp-dropped'];
 const lower = (h) => Object.fromEntries(Object.entries(h || {}).map(([k, v]) => [k.toLowerCase(), String(v)]));
 
-// A queue entry as the fixture holds it: a stream's chunks joined into its body text.
-const answerOf = (a) => ({
+// A queue entry as the fixture holds it: a stream's chunks joined into its body text; { throws } when fetch rejects.
+const answerOf = (a) => (a.throws ? { throws: a.throws } : answerOfResponse(a));
+const answerOfResponse = (a) => ({
   status: a.status,
   headers: a.headers || {},
   body: a.chunks ? a.chunks.join('') : a.body,
@@ -355,6 +363,7 @@ async function runCase(dataDir, sec, gw, requests, queue) {
     });
     const a = queue[exchanges.length - 1];
     if (!a) throw new Error(`exchange ${exchanges.length} has no answer in the queue`);
+    if (a.throws) throw new TypeError(a.throws); // fetch rejects: a refused connection, a DNS or TLS failure
     if (a.chunks) {
       const pieces = a.chunks.map((c) => new Uint8Array(Buffer.from(c, 'utf8')));
       let i = 0;

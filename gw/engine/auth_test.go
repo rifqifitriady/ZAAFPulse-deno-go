@@ -37,6 +37,7 @@ type authAnswer struct {
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
 	Stream  bool              `json:"stream"`
+	Throws  string            `json:"throws"` // fetch rejected (a refused connection): the transport fails
 }
 
 type authFixture struct {
@@ -151,6 +152,9 @@ func (r *replay) RoundTrip(req *http.Request) (*http.Response, error) {
 		r.t.Errorf("exchange %d body\n got %v\nwant %v", i, ptrText(body), ptrText(w.Body))
 	}
 	a := r.queue[i]
+	if a.Throws != "" {
+		return nil, errors.New("dial tcp 127.0.0.1:1: connect: connection refused")
+	}
 	h := http.Header{}
 	for k, v := range a.Headers {
 		h.Set(k, v)
@@ -203,7 +207,7 @@ func authState(t *testing.T, f authFixture) *State {
 // client the same status, headers and bytes and the same usage line.
 func TestAuthFixtures(t *testing.T) {
 	fs := loadAuth(t)
-	if len(fs) < 15 {
+	if len(fs) < 16 {
 		t.Fatalf("%d auth fixtures", len(fs))
 	}
 	was := *translate.Default

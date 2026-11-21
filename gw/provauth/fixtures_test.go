@@ -34,9 +34,11 @@ type fixture struct {
 		Secret    *string  `json:"secret"`
 		Mask      []string `json:"mask"`
 		Responses []struct {
-			Status  int               `json:"status"`
-			Body    string            `json:"body"`
-			Headers map[string]string `json:"headers"`
+			Status    int               `json:"status"`
+			Body      string            `json:"body"`
+			Headers   map[string]string `json:"headers"`
+			Throws    string            `json:"throws"`    // fetch rejects with this message
+			BodyError string            `json:"bodyError"` // the body fails while it is read
 		} `json:"responses"`
 		Steps []struct {
 			Now   int64 `json:"now"`
@@ -45,6 +47,11 @@ type fixture struct {
 	} `json:"in"`
 	Out json.RawMessage `json:"out"`
 }
+
+// errReader fails every read with err.
+type errReader struct{ err error }
+
+func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 
 type roundTrip func(*http.Request) (*http.Response, error)
 
@@ -100,11 +107,18 @@ func TestFixturesFromJS(t *testing.T) {
 				}
 				q := queue[0]
 				queue = queue[1:]
+				if q.Throws != "" {
+					return nil, errors.New("dial tcp 127.0.0.1:1: connect: connection refused")
+				}
 				h := http.Header{}
 				for k, v := range q.Headers {
 					h.Set(k, v)
 				}
-				return &http.Response{StatusCode: q.Status, Header: h, Body: io.NopCloser(strings.NewReader(q.Body)), Request: r}, nil
+				var rb io.Reader = strings.NewReader(q.Body)
+				if q.BodyError != "" {
+					rb = io.MultiReader(strings.NewReader(`{"access_token":"cut`), errReader{errors.New(q.BodyError)})
+				}
+				return &http.Response{StatusCode: q.Status, Header: h, Body: io.NopCloser(rb), Request: r}, nil
 			})}
 			var now time.Time
 			clk := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
