@@ -191,6 +191,28 @@ const gContents = (text = 'hi') => ({ contents: [{ role: 'user', parts: [{ text 
 const WEATHER_AN = { name: 'get_weather', description: 'weather', input_schema: { type: 'object', properties: { city: { type: 'string' } } } };
 const WEATHER_FN = { type: 'function', function: { name: 'get_weather', parameters: { type: 'object' } } };
 
+// Token saver (docs/superpowers/specs/2026-11-17-rtk-go-design.md R2, R3, R9): a long tool result in each format.
+const SAVER_DIFF = Array.from({ length: 3 }, (_, f) =>
+  [`diff --git a/f${f}.js b/f${f}.js`, '@@ -1,90 +1,90 @@', ...Array.from({ length: 90 }, (_, i) => `+ line ${i}`)].join('\n'),
+).join('\n');
+const saverTurn = (result) => [
+  { role: 'user', content: 'go' },
+  { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'git diff' } }] },
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: result }] },
+];
+const saverInput = [
+  { role: 'user', content: 'go' },
+  { type: 'function_call', call_id: 'c1', name: 'shell', arguments: '{"command":"git diff"}' },
+  { type: 'function_call_output', call_id: 'c1', output: SAVER_DIFF },
+];
+const saverGemini = {
+  contents: [
+    { role: 'user', parts: [{ text: 'go' }] },
+    { role: 'model', parts: [{ functionCall: { name: 'shell', args: { command: 'git diff' } } }] },
+    { role: 'user', parts: [{ functionResponse: { name: 'shell', response: { output: SAVER_DIFF } } }] },
+  ],
+};
+
 // [name, fn, path, opt, body, provider]. opt: { key, auth: 'bearer' | 'x-api-key' | 'goog' | 'query', headers,
 // guardrails, budgets, failChecks, rateLimited }.
 const CASES = [
@@ -308,6 +330,18 @@ const CASES = [
   ['emb-400', 'embeddings', '/v1/embeddings', {}, { model: 'oa/e1', input: 'x' }, json(400, { error: { message: `bad ${OA_KEY}` } })],
   ['emb-throw', 'embeddings', '/v1/embeddings', {}, { model: 'oa/e1', input: 'x' }, { throw: 'ECONNREFUSED' }],
   ['emb-guard-redact', 'embeddings', '/v1/embeddings', { guardrails: { ...OFF, secrets: 'redact' } }, { model: 'oa/e1', input: `key ${ANT}` }, embOk()],
+  /* token saver (rtk spec): translated, passthrough (savedTokens on its guard line too), Responses, Gemini */
+  ['msg-saver-whole', 'messages', '/v1/messages', {}, msgs('oa/m1', { messages: saverTurn(SAVER_DIFF) }), chatOk()],
+  ['msg-saver-stream', 'messages', '/v1/messages', {}, msgs('oa/m1', { stream: true, messages: saverTurn(SAVER_DIFF) }), chatStream()],
+  ['msg-saver-header-off', 'messages', '/v1/messages', { headers: { 'x-zp-token-saver': 'off' } }, msgs('oa/m1', { messages: saverTurn(SAVER_DIFF) }), chatOk()],
+  ['msg-saver-guard-block', 'messages', '/v1/messages', { guardrails: { ...OFF, secrets: 'block' } }, msgs('oa/m1', { messages: saverTurn(`key ${ANT}\n${SAVER_DIFF}`) }), chatOk()],
+  ['msg-native-saver', 'messages', '/v1/messages', {}, msgs('an/claude-x', { messages: saverTurn(SAVER_DIFF) }), anMsg()],
+  ['msg-native-saver-stream', 'messages', '/v1/messages', {}, msgs('an/claude-x', { stream: true, messages: saverTurn(SAVER_DIFF) }), anStream()],
+  ['msg-native-saver-guard-block', 'messages', '/v1/messages', { guardrails: { ...OFF, secrets: 'block' } }, msgs('an/claude-x', { messages: saverTurn(`key ${ANT}\n${SAVER_DIFF}`) }), anMsg()],
+  ['chat-an-saver', 'chatAnthropic', '/v1/chat/completions', {}, { model: 'an/claude-x', messages: [{ role: 'user', content: 'go' }, { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Bash', arguments: '{"command":"git diff"}' } }] }, { role: 'tool', tool_call_id: 'c1', content: SAVER_DIFF }] }, anMsg()],
+  ['resp-saver', 'responses', '/v1/responses', {}, { model: 'oa/m1', input: saverInput }, chatOk()],
+  ['resp-native-saver', 'responses', '/v1/responses', {}, { model: 'op/gpt-6.1', input: saverInput }, respOk()],
+  ['gem-saver', 'gemini', '/v1beta/models/oa%2Fm1:generateContent', { auth: 'goog' }, saverGemini, chatOk()],
 ];
 
 // A request as gateway.handle reads it: headers, the target, a loopback client, the body as one chunk.

@@ -55,19 +55,23 @@ func (s *State) translatedPlan(r *Request, key *ipc.GatewayKeyAuth, clientModel 
 	if why != "" {
 		return handoff(why)
 	}
-	if s.tokenSaverOn(r) && hasToolMessage(oai) {
-		return handoff("token saver: tool results")
-	}
 	stream := oai.Get("stream").Truthy()
 	out, why := upstreamBody(oai, t, stream)
 	if why != "" {
 		return handoff(why)
 	}
+	var job *saverJob
+	if s.tokenSaverOn(r) {
+		// proxyChat's saveTokens(body, 'openai') on the translated chat body (rtk.js R2, spec D10).
+		if job, why = scanSaver(out, "openai"); why != "" {
+			return handoff(why)
+		}
+	}
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: clientModel, Stream: stream, Format: format, Shape: sh,
 		URL: t.Provider.BaseURL + "/chat/completions", Header: providerHeader(t, cred), Upstream: UpChat,
 		GuardFormat: "openai-chat", Env: translate.Default, Tagged: tagged, Soft: soft,
 		Dropped: append([]string(nil), dropped...), Custom: custom, Base: s.base(key, t, model, r),
-		build: translatedBuild}
+		build: translatedBuild, saver: job}
 	if tagged && p.Dropped == nil {
 		p.Dropped = []string{}
 	}
@@ -88,6 +92,8 @@ func (s *State) translatedPlan(r *Request, key *ipc.GatewayKeyAuth, clientModel 
 	}
 	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
 		p.Policy, p.pending = &pol, out
+	} else if job != nil {
+		p.pending = out // State.Save builds Body
 	} else {
 		p.Body = p.build(&p, out)
 	}
@@ -175,31 +181,4 @@ func (s *State) PlanGemini(r *Request, now int64) Plan {
 		p.Class = SubGeminiStream
 	}
 	return p
-}
-
-// hasToolResultBlock is whether saveTokens(body, 'anthropic') would look at a tool result: a message content block of
-// type tool_result, or a message it could not read (JS throws a TypeError there, and answers itself).
-func hasToolResultBlock(body *Value) bool {
-	msgs := body.Get("messages")
-	if msgs == nil || msgs.Kind != Array {
-		return false
-	}
-	for _, m := range msgs.A {
-		if m == nil || m.Kind == Null {
-			return true
-		}
-		c := m.Get("content")
-		if c == nil || c.Kind != Array {
-			continue
-		}
-		for _, b := range c.A {
-			if b == nil || b.Kind == Null {
-				return true
-			}
-			if t := b.Get("type"); t != nil && t.Kind == String && t.S == "tool_result" {
-				return true
-			}
-		}
-	}
-	return false
 }

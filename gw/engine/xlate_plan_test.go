@@ -99,7 +99,6 @@ func TestTranslatedHandoffs(t *testing.T) {
 		{"/v1/messages", `{"model":"llama3","messages":[]}`, "model: mapping needs the model list"},
 		{"/v1/messages", `{"model":"router/x","messages":[]}`, "model: a route"},
 		{"/v1/messages", `{"model":"zz/none","messages":[]}`, "model: mapping needs the model list"},
-		{"/v1/messages", `{"model":"oa/m1","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"x"}]}]}`, "token saver: tool results"},
 		{"/v1/messages", `{"model":"oa/m1","messages":[],"tool_choice":{"type":"tool","name":"web_search"},"tools":[{"type":"web_search_20250305","name":"web_search"}]}`, "translate: the request cannot be translated"},
 		{"/v1/responses", `{"model":"oa/m1","input":"hi","previous_response_id":"r1"}`, "translate: the request cannot be translated"},
 		{"/v1/responses", `{"input":"hi"}`, "model: missing"},
@@ -112,11 +111,18 @@ func TestTranslatedHandoffs(t *testing.T) {
 			t.Errorf("%s %s: %q", c.path, c.body, p.Handoff)
 		}
 	}
-	// The token saver off by header: translated and served.
+	// The token saver off by header: translated and served, without the saver.
 	r := xlateReq(t, "/v1/messages", `{"model":"oa/m1","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"x"}]}]}`)
 	r.Header.Set("X-Zp-Token-Saver", "off")
-	if p := s.PlanFor("messages", r, fixtureNow); p.Handoff != "" {
+	if p := s.PlanFor("messages", r, fixtureNow); p.Handoff != "" || p.saver != nil {
 		t.Fatal(p.Handoff)
+	}
+	// On: a long tool result is translated and planned with the saver on the translated chat body (rtk spec D10).
+	long := `{"model":"oa/m1","messages":[{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"Bash","input":{"command":"git log"}}]},` +
+		`{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":` +
+		string(mustJSON(strings.Repeat("commit 1234567\nAuthor: a\n\n    msg\n    more\n", 40))) + `}]}]}`
+	if p := s.PlanFor("messages", xlateReq(t, "/v1/messages", long), fixtureNow); p.Handoff != "" || p.saver == nil || p.keepSaved {
+		t.Fatalf("handoff %q, saver %v, keepSaved %v", p.Handoff, p.saver != nil, p.keepSaved)
 	}
 }
 
