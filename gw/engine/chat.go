@@ -169,6 +169,9 @@ type Plan struct {
 	// is already the OpenAI one (the route loop converted it).
 	dropAdded bool
 	converted bool
+	// replay: the legs in the control plane's order, for the shadow's replay of a route call (shadow_route.go); serveRoute
+	// then takes nothing and orders nothing. nil: a served call.
+	replay []*Plan
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }

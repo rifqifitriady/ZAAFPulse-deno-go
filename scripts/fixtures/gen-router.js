@@ -18,6 +18,10 @@
 //   requests: [{ url, method, headers, body }], client: { status, headers, body }, usage: [line, oldest first],
 //   events: [{ type: 'provider.note' | 'route.take', body }], state: routeState() }] }. The clock is start plus the
 //   advanceMs of every step so far; the random counter runs over the whole sequence. Each step must use every answer.
+// - shadow-<class>-<what> (fn "shadow", P4h spec Decision 11): the sequence seq-<class>-<what> again, every call marked
+//   as one the go gateway shadows; in { seq }, out { steps: [{ capture }] }: lib/gateway/shadow.js's capture of each
+//   call (the route tape, every line, the provider answers with the thrown calls), the runtime's used-body text in the
+//   client body written as the seq files write it.
 // A number JSON cannot hold (NaN, Infinity) is written as its String(); -0 is written as 0. Headers are written as the
 // JS Headers object reads them (lower-case names, values trimmed). No date-time without an offset is written (its
 // value would depend on the machine's time zone).
@@ -27,6 +31,7 @@ const path = require('path');
 const { writeCases, ROOT, FIXED_NOW } = require('./lib'); // first: the random counter and the fixed clock
 const { createProviders, resetIn, readQuota } = require('../../lib/gateway/providers');
 const { createGateway } = require('../../lib/gateway');
+const shadow = require('../../lib/gateway/shadow');
 const { createSecrets } = require('../../lib/secrets');
 const { createGuard } = require('../../lib/cost/guard');
 const { configPush, secretsPush, snapshotPush } = require('../../lib/front/push');
@@ -1113,7 +1118,7 @@ const seqSecrets = () =>
   });
 
 // One gateway per sequence, fresh data folder and clock: its steps share the rotation counters and the cooldowns.
-async function runSequence(dataDir, gw, service, steps) {
+async function runSequence(dataDir, gw, service, steps, { capture = false } = {}) {
   fs.rmSync(dataDir, { recursive: true, force: true });
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify({ keys: SEQ_KEYS }));
@@ -1177,10 +1182,19 @@ async function runSequence(dataDir, gw, service, steps) {
       const before = gateway.usage.recent(2000).length;
       const res = responseOf();
       const r = step.request;
-      await gateway.handle(requestOf(r.path, r.headers, r.body), res, new URL(r.path, 'http://localhost'));
+      const req = requestOf(r.path, r.headers, r.body);
+      const id = `5ad0${String(i).padStart(12, '0')}`;
+      if (capture) Object.assign(req, { [shadow.SHADOW_ID]: id });
+      await gateway.handle(req, res, new URL(r.path, 'http://localhost'));
       if (problem) throw new Error(`step ${i}: ${problem}`);
       if (sent.length !== queue.length)
         throw new Error(`step ${i}: ${queue.length} answers given, ${sent.length} provider requests made`);
+      if (capture) {
+        const c = shadow.takeCapture(id);
+        if (c && c.client && typeof c.client.body === 'string') c.client.body = bodyUsed(c.client.body);
+        out.push({ capture: c });
+        continue;
+      }
       const lines = gateway.usage.recent(2000);
       out.push({
         now: FIXED_NOW + clockOffset,
@@ -1246,12 +1260,31 @@ function sequenceCases(dataDir) {
       start: FIXED_NOW,
       steps,
     };
-    return { name, fn: 'sequence', args, call: (a) => runSequence(dataDir, gw, service, a.steps) };
+    return {
+      name,
+      fn: 'sequence',
+      args,
+      dataDir,
+      gw,
+      service,
+      call: (a) => runSequence(dataDir, gw, service, a.steps),
+    };
   });
+}
+
+// The same sequences with every call shadowed: the capture of each (P4h spec Decision 11).
+function shadowCases(seqs) {
+  return seqs.map((c) => ({
+    name: c.name.replace(/^seq-/, 'shadow-'),
+    fn: 'shadow',
+    args: { seq: c.name },
+    call: () => runSequence(c.dataDir, c.gw, c.service, JSON.parse(JSON.stringify(c.args.steps)), { capture: true }),
+  }));
 }
 
 async function main() {
   const dataDir = path.join(ROOT, 'gw', 'testdata', '.gen-router-data');
+  const seqs = sequenceCases(dataDir);
   const cases = [
     {
       name: 'fn-resetin',
@@ -1277,7 +1310,8 @@ async function main() {
       args: { providers: PROVIDERS, routes: ROUTES, sequences: normal(RESOLVE_SEQUENCES) },
       call: runResolve,
     },
-    ...sequenceCases(dataDir),
+    ...seqs,
+    ...shadowCases(seqs),
   ];
   try {
     await writeCases('router', cases, { secrets: SEQ_SECRETS });

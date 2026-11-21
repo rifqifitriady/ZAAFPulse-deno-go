@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -40,6 +41,10 @@ type Capture struct {
 	// P4g: the integration tool a /mcp tools/call ran (lib/gateway/shadow.js noteTool); nil when the control plane
 	// answered before calling it.
 	Tool *CaptureTool `json:"tool"`
+	// P4h: a route call's tape (each resolveAll of the request, in order) and every usage line it wrote, in order; both
+	// empty for a call that resolved no route (shadow_route.go).
+	Routes []CaptureRoute   `json:"routes"`
+	Lines  []map[string]any `json:"lines"`
 }
 
 // CaptureTool is the tool call of a captured /mcp tools/call: its name, the JSON text of the arguments it was given,
@@ -67,6 +72,10 @@ type ProviderAnswer struct {
 	Body        string `json:"body"`
 	Ended       string `json:"ended"`     // a stream (P4c): "eof" or "cut"
 	Truncated   bool   `json:"truncated"` // a stream: the capture passed its cap
+	// P4h, a route call only: the provider call threw, with this (masked) message, "<provider id>: <why>"; Token: it
+	// threw before the request went out (the token fetch).
+	Thrown string `json:"thrown"`
+	Token  bool   `json:"token"`
 }
 
 // Diff is one field that differs.
@@ -89,6 +98,11 @@ type ShadowLine struct {
 	// Auth: the call's target is a token-auth provider (P4g spec Decision 14); the shadow log also counts such a line
 	// for the provider-auth switch.
 	Auth bool `json:"auth,omitzero"`
+	// Route: a route call (P4h spec Decision 2); the shadow log also counts such a line for the routes switch.
+	// RouteView: the engine's own counter and cooling set when it planned the call, against JS's first resolveAll
+	// ("same" or "differs", Decision 11); counted outside the diff gate.
+	Route     bool   `json:"route,omitzero"`
+	RouteView string `json:"routeView,omitzero"`
 }
 
 // budgetLag is the reason a budget disagreement is not a diff: the control plane decides on its live spend, the engine
@@ -476,10 +490,11 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		js.ServeHTTP(w, r)
 		return
 	}
-	if p.Route != nil {
-		// The compare of a route call (JS's route tape) is not there yet (P4h Task 7): its line stays today's hand-off.
-		h := handoff("model: a route")
-		p = &h
+	// A route call: the engine's own view of the route now, read without a take (in shadow mode JS takes the rotation
+	// and tells it here; P4h spec Decision 11).
+	var view *routeView
+	if p.Route != nil && p.Handoff == "" {
+		view = e.peekRoute(p, e.now())
 	}
 	select {
 	case shadowSlots <- struct{}{}:
@@ -500,7 +515,8 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		}
 		// The budget, decided now on the snapshot (cheap); the guardrail checks run after the answer, off this path.
 		// count_tokens and the engine's own answers check no budget (P4d).
-		if p.Upstream != UpNone && p.Upstream != UpCount && p.Upstream != UpTool { // no budget on /mcp (P4g)
+		// A route call's budget is decided over its legs in the replay (serveRoute).
+		if p.Route == nil && p.Upstream != UpNone && p.Upstream != UpCount && p.Upstream != UpTool { // no budget on /mcp (P4g)
 			if ref, unchecked := s.Budget(p, e.now(), e.staleMs, nil); ref != nil {
 				p.refused = ref
 			} else {
@@ -521,7 +537,8 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		v := recover()
 		go func() {
 			defer func() { <-shadowSlots }()
-			l := ShadowLine{Class: sub, Outcome: "skipped", Reason: "the client left before the answer ended"}
+			l := ShadowLine{Class: sub, Outcome: "skipped", Reason: "the client left before the answer ended",
+				Route: p.Route != nil}
 			line, _ := json.Marshal(l)
 			if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
 				e.logf("shadow: the compare line could not be posted: %v", err)
@@ -555,10 +572,14 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 				time.Sleep(20 * time.Millisecond)
 			}
 		}
-		l := s.compareCaptured(sub, p, c)
+		l := s.compareCapturedAt(sub, p, c, e.staleMs, e.now)
 		e.logSaverPanic(p)
 		if wait > 0 {
 			l = rateLimitedLine(sub, l.Status, wait) // the engine would have answered 429 itself
+			l.Route = p.Route != nil
+		}
+		if l.Route {
+			l.RouteView = view.against(c)
 		}
 		line, _ := json.Marshal(l)
 		if _, _, err := own(http.MethodPost, "/_zp/shadow", line); err != nil {
@@ -571,12 +592,20 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 // runs first (spec D14; a refusal the budget decided comes before it in JS), then the guardrails or the refusal, then
 // the compare of the class's kind.
 func (s *State) compareCaptured(sub string, p *Plan, c *Capture) ShadowLine {
-	l := s.compareCapturedLine(sub, p, c)
-	l.Auth = p.TokenAuth()
+	return s.compareCapturedAt(sub, p, c, StaleMs, NowMs)
+}
+
+// compareCapturedAt is compareCaptured with the engine's snapshot age limit and clock (a route call's replay decides its
+// budget).
+func (s *State) compareCapturedAt(sub string, p *Plan, c *Capture, staleMs int64, now func() int64) ShadowLine {
+	auth := p.TokenAuth() // before a route call's replay takes the tokens off its legs
+	l := s.compareCapturedLine(sub, p, c, staleMs, now)
+	l.Auth = auth
+	l.Route = l.Route || p.Route != nil
 	return l
 }
 
-func (s *State) compareCapturedLine(sub string, p *Plan, c *Capture) ShadowLine {
+func (s *State) compareCapturedLine(sub string, p *Plan, c *Capture, staleMs int64, now func() int64) ShadowLine {
 	if p.Upstream == UpTool && p.Handoff == "" { // /mcp tools/call (P4g): no saver, its own guardrails (shadow_mcp.go)
 		return s.CompareMCP(sub, p, c)
 	}
@@ -590,6 +619,14 @@ func (s *State) compareCapturedLine(sub string, p *Plan, c *Capture) ShadowLine 
 		}
 	}
 	var l ShadowLine
+	if p.Route != nil && p.Handoff == "" { // a route call: JS's tape replayed (shadow_route.go)
+		l = s.CompareRoute(sub, p, c, staleMs, now)
+		l.Saver = p.saverHits > 0 || (c != nil && slices.ContainsFunc(c.Lines, func(u map[string]any) bool {
+			_, ok := u["savedTokens"]
+			return ok
+		}))
+		return l
+	}
 	ref := p.refused
 	if ref == nil {
 		ref = s.Guard(p, 0)

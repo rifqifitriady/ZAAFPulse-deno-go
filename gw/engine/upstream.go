@@ -233,6 +233,11 @@ var winsock = map[syscall.Errno]string{10061: "ECONNREFUSED", 10054: "ECONNRESET
 // common system and undici codes, else "fetch failed". Deno names some of these differently; a failed call has no
 // provider answer, so the shadow compare never reads it.
 func ErrorCode(err error) string {
+	// The shadow's replay of a provider call that threw in the control plane (shadow_route.go): named as JS named it.
+	var rf replayFailure
+	if errors.As(err, &rf) {
+		return string(rf)
+	}
 	// Winsock codes (Windows) by the names Node gives them there (re-review N4); no Unix errno is this large.
 	var errno syscall.Errno
 	if errors.As(err, &errno) {

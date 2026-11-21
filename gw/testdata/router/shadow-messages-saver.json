@@ -1,0 +1,145 @@
+{
+  "secrets": [
+    "c2stb2Etcm91dGVyLWZpeHR1cmUtMTIzNDU2",
+    "c2stb2Itcm91dGVyLWZpeHR1cmUtNzc4ODk5"
+  ],
+  "fn": "shadow",
+  "in": {
+    "seq": "seq-messages-saver"
+  },
+  "out": {
+    "steps": [
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:9/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"t1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"t1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\"}],\"max_tokens\":64,\"stream\":false}"
+            },
+            {
+              "url": "http://127.0.0.1:13/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:1>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"t1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"t1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\"}],\"max_tokens\":64,\"stream\":false}"
+            }
+          ],
+          "providerResponse": null,
+          "upstream": [
+            {
+              "status": 500,
+              "contentType": "application/json",
+              "body": "",
+              "ended": "cut",
+              "truncated": false
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}",
+              "ended": "eof",
+              "truncated": false
+            }
+          ],
+          "client": {
+            "status": 200,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"id\":\"msg_010101010101010101010101\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"router/fb\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":800,\"output_tokens\":500,\"cache_read_input_tokens\":200,\"cache_creation_input_tokens\":0}}",
+            "truncated": false
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "ob",
+            "model": "router/fb",
+            "routedTo": "ob/m1",
+            "kind": "chat",
+            "format": "anthropic",
+            "stream": false,
+            "savedTokens": 206,
+            "client": "claude-code",
+            "local": true,
+            "status": 200,
+            "ms": 0,
+            "input": 1000,
+            "output": 500,
+            "cached": 200,
+            "cost": 0.002
+          },
+          "tape": {
+            "random": [
+              "010101010101010101010101"
+            ],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/fb",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "oa/m1",
+                "ob/m1"
+              ]
+            },
+            {
+              "name": "router/fb",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "oa/m1",
+                "ob/m1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/fb",
+              "routedTo": "oa/m1",
+              "kind": "chat",
+              "format": "anthropic",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 500,
+              "ms": 0,
+              "error": "fell back to the next route target",
+              "cost": 0
+            },
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "ob",
+              "model": "router/fb",
+              "routedTo": "ob/m1",
+              "kind": "chat",
+              "format": "anthropic",
+              "stream": false,
+              "savedTokens": 206,
+              "client": "claude-code",
+              "local": true,
+              "status": 200,
+              "ms": 0,
+              "input": 1000,
+              "output": 500,
+              "cached": 200,
+              "cost": 0.002
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
