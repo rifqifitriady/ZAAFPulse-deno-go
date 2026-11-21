@@ -1,6 +1,7 @@
 // Contract: one requests-per-minute window per key across the engines (P4f D16). A key with rpm 3 makes a chat call (the
-// go engine under ZP_ENGINE=go), an embeddings call (always the server), and a chat call; a fourth request to either is
-// refused with 429, in every mode. Before P4f each engine kept its own window, and go mode let the fourth through.
+// go engine under ZP_ENGINE=go), a model list (always the server: GET /v1/models stays on js, P4d), and a chat call; a
+// fourth request to either is refused with 429, in every mode. Before P4f each engine kept its own window, and go mode
+// let the fourth through. (Before P4d the server's call was an embeddings call, which the go engine now serves.)
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { start } = require('./harness');
@@ -23,7 +24,7 @@ test('a key with rpm 3 is refused on its fourth request, whichever engine answer
       key: k.secret,
       body: { model: 'oa/m1', messages: [{ role: 'user', content: 'hi' }] },
     });
-  const embed = () => h.call('/v1/embeddings', { key: k.secret, body: { model: 'oa/m1', input: 'hi' } });
+  const embed = () => h.call('/v1/models', { key: k.secret, method: 'GET' });
   assert.equal((await chat()).status, 200);
   await hop();
   assert.equal((await embed()).status, 200);

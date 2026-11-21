@@ -96,9 +96,10 @@ func spentOf(rec ipc.UsageRecord, snap *ipc.BudgetSnapshot) (Spent, bool) {
 	return x, true
 }
 
-func quota(msg string) *Answer {
-	return &Answer{Status: http.StatusPaymentRequired, Header: answerHeader(), Body: errorBody(msg, "insufficient_quota", ""),
-		NoLine: true}
+// quota is a 402 insufficient_quota in the client's shape, with no usage line.
+func quota(msg string, sh Shape) *Answer {
+	a := shapeError(sh, http.StatusPaymentRequired, msg, "insufficient_quota", "", "")
+	return &a
 }
 
 // limited is proxyChat's limitedKey: a key budget (budgetUSD), or a blocking budget scoped to the key or its center.
@@ -127,15 +128,15 @@ func (s *State) limited(k *ipc.GatewayKeyAuth) bool {
 // checked the call. own is the engine's lines since the snapshot (Spend.Since).
 func (s *State) Budget(p *Plan, now, staleMs int64, own []Spent) (*Answer, bool) {
 	if s.limited(p.Key) && TierOf(p.Target.Provider) != "private" && s.Pricer.Key(p.Target.Name) == "" {
-		return quota("this key has a budget, and " + p.Model + " has no known price; add one under Settings → Model prices"), false
+		return quota("this key has a budget, and "+p.Model+" has no known price; add one under Settings → Model prices", p.Shape), false
 	}
 	in := ipc.CheckInput{KeyID: p.Key.ID, Model: NormalizeModel(p.Target.Name), Provider: p.Target.Provider.ID}
 	d := ipc.Decide(s.Snapshot, now, staleMs, in)
 	if d.Action == ipc.Refuse {
-		return quota(d.Message), false
+		return quota(d.Message, p.Shape), false
 	}
 	if m := s.ownRefusal(in, own); m != "" {
-		return quota(m), false
+		return quota(m, p.Shape), false
 	}
 	return nil, d.Action == ipc.Unchecked
 }

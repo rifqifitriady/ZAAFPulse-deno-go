@@ -1,0 +1,362 @@
+{
+  "secrets": [
+    "enBfeGxhdGVGaXh0dXJlU2VjcmV0MDEyMzQ1Njc4OWFiY2RlZg==",
+    "c2stYW4teGxhdGUtZml4dHVyZS02NTQzMjE=",
+    "c2stb2EteGxhdGUtZml4dHVyZS0xMjM0NTY="
+  ],
+  "fn": "chatAnthropic",
+  "in": [
+    {
+      "config": {
+        "gateway": {
+          "providers": [
+            {
+              "id": "oa",
+              "preset": "custom",
+              "baseUrl": "http://127.0.0.1:9/v1",
+              "approved": true,
+              "tier": "external",
+              "auth": {
+                "type": "key"
+              },
+              "span": {
+                "name": "oa",
+                "address": "127.0.0.1",
+                "port": 9
+              }
+            },
+            {
+              "id": "an",
+              "preset": "anthropic",
+              "baseUrl": "http://127.0.0.1:10/v1",
+              "approved": true,
+              "auth": {
+                "type": "key"
+              },
+              "span": {
+                "name": "anthropic",
+                "address": "127.0.0.1",
+                "port": 10
+              }
+            },
+            {
+              "id": "op",
+              "preset": "openai",
+              "baseUrl": "http://127.0.0.1:8/v1",
+              "approved": true,
+              "auth": {
+                "type": "key"
+              },
+              "span": {
+                "name": "openai",
+                "address": "127.0.0.1",
+                "port": 8
+              }
+            },
+            {
+              "id": "pv",
+              "preset": "ollama",
+              "baseUrl": "http://127.0.0.1:11434/v1",
+              "aliases": {
+                "fast": "llama-9"
+              },
+              "span": {
+                "name": "ollama",
+                "address": "127.0.0.1",
+                "port": 11434
+              }
+            },
+            {
+              "id": "or",
+              "preset": "openrouter",
+              "baseUrl": "http://127.0.0.1:11/v1",
+              "approved": true,
+              "auth": {
+                "type": "key"
+              },
+              "span": {
+                "name": "openrouter",
+                "address": "127.0.0.1",
+                "port": 11
+              }
+            },
+            {
+              "id": "lt",
+              "preset": "litellm",
+              "baseUrl": "http://127.0.0.1:4000/v1",
+              "span": {
+                "name": "litellm",
+                "address": "127.0.0.1",
+                "port": 4000
+              }
+            },
+            {
+              "id": "gm",
+              "preset": "gemini",
+              "baseUrl": "http://127.0.0.1:12/v1beta/openai",
+              "approved": true,
+              "auth": {
+                "type": "key"
+              },
+              "span": {
+                "name": "gcp.gemini",
+                "address": "127.0.0.1",
+                "port": 12
+              }
+            }
+          ],
+          "routes": [
+            {
+              "name": "router/x",
+              "targets": [
+                "oa/m1",
+                "op/gpt-6.1"
+              ]
+            }
+          ],
+          "guardrails": {
+            "scope": "external",
+            "secrets": "off",
+            "pii": "off",
+            "injection": "off"
+          },
+          "defaults": {
+            "model": "",
+            "plannerModel": "",
+            "codeModel": ""
+          },
+          "tokenSaver": true,
+          "modelMap": [
+            {
+              "match": "claude-*",
+              "to": "oa/m1"
+            },
+            {
+              "match": "gpt-codex*",
+              "to": "op/gpt-6.1"
+            },
+            {
+              "match": "gemini-*",
+              "to": "gm/gemini-2.5-pro"
+            }
+          ]
+        },
+        "keys": [
+          {
+            "id": "k1",
+            "name": "k1",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_xlateFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "81ea22d499953b864c6931b1c2fc5382abf011aaedbb673f60f8117b5f20bfe5"
+          },
+          {
+            "id": "k2",
+            "name": "k2",
+            "scopes": [
+              "llm"
+            ],
+            "models": [
+              "oa/*"
+            ],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_xlateFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "abc8c8a70a0f68264541200b92ff260fe87268e319d3fc6b2afefa4b6da0dda2"
+          },
+          {
+            "id": "k3",
+            "name": "k3",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": 1,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_xlateFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "5fdb8811e51ba5716dcb103a6552e3f02a2c79731e4bd5b3e19c7fd8f25bcf6b"
+          },
+          {
+            "id": "k4",
+            "name": "k4",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 1,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_xlateFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "9425dfaaff8947aeba548dc449ce4dbd6667e7e43339554634e6b501ff9cafd9"
+          }
+        ],
+        "pricing": {
+          "m1": {
+            "input": 1000000000,
+            "output": 2000000000
+          },
+          "llama-9": {
+            "input": 100000000,
+            "output": 300000000,
+            "cacheRead": 10000000
+          },
+          "gpt-6.1": {
+            "input": 2000000000,
+            "output": 8000000000
+          },
+          "claude-x": {
+            "input": 3000000000,
+            "output": 15000000000,
+            "cacheRead": 300000000
+          },
+          "e1": {
+            "input": 20000000,
+            "output": 0
+          },
+          "gemini-2.5-pro": {
+            "input": 1250000000,
+            "output": 10000000000
+          }
+        }
+      },
+      "secrets": {
+        "providers": [
+          {
+            "id": "oa",
+            "value": "<<ZPSECRET:2>>"
+          },
+          {
+            "id": "an",
+            "value": "<<ZPSECRET:1>>"
+          },
+          {
+            "id": "op",
+            "value": "<<ZPSECRET:2>>"
+          },
+          {
+            "id": "or",
+            "value": "<<ZPSECRET:2>>"
+          },
+          {
+            "id": "gm",
+            "value": "<<ZPSECRET:2>>"
+          }
+        ],
+        "mask": [
+          "<<ZPSECRET:2>>",
+          "<<ZPSECRET:1>>"
+        ]
+      },
+      "snapshot": {
+        "budgets": [],
+        "keyCenter": {},
+        "at": 1767225600000
+      },
+      "request": {
+        "path": "/v1/chat/completions",
+        "headers": {
+          "content-type": "application/json",
+          "user-agent": "claude-cli/9.9.9",
+          "authorization": "Bearer <<ZPSECRET:0>>"
+        },
+        "body": "{\"model\":\"an/claude-x\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+      },
+      "provider": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_up\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-x\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1,\"cache_read_input_tokens\":2}}}\n\n",
+          "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+          "event: ping\ndata: {\"type\":\"ping\"}\n\n",
+          "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}}\n\n",
+          "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}}\n\n",
+          "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+          "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":7}}\n\n",
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ]
+      }
+    }
+  ],
+  "out": {
+    "requests": [
+      {
+        "url": "http://127.0.0.1:10/v1/messages",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json",
+          "x-api-key": "<<ZPSECRET:1>>",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": "{\"model\":\"claude-x\",\"max_tokens\":8192,\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}],\"stream\":true}"
+      }
+    ],
+    "client": {
+      "status": 200,
+      "headers": {
+        "content-type": "text/event-stream",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*",
+        "retry-after": null,
+        "x-zp-dropped": null
+      },
+      "body": "data: {\"id\":\"chatcmpl-010101010101010101010101\",\"object\":\"chat.completion.chunk\",\"created\":1767225600,\"model\":\"an/claude-x\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-010101010101010101010101\",\"object\":\"chat.completion.chunk\",\"created\":1767225600,\"model\":\"an/claude-x\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-010101010101010101010101\",\"object\":\"chat.completion.chunk\",\"created\":1767225600,\"model\":\"an/claude-x\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-010101010101010101010101\",\"object\":\"chat.completion.chunk\",\"created\":1767225600,\"model\":\"an/claude-x\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"chatcmpl-010101010101010101010101\",\"object\":\"chat.completion.chunk\",\"created\":1767225600,\"model\":\"an/claude-x\",\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":7,\"total_tokens\":19,\"prompt_tokens_details\":{\"cached_tokens\":2}}}\n\ndata: [DONE]\n\n"
+    },
+    "usage": {
+      "keyId": "k1",
+      "provider": "an",
+      "model": "an/claude-x",
+      "kind": "chat",
+      "format": "openai",
+      "stream": true,
+      "client": "claude-code",
+      "local": true,
+      "status": 200,
+      "input": 12,
+      "output": 7,
+      "cached": 2,
+      "cost": 135600,
+      "ttft": "set"
+    }
+  }
+}

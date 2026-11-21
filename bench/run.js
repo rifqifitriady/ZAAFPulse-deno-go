@@ -6,7 +6,9 @@
 // Knobs (defaults in brackets): ZP_BENCH_REQUESTS [2000], ZP_BENCH_LEVELS [50,200,500], ZP_BENCH_SECONDS [10],
 // ZP_BENCH_DELAY_MS [20], ZP_BENCH_CHUNKS [20], ZP_BENCH_INTERVAL_MS [25], ZP_BENCH_STARTS [5], ZP_BENCH_OUT
 // [bench/results], ZP_BENCH_HOST [the host name], ZP_BENCH_TIER [external; private lets the go engine serve until P4e];
-// ZP_ENGINE (front, go: the Go gateway in front; go also records its RSS and which engine called the mock).
+// ZP_ENGINE (front, go: the Go gateway in front; go also records its RSS and which engine called the mock);
+// ZP_BENCH_FORMAT [openai; anthropic: the gateway calls go to /v1/messages in the Anthropic format, translated to the
+// mock's OpenAI chat (P4d), the direct calls stay chat].
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -33,6 +35,8 @@ const CFG = {
   // P4c: the bench provider's tier (private: the go engine may serve it until P4e) and the engine mode (ZP_ENGINE).
   tier: process.env.ZP_BENCH_TIER === 'private' ? 'private' : 'external',
   engine: process.env.ZP_ENGINE || 'js',
+  // P4d: the client format of the gateway calls (the translated path when anthropic).
+  format: process.env.ZP_BENCH_FORMAT === 'anthropic' ? 'anthropic' : 'openai',
 };
 const KEYS = 25; // the stream workers spread over these keys, so no key reaches its rate limit
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -141,7 +145,8 @@ async function streamOnce(url, headers, body) {
     if (ttfb === null) ttfb = performance.now() - t0;
     tail = (tail + dec.decode(chunk, { stream: true })).slice(-64);
   }
-  if (!tail.includes('[DONE]')) throw new Error('stream ended early');
+  // An OpenAI stream ends with [DONE], an Anthropic one with message_stop (ZP_BENCH_FORMAT=anthropic).
+  if (!tail.includes('[DONE]') && !tail.includes('message_stop')) throw new Error('stream ended early');
   return { ttfb, dur: performance.now() - t0 };
 }
 
@@ -226,9 +231,12 @@ async function main() {
     const gatewayIdleRssMB = gwPid ? rssMB(gwPid) : null;
 
     const json = { 'content-type': 'application/json' };
-    const gwUrl = `${server.base}/v1/chat/completions`;
+    const anthropic = CFG.format === 'anthropic';
+    const gwUrl = `${server.base}${anthropic ? '/v1/messages' : '/v1/chat/completions'}`;
     const directUrl = `${mock.url}/chat/completions`;
-    const whole = JSON.stringify({ model: 'bench/bench-1', messages: [{ role: 'user', content: 'ping' }] });
+    const gwBody = (extra) =>
+      JSON.stringify({ model: 'bench/bench-1', ...(anthropic ? { max_tokens: 256 } : {}), ...extra });
+    const whole = gwBody({ messages: [{ role: 'user', content: 'ping' }] });
     const wholeDirect = JSON.stringify({ model: 'bench-1', messages: [{ role: 'user', content: 'ping' }] });
     const gwHeaders = (i) => ({ ...json, authorization: `Bearer ${keys[i % KEYS]}` });
     for (let i = 0; i < 50; i++) {
@@ -260,11 +268,7 @@ async function main() {
     if (CFG.engine === 'go' && nsCounts.go < CFG.requests)
       throw new Error(`the go engine answered ${nsCounts.go} of ${CFG.requests} non-streaming calls`);
 
-    const streamBody = JSON.stringify({
-      model: 'bench/bench-1',
-      stream: true,
-      messages: [{ role: 'user', content: 'go' }],
-    });
+    const streamBody = gwBody({ stream: true, messages: [{ role: 'user', content: 'go' }] });
     const streamDirect = JSON.stringify({
       model: 'bench-1',
       stream: true,
@@ -334,7 +338,9 @@ async function main() {
     };
     const dir = process.env.ZP_BENCH_OUT || path.join(__dirname, 'results');
     fs.mkdirSync(dir, { recursive: true });
-    const variant = CFG.engine !== 'js' || CFG.tier !== 'external' ? `-${CFG.engine}-${CFG.tier}` : '';
+    const variant =
+      (CFG.engine !== 'js' || CFG.tier !== 'external' ? `-${CFG.engine}-${CFG.tier}` : '') +
+      (CFG.format === 'anthropic' ? '-anthropic' : '');
     const file = path.join(dir, `${date}-${CFG.runtime}${variant}-${result.host.name}.json`);
     fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}\n`);
     console.log(`wrote ${path.relative(process.cwd(), file)} in ${result.durationS} s`);
