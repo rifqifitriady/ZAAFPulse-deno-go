@@ -138,8 +138,10 @@ type Plan struct {
 	saver     *saverJob
 	saverDone bool
 	saverWhy  string // Save's hand-off reason, returned again on a later call
-	saverHits int
-	keepSaved bool
+	// SaverPanic is a panic out of the token saver (a bug, never a JS answer), handed off and logged (final review I1).
+	SaverPanic string
+	saverHits  int
+	keepSaved  bool
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }

@@ -60,7 +60,7 @@ var Subs = map[string][]string{
 }
 
 // GoClasses are the classes a config.push may put on go: every sub-class of Subs (a path class is also its own first
-// sub-class). Classify never returns a sub-class that is not a path class. A config.push that puts another class on go
+// sub-class), and token-saver, the token saver's switch (rtk spec D13). Classify never returns a sub-class that is not a path class. A config.push that puts another class on go
 // is refused.
 var GoClasses = func() map[string]bool {
 	m := map[string]bool{"token-saver": true} // the token saver's switch: not a path, read by the engine (rtk spec D13)

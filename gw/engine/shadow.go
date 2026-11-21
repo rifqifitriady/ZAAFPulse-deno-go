@@ -448,6 +448,7 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 			}
 		}
 		l := s.compareCaptured(sub, p, c)
+		e.logSaverPanic(p)
 		if wait > 0 {
 			l = rateLimitedLine(sub, l.Status, wait) // the engine would have answered 429 itself
 		}

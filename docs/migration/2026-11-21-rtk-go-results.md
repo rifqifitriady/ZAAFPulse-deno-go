@@ -40,6 +40,9 @@ every change from the plan, with evidence).
   - `token saver: over its step budget`: `64 × units + 2^24` steps or 2 s (owner answer 21).
   - `token saver: a tool call id the engine cannot match`: a translated body whose tool ids are objects, which JS
     matches by identity.
+  - `token saver: the engine's saver panicked`: a bug of the port, logged with the panic's value; never a crash.
+
+  The shadow log shows every saver hand-off under `token-saver` too (as hand-offs, never as compares).
 
   The hand-off `token saver: tool results` is gone from chat, translated calls and the passthrough.
 
@@ -49,11 +52,11 @@ every change from the plan, with evidence).
 |---|---|
 | Function fixtures from the real JS (`scripts/fixtures/gen-rtk.js` → `gw/testdata/rtk`) | 352 cases: 53 hand-written `compressText`, 35 `pickFilter`, 58 `saveTokens` (17 where JS throws), 6 big-input recipes (1 MiB, exactly 10 MiB, 10 MiB + 1), 160 seeded random texts and 40 random JSON documents. Every case equal; Node and Deno write the same bytes under the fixtures job's deny flags |
 | Route fixtures from the real JS | 13 `saver-*` in `gw/testdata/chat-guard` (whole, stream, header off, setting off, short result, `savedTokens: 0`, redact after, secret in the omitted middle, guard block, budget 402, price 402, provider 500, provider throw); 14 `*saver*` in `gw/testdata/xlate` (translated whole, stream, header off, guard block, guard redact, throw; passthrough whole, stream, guard block; chat → Anthropic whole and stream; Responses translated and native; Gemini) |
-| Independent reviews | Tasks 1–5: 26,000 random texts and 24,000 random bodies against the JS, 0 mismatches (2 Minor over-hand-offs fixed). Tasks 6–7: 1 Important (a shadowed `token-saver` compared nothing while chat was on js), 4 Minor, all fixed. Tasks 8–9: 1 Important (Gemini tool ids shared by identity), 4 Minor, all fixed |
+| Independent reviews | Final whole-branch review: 1 Important (a panic in the saver was not recovered: the shadow's goroutine would crash the gateway), fixed; Minors fixed or noted (a rare double rate-limit count when the window frees between the look and the take, documented in `serve.go`). Tasks 1–5: 26,000 random texts and 24,000 random bodies against the JS, 0 mismatches (2 Minor over-hand-offs fixed). Tasks 6–7: 1 Important (a shadowed `token-saver` compared nothing while chat was on js), 4 Minor, all fixed. Tasks 8–9: 1 Important (Gemini tool ids shared by identity), 4 Minor, all fixed |
 | Contract suite | `test/contract/saver.test.js`: 7 cases (chat whole and stream, header off, the 502 of an unreadable message, translated messages, the Anthropic passthrough, a Responses-native passthrough left unchanged) in js, go (each line from the gateway) and shadow (diff 0) modes. The whole suite (205 tests) passes in all three modes |
 | Step budget | Worst fixture uses 4.3% of its limit. The quadratic head scan (`^\s*\d+[\t\|→]` with `m` on a whitespace-only head, in V8 too) is capped at 4.24M steps for 2048 blank lines, a quarter of the `2^24` constant (spec Decision 23) |
-| Memory | Save on a 10 MiB tool result allocates 5.96× the text for a log and 3.04× for a grep output (bound 8×) |
-| Speed (`BenchmarkSaveTokens`, Apple M-series, saver only) | 64 KiB 0.60–0.69 ms, 1 MiB 9.5–9.9 ms, 10 MiB 90–110 ms; V8 on the same input 0.32 / 5.3 / 57.5 ms (Go about 1.7–2× V8) |
+| Memory | Save on a 10 MiB tool result allocates 5.96× the text for a log and 3.04× for a grep output (bound 8×). Calls that run the saver at once are not limited: owners who send multi-megabyte tool results should size `gateway.memLimitMB` for about 6× those texts per concurrent call, next to P4e's guidance for guarded calls |
+| Speed (`BenchmarkSaveTokens`, the owner's laptop, saver only, one run of 3 while no suite ran; indicative, not a quiet-machine number) | 64 KiB 0.60–0.69 ms, 1 MiB 9.5–9.9 ms, 10 MiB 90–110 ms; V8 on the same input 0.32 / 5.3 / 57.5 ms (Go about 1.7–2× V8). Under load (the final review's run, load average about 5) the same benchmark gave 3.0 / 50 / 458 ms, on this commit and on Task 5's alike |
 | Go | `gofmt` clean; `go vet` (also `GOOS=windows`); `go test -race ./...` green |
 
 ## Known differences from the JS gateway

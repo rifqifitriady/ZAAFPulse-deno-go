@@ -78,3 +78,17 @@ func TestShadowTranslatedSaverFixtures(t *testing.T) {
 		t.Fatalf("%d of %d saver fixtures found", n, len(want))
 	}
 }
+
+// Final review I1: a panic out of the saver is a hand-off with the panic kept for the log, never a crash.
+func TestSaverPanicHandsOff(t *testing.T) {
+	saverHook = func() { panic("boom") }
+	defer func() { saverHook = nil }()
+	s, p, want, c := guardFixture(t, "saver-whole")
+	if why := s.Save(&p, time.Now()); why != saverPanicked || p.SaverPanic != "boom" {
+		t.Fatalf("Save: %q %q", why, p.SaverPanic)
+	}
+	_, p, _, _ = guardFixture(t, "saver-whole")
+	if l := s.compareCaptured("chat", &p, jsCapture(t, want, nil, c)); l.Outcome != "handoff" || l.Reason != saverPanicked {
+		t.Fatalf("compare: %+v", l)
+	}
+}
