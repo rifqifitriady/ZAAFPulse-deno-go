@@ -95,7 +95,8 @@
               },
               "cost": 0
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -127,7 +128,8 @@
               ]
             }
           ],
-          "lines": []
+          "lines": [],
+          "runtime": "<<runtime>>"
         }
       }
     ]

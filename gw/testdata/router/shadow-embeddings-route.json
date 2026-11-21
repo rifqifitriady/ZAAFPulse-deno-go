@@ -84,7 +84,8 @@
               "output": 0,
               "cost": 0
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -162,7 +163,8 @@
               "output": 0,
               "cost": 0
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -242,7 +244,8 @@
               "output": 0,
               "cost": 0
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       }
     ]

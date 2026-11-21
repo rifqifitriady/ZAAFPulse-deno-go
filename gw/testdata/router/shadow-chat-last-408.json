@@ -128,7 +128,8 @@
               "error": "too slow",
               "cost": 0
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -218,7 +219,8 @@
               "cached": 200,
               "cost": 0.002
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       }
     ]

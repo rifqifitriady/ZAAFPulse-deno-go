@@ -91,7 +91,8 @@
               "cached": 200,
               "cost": 0.000232
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -120,7 +121,8 @@
               "order": []
             }
           ],
-          "lines": []
+          "lines": [],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -149,7 +151,8 @@
               "order": []
             }
           ],
-          "lines": []
+          "lines": [],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -237,7 +240,8 @@
               "cached": 200,
               "cost": 0.002
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       }
     ]

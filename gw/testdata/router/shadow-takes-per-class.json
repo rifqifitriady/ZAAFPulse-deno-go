@@ -38,7 +38,8 @@
               ]
             }
           ],
-          "lines": []
+          "lines": [],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -124,7 +125,8 @@
               "cached": 200,
               "cost": 0.002
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -202,7 +204,8 @@
               "output": 0,
               "cost": 0
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -299,7 +302,8 @@
               "cached": 200,
               "cost": 0.002
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -399,7 +403,8 @@
               "cached": 200,
               "cost": 0.002
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -487,7 +492,8 @@
               "cached": 200,
               "cost": 0.002
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -519,7 +525,8 @@
               ]
             }
           ],
-          "lines": []
+          "lines": [],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -597,7 +604,8 @@
               "output": 0,
               "cost": 0
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       }
     ]

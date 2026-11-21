@@ -35,7 +35,8 @@ type CaptureRoute struct {
 }
 
 // NodeBodyUsedText is the TypeError text Node's Response.text() throws for a body already cancelled; the engine writes
-// Deno's (BodyUsedText). The compare reads either as the runtime's text for the same quirk (spec Decision 15f).
+// Deno's (BodyUsedText, the control plane's runtime). The compare is exact: under Node the quirk's answer is a
+// client.body diff, a known difference (spec Decision 15f); the capture's runtime says which runtime answered.
 const NodeBodyUsedText = "Body is unusable: Body has already been read"
 
 // replayFailure is a provider call that threw in the control plane, replayed: ErrorCode names it by the text JS named it
@@ -241,7 +242,7 @@ func (s *State) CompareRoute(class string, p *Plan, c *Capture, staleMs int64, n
 	}
 	answer, sent, lines, check := s.replayRoute(p, legs, c, staleMs, now)
 
-	jsBody := strings.ReplaceAll(c.Client.Body, NodeBodyUsedText, BodyUsedText)
+	jsBody := c.Client.Body
 	if (budgetRefusalAny(c.Client.Status, c.Client.Body) || budgetRefusalAny(answer.status, answer.body.String())) &&
 		(c.Client.Status != answer.status || jsBody != answer.body.String()) {
 		return skip(budgetLag) // each side's own view of the budgets (P4e Decision 18)
@@ -334,15 +335,17 @@ func (s *State) replayRoute(p *Plan, legs []*Plan, c *Capture, staleMs int64, no
 	env, check := tapeEnv(c)
 	q := *p
 	q.Env = env
-	q.replay = legs
-	for _, l := range legs {
-		l.Env = env
-		if l.auth != nil {
+	q.replay = make([]*Plan, len(legs))
+	for i, l := range legs {
+		lc := *l // the replay edits its own copy of each leg; the planned legs stay as they are
+		lc.Env = env
+		if lc.auth != nil {
 			// A token-auth leg: the replay sends a marked token (each engine holds its own; compared by scheme).
-			l.Header = l.Header.Clone()
-			setToken(l.Header, l.Target, tokenMark)
-			l.auth = nil
+			lc.Header = lc.Header.Clone()
+			setToken(lc.Header, lc.Target, tokenMark)
+			lc.auth = nil
 		}
+		q.replay[i] = &lc
 	}
 	r, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://127.0.0.1/", http.NoBody)
 	w := &replayWriter{header: http.Header{}}

@@ -1192,6 +1192,7 @@ async function runSequence(dataDir, gw, service, steps, { capture = false } = {}
       if (capture) {
         const c = shadow.takeCapture(id);
         if (c && c.client && typeof c.client.body === 'string') c.client.body = bodyUsed(c.client.body);
+        if (c && c.runtime) c.runtime = '<<runtime>>'; // the same bytes on Node and Deno
         out.push({ capture: c });
         continue;
       }
