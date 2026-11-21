@@ -8,7 +8,9 @@
 // [bench/results], ZP_BENCH_HOST [the host name], ZP_BENCH_TIER [external; private lets the go engine serve until P4e];
 // ZP_ENGINE (front, go: the Go gateway in front; go also records its RSS and which engine called the mock);
 // ZP_BENCH_FORMAT [openai; anthropic: the gateway calls go to /v1/messages in the Anthropic format, translated to the
-// mock's OpenAI chat (P4d), the direct calls stay chat].
+// mock's OpenAI chat (P4d), the direct calls stay chat]; ZP_BENCH_TOOL_RESULT [0; <bytes>: each gateway call carries a
+// tool call and a tool result of about that many bytes, so the token saver works on every call (rtk spec D20); the
+// direct calls stay without one].
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -37,6 +39,7 @@ const CFG = {
   engine: process.env.ZP_ENGINE || 'js',
   // P4d: the client format of the gateway calls (the translated path when anthropic).
   format: process.env.ZP_BENCH_FORMAT === 'anthropic' ? 'anthropic' : 'openai',
+  toolResult: num('ZP_BENCH_TOOL_RESULT', 0),
 };
 const KEYS = 25; // the stream workers spread over these keys, so no key reaches its rate limit
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -236,7 +239,30 @@ async function main() {
     const directUrl = `${mock.url}/chat/completions`;
     const gwBody = (extra) =>
       JSON.stringify({ model: 'bench/bench-1', ...(anthropic ? { max_tokens: 256 } : {}), ...extra });
-    const whole = gwBody({ messages: [{ role: 'user', content: 'ping' }] });
+    // ZP_BENCH_TOOL_RESULT: a log the token saver shortens, after the tool call that asked for it, in the call's format.
+    const log = CFG.toolResult
+      ? '2026-11-17T10:00:00Z INFO step done\n'.repeat(Math.ceil(CFG.toolResult / 36)).slice(0, CFG.toolResult)
+      : '';
+    const turn = (content) => {
+      if (!log) return [{ role: 'user', content }];
+      if (anthropic)
+        return [
+          { role: 'user', content: 'run it' },
+          { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'tail app.log' } }] },
+          { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: log }, { type: 'text', text: content }] },
+        ];
+      return [
+        { role: 'user', content: 'run it' },
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Bash', arguments: '{"command":"tail app.log"}' } }],
+        },
+        { role: 'tool', tool_call_id: 'c1', content: log },
+        { role: 'user', content },
+      ];
+    };
+    const whole = gwBody({ messages: turn('ping') });
     const wholeDirect = JSON.stringify({ model: 'bench-1', messages: [{ role: 'user', content: 'ping' }] });
     const gwHeaders = (i) => ({ ...json, authorization: `Bearer ${keys[i % KEYS]}` });
     for (let i = 0; i < 50; i++) {
@@ -268,7 +294,7 @@ async function main() {
     if (CFG.engine === 'go' && nsCounts.go < CFG.requests)
       throw new Error(`the go engine answered ${nsCounts.go} of ${CFG.requests} non-streaming calls`);
 
-    const streamBody = gwBody({ stream: true, messages: [{ role: 'user', content: 'go' }] });
+    const streamBody = gwBody({ stream: true, messages: turn('go') });
     const streamDirect = JSON.stringify({
       model: 'bench-1',
       stream: true,
@@ -340,7 +366,8 @@ async function main() {
     fs.mkdirSync(dir, { recursive: true });
     const variant =
       (CFG.engine !== 'js' || CFG.tier !== 'external' ? `-${CFG.engine}-${CFG.tier}` : '') +
-      (CFG.format === 'anthropic' ? '-anthropic' : '');
+      (CFG.format === 'anthropic' ? '-anthropic' : '') +
+      (CFG.toolResult ? `-tool${CFG.toolResult}` : '');
     const file = path.join(dir, `${date}-${CFG.runtime}${variant}-${result.host.name}.json`);
     fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}\n`);
     console.log(`wrote ${path.relative(process.cwd(), file)} in ${result.durationS} s`);
