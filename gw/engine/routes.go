@@ -210,12 +210,35 @@ func (r *RouteState) Take(name string, count int, at int64, remote bool) int {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.take(name, count, at, remote)
+}
+
+// take is Take with the mutex held.
+func (r *RouteState) take(name string, count int, at int64, remote bool) int {
 	n := r.rr[name] % count
 	r.rr[name] = n + 1
 	if r.send != nil && !remote {
 		r.send(ipc.TypeRouteTake, ipc.RouteTake{Name: name, At: at})
 	}
 	return n
+}
+
+// TakeOrder is resolveAll for a route call (spec Decision 6): takes local takes of a round-robin route of count raw
+// targets (the last one's n rotates), then Order with the cooling test at `at`, all under one hold of the mutex, so no
+// note or take lands between the take and the cooling test.
+func (r *RouteState) TakeOrder(name string, count, takes int, roundRobin bool, legs []*Plan, at int64) []*Plan {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	if roundRobin && count >= 2 {
+		for range takes {
+			n = r.take(name, count, at, false)
+		}
+	}
+	return Order(legs, n, roundRobin, func(id string) bool {
+		c, ok := r.cool[id]
+		return ok && c.Until > float64(at)
+	})
 }
 
 // SetSend replaces where local notes and takes go (nil: nowhere); see RouteState for what send may do.

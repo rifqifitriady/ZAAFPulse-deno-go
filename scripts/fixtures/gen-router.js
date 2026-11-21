@@ -732,6 +732,23 @@ const saverTurn = [
   { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: SAVER_DIFF }] },
 ];
 
+// The same tool result in a chat body: the tool call names the command, the tool message carries the output.
+const saverChatTurn = [
+  { role: 'user', content: 'go' },
+  {
+    role: 'assistant',
+    content: null,
+    tool_calls: [{ id: 't1', type: 'function', function: { name: 'Bash', arguments: '{"command":"git diff"}' } }],
+  },
+  { role: 'tool', tool_call_id: 't1', content: SAVER_DIFF },
+];
+// A body read after proxyChat cancelled it (a target that fell back, then every later target threw): the runtime's
+// TypeError text, which differs between Node and Deno (spec Decision 15f), is written as this marker so both runtimes
+// write the same bytes; the Go replay maps Deno's text (the control plane's runtime) to it.
+const BODY_USED = '<<runtime: body already used>>';
+const BODY_USED_TEXTS = ['Body is unusable: Body has already been read', 'Body already consumed'];
+const bodyUsed = (text) => BODY_USED_TEXTS.reduce((t, m) => t.split(m).join(BODY_USED), text);
+
 // [name, note, steps, opt]; opt: { guardrails, budgets }.
 const SEQUENCES = [
   [
@@ -964,6 +981,27 @@ const SEQUENCES = [
     },
   ],
   [
+    'seq-chat-fallback-then-throw',
+    'a target that fell back keeps the call: the last target throws (599 line), then the cancelled body is read and the runtime error answers 500 (copied quirk, spec Decision 7); whole and stream',
+    [
+      [CHAT, chat('router/fb'), [err(503, 'busy'), THROW]],
+      [CHAT, chat('router/fb', { stream: true }), [err(503, 'busy'), THROW]],
+    ],
+  ],
+  [
+    'seq-chat-saver',
+    'the token saver on chat route calls: run once on the client body; every leg sends the shortened text; savedTokens only on the answer line, never on the 599, fallback or guard lines',
+    [
+      [CHAT, chat('router/rr3', { messages: saverChatTurn }), [THROW, err(503, 'busy'), chatOk()]],
+      [
+        CHAT,
+        chat('router/mix', { messages: [...saverChatTurn, { role: 'user', content: `key ${ANT}` }] }),
+        [err(500, 'down')],
+      ],
+    ],
+    { guardrails: { ...OFF, secrets: 'block' } },
+  ],
+  [
     'seq-messages-dropped',
     'a translated route call that drops a server-side tool: x-zp-dropped on the answer, after a fallback',
     [
@@ -1108,7 +1146,7 @@ async function runSequence(dataDir, gw, service, steps) {
         client: {
           status: res.statusCode,
           headers: Object.fromEntries(SEQ_HEADERS.map((h) => [h, res.headers[h] ?? null])),
-          body: res.body,
+          body: bodyUsed(res.body),
         },
         usage: lines
           .slice(0, lines.length - before)

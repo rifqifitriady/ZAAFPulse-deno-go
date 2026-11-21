@@ -20,6 +20,10 @@ import (
 // served on go only when its sub-class and this switch are on go, and compared when either is shadowed.
 const RouteSwitch = "routes"
 
+// BodyUsedText is the TypeError text Deno's Response.text() throws for a body already cancelled (the control plane runs
+// on Deno; Node writes "Body is unusable: Body has already been read", spec Decision 15f).
+const BodyUsedText = "Body already consumed"
+
 // retryable is lib/gateway/index.js retryable: an answer worth trying the next route target for.
 func retryable(status int) bool { return status == 408 || status == 429 || status >= 500 }
 
@@ -91,13 +95,7 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 	// resolveAll: the take (once per resolveAll of the JS path; the last one's n orders), then the order.
 	now := e.now()
 	rr := p.Route.Strategy != nil && *p.Route.Strategy == "round-robin"
-	n := 0
-	if rr {
-		for range p.Takes {
-			n = e.routes.Take(p.Route.Name, len(p.Route.Targets), now, false)
-		}
-	}
-	legs := Order(p.Legs, n, rr, func(id string) bool { return e.routes.Cooling(id, now) })
+	legs := e.routes.TakeOrder(p.Route.Name, len(p.Route.Targets), p.Takes, rr, p.Legs, now)
 
 	// targetsFor's price rule for a key with a budget, then allowedTargets: 402s without a line.
 	if s.limited(p.Key) {
@@ -122,6 +120,7 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 
 	// proxyChat's loop.
 	var last *Answer // the 502 of the last call that threw, with its 599 line
+	fell := false    // a leg fell back: proxyChat keeps it as its target, with its body cancelled
 	for i, l := range legs {
 		l.Unchecked = unchecked
 		if l.Policy != nil {
@@ -156,11 +155,13 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 		if !ok2xx(status) && retryable(status) && i < len(legs)-1 {
 			_ = resp.Body.Close()
 			e.emitLine(stamp(s.fellBack(l, status, elapsed())), unchecked, call)
+			fell = true
 			continue
 		}
 		if l.Upstream == UpAnthropic && !l.Stream && ok2xx(status) {
 			// callChat converts a whole Anthropic answer inside proxyChat's try: a conversion that throws is a failed
 			// target (a 599 line, then the next one), not the answer.
+			// A read error leaves raw short: anthropicWhole then fails on it, as r.json() rejects in JS.
 			raw, _ := io.ReadAll(cutBody{resp.Body})
 			_ = resp.Body.Close()
 			conv, why := anthropicWhole(l.Env, raw, l.ClientModel, s.onPanic("the Anthropic leg's whole answer"))
@@ -186,6 +187,14 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 				return ProviderResult{Status: status, Header: resp.Header, Body: cutBody{resp.Body}}
 			})
 		}
+		return
+	}
+	if fell {
+		// Copied quirk (spec Decision 7): proxyChat returns the last target that fell back, whose body it cancelled;
+		// chatCompletion reads that body, the runtime throws, and handle's catch answers 502 upstream_error with the
+		// runtime's text. No line beyond the attempts' own.
+		e.answerOwn(w, r, s, shapeError(p.Shape, http.StatusBadGateway, s.mask(BodyUsedText), "upstream_error", "", ""),
+			started, tr)
 		return
 	}
 	// No target answered: the 502 with the last error, masked (its 599 line is out).
