@@ -135,6 +135,9 @@ func errorBody(msg, typ, code string) []byte {
 func refusal(p *Plan, status int, msg, typ, code string, ms float64, lineErr string, g *ipc.GuardrailOutcome) *Answer {
 	rec := p.Base
 	rec.RoutedTo, rec.Guard = nil, g
+	if !p.keepSaved {
+		rec.SavedTokens = nil // proxyChat's guard lines carry no savedTokens (rtk.js R9)
+	}
 	rec.Status, rec.Ms, rec.Cost = int64(status), ms, 0
 	rec.Input, rec.Output, rec.Cached = nil, nil, nil
 	rec.Error = &lineErr

@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "commit 12345678z",
+    ""
+  ],
+  "out": null
+}

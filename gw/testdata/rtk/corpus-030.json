@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "[0/40] building\n./a/b1/c1.txt\n./a/b2/c2.txt\n\n[4/40] building\n./a/b1/c5.txt\n[6/40] building\n\n./a/b0/c8.txt\n./a/b1/c9.txt\n[10/40] building\n\n[12/40] building\n./a/b1/c13.txt\n\n\n\n\n\n\n\n\n\n\n./a/b0/c24.txt\n./a/b1/c25.txt\n./a/b2/c26.txt\n[27/40] building\n\n./a/b1/c29.txt\n[30/40] building\n[31/40] building\n./a/b0/c32.txt\n[33/40] building\n[34/40] building\n\n./a/b0/c36.txt\n[37/40] building\n./a/b2/c38.txt\n[39/40] building\n\n\n\n\n./a/b0/c44.txt\n\n\n./a/b3/c47.txt\n./a/b0/c48.txt\n\n\n./a/b3/c51.txt\n./a/b0/c52.txt\n\n[54/40] building\n\n./a/b0/c56.txt\n./a/b0/c56.txt\n./a/b0/c56.txt\n./a/b0/c56.txt\n./a/b0/c56.txt\n./a/b0/c56.txt\n./a/b0/c56.txt\n./a/b0/c56.txt\n./a/b0/c56.txt\n[65/40] building\n./a/b2/c66.txt\n\n./a/b0/c68.txt\n[69/40] building\n[70/40] building\n\n[72/40] building\n\n[74/40] building\n[75/40] building\n./a/b0/c76.txt",
+    "Grep TODO"
+  ],
+  "out": {
+    "text": "[0/40] building\n./a/b1/c1.txt\n./a/b2/c2.txt\n[4/40] building\n./a/b1/c5.txt\n[6/40] building\n./a/b0/c8.txt\n./a/b1/c9.txt\n[10/40] building\n[12/40] building\n./a/b1/c13.txt\n./a/b0/c24.txt\n./a/b1/c25.txt\n./a/b2/c26.txt\n[27/40] building\n./a/b1/c29.txt\n[30/40] building\n[31/40] building\n./a/b0/c32.txt\n[33/40] building",
+    "filter": "grep",
+    "saved": 483
+  }
+}

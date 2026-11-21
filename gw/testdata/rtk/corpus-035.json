@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "same repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line",
+    "Bash find . -name x"
+  ],
+  "out": {
+    "text": "same repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\nsame repeated line\r\n  … 56 more in . omitted",
+    "filter": "listing",
+    "saved": 1094
+  }
+}

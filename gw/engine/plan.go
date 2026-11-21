@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/provauth"
 )
 
 // Sub-classes (P4d Decision 2): each has its own engine entry, shadow entry and switch-rule record.
@@ -37,6 +38,7 @@ var Subs = map[string][]string{
 	"responses":  {SubResponses, SubResponsesStream},
 	"gemini":     {SubGemini, SubGeminiStream, SubGeminiCount},
 	"embeddings": {SubEmbeddings},
+	"mcp":        {SubMCP},
 }
 
 // Shape is how the engine writes a refusal: lib/gateway/index.js fail (OpenAI), anthropicError, or the Google error.
@@ -110,19 +112,31 @@ func (s *State) target(model string, key *ipc.GatewayKeyAuth) (*Target, string) 
 	return t, ""
 }
 
-// credential is the provider's API key ("" for none); OAuth2 and service accounts are P4g's (P4d Decision 17).
-func (s *State) credential(t *Target) (string, string) {
+// credential is the provider's API key ("" for none), or for an oauth2 or google-sa provider the engine's token source
+// (P4g Decision 11: the plan carries the source, Upstream.Start gets the token). A provider with no handed value, a
+// refresh_token grant provider (Decision 19), or a state without a token registry (not installed by an engine), is
+// handed off.
+func (s *State) credential(t *Target) (string, *provauth.Cached, string) {
 	a := t.Provider.Auth
 	if a == nil {
-		return "", ""
+		return "", nil, ""
 	}
 	if a.Type != "key" {
-		return "", "provider: OAuth2 or a service account (P4g)"
+		if refreshGrant(t.Provider) {
+			return "", nil, HandRefreshGrant
+		}
+		if !tokenAuth(t.Provider) || s.tokens == nil {
+			return "", nil, "provider: OAuth2 or a service account (P4g)"
+		}
+		if s.Secrets[t.Provider.ID] == "" {
+			return "", nil, "provider: no credential"
+		}
+		return "", s.tokens.Source(t.Provider), ""
 	}
 	if c := s.Secrets[t.Provider.ID]; c != "" {
-		return c, ""
+		return c, nil, ""
 	}
-	return "", "provider: no credential"
+	return "", nil, "provider: no credential"
 }
 
 // providerHeader is providers.js headers(p): x-api-key and anthropic-version for the Anthropic format, else a Bearer.
@@ -203,6 +217,8 @@ func (s *State) PlanFor(class string, r *Request, now int64) Plan {
 		return s.PlanGemini(r, now)
 	case "embeddings":
 		return s.PlanEmbeddings(r, now)
+	case "mcp":
+		return s.PlanMCP(r, now)
 	}
 	return handoff("class: not on the go engine")
 }

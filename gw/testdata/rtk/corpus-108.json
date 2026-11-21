@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "npm ERR! failed 0\nnpm ERR! failed 1\nnpm ERR! failed 2\nnpm ERR! failed 3\nnpm ERR! failed 4\nnpm ERR! failed 5\nnpm ERR! failed 6\nnpm ERR! failed 7\nnpm ERR! failed 8\nnpm ERR! failed 9\nnpm ERR! failed 10\nnpm ERR! failed 11\nnpm ERR! failed 12\nnpm ERR! failed 13\nnpm ERR! failed 14\nnpm ERR! failed 15\nnpm ERR! failed 16\nnpm ERR! failed 17\nnpm ERR! failed 18\nnpm ERR! failed 19\nnpm ERR! failed 20\nnpm ERR! failed 21\nnpm ERR! failed 22\nnpm ERR! failed 23\nnpm ERR! failed 24\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 38\nnpm ERR! failed 39\nnpm ERR! failed 40\nnpm ERR! failed 41\nnpm ERR! failed 42\nnpm ERR! failed 43\nnpm ERR! failed 44",
+    "Bash rg foo | head"
+  ],
+  "out": {
+    "text": "npm ERR! failed 0\n  (× 45 similar lines)\n…\nnpm ERR! failed 20\nnpm ERR! failed 21\nnpm ERR! failed 22\nnpm ERR! failed 23\nnpm ERR! failed 24\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 25\nnpm ERR! failed 38\nnpm ERR! failed 39\nnpm ERR! failed 40\nnpm ERR! failed 41\nnpm ERR! failed 42\nnpm ERR! failed 43\nnpm ERR! failed 44",
+    "filter": "build",
+    "saved": 327
+  }
+}

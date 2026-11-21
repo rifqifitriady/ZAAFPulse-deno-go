@@ -262,6 +262,70 @@ const CASES = [
   ],
 ];
 
+// Token saver (spec docs/superpowers/specs/2026-11-17-rtk-go-design.md R9, D9, D12): a long tool result shortened on
+// the chat path, before the guardrails, with savedTokens on the lines JS writes it on.
+const DIFF = Array.from({ length: 3 }, (_, f) =>
+  [`diff --git a/f${f}.js b/f${f}.js`, '@@ -1,90 +1,90 @@', ...Array.from({ length: 90 }, (_, i) => `+ line ${i}`)].join(
+    '\n',
+  ),
+).join('\n');
+const LOGTXT = Array.from({ length: 400 }, (_, i) => `2026-11-17 INFO step ${i}`).join('\n');
+const ONE_BLANK = Array.from(
+  { length: 270 },
+  (_, i) => `item ${[400, 20, 1].map((d) => 'ghijklmnopqrstuvwxyz'[Math.floor(i / d) % 20]).join('')} zzzzzzzzzz`,
+)
+  .join('\n')
+  .replace('\n', '\n\n\n');
+const toolTurn = (content, command = 'git diff') => [
+  { role: 'user', content: 'go' },
+  {
+    role: 'assistant',
+    content: null,
+    tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Bash', arguments: JSON.stringify({ command }) } }],
+  },
+  { role: 'tool', tool_call_id: 'c1', content },
+];
+const OAI_DONE = { status: 200, body: 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n' };
+CASES.push(
+  ['saver-whole', {}, { model: 'oa/m1', messages: toolTurn(DIFF) }, ok()],
+  ['saver-stream', {}, { model: 'oa/m1', stream: true, messages: toolTurn(DIFF) }, OAI_DONE],
+  ['saver-header-off', { headers: { 'x-zp-token-saver': 'OFF' } }, { model: 'oa/m1', messages: toolTurn(DIFF) }, ok()],
+  ['saver-setting-off', { tokenSaver: false }, { model: 'oa/m1', messages: toolTurn(DIFF) }, ok()],
+  ['saver-short-result', {}, { model: 'oa/m1', messages: toolTurn('ok') }, ok()],
+  ['saver-zero-tokens', {}, { model: 'oa/m1', messages: toolTurn(ONE_BLANK, 'echo') }, ok()],
+  [
+    'saver-redact-after',
+    { guardrails: { ...OFF, secrets: 'redact' } },
+    { model: 'oa/m1', messages: toolTurn(`key ${ANT}\n${DIFF}`) },
+    ok(),
+  ],
+  [
+    'saver-secret-in-omitted-middle',
+    { guardrails: { ...OFF, secrets: 'block' } },
+    { model: 'oa/m1', messages: toolTurn(LOGTXT.replace('step 250', `step 250 ${ANT}`)) },
+    ok(),
+  ],
+  [
+    'saver-guard-block',
+    { guardrails: { ...OFF, secrets: 'block' } },
+    { model: 'oa/m1', messages: toolTurn(`key ${ANT}\n${DIFF}`) },
+    ok(),
+  ],
+  [
+    'saver-budget-402',
+    { budgets: [budget('b1', 'global', 'exceeded')] },
+    { model: 'oa/m1', messages: toolTurn(DIFF) },
+    ok(),
+  ],
+  ['saver-price-402', { key: 'k3' }, { model: 'oa/nopr', messages: toolTurn(DIFF) }, ok()],
+  [
+    'saver-provider-500',
+    {},
+    { model: 'oa/m1', messages: toolTurn(DIFF) },
+    { status: 500, body: '{"error":{"message":"boom"}}' },
+  ],
+  ['saver-provider-throws', {}, { model: 'oa/m1', messages: toolTurn(DIFF) }, { throw: 'ECONNREFUSED' }],
+);
 // A request as gateway.handle reads it: headers, the target, a loopback client, the body as one chunk.
 const requestOf = (headers, text) => ({
   method: 'POST',
@@ -308,6 +372,7 @@ function main() {
   let sent = null;
   const fetchImpl = async (url, init) => {
     sent = { url, headers: init.headers, body: init.body };
+    if (cur.provider.throw) throw new Error(cur.provider.throw);
     const p = cur.provider;
     return new Response(Buffer.from(p.body, 'utf8'), {
       status: p.status,
@@ -339,10 +404,19 @@ function main() {
     },
   });
   const cases = CASES.map(([name, opt, body, provider]) => {
-    const gw = { providers: PROVIDERS, routes: [], ...(opt.guardrails ? { guardrails: opt.guardrails } : {}) };
+    const gw = {
+      providers: PROVIDERS,
+      routes: [],
+      ...(opt.guardrails ? { guardrails: opt.guardrails } : {}),
+      ...(opt.tokenSaver === false ? { tokenSaver: false } : {}),
+    };
     const service = fakeService(opt.budgets || [], opt.keyCenter || {});
     const snapshot = { ...snapshotPush({ service, keyIds: KEYS.map((k) => k.id), now: FIXED_NOW }), at: FIXED_NOW };
-    const headers = { 'content-type': 'application/json', authorization: `Bearer ${secretOf[opt.key || 'k1']}` };
+    const headers = {
+      'content-type': 'application/json',
+      authorization: `Bearer ${secretOf[opt.key || 'k1']}`,
+      ...(opt.headers || {}),
+    };
     const args = [
       {
         config: configPush({ gateway: gw, keys: KEYS, pricing: PRICING }),

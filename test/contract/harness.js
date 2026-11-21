@@ -8,8 +8,8 @@
 //   ZP_ENGINE=front        gateway.engine "front": the Go gateway (built by scripts/ipc/build-stub.js, or ZP_GW_BIN)
 //                          holds the port and forwards every case to the server (P4a T6)
 //   ZP_ENGINE=go           front, with every go class on the go engine (P4b, P4c, P4d: chat, messages, responses, gemini,
-//                          embeddings and their sub-classes): the gateway serves the calls it can itself and hands the
-//                          others to the server (gateway.shadowDays 0: no shadow gate)
+//                          embeddings and their sub-classes; P4g: mcp, provider-auth): the gateway serves the calls
+//                          it can itself and hands the others to the server (gateway.shadowDays 0: no shadow gate)
 //   ZP_ENGINE=shadow       front, every go class on js and shadowed: the gateway compares each call with the go engine;
 //                          stop() fails when the server's .data/gateway-shadow.jsonl holds a diff
 // Nothing here reaches the network: the providers point at the fake upstream on 127.0.0.1, price sync is off, and
@@ -23,8 +23,8 @@ const { NO_JUDGE_PORTS } = require('../helpers');
 const { startUpstream } = require('./upstream');
 const { buildStub } = require('../../scripts/ipc/build-stub');
 const permissions = require('../../lib/permissions');
-// Every class the go engine has (P4b chat, P4c chat-stream, the P4d classes): on go under ZP_ENGINE=go, shadowed under
-// ZP_ENGINE=shadow.
+// Every class the go engine has (P4b chat, P4c chat-stream, the P4d classes, P4g mcp and provider-auth): on go under
+// ZP_ENGINE=go, shadowed under ZP_ENGINE=shadow.
 const { GO_CLASSES } = require('../../lib/front');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -246,23 +246,45 @@ function clientFor(base) {
     if (r.status !== 200 || (r.json && r.json.errors)) throw new Error(`admin ${route}: ${r.status} ${r.text}`);
     return r.json;
   };
+  // The usage records, newest first (GET /api/gateway/logs).
+  // With chat on the go engine a call's line reaches the log through the IPC ingest, a few milliseconds after the
+  // answer (P4b deviation 5): the list is read until two reads 100 ms apart agree (at most 2 s).
+  const logs = async () => {
+    const read = async () => (await call('/api/gateway/logs', { method: 'GET' })).json.entries;
+    let entries = await read();
+    if (process.env.ZP_ENGINE !== 'go') return entries;
+    for (let i = 0; i < 20; i++) {
+      await sleep(100);
+      const again = await read();
+      if (again.length === entries.length && JSON.stringify(again[0]) === JSON.stringify(entries[0])) return again;
+      entries = again;
+    }
+    return entries;
+  };
   return {
     call,
     admin,
-    // The usage records, newest first (GET /api/gateway/logs).
-    // With chat on the go engine a call's line reaches the log through the IPC ingest, a few milliseconds after the
-    // answer (P4b deviation 5): the list is read until two reads 100 ms apart agree (at most 2 s).
-    logs: async () => {
-      const read = async () => (await call('/api/gateway/logs', { method: 'GET' })).json.entries;
-      let entries = await read();
-      if (process.env.ZP_ENGINE !== 'go') return entries;
-      for (let i = 0; i < 20; i++) {
-        await sleep(100);
-        const again = await read();
-        if (again.length === entries.length && JSON.stringify(again[0]) === JSON.stringify(entries[0])) return again;
-        entries = again;
+    logs,
+    // The newest usage line once the log holds more than `before` lines (a line from the gateway reaches the log a
+    // few milliseconds after the answer); throws after 5 s.
+    lineAfter: async (before) => {
+      const end = Date.now() + 5000;
+      for (;;) {
+        const entries = await logs();
+        if (entries.length > before) return entries[0];
+        if (Date.now() > end) throw new Error('no usage line within 5 s');
+        await sleep(20);
       }
-      return entries;
+    },
+    // ZP_ENGINE=shadow: the shadow stats of class c (GET /api/gateway/status) once it has compared at least min calls,
+    // or as they are after 5 s. A shadow run passes only when its classes were compared, not just free of diffs.
+    shadowStats: async (c, min) => {
+      const end = Date.now() + 5000;
+      for (;;) {
+        const st = (await call('/api/gateway/status', { method: 'GET' })).json.shadow || {};
+        if ((st[c] && st[c].compared >= min) || Date.now() > end) return st[c] || null;
+        await sleep(50);
+      }
     },
     // A new key: { secret, id }. Defaults: every scope, a high rate limit so cases never limit each other.
     newKey: async (input = {}) => {
@@ -315,13 +337,23 @@ function providerList(upstreamUrl) {
 }
 const ROUTES = [{ name: 'router/fallback', targets: ['oa/fail503', 'oa/m1'], strategy: 'fallback' }];
 
-// start() -> { base, key, keyId, upstream, call, admin, logs, newKey, setGuardrails, stop }. One per test file.
-async function start() {
-  const upstream = await startUpstream();
+// start({ tls }) -> { base, key, keyId, upstream, call, admin, logs, newKey, setGuardrails, stop }. One per test file.
+// tls (P4g): the fake upstream's token endpoint is served over HTTPS too (upstream.tlsUrl), and the spawned server and
+// its gateway trust that run's CA through NODE_EXTRA_CA_CERTS and DENO_CERT (lib/ipc/env.js hands both to the gateway).
+async function start({ tls = false } = {}) {
+  const upstream = await startUpstream({ tls });
   let server = null;
+  let caDir = null;
   try {
     const url = process.env.ZP_CONTRACT_URL;
-    server = url ? { base: url.replace(/\/+$/, ''), stop: async () => {} } : await startServer();
+    let env = {};
+    if (tls && !url) {
+      caDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-contract-ca-'));
+      const caFile = path.join(caDir, 'ca.pem');
+      fs.writeFileSync(caFile, upstream.ca);
+      env = { NODE_EXTRA_CA_CERTS: caFile, DENO_CERT: caFile };
+    }
+    server = url ? { base: url.replace(/\/+$/, ''), stop: async () => {} } : await startServer({ env });
     const c = clientFor(server.base);
     for (const p of providerList(upstream.url)) await c.admin('providers', { action: 'save', ...p });
     for (const r of ROUTES) await c.admin('routes', { action: 'save', ...r });
@@ -340,12 +372,14 @@ async function start() {
           await server.stop();
         } finally {
           await upstream.close(); // also when the server's stop throws (a shadow diff), or the test process hangs
+          if (caDir) fs.rmSync(caDir, { recursive: true, force: true });
         }
       },
     };
   } catch (err) {
     if (server) await server.stop();
     await upstream.close();
+    if (caDir) fs.rmSync(caDir, { recursive: true, force: true });
     throw err;
   }
 }

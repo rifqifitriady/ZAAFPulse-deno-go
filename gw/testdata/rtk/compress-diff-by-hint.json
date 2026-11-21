@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "DIFF\nindex 1234567..89abcde 100644\n--- a/src/f0.js\n+++ b/src/f0.js\n@@ -1,10 +1,10 @@\n-  const v0 = 0;\n+  const v1 = 1;\n+  const v2 = 2;\n-  const v3 = 3;\n+  const v4 = 4;\n+  const v5 = 5;\n-  const v6 = 6;\n+  const v7 = 7;\n+  const v8 = 8;\n-  const v9 = 9;\nDIFF\nindex 1234567..89abcde 100644\n--- a/src/f1.js\n+++ b/src/f1.js\n@@ -1,10 +1,10 @@\n-  const v0 = 0;\n+  const v1 = 1;\n+  const v2 = 2;\n-  const v3 = 3;\n+  const v4 = 4;\n+  const v5 = 5;\n-  const v6 = 6;\n+  const v7 = 7;\n+  const v8 = 8;\n-  const v9 = 9;",
+    "Bash git -C repo diff --stat"
+  ],
+  "out": null
+}

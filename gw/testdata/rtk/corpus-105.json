@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "[0/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\nsame repeated line\nsame repeated line\nsame repeated line\n[12/40] building\n[13/40] building\n[14/40] building\nsame repeated line\n[16/40] building\n[17/40] building\n[18/40] building\n[19/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\n[20/40] building\nsame repeated line\nsame repeated line\n[48/40] building\nsame repeated line\n[50/40] building\nsame repeated line\nsame repeated line\n[53/40] building\n[54/40] building\nsame repeated line\n[56/40] building\nsame repeated line\nsame repeated line\n[59/40] building\nsame repeated line\nsame repeated line\nsame repeated line\n[63/40] building\n[64/40] building\nsame repeated line\nsame repeated line\n[67/40] building\nsame repeated line",
+    "Bash find . -name x"
+  ],
+  "out": {
+    "text": "[0/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\n[1/40] building\nsame repeated line\nsame repeated line\nsame repeated line\n  … 57 more in . omitted",
+    "filter": "listing",
+    "saved": 974
+  }
+}

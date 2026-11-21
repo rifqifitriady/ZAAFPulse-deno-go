@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "\u001b[30mline 0\u001b[0m\n\u001b[31mline 1\u001b[0m\n\u001b[32mline 2\u001b[0m\n\u001b[33mline 3\u001b[0m\n\u001b[34mline 4\u001b[0m\n\u001b[35mline 5\u001b[0m\n\u001b[36mline 6\u001b[0m\n\u001b[37mline 7\u001b[0m\n\u001b[30mline 8\u001b[0m\n\u001b[31mline 9\u001b[0m\n\u001b[32mline 10\u001b[0m\n\u001b[33mline 11\u001b[0m\n\u001b[34mline 12\u001b[0m\n\u001b[35mline 13\u001b[0m\n\u001b[36mline 14\u001b[0m\n\u001b[37mline 15\u001b[0m\n\u001b[30mline 16\u001b[0m\n\u001b[31mline 17\u001b[0m\n\u001b[32mline 18\u001b[0m\n\u001b[33mline 19\u001b[0m\n\u001b[34mline 20\u001b[0m\n\u001b[35mline 21\u001b[0m\n\u001b[36mline 22\u001b[0m\n\u001b[37mline 23\u001b[0m\n\u001b[30mline 24\u001b[0m\n\u001b[31mline 25\u001b[0m\n\u001b[32mline 26\u001b[0m\n\u001b[33mline 27\u001b[0m\n\u001b[34mline 28\u001b[0m\n\u001b[35mline 29\u001b[0m\n\u001b[36mline 30\u001b[0m\n\u001b[37mline 31\u001b[0m\n\u001b[30mline 32\u001b[0m\n\u001b[31mline 33\u001b[0m\n\u001b[32mline 34\u001b[0m\n\u001b[33mline 35\u001b[0m\n\u001b[34mline 36\u001b[0m\n\u001b[35mline 37\u001b[0m\n\u001b[36mline 38\u001b[0m\n\u001b[37mline 39\u001b[0m",
+    ""
+  ],
+  "out": {
+    "text": "line 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\nline 31\nline 32\nline 33\nline 34\nline 35\nline 36\nline 37\nline 38\nline 39",
+    "filter": "ansi",
+    "saved": 360
+  }
+}

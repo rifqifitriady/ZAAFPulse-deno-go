@@ -42,7 +42,8 @@ func TestChatAnthropicSubClass(t *testing.T) {
 	}
 }
 
-// OAuth2 and service accounts stay with the control plane (P4g), on every leg.
+// OAuth2 and service accounts stay with the control plane, on every leg, when the state has no token registry (one no
+// engine installed; P4g: SetState gives it the engine's).
 func TestCredentialHandsOffOAuth(t *testing.T) {
 	s := xlateState(t)
 	for i := range s.Gateway.Providers {

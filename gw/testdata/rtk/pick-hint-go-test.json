@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "",
+    "exec go test ./..."
+  ],
+  "out": "build"
+}

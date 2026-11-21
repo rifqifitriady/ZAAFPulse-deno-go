@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "PASS test/0.test.js\n M src/s1.ts\nPASS test/2.test.js\n\u001b]8;;http://x/3\u0007link\u001b]8;;\u0007\n nbsp 4 ls\n M src/s5.ts\n M src/s5.ts\n nbsp 7 ls",
+    ""
+  ],
+  "out": null
+}

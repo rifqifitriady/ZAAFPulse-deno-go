@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "2026-11-17T10:00:00Z INFO request e3ae63218e8f done\n     1\tcode line 1\n    message 2\n     3\tcode line 3\n    message 4\n    message 4\n    message 4\n    message 4\n    message 8\n     9\tcode line 9\n     9\tcode line 9\n     9\tcode line 9\n     9\tcode line 9\n     9\tcode line 9\n     9\tcode line 9\n     9\tcode line 9\n     9\tcode line 9",
+    "Bash rg foo | head"
+  ],
+  "out": null
+}

@@ -55,7 +55,7 @@ func (s *State) PlanCount(r *Request, now int64) Plan {
 	if t == nil || FormatOf(t.Provider) != "anthropic" || Authorize(key, "llm", model, "") != "" {
 		return self
 	}
-	cred, why := s.credential(t)
+	cred, auth, why := s.credential(t)
 	if why != "" {
 		return handoff(why)
 	}
@@ -69,7 +69,7 @@ func (s *State) PlanCount(r *Request, now int64) Plan {
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: m.S, Upstream: UpCount, Class: SubMessagesCount,
 		Format: "anthropic", Shape: ShapeAnthropic, GuardFormat: "anthropic", Env: translate.Default,
 		URL: t.Provider.BaseURL + "/messages/count_tokens", Header: providerHeader(t, cred), Timeout: CountTimeout,
-		Self: self.Self, Base: s.base(key, t, model, r), build: passBuild}
+		Self: self.Self, Base: s.base(key, t, model, r), build: passBuild, auth: auth}
 	addAnthropicHeaders(&p, r)
 	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
 		p.Policy, p.pending = &pol, body

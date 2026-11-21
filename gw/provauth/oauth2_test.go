@@ -219,6 +219,42 @@ func TestOAuth2TimesOut(t *testing.T) {
 	}
 }
 
+// A token endpoint that refuses the connection: "fetch failed" as fetch rejects, without the provider id, the URL or the
+// address (P4g final review I1).
+func TestOAuth2ConnectionRefused(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL + "/tenant/token"
+	srv.Close() // the port is closed: the connection is refused
+	src := OAuth2(OAuth2Config{TokenURL: url, ClientID: "c"}, secretOf("s"), nil, nil, WithID("azure"))
+	_, _, err := src.Token(context.Background())
+	if err == nil || err.Error() != "fetch failed" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// A body that fails while it is read is read as {}: the missing access_token is the message, as r.json().catch(() =>
+// ({})) gives.
+func TestOAuth2BodyReadError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `{"access_token":"cut`)
+		w.(http.Flusher).Flush()
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			return
+		}
+		c, _, _ := hj.Hijack()
+		_ = c.Close()
+	}))
+	t.Cleanup(srv.Close)
+	src := OAuth2(OAuth2Config{TokenURL: srv.URL, ClientID: "c"}, secretOf("s"), srv.Client(), nil, WithID("azure"))
+	_, _, err := src.Token(context.Background())
+	if err == nil || err.Error() != "azure: token refresh failed (200)" {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestOAuth2Errors(t *testing.T) {
 	srv, _ := endpoint(t, func(n int, r seen) (int, string) {
 		switch {
@@ -314,5 +350,38 @@ func TestExpiresIn(t *testing.T) {
 		if err != nil || exp.Sub(t0) != want {
 			t.Errorf("%s: %v %v, want %v", body, exp.Sub(t0), err, want)
 		}
+	}
+}
+
+func TestCachedExpiry(t *testing.T) {
+	srv, _ := endpoint(t, func(n int, _ seen) (int, string) {
+		if n == 2 {
+			return 401, `{"error":"invalid_client"}`
+		}
+		return 200, fmt.Sprintf(`{"access_token":"cc-%d","expires_in":%d}`, n, 600*n)
+	})
+	clk := &clock{now: t0}
+	src := OAuth2(OAuth2Config{TokenURL: srv.URL, ClientID: "app"}, secretOf("s"), srv.Client(), clk.Now)
+	if _, ok := src.Expiry(); ok {
+		t.Fatal("an expiry before any token")
+	}
+	if _, _, err := src.Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if exp, ok := src.Expiry(); !ok || !exp.Equal(t0.Add(10*time.Minute)) {
+		t.Fatalf("expiry %v %v", exp, ok)
+	}
+	if _, _, err := src.Refresh(context.Background()); err == nil {
+		t.Fatal("the second refresh should fail")
+	}
+	if exp, ok := src.Expiry(); !ok || !exp.Equal(t0.Add(10*time.Minute)) {
+		t.Fatalf("a failed refresh keeps the expiry: %v %v", exp, ok)
+	}
+	clk.Set(t0.Add(time.Minute))
+	if _, _, err := src.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if exp, ok := src.Expiry(); !ok || !exp.Equal(t0.Add(time.Minute+30*time.Minute)) {
+		t.Fatalf("expiry after a refresh %v %v", exp, ok)
 	}
 }

@@ -168,13 +168,14 @@ func (st *frames) pop() packed {
 }
 
 type vm struct {
-	s     []uint16
-	caps  []int
-	stack frames
-	b     *Budget
-	icase bool
-	prog  *prog
-	regs  []int
+	s         []uint16
+	caps      []int
+	stack     frames
+	b         *Budget
+	icase     bool
+	multiline bool
+	prog      *prog
+	regs      []int
 }
 
 func (re *Regexp) newVM(s []uint16, b *Budget) *vm {
@@ -182,7 +183,7 @@ func (re *Regexp) newVM(s []uint16, b *Budget) *vm {
 		panic(ErrStack) // the stack's 32-bit offsets cannot address it: refused like a run past the stack cap
 	}
 	p := re.program()
-	return &vm{s: s, caps: make([]int, 2*(re.ncap+1)), b: b, icase: re.icase, prog: p, regs: make([]int, p.nregs)}
+	return &vm{s: s, caps: make([]int, 2*(re.ncap+1)), b: b, icase: re.icase, multiline: re.multiline, prog: p, regs: make([]int, p.nregs)}
 }
 
 func (m *vm) step(n int) {
@@ -347,10 +348,10 @@ func (m *vm) run(p *prog, regs []int, pos, target int) (int, bool) {
 				pc++
 			}
 		case opBegin:
-			ok = pos == 0
+			ok = pos == 0 || m.multiline && isLineTerminator(s[pos-1])
 			pc++
 		case opEnd:
-			ok = pos == len(s)
+			ok = pos == len(s) || m.multiline && isLineTerminator(s[pos])
 			pc++
 		case opWordB:
 			ok = m.wordAt(pos-1) != m.wordAt(pos)

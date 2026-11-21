@@ -30,14 +30,14 @@ func (s *State) PlanEmbeddings(r *Request, now int64) Plan {
 	if why != "" {
 		return handoff(why)
 	}
-	cred, why := s.credential(t)
+	cred, auth, why := s.credential(t)
 	if why != "" {
 		return handoff(why)
 	}
 	kind := "embeddings"
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: model, Upstream: UpEmbeddings, Class: SubEmbeddings,
 		Format: "openai", Shape: ShapeOpenAI, GuardFormat: "embeddings", Env: translate.Default, Detached: true,
-		URL: t.Provider.BaseURL + "/embeddings", Header: providerHeader(t, cred), build: passBuild,
+		URL: t.Provider.BaseURL + "/embeddings", Header: providerHeader(t, cred), build: passBuild, auth: auth,
 		Base: ipc.UsageRecord{KeyID: key.ID, Provider: t.Provider.ID, Model: model, Kind: &kind}}
 	b := s.base(key, t, model, r) // the client tag and local flag
 	p.Base.Client, p.Base.Local = b.Client, b.Local

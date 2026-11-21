@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "diff --git a b",
+    ""
+  ],
+  "out": "git-diff"
+}

@@ -1,0 +1,8 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"a\",\"function\":{\"name\":{\"toString\":1},\"arguments\":\"{}\"}}]}]}",
+    "openai"
+  ],
+  "throws": "Cannot convert object to primitive value"
+}

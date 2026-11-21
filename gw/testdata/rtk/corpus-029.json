@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "2026-11-17T10:00:00Z INFO request 62ad62be65d7 done\n2026-11-17T10:00:01Z INFO request 4398c8bf1f72 done\n nbsp 2 ls\n nbsp 3 ls\n\tmodified:   src/m4.go\n nbsp 5 ls\n2026-11-17T10:00:06Z INFO request 91e1f1f31ee6 done\n\tmodified:   src/m0.go\n nbsp 8 ls\n nbsp 9 ls\n nbsp 10 ls\n2026-11-17T10:00:11Z INFO request c6b9227fcdd7 done\n\tmodified:   src/m5.go\n2026-11-17T10:00:13Z INFO request c3e4bb6b792a done\n\tmodified:   src/m0.go\n nbsp 15 ls\n\tmodified:   src/m2.go\n\tmodified:   src/m3.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n2026-11-17T10:00:27Z INFO request 275b86d4a31e done\n\tmodified:   src/m0.go\n\tmodified:   src/m1.go\n\tmodified:   src/m2.go\n nbsp 31 ls\n\tmodified:   src/m4.go\n nbsp 33 ls\n nbsp 34 ls\n nbsp 35 ls",
+    "Bash maKe"
+  ],
+  "out": {
+    "text": "2026-11-17T10:00:11Z INFO request c6b9227fcdd7 done\n\tmodified:   src/m5.go\n2026-11-17T10:00:13Z INFO request c3e4bb6b792a done\n\tmodified:   src/m0.go\n nbsp 15 ls\n\tmodified:   src/m2.go\n\tmodified:   src/m3.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n\tmodified:   src/m4.go\n2026-11-17T10:00:27Z INFO request 275b86d4a31e done\n\tmodified:   src/m0.go\n\tmodified:   src/m1.go\n\tmodified:   src/m2.go\n nbsp 31 ls\n\tmodified:   src/m4.go\n nbsp 33 ls\n nbsp 34 ls\n nbsp 35 ls",
+    "filter": "build",
+    "saved": 269
+  }
+}
