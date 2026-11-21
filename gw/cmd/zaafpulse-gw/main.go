@@ -176,6 +176,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		default:
 		}
 	})
+	// The routing state across the engines (P4h Decision 3): each provider answer the engine reads and each rotation it
+	// takes, as control messages. The route state enqueues them under its mutex, so they leave in the order it changed
+	// (strikes and rotations are order-sensitive); the enqueue never blocks, and a message that does not fit is dropped
+	// (a lost note or take shifts a cooldown or a rotation, never a ledger).
+	type ctlMsg struct {
+		typ  string
+		body any
+	}
+	routeMsgs := make(chan ctlMsg, 4096)
+	go func() {
+		for m := range routeMsgs {
+			_ = g.ch.Send(m.typ, m.body, "", "")
+		}
+	}()
+	g.engine.SetRouteSend(func(typ string, body any) {
+		select {
+		case routeMsgs <- ctlMsg{typ, body}:
+		default:
+		}
+	})
 	g.engine.SetStaleMs(o.staleMs)
 	// The background token refresh of oauth2 and google-sa providers (P4g Decision 13), until shutdown or exit.
 	tokStop := make(chan struct{})
@@ -331,6 +351,8 @@ func (g *gateway) handle(msg ipc.Message) int {
 		g.engine.NoteTake(b.KeyID, b.At) // P4f D16: a request the control plane admitted
 	case *ipc.RateLimitWindow:
 		g.engine.SeedWindows(b.Windows) // P4f D16: the window of a new session, before budget.snapshot
+	case *ipc.ProviderNote, *ipc.RouteTake, *ipc.RouteState:
+		g.engine.RouteControl(b) // P4h Decision 3: a provider answer or a rotation the control plane read, or the seed
 	case *ipc.Ack:
 		if b.Stream != g.box.Stream() {
 			g.log.Printf("ack for another stream %s, ignored", b.Stream)

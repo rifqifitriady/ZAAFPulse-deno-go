@@ -514,3 +514,44 @@ test('an unchecked-alert hook that throws changes nothing for the ingest (P4f D2
   assert.equal(sup.status().unchecked.count, 1);
   assert.ok(logs.some((l) => l.includes('audit down')));
 });
+
+// P4h Decision 3: each session builds the routing state from sources.routes at its hello (none without the source),
+// and notes and takes travel as control messages like the rate-limit takes.
+test('the routing state goes with each session; notes and takes travel both ways (P4h)', async (t) => {
+  const { sessions, start } = fakeStart();
+  const controls = [];
+  let state = { rr: [{ name: 'router/x', n: 1 }], cooldown: [] };
+  const sup = createSupervisor(
+    fakeOpts(
+      start,
+      [],
+      { t: 0 },
+      {
+        sources: {
+          config: () => ({}),
+          secrets: () => ({}),
+          snapshot: () => ({ budgets: [], keyCenter: {} }),
+          routes: () => state,
+        },
+        onControl: (msg) => controls.push(msg),
+      },
+    ),
+  );
+  t.after(() => stopFake(sup, sessions));
+  sup.start();
+  state = { rr: [{ name: 'router/x', n: 2 }], cooldown: [] };
+  assert.deepEqual(sessions[0].opts.initial.routes(), state, 'built when the session asks, at its hello');
+  const sent = [];
+  sessions[0].send = (type, body) => sent.push([type, body]);
+  sessions[0].becomeReady();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(sup.control('route.take', { name: 'router/x', at: 8 }), true);
+  assert.deepEqual(sent, [['route.take', { name: 'router/x', at: 8 }]]);
+  sessions[0].opts.onControl({ type: 'provider.note', body: { providerId: 'a', status: 200, at: 9, headers: {} } });
+  assert.equal(controls.length, 1);
+  const other = fakeStart();
+  const bare = createSupervisor(fakeOpts(other.start, [], { t: 0 }));
+  t.after(() => stopFake(bare, other.sessions));
+  bare.start();
+  assert.equal(other.sessions[0].opts.initial.routes(), null, 'no source: no route.state');
+});

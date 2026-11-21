@@ -27,6 +27,10 @@ const (
 	// P4f D16: one rate-limit window across the engines (control messages, not outbox events).
 	TypeRateLimitTake   = "ratelimit.take"
 	TypeRateLimitWindow = "ratelimit.window"
+	// P4h Decisions 3, 14: the routing state replicated across the engines (control messages, not outbox events).
+	TypeProviderNote = "provider.note"
+	TypeRouteTake    = "route.take"
+	TypeRouteState   = "route.state"
 )
 
 // Hello is the gateway's first message: the protocols it speaks, its version, its durable event stream and the
@@ -98,7 +102,7 @@ type FrontShadow struct {
 
 // RouteClass is one of the gateway's route classes (gw/front Classes), or a sub-class: chat-stream (P4c), and the P4d
 // sub-classes (gw/front Subs); or token-saver, the token saver's switch (rtk spec D13); or provider-auth, the switch of
-// token-auth provider calls (P4g spec Decisions 14, 17).
+// token-auth provider calls (P4g spec Decisions 14, 17); or routes, the switch of route calls (P4h spec Decision 2).
 type RouteClass string
 
 func (c *RouteClass) UnmarshalJSON(b []byte) error {
@@ -109,7 +113,7 @@ func (c *RouteClass) UnmarshalJSON(b []byte) error {
 	switch s {
 	case "chat", "chat-stream", "chat-anthropic", "chat-anthropic-stream", "messages", "messages-stream", "messages-count",
 		"responses", "responses-stream", "embeddings", "models", "gemini", "gemini-stream", "gemini-count", "mcp", "a2a",
-		"skills", "agents", "token-saver", "provider-auth":
+		"skills", "agents", "token-saver", "provider-auth", "routes":
 		*c = RouteClass(s)
 		return nil
 	}
@@ -382,7 +386,7 @@ type UsageRecord struct {
 	Kind        *string           `json:"kind,omitzero" ipc:"enum=chat|agent|embeddings|mcp"`
 	Format      *string           `json:"format,omitzero" ipc:"enum=openai|anthropic|responses|gemini"`
 	Stream      *bool             `json:"stream,omitzero"`
-	Status      int64             `json:"status" ipc:"min=0"`
+	Status      int64             `json:"status" ipc:"min=100,max=599"`
 	Ms          float64           `json:"ms" ipc:"min=0"`
 	TTFT        Nullable[float64] `json:"ttft,omitzero"`
 	Input       *int64            `json:"input,omitzero" ipc:"min=0"`
@@ -539,4 +543,42 @@ type RateLimitWindow struct {
 type RateWindow struct {
 	KeyID string  `json:"keyId" ipc:"minlen=1"`
 	At    []int64 `json:"at"`
+}
+
+// ProviderNote is one provider answer an engine read, for the other engine's cooldowns and the control plane's quota
+// readings (P4h Decisions 3, 4; both directions, a control message). At is the observer's clock (epoch ms); Headers
+// holds the names noteResponse reads plus retry-after, lower case, values joined with ", ".
+type ProviderNote struct {
+	ProviderID string            `json:"providerId" ipc:"minlen=1"`
+	Status     int               `json:"status" ipc:"min=100,max=599"`
+	At         int64             `json:"at" ipc:"min=0"`
+	Headers    map[string]string `json:"headers"`
+}
+
+// RouteTake is one round-robin rotation an engine took on a route (P4h Decision 3; both directions).
+type RouteTake struct {
+	Name string `json:"name" ipc:"minlen=1"`
+	At   int64  `json:"at" ipc:"min=0"`
+}
+
+// RouteState seeds a new gateway with the control plane's rotation counters and live cooldowns (P4h Decision 3), after
+// ratelimit.window and before budget.snapshot.
+type RouteState struct {
+	RR       []RouteRR       `json:"rr"`
+	Cooldown []RouteCooldown `json:"cooldown"`
+}
+
+// RouteRR is one route's rotation counter: providers.js rr (the n of the next take is N % the target count).
+type RouteRR struct {
+	Name string `json:"name" ipc:"minlen=1"`
+	N    int    `json:"n" ipc:"min=0"`
+}
+
+// RouteCooldown is one provider's live cooldown. Until is epoch ms and may be fractional (a fractional retry-after or
+// reset gives a fractional until in JS too; P4h plan deviation of Task 1).
+type RouteCooldown struct {
+	ProviderID string  `json:"providerId" ipc:"minlen=1"`
+	Until      float64 `json:"until" ipc:"min=0"`
+	Strikes    int     `json:"strikes" ipc:"min=0"`
+	Reason     string  `json:"reason"`
 }

@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -423,3 +425,225 @@ func decodeFix(t *testing.T, b json.RawMessage, v any) {
 }
 
 func jsonQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+// sentMsg is one control message the route state handed to send.
+type sentMsg struct {
+	typ  string
+	body any
+}
+
+// A local note sends exactly one provider.note; a remote one sends none. The same for takes.
+func TestRouterNoteSendsOnce(t *testing.T) {
+	var got []sentMsg
+	r := NewRouteState(func(typ string, body any) { got = append(got, sentMsg{typ, body}) })
+	h := http.Header{}
+	h.Set("Retry-After", "2")
+	r.Note("a", 429, h, 100, false)
+	if len(got) != 1 || got[0].typ != ipc.TypeProviderNote {
+		t.Fatalf("local note: %+v", got)
+	}
+	if b, ok := got[0].body.(ipc.ProviderNote); !ok || b.ProviderID != "a" || b.Status != 429 || b.At != 100 ||
+		b.Headers["retry-after"] != "2" {
+		t.Fatalf("local note body: %#v", got[0].body)
+	}
+	r.Note("a", 200, http.Header{}, 101, true)
+	if len(got) != 1 {
+		t.Fatalf("a remote note was sent back: %+v", got)
+	}
+	if r.Cooling("a", 101) {
+		t.Fatal("the remote 200 did not clear the cooldown")
+	}
+	r.Take("router/x", 2, 102, true)
+	if len(got) != 1 {
+		t.Fatalf("a remote take was sent back: %+v", got)
+	}
+	r.Take("router/x", 2, 103, false)
+	if len(got) != 2 || got[1].typ != ipc.TypeRouteTake || got[1].body != (ipc.RouteTake{Name: "router/x", At: 103}) {
+		t.Fatalf("local take: %+v", got)
+	}
+}
+
+// Sends leave in the order the state changed (send runs under the mutex): with 32 goroutines noting one provider, the
+// strikes of the sent notes, replayed in order on a second state, end where the first one is.
+func TestRouterSendOrder(t *testing.T) {
+	var mu sync.Mutex
+	var notes []ipc.ProviderNote
+	a := NewRouteState(func(typ string, body any) {
+		if !mu.TryLock() {
+			t.Error("send blocked: the mutex was not free (send must not need another lock here)")
+			return
+		}
+		notes = append(notes, body.(ipc.ProviderNote))
+		mu.Unlock()
+	})
+	var wg sync.WaitGroup
+	for w := 0; w < 32; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < 50; i++ {
+				h := http.Header{}
+				status := []int{429, 503, 200}[(w+i)%3]
+				a.Note("p", status, h, int64(1000*(w*50+i)), false)
+			}
+		}(w)
+	}
+	wg.Wait()
+	b := NewRouteState(nil)
+	for _, n := range notes {
+		h := http.Header{}
+		for k, v := range n.Headers {
+			h.Set(k, v)
+		}
+		b.Note(n.ProviderID, n.Status, h, n.At, true)
+	}
+	if sa, sb := a.Snapshot(), b.Snapshot(); !reflectEqualJSON(sa, sb) {
+		t.Fatalf("replayed in send order: %+v, applied: %+v", sb, sa)
+	}
+}
+
+func reflectEqualJSON(a, b any) bool {
+	x, _ := json.Marshal(a)
+	y, _ := json.Marshal(b)
+	return string(x) == string(y)
+}
+
+// Seed replaces the state; a Take after it continues the seeded counter; Snapshot gives it back.
+func TestRouterSeedThenTake(t *testing.T) {
+	r := NewRouteState(nil)
+	r.Take("router/old", 2, 1, false)
+	r.Note("old", 429, http.Header{}, 1, false)
+	seed := ipc.RouteState{
+		RR:       []ipc.RouteRR{{Name: "router/x", N: 7}},
+		Cooldown: []ipc.RouteCooldown{{ProviderID: "a", Until: 5000.5, Strikes: 2, Reason: "HTTP 429"}},
+	}
+	r.Seed(seed)
+	if got := r.Snapshot(); !reflectEqualJSON(got, seed) {
+		t.Fatalf("snapshot after the seed: %+v", got)
+	}
+	if n := r.Take("router/x", 3, 2, false); n != 1 { // 7 % 3
+		t.Fatalf("take after the seed: %d, want 1", n)
+	}
+	if n := r.Take("router/x", 3, 3, false); n != 2 { // 2 % 3
+		t.Fatalf("second take: %d, want 2", n)
+	}
+	if !r.Cooling("a", 5000) || r.Cooling("a", 5001) {
+		t.Fatal("the seeded cooldown")
+	}
+	// The next 429 doubles from the seeded strikes: 1000 * 2^2.
+	r.Note("a", 429, http.Header{}, 10000, false)
+	if c := r.Snapshot().Cooldown[0]; c.Until != 14000 || c.Strikes != 3 {
+		t.Fatalf("after a 429: %+v", c)
+	}
+}
+
+// The upstream notes every provider answer once its headers are in: the last of a redirect chain only, and both
+// answers of a 401 replay (providers.js request calls noteResponse on each).
+func TestUpstreamNotesEveryAnswer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/a" {
+			http.Redirect(w, r, "/b", http.StatusFound)
+			return
+		}
+		w.Header().Set("X-Ratelimit-Remaining-Requests", "0")
+		w.WriteHeader(429)
+	}))
+	defer srv.Close()
+	up := NewUpstream(func(string) string { return "" })
+	var got []int
+	up.SetOnAnswer(func(p *Plan, status int, h http.Header) {
+		got = append(got, status)
+		if h.Get("X-Ratelimit-Remaining-Requests") != "0" {
+			t.Errorf("headers: %v", h)
+		}
+	})
+	if res := up.Call(context.Background(), planTo(srv.URL+"/a")); res.Status != 429 {
+		t.Fatalf("%+v", res)
+	}
+	if len(got) != 1 || got[0] != 429 {
+		t.Fatalf("notes %v, want [429]", got)
+	}
+
+	var statuses []int
+	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "/token") {
+			return answer(200, `{"access_token":"tok","expires_in":3600}`), nil
+		}
+		if len(statuses) == 0 {
+			return answer(401, `{}`), nil
+		}
+		return answer(200, `{}`), nil
+	})
+	tup, p := tokenPlan(t, rt)
+	tup.SetOnAnswer(func(p *Plan, status int, h http.Header) { statuses = append(statuses, status) })
+	if res := tup.Call(context.Background(), &p); res.Status != 200 {
+		t.Fatalf("%+v", res)
+	}
+	if len(statuses) != 2 || statuses[0] != 401 || statuses[1] != 200 {
+		t.Fatalf("notes %v, want [401 200]", statuses)
+	}
+}
+
+// An engine notes the provider answer of a call it serves (its own cooldown, and one provider.note at the engine's
+// clock), and applies the control plane's notes, takes (with its own target count) and seed without sending them back.
+func TestEngineRouteReplication(t *testing.T) {
+	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "/token") {
+			return answer(200, `{"access_token":"tok","expires_in":3600}`), nil
+		}
+		a := answer(429, `{"error":{"message":"slow down"}}`)
+		a.Header.Set("Retry-After", "7")
+		a.Header.Set("X-Ratelimit-Remaining-Tokens", "0")
+		return a, nil
+	})
+	f := authUnitFixture(t)
+	var mu sync.Mutex
+	var lines []ipc.UsageRecord
+	s := authState(t, f)
+	rr := "round-robin"
+	s.Gateway.Routes = append(s.Gateway.Routes, ipc.RouteConfig{Name: "router/two", Targets: []string{"a/x", "b/y"}, Strategy: &rr},
+		ipc.RouteConfig{Name: "router/fb", Targets: []string{"a/x", "b/y"}})
+	e := authEngine(t, rt, s, &lines, &mu)
+	var got []sentMsg
+	e.SetRouteSend(func(typ string, body any) { got = append(got, sentMsg{typ, body}) })
+	rq := f.In.Requests[0]
+	req := httptest.NewRequest(rq.Method, "http://127.0.0.1:4777"+rq.Path, strings.NewReader(rq.Body))
+	req.Host, req.RemoteAddr = "127.0.0.1:4777", "127.0.0.1:50000"
+	for k, v := range rq.Headers {
+		req.Header.Set(k, v)
+	}
+	raw, _, _ := strings.Cut(rq.Path, "?")
+	e.Serve(classOfPath(raw), httptest.NewRecorder(), req, raw, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("handed off")
+	}))
+	e.streams.Wait()
+	want := ipc.ProviderNote{ProviderID: "az", Status: 429, At: fixtureNow,
+		Headers: map[string]string{"retry-after": "7", "x-ratelimit-remaining-tokens": "0"}}
+	if len(got) != 1 || got[0].typ != ipc.TypeProviderNote || !reflectEqualJSON(got[0].body, want) {
+		t.Fatalf("sent %+v, want one %+v", got, want)
+	}
+	if !e.Routes().Cooling("az", fixtureNow+6999) || e.Routes().Cooling("az", fixtureNow+7000) {
+		t.Fatal("the engine's own cooldown of az")
+	}
+
+	e.RouteControl(&ipc.ProviderNote{ProviderID: "az", Status: 200, At: fixtureNow + 1, Headers: map[string]string{}})
+	if e.Routes().Cooling("az", fixtureNow+1) {
+		t.Fatal("a remote 200 did not clear the cooldown")
+	}
+	e.RouteControl(&ipc.RouteTake{Name: "router/two", At: 1})
+	e.RouteControl(&ipc.RouteTake{Name: "router/fb", At: 1})      // not round-robin: nothing
+	e.RouteControl(&ipc.RouteTake{Name: "router/missing", At: 1}) // not here: nothing
+	if n := e.Routes().Peek("router/two", 2); n != 1 {
+		t.Fatalf("after a remote take: peek %d, want 1", n)
+	}
+	if n := e.Routes().Peek("router/fb", 2); n != 0 {
+		t.Fatalf("a fallback route was rotated: %d", n)
+	}
+	e.RouteControl(&ipc.RouteState{RR: []ipc.RouteRR{{Name: "router/two", N: 4}}, Cooldown: []ipc.RouteCooldown{}})
+	if n := e.Routes().Take("router/two", 2, 2, false); n != 0 {
+		t.Fatalf("take after the seed: %d, want 0", n)
+	}
+	if len(got) != 2 || got[1].typ != ipc.TypeRouteTake {
+		t.Fatalf("remote messages were sent back, or the local take was not sent: %+v", got)
+	}
+}
