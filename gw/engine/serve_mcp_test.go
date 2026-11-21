@@ -48,6 +48,13 @@ func (g *mcpRig) sent() []string {
 	return append([]string(nil), g.bodies...)
 }
 
+// handedOff is the number of requests handed to js, read under the lock the handler writes it under.
+func (g *mcpRig) handedOff() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.handed
+}
+
 func newMCPRig(t *testing.T, c mcpCase, tool func(ctx context.Context, body []byte) (int, []byte, error)) *mcpRig {
 	t.Helper()
 	g := &mcpRig{headers: c.Request.Headers, lines: make(chan ipc.UsageRecord, 64)}
@@ -285,8 +292,8 @@ func TestServeMCPHandsOff(t *testing.T) {
 	base := mcpBase(t)
 	g := newMCPRig(t, base, endpointTool([]byte(`{"r":{}}`)))
 	resp, _ := g.post(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, nil)
-	if resp.StatusCode != 299 || g.handed != 1 || len(g.sent()) != 0 {
-		t.Fatalf("%d handed %d sent %d", resp.StatusCode, g.handed, len(g.sent()))
+	if resp.StatusCode != 299 || g.handedOff() != 1 || len(g.sent()) != 0 {
+		t.Fatalf("%d handed %d sent %d", resp.StatusCode, g.handedOff(), len(g.sent()))
 	}
 }
 
