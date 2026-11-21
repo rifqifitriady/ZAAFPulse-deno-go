@@ -3,6 +3,7 @@ package engine
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // The shadow compares a call the token saver rewrote (spec D14): the saver runs in the compare, the shortened body is
@@ -40,5 +41,8 @@ func TestShadowSaverHandoffLine(t *testing.T) {
 	l := s.compareCaptured("chat", &p, jsCapture(t, want, nil, c))
 	if l.Outcome != "handoff" || l.Reason != saverOverBudget || l.Status != want.Client.Status {
 		t.Fatalf("got %+v", l)
+	}
+	if why := s.Save(&p, time.Now()); why != saverOverBudget || len(p.Body) != 0 {
+		t.Fatalf("a second Save: %q, body %d bytes (review m2: the hand-off stands)", why, len(p.Body))
 	}
 }

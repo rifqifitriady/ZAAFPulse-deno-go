@@ -225,6 +225,9 @@ func TestChatStreamSubClassDispatch(t *testing.T) {
 		{map[string]string{"chat": "go", "chat-stream": "js"}, nil, "serve"},
 		{map[string]string{"chat": "js", "chat-stream": "js"}, []string{"chat-stream"}, "shadow"},
 		{map[string]string{"chat": "js"}, []string{"chat"}, "shadow"},
+		// rtk spec D13: a shadowed token-saver compares chat calls while chat is on js; on go it alone serves nothing.
+		{map[string]string{"chat": "js", "token-saver": "js"}, []string{"token-saver"}, "shadow"},
+		{map[string]string{"chat": "js", "token-saver": "go"}, nil, "js"},
 	} {
 		s := startFront(t, up.port(), func(cfg *Config) { cfg.Engines = c.engines })
 		e := &recEngine{calls: make(chan string, 1)}

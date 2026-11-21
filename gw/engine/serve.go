@@ -141,7 +141,11 @@ func (e *Engine) open(p *Plan) int64 {
 	if e.calls == nil || e.emitCall == nil {
 		return 0
 	}
-	return e.calls.Open(e.now(), p.Base)
+	base := p.Base
+	if !p.keepSaved {
+		base.SavedTokens = nil // a recovered 599 line carries no savedTokens, as Failed's (rtk spec D12)
+	}
+	return e.calls.Open(e.now(), base)
 }
 
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
@@ -277,10 +281,13 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		js.ServeHTTP(w, r)
 		return
 	}
-	// The token saver runs before the rate limit takes the call, so that its hand-off is exact (spec D9, D11).
-	if why := s.Save(&p, time.Now()); why != "" {
-		js.ServeHTTP(w, r)
-		return
+	// The token saver runs before the rate limit takes the call, so that its hand-off is exact (spec D9, D11). A key
+	// already at its limit is answered 429 below without the saver's work, as JS refuses it before saveTokens.
+	if p.saver != nil && e.limits.Wait(p.Key.ID, p.Key.RPM, e.now()) == 0 {
+		if why := s.Save(&p, time.Now()); why != "" {
+			js.ServeHTTP(w, r)
+			return
+		}
 	}
 	tr := e.trace(s, r, rawPath)
 	takeAt := e.now()
@@ -295,6 +302,12 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	}
 	if e.onTake != nil {
 		e.onTake(p.Key.ID, takeAt) // the control plane's copy of the window (P4f D16)
+	}
+	// The window freed between the look above and the take: the saver runs now. A hand-off here is rare and leaves
+	// this take counted (JS counts the call once more).
+	if why := s.Save(&p, time.Now()); why != "" {
+		js.ServeHTTP(w, r)
+		return
 	}
 	if p.Upstream == UpNone { // an answer of the engine's own (a count estimate, P4d): no budget, no line
 		e.answerOwn(w, r, s, *p.Self, started, tr)
