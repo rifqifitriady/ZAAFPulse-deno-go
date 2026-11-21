@@ -115,7 +115,10 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 	// resolveAll: the take (once per resolveAll of the JS path; the last one's n orders), then the order.
 	now := e.now()
 	rr := p.Route.Strategy != nil && *p.Route.Strategy == "round-robin"
-	legs := e.routes.TakeOrder(p.Route.Name, len(p.Route.Targets), p.Takes, rr, p.Legs, now)
+	legs := p.replay
+	if legs == nil {
+		legs = e.routes.TakeOrder(p.Route.Name, len(p.Route.Targets), p.Takes, rr, p.Legs, now)
+	}
 	if p.Upstream == UpCount { // countTokens: the first leg decides; no price rule, no budget, no fallback
 		e.serveRouteCount(w, r, s, p, legs, started, tr, js)
 		return

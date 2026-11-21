@@ -1,0 +1,250 @@
+{
+  "secrets": [
+    "c2stb2Etcm91dGVyLWZpeHR1cmUtMTIzNDU2",
+    "c2stb2Itcm91dGVyLWZpeHR1cmUtNzc4ODk5"
+  ],
+  "fn": "shadow",
+  "in": {
+    "seq": "seq-embeddings-route"
+  },
+  "out": {
+    "steps": [
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:9/v1/embeddings",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"e1\",\"input\":\"hello\"}"
+            }
+          ],
+          "providerResponse": null,
+          "upstream": [
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "body": "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.1,-0.2]}],\"model\":\"e1-up\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}",
+              "ended": "eof",
+              "truncated": false
+            }
+          ],
+          "client": {
+            "status": 200,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.1,-0.2]}],\"model\":\"e1-up\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}",
+            "truncated": false
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "oa",
+            "model": "router/emb",
+            "kind": "embeddings",
+            "client": "claude-code",
+            "local": true,
+            "ms": 0,
+            "status": 200,
+            "input": 4,
+            "output": 0,
+            "cost": 0
+          },
+          "tape": {
+            "random": [],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/emb",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "oa/e1",
+                "ob/e1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/emb",
+              "kind": "embeddings",
+              "client": "claude-code",
+              "local": true,
+              "ms": 0,
+              "status": 200,
+              "input": 4,
+              "output": 0,
+              "cost": 0
+            }
+          ]
+        }
+      },
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:9/v1/embeddings",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"e1\",\"input\":\"hello\"}"
+            }
+          ],
+          "providerResponse": null,
+          "upstream": [
+            {
+              "status": 429,
+              "contentType": "application/json",
+              "body": "{\"error\":{\"message\":\"slow down\",\"type\":\"upstream\"}}",
+              "ended": "eof",
+              "truncated": false
+            }
+          ],
+          "client": {
+            "status": 429,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"error\":{\"message\":\"slow down\",\"type\":\"upstream\"}}",
+            "truncated": false
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "oa",
+            "model": "router/emb",
+            "kind": "embeddings",
+            "client": "claude-code",
+            "local": true,
+            "ms": 0,
+            "status": 429,
+            "input": 0,
+            "output": 0,
+            "cost": 0
+          },
+          "tape": {
+            "random": [],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/emb",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "oa/e1",
+                "ob/e1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/emb",
+              "kind": "embeddings",
+              "client": "claude-code",
+              "local": true,
+              "ms": 0,
+              "status": 429,
+              "input": 0,
+              "output": 0,
+              "cost": 0
+            }
+          ]
+        }
+      },
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:13/v1/embeddings",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:1>>"
+              },
+              "body": "{\"model\":\"e1\",\"input\":\"hello\"}"
+            }
+          ],
+          "providerResponse": null,
+          "upstream": [
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "body": "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.1,-0.2]}],\"model\":\"e1-up\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}",
+              "ended": "eof",
+              "truncated": false
+            }
+          ],
+          "client": {
+            "status": 200,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.1,-0.2]}],\"model\":\"e1-up\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}",
+            "truncated": false
+          },
+          "usage": {
+            "ts": 1767225601000,
+            "keyId": "k1",
+            "provider": "ob",
+            "model": "router/emb",
+            "kind": "embeddings",
+            "client": "claude-code",
+            "local": true,
+            "ms": 0,
+            "status": 200,
+            "input": 4,
+            "output": 0,
+            "cost": 0
+          },
+          "tape": {
+            "random": [],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/emb",
+              "n": 0,
+              "cooling": [
+                "oa"
+              ],
+              "order": [
+                "ob/e1",
+                "oa/e1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225601000,
+              "keyId": "k1",
+              "provider": "ob",
+              "model": "router/emb",
+              "kind": "embeddings",
+              "client": "claude-code",
+              "local": true,
+              "ms": 0,
+              "status": 200,
+              "input": 4,
+              "output": 0,
+              "cost": 0
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
