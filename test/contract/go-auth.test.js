@@ -3,10 +3,13 @@
 // fake upstream's POST /token), all saved through the dashboard API. Chat, whole and streamed, reaches the provider
 // with "Bearer <token from the token endpoint>"; a token the provider revoked is answered 401 once, and the call is
 // replayed with a fresh token and answers 200. The cases hold in every mode; under ZP_ENGINE=go each line carries "ipc"
-// (the go engine served the call with its own token); under ZP_ENGINE=shadow the harness's stop() fails on any diff.
+// (the go engine served the call with its own token), except the refresh_token grant provider's, which stays on the
+// control plane (P4g Decision 19); under ZP_ENGINE=shadow the harness's stop() fails on any diff.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { start } = require('./harness');
 const { JWT_BEARER } = require('./upstream');
 
@@ -84,7 +87,9 @@ async function chat(id, stream) {
   assert.ok(h.upstream.tokens.issued.includes(auth.slice(7)), auth);
   const line = await h.lineAfter(before);
   assert.equal(line.status, 200);
-  if (GO) assert.ok(line.ipc, `the go engine served it: ${JSON.stringify(line)}`);
+  // A refresh_token grant provider stays on the control plane (P4g Decision 19): js serves it in every mode.
+  if (GO && id === 'o2r') assert.ok(!line.ipc, `js served it: ${JSON.stringify(line)}`);
+  else if (GO) assert.ok(line.ipc, `the go engine served it: ${JSON.stringify(line)}`);
   return { sent, line };
 }
 const formsOf = (pred) => h.upstream.tokens.forms.map((f) => f.form).filter(pred);
@@ -138,15 +143,24 @@ for (const id of ['o2', 'gsa'])
     assert.ok(h.upstream.tokens.issued.length > issued, 'a new token was fetched');
   });
 
-// ZP_ENGINE=shadow: the six chat calls above (three providers, whole and streamed) were compared with the go engine under
-// the provider-auth switch, with no diff (the two replays are skipped by design: each engine holds its own token); a
-// switch that stopped shadowing would leave the diff log empty and pass without this.
+// ZP_ENGINE=shadow: the four chat calls above to o2 and gsa (whole and streamed) were compared with the go engine under
+// the provider-auth switch, with no diff (the two replays are skipped by design: each engine holds its own token; the
+// refresh_token grant provider o2r is a hand-off, never a compare: Decision 19); a switch that stopped shadowing would
+// leave the diff log empty and pass without this.
 test(
   'go auth: the shadow compared the token-auth calls, with no diff',
   { skip: skip || (process.env.ZP_ENGINE !== 'shadow' && 'only under ZP_ENGINE=shadow') },
   async () => {
-    const st = await h.shadowStats('provider-auth', 6);
-    assert.ok(st && st.compared >= 6, JSON.stringify(st));
+    const st = await h.shadowStats('provider-auth', 4);
+    assert.ok(st && st.compared >= 4, JSON.stringify(st));
     assert.equal(st.diffs, 0, JSON.stringify(st));
+    // The two o2r calls were handed off with the Decision 19 reason.
+    const log = fs.readFileSync(path.join(h.server.data, '.data', 'gateway-shadow.jsonl'), 'utf8');
+    const handed = log
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+      .filter((e) => e.outcome === 'handoff' && /refresh-token grant stays on the control plane/.test(e.reason || ''));
+    assert.ok(handed.length >= 2, `${handed.length} refresh-token grant hand-offs`);
   },
 );
