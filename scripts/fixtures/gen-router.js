@@ -929,6 +929,52 @@ const SEQUENCES = [
     'the token saver on a route call with a tool result: run once; both legs send the shortened text',
     [[MSG, msgs('router/fb', { messages: saverTurn }), [err(500, 'down'), chatOk()], XA]],
   ],
+  [
+    'seq-takes-per-class',
+    'takes per class on a two-target round-robin route, pinned by the counter: count, gemini, embeddings and chat take once, messages and responses twice',
+    [
+      [COUNT, msgs('router/rr2'), [], XA],
+      [
+        '/v1beta/models/router%2Frr2:generateContent',
+        { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+        [chatOk()],
+        { auth: 'goog' },
+      ],
+      [EMB, { model: 'router/rr2', input: 'hello' }, [embOk()]],
+      [MSG, msgs('router/rr2'), [chatOk()], XA],
+      [RESP, { model: 'router/rr2', input: 'hi' }, [chatOk()]],
+      [CHAT, chat('router/rr2'), [chatOk()]],
+      [COUNT, msgs('router/rr2'), [], XA],
+      [EMB, { model: 'router/rr2', input: 'hello' }, [embOk()]],
+    ],
+  ],
+  [
+    'seq-chat-rr-402',
+    'a round-robin route whose every target a provider budget refuses: 402, and the take happens before it',
+    [
+      [CHAT, chat('router/rr2'), []],
+      [CHAT, chat('router/rr2'), []],
+      [CHAT, chat('router/rr3'), [chatOk()]],
+    ],
+    {
+      budgets: [
+        budget('b1', { dim: 'provider', value: 'oa' }, 'exceeded'),
+        budget('b2', { dim: 'provider', value: 'ob' }, 'exceeded'),
+      ],
+    },
+  ],
+  [
+    'seq-messages-dropped',
+    'a translated route call that drops a server-side tool: x-zp-dropped on the answer, after a fallback',
+    [
+      [
+        MSG,
+        msgs('router/fb', { tools: [{ type: 'web_search_20250305', name: 'web_search' }] }),
+        [err(500, 'down'), chatOk()],
+        XA,
+      ],
+    ],
+  ],
 ];
 
 const SEQ_HEADERS = ['content-type', 'cache-control', 'access-control-allow-origin', 'retry-after', 'x-zp-dropped'];
