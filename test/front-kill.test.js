@@ -4,7 +4,9 @@
 // P4c: the same with the stream served by the go engine (chat and chat-stream on go). P4f D14: the gateway dies with the
 // call, and the restarted gateway writes its line from the call journal (status 599, "the gateway stopped before the
 // call ended"): exactly one line, never two. Also for a whole (non-streamed) answer the gateway dies waiting for. The
-// call after the restart has exactly one line too (P4a T6-2).
+// call after the restart has exactly one line too (P4a T6-2). P4h Decision 10: a route call the go engine serves is
+// journalled per leg; killed during its second leg, it leaves the first leg's fallback line and exactly one recovered
+// line for the second.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
@@ -26,6 +28,11 @@ async function slowProvider(t) {
     const model = JSON.parse(body || '{}').model;
     const chunk = (delta, extra = {}) =>
       `data: ${JSON.stringify({ id: 's1', object: 'chat.completion.chunk', model, choices: [{ index: 0, delta, ...extra }] })}\n\n`;
+    if (model === 'fail429') {
+      res.writeHead(429, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'slow down' } }));
+      return;
+    }
     if (model === 'slowwhole') {
       arrive();
       await released;
@@ -76,10 +83,14 @@ const GO_GATEWAY = {
   shadowMinCompares: 0,
 };
 
-async function killDuringStream(t, { goEngine, stream = true }) {
+async function killDuringStream(t, { goEngine, stream = true, route = false }) {
   if (!stubBin(t)) return;
   const up = await slowProvider(t);
-  const gateway = goEngine ? GO_GATEWAY : { engine: 'front' };
+  const gateway = !goEngine
+    ? { engine: 'front' }
+    : route
+      ? { ...GO_GATEWAY, engines: { ...GO_GATEWAY.engines, routes: 'go' } }
+      : GO_GATEWAY;
   const s = await startServer({ runtime: RUNTIME, config: { ...SEED_CONFIG, gateway } });
   t.after(() => s.stop());
   // The gateway in front must be up before the stream starts: one that failed to start (Deno serving the fallback)
@@ -96,9 +107,17 @@ async function killDuringStream(t, { goEngine, stream = true }) {
     baseUrl: up.url,
     tier: 'external',
     approved: true,
-    models: ['slowm', 'slowwhole', 'm1'],
+    models: ['slowm', 'slowwhole', 'fail429', 'm1'],
     secret: { mode: 'store', value: 'sk-slow' },
   });
+  // A route whose first leg falls back (429) and whose second leg is held until the gateway is killed.
+  if (route)
+    await c.admin('routes', {
+      action: 'save',
+      name: 'router/killer',
+      targets: ['sl/fail429', 'sl/slowwhole'],
+      strategy: 'fallback',
+    });
   const key = await c.newKey({ scopes: ['llm'] });
 
   if (stream) {
@@ -129,7 +148,10 @@ async function killDuringStream(t, { goEngine, stream = true }) {
     const pending = fetch(`${s.base}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${key.secret}` },
-      body: JSON.stringify({ model: 'sl/slowwhole', messages: [{ role: 'user', content: 'hi' }] }),
+      body: JSON.stringify({
+        model: route ? 'router/killer' : 'sl/slowwhole',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
     }).then(
       (r) => r.status,
       () => 'cut',
@@ -166,7 +188,23 @@ async function killDuringStream(t, { goEngine, stream = true }) {
     15000,
     'the usage line of the call after the restart',
   );
-  const slow = stream ? 'slowm' : 'slowwhole';
+  if (route) {
+    // The first leg's fallback line (written before the kill) and one recovered line for the leg in flight.
+    const lines = logs.filter((e) => e.model === 'router/killer');
+    assert.equal(lines.length, 2, `two lines for the route call: ${JSON.stringify(logs)}`);
+    const fell = lines.filter((e) => e.status === 429);
+    assert.equal(fell.length, 1, JSON.stringify(lines));
+    assert.equal(fell[0].routedTo, 'sl/fail429');
+    assert.equal(fell[0].error, 'fell back to the next route target');
+    assert.ok(fell[0].ipc, `the go engine wrote it: ${JSON.stringify(fell[0])}`);
+    const cut = lines.filter((e) => e.status === 599);
+    assert.equal(cut.length, 1, JSON.stringify(lines));
+    assert.ok(cut[0].ipc, `the go engine's journal wrote it: ${JSON.stringify(cut[0])}`);
+    assert.equal(cut[0].error, 'the gateway stopped before the call ended');
+    assert.equal(cut[0].cost, 0);
+    assert.equal(cut[0].provider, 'sl');
+  }
+  const slow = route ? 'slowwhole' : stream ? 'slowm' : 'slowwhole';
   const cut = logs.filter((e) => String(e.model).endsWith(slow) || String(e.routedTo || '').endsWith(slow));
   assert.equal(cut.length, 1, `exactly one line for the cut call: ${JSON.stringify(logs)}`);
   if (goEngine) {
@@ -189,3 +227,6 @@ test('the gateway killed during a stream it serves itself: the cut, the port ret
 
 test('the gateway killed while it waits for a whole answer it serves: exactly one line, from the journal (P4f D14)', (t) =>
   killDuringStream(t, { goEngine: true, stream: false }));
+
+test('the gateway killed during the second leg of a route call it serves: the fallback line and one recovered line (P4h D10)', (t) =>
+  killDuringStream(t, { goEngine: true, stream: false, route: true }));

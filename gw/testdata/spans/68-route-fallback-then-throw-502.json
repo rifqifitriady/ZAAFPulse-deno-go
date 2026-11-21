@@ -1,0 +1,151 @@
+{
+  "fn": "spans",
+  "in": {
+    "request": {},
+    "prior": [
+      {
+        "ts": 1767225599990,
+        "ms": 4.25,
+        "status": 429,
+        "cost": 0,
+        "keyId": "k1",
+        "provider": "oa",
+        "model": "router/r1",
+        "kind": "chat",
+        "format": "openai",
+        "stream": false,
+        "local": true,
+        "routedTo": "oa/m1",
+        "error": "fell back to the next route target"
+      },
+      {
+        "ts": 1767225599990,
+        "ms": 4.25,
+        "status": 599,
+        "cost": 0,
+        "keyId": "k1",
+        "provider": "op",
+        "model": "router/r1",
+        "kind": "chat",
+        "format": "openai",
+        "stream": false,
+        "local": true,
+        "error": "fetch failed"
+      }
+    ],
+    "answer": {
+      "status": 502,
+      "chunks": [
+        "{\"error\":{\"message\":\"Body already consumed\"}}"
+      ]
+    },
+    "usage": null,
+    "priorProviderSpans": [
+      {
+        "name": "oa",
+        "address": "127.0.0.1",
+        "port": 9
+      },
+      {
+        "name": "openai",
+        "address": "api.openai.com",
+        "port": 443
+      }
+    ]
+  },
+  "out": {
+    "traceId": "01010101010101010101010101010101",
+    "spans": [
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0202020202020202",
+          "p": null,
+          "n": "POST /v1/chat/completions",
+          "k": "server",
+          "st": 0,
+          "d": 0,
+          "ok": false,
+          "err": "error",
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "http.request.method": "POST",
+            "http.route": "/v1/chat/completions",
+            "url.path": "/v1/chat/completions",
+            "url.scheme": "http",
+            "network.protocol.version": "1.1",
+            "http.response.status_code": 502,
+            "error.type": "502"
+          }
+        }
+      },
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0303030303030303",
+          "p": "0202020202020202",
+          "n": "chat router/r1",
+          "k": "client",
+          "st": 1767225599985750,
+          "d": 4250,
+          "ok": false,
+          "err": "fell back to the next route target",
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.provider.name": "oa",
+            "gen_ai.request.model": "router/r1",
+            "gen_ai.response.model": "oa/m1",
+            "server.address": "127.0.0.1",
+            "server.port": 9,
+            "gen_ai.request.stream": false,
+            "zaafpulse.cost.usd": 0,
+            "zaafpulse.api_key.id": "k1",
+            "zaafpulse.provider.id": "oa",
+            "zaafpulse.request.kind": "chat",
+            "zaafpulse.request.format": "openai",
+            "error.type": "429"
+          }
+        },
+        "otlp": {
+          "message": "fell back to the next route target"
+        }
+      },
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0404040404040404",
+          "p": "0202020202020202",
+          "n": "chat router/r1",
+          "k": "client",
+          "st": 1767225599985750,
+          "d": 4250,
+          "ok": false,
+          "err": "fetch failed",
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.provider.name": "openai",
+            "gen_ai.request.model": "router/r1",
+            "gen_ai.response.model": "router/r1",
+            "server.address": "api.openai.com",
+            "server.port": 443,
+            "gen_ai.request.stream": false,
+            "zaafpulse.cost.usd": 0,
+            "zaafpulse.api_key.id": "k1",
+            "zaafpulse.provider.id": "op",
+            "zaafpulse.request.kind": "chat",
+            "zaafpulse.request.format": "openai",
+            "error.type": "netwo\u0072k_error"
+          }
+        },
+        "otlp": {
+          "message": "fetch failed"
+        }
+      }
+    ]
+  }
+}
