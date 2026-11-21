@@ -148,7 +148,6 @@ func (h *httpWriter) commit(gone bool) {
 // serveDeliver serves a planned P4d call after its rate limit, budget and guardrail checks.
 func (e *Engine) serveDeliver(w http.ResponseWriter, r *http.Request, s *State, p *Plan, started time.Time,
 	tr *callTrace, js http.Handler) {
-	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
 	if p.Stream {
 		if !e.track() {
 			js.ServeHTTP(w, r) // the gateway is shutting down
@@ -162,6 +161,23 @@ func (e *Engine) serveDeliver(w http.ResponseWriter, r *http.Request, s *State, 
 	if p.Upstream != UpCount {
 		call = e.open(p)
 	}
+	e.deliverCall(w, r, s, p, started, tr, call, func(ctx context.Context) ProviderResult {
+		res := ProviderResult{}
+		resp, why := e.upstream.Start(ctx, p)
+		if why != "" {
+			res.Why = why
+		} else {
+			res.Status, res.Header, res.Body = resp.StatusCode, resp.Header, cutBody{resp.Body}
+		}
+		return res
+	})
+}
+
+// deliverCall answers a P4d call through Deliver: start makes the provider call (a route leg's call already made
+// returns it), call is the journal entry its line closes. The caller tracks a stream and ends it.
+func (e *Engine) deliverCall(w http.ResponseWriter, r *http.Request, s *State, p *Plan, started time.Time,
+	tr *callTrace, call int64, start func(ctx context.Context) ProviderResult) {
+	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
 	hw := &httpWriter{w: w, rc: http.NewResponseController(w)}
 	if tr != nil {
 		hw.obs = NewObserver()
@@ -206,13 +222,7 @@ func (e *Engine) serveDeliver(w http.ResponseWriter, r *http.Request, s *State, 
 	if p.Detached {
 		ctx = context.WithoutCancel(ctx) // embeddings: the client's leaving does not cancel the call (J8)
 	}
-	res := ProviderResult{}
-	resp, why := e.upstream.Start(ctx, p)
-	if why != "" {
-		res.Why = why
-	} else {
-		res.Status, res.Header, res.Body = resp.StatusCode, resp.Header, cutBody{resp.Body}
-	}
+	res := start(ctx)
 	if p.Stream || p.Upstream == UpChat || p.Upstream == UpAnthropic {
 		// The client's body and the plan's copies are no longer needed once the call is under way (P4c Decision 11).
 		r.Body = http.NoBody

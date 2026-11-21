@@ -328,6 +328,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		g, sh := e.mode(AuthSwitch)
 		onGo, shadowed = onGo && g, shadowed || sh
 	}
+	if p.Route != nil { // a route call also needs the routes switch (P4h spec Decision 2)
+		g, sh := e.mode(RouteSwitch)
+		onGo, shadowed = onGo && g, shadowed || sh
+	}
 	if p.Handoff != "" && onGo {
 		js.ServeHTTP(w, r)
 		return
@@ -371,6 +375,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		js.ServeHTTP(w, r)
 		return
 	}
+	if p.Route != nil { // a route call: the take, the order, the filters and the fallback loop (serve_route.go)
+		e.serveRoute(w, r, s, &p, req, started, tr, js)
+		return
+	}
 	if p.Upstream == UpTool { // /mcp tools/call (P4g): no budget, the tool run by the control plane
 		e.serveMCP(w, r, s, &p, started, tr)
 		return
@@ -404,27 +412,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 				e.answerOwn(w, r, s, *a, started, tr)
 				return
 			}
-			if p.Overrun != "" {
-				e.logf("go engine: guardrails: the %s check ran past its limit; the call was refused", p.Overrun)
-			}
-			if p.GuardPanic != "" {
-				e.logf("go engine: guardrails: the checks panicked (%s); the call was refused with 500", p.GuardPanic)
-			}
-			rec := a.Usage
-			rec.Ts = e.now()
-			if tr != nil {
-				rec.TraceID = &tr.tc.TraceID
-			}
-			e.emitLine(rec, false, 0) // a refusal was not metered: no unchecked mark (P4e Decision 14)
-			if r.Context().Err() == nil {
-				write(w, *a)
-			}
-			if tr != nil {
-				flushAnswer(w)
-				obs := NewObserver()
-				obs.Feed(a.Body)
-				e.spans(s, tr, a.Status, started, time.Now(), &rec, provSpan(&p), obs)
-			}
+			e.guardRefused(w, r, s, &p, a, started, tr)
 			return
 		}
 		e.noteFailures(p.Failures)
@@ -438,7 +426,9 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 			js.ServeHTTP(w, r) // the gateway is shutting down
 			return
 		}
-		e.serveStream(w, r, s, &p, req, started, tr)
+		call := e.open(&p)
+		resp, why := e.upstream.Start(r.Context(), &p)
+		e.serveStream(w, r, s, &p, req, started, tr, call, resp, why)
 		return
 	}
 	call := e.open(&p)
@@ -453,8 +443,14 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	default:
 		a = s.Respond(&p, res.Status, res.Body, ms)
 	}
-	// The usage line goes out before the answer: the control plane has it on its way when the client reads the answer
-	// (it is stored a few milliseconds later, through the outbox and the ingest), as the JS gateway records before it ends.
+	e.answerWhole(w, r, s, &p, a, call, started, tr)
+}
+
+// answerWhole ends a call answered whole: its usage line, then the answer, then its spans. The usage line goes out
+// before the answer: the control plane has it on its way when the client reads the answer (it is stored a few
+// milliseconds later, through the outbox and the ingest), as the JS gateway records before it ends.
+func (e *Engine) answerWhole(w http.ResponseWriter, r *http.Request, s *State, p *Plan, a Answer, call int64,
+	started time.Time, tr *callTrace) {
 	rec := a.Usage
 	rec.Ts = e.now()
 	if tr != nil {
@@ -468,7 +464,33 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		flushAnswer(w)
 		obs := NewObserver()
 		obs.Feed(a.Body) // what JS's observer sees: the body res.end writes, also to a client that left
-		e.spans(s, tr, a.Status, started, time.Now(), &rec, provSpan(&p), obs)
+		e.spans(s, tr, a.Status, started, time.Now(), &rec, provSpan(p), obs)
+	}
+}
+
+// guardRefused answers a call the guardrails refused (a block, or checks that failed closed): its line, then the answer.
+func (e *Engine) guardRefused(w http.ResponseWriter, r *http.Request, s *State, p *Plan, a *Answer, started time.Time,
+	tr *callTrace) {
+	if p.Overrun != "" {
+		e.logf("go engine: guardrails: the %s check ran past its limit; the call was refused", p.Overrun)
+	}
+	if p.GuardPanic != "" {
+		e.logf("go engine: guardrails: the checks panicked (%s); the call was refused with 500", p.GuardPanic)
+	}
+	rec := a.Usage
+	rec.Ts = e.now()
+	if tr != nil {
+		rec.TraceID = &tr.tc.TraceID
+	}
+	e.emitLine(rec, false, 0) // a refusal was not metered: no unchecked mark (P4e Decision 14)
+	if r.Context().Err() == nil {
+		write(w, *a)
+	}
+	if tr != nil {
+		flushAnswer(w)
+		obs := NewObserver()
+		obs.Feed(a.Body)
+		e.spans(s, tr, a.Status, started, time.Now(), &rec, provSpan(p), obs)
 	}
 }
 
@@ -541,11 +563,12 @@ func flushAnswer(w http.ResponseWriter) { _ = http.NewResponseController(w).Flus
 
 func itoa(n int) string { return NumberString(float64(n)) }
 
-// serveStream answers a planned stream (P4c D3): the provider's headers, then each read rewritten and flushed at once,
-// written synchronously (a slow client slows the provider read), and one usage line when it ends, whatever ended it,
-// handed to emit after the response's last byte.
+// serveStream answers a planned stream (P4c D3) whose provider call started (resp, or why it failed; call is its
+// journal entry): the provider's headers, then each read rewritten and flushed at once, written synchronously (a slow
+// client slows the provider read), and one usage line when it ends, whatever ended it, handed to emit after the
+// response's last byte. It ends the stream the caller tracked (streams.Done).
 func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p *Plan, req *Request, started time.Time,
-	tr *callTrace) {
+	tr *callTrace, call int64, resp *http.Response, why string) {
 	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
 	var line func() ipc.UsageRecord
 	var obs *Observer // what the client was sent, for the client span's id and finish reasons (P4f D5)
@@ -553,7 +576,6 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 		obs = NewObserver()
 	}
 	status := http.StatusOK
-	call := e.open(p)
 	defer func() {
 		if line == nil {
 			if call != 0 {
@@ -576,7 +598,6 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 			}
 		}()
 	}()
-	resp, why := e.upstream.Start(r.Context(), p)
 	if why != "" {
 		a := s.Failed(p, why, elapsed())
 		line = func() ipc.UsageRecord { return a.Usage }

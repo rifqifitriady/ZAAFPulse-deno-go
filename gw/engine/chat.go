@@ -154,6 +154,16 @@ type Plan struct {
 	SaverPanic string
 	saverHits  int
 	keepSaved  bool
+
+	// P4h. A route call (spec Decision 8): Route is the route asked for (nil: not a route call), Legs one complete
+	// single-target plan per raw target in the route's order (nil for a name that does not resolve or that a
+	// private-only key may not use), Takes how many times the JS path calls resolveAll for it (Decision 7). Serve takes,
+	// orders the legs and tries them (serve_route.go). relegs builds the legs again from a client body the token saver
+	// shortened (Decision 9: every leg sends the shortened text).
+	Route  *ipc.RouteConfig
+	Legs   []*Plan
+	Takes  int
+	relegs func(body *Value) ([]*Plan, string)
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }
@@ -202,29 +212,39 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	if Authorize(key, "llm", model, "") != "" {
 		return handoff("key: not allowed")
 	}
-	for _, rt := range s.Gateway.Routes {
-		if rt.Name == model {
-			return handoff("model: a route")
-		}
+	if rt := s.routeOf(model); rt != nil {
+		return s.planChatRoute(r, body, key, rt)
 	}
 	t := Resolve(s.Gateway.Providers, model)
 	if t == nil || (key.PrivateOnly && TierOf(t.Provider) != "private") {
 		return handoff("model: no usable target")
 	}
-	cred, auth, why := s.credential(t)
+	p, why := s.chatLeg(r, body, key, t, model, s.tokenSaverOn(r))
 	if why != "" {
 		return handoff(why)
+	}
+	return p
+}
+
+// chatLeg is proxyChat's work for one target t of model (the client's model: a plain model or a route): the upstream
+// body, the Anthropic leg, the guardrails' policy for the target's tier and the provider request. save scans the body
+// for the token saver (a single-target call; a route call runs the saver once on the client body, planChatRoute). why
+// is a hand-off reason.
+func (s *State) chatLeg(r *Request, body *Value, key *ipc.GatewayKeyAuth, t *Target, model string, save bool) (Plan, string) {
+	cred, auth, why := s.credential(t)
+	if why != "" {
+		return Plan{}, why
 	}
 	stream := body.Get("stream").Truthy()
 	out, why := upstreamBody(body, t, stream)
 	if why != "" {
-		return handoff(why)
+		return Plan{}, why
 	}
 	var job *saverJob
-	if s.tokenSaverOn(r) {
+	if save {
 		// saveTokens(body, 'openai') before the guardrails (rtk.js R2): the walk now, the filters in Save.
 		if job, why = scanSaver(out, "openai"); why != "" {
-			return handoff(why) // saveTokens would throw, or reads what the engine cannot hold: JS answers (spec D7)
+			return Plan{}, why // saveTokens would throw, or reads what the engine cannot hold: JS answers (spec D7)
 		}
 	}
 	so := body.Get("stream_options")
@@ -234,7 +254,7 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild, saver: job, auth: auth}
 	if FormatOf(t.Provider) == "anthropic" {
 		if why := planAnthropicLeg(&p, cred, out); why != "" {
-			return handoff(why)
+			return Plan{}, why
 		}
 	}
 	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
@@ -249,7 +269,7 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 		p.Base.Stream = &v
 	}
 	p.Class = SubClass("chat", &p, nil)
-	return p
+	return p, ""
 }
 
 // upstreamBody is proxyChat's upstreamBody: { ...body, stream_options: { ...(body.stream_options || {}), include_usage:

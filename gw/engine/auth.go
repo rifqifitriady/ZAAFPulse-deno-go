@@ -182,7 +182,17 @@ func (t *Tokens) Run(stop <-chan struct{}) {
 }
 
 // TokenAuth is whether the plan's target is called with a token the engine gets (the provider-auth switch applies).
-func (p *Plan) TokenAuth() bool { return p.auth != nil }
+func (p *Plan) TokenAuth() bool {
+	if p.auth != nil {
+		return true
+	}
+	for _, l := range p.Legs { // a route call to a token-auth target (P4h)
+		if l != nil && l.auth != nil {
+			return true
+		}
+	}
+	return false
+}
 
 // setToken puts the token on a provider request's headers: x-api-key for the Anthropic format, else a Bearer
 // (providers.js headers).
