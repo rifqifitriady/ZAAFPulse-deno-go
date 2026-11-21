@@ -246,23 +246,45 @@ function clientFor(base) {
     if (r.status !== 200 || (r.json && r.json.errors)) throw new Error(`admin ${route}: ${r.status} ${r.text}`);
     return r.json;
   };
+  // The usage records, newest first (GET /api/gateway/logs).
+  // With chat on the go engine a call's line reaches the log through the IPC ingest, a few milliseconds after the
+  // answer (P4b deviation 5): the list is read until two reads 100 ms apart agree (at most 2 s).
+  const logs = async () => {
+    const read = async () => (await call('/api/gateway/logs', { method: 'GET' })).json.entries;
+    let entries = await read();
+    if (process.env.ZP_ENGINE !== 'go') return entries;
+    for (let i = 0; i < 20; i++) {
+      await sleep(100);
+      const again = await read();
+      if (again.length === entries.length && JSON.stringify(again[0]) === JSON.stringify(entries[0])) return again;
+      entries = again;
+    }
+    return entries;
+  };
   return {
     call,
     admin,
-    // The usage records, newest first (GET /api/gateway/logs).
-    // With chat on the go engine a call's line reaches the log through the IPC ingest, a few milliseconds after the
-    // answer (P4b deviation 5): the list is read until two reads 100 ms apart agree (at most 2 s).
-    logs: async () => {
-      const read = async () => (await call('/api/gateway/logs', { method: 'GET' })).json.entries;
-      let entries = await read();
-      if (process.env.ZP_ENGINE !== 'go') return entries;
-      for (let i = 0; i < 20; i++) {
-        await sleep(100);
-        const again = await read();
-        if (again.length === entries.length && JSON.stringify(again[0]) === JSON.stringify(entries[0])) return again;
-        entries = again;
+    logs,
+    // The newest usage line once the log holds more than `before` lines (a line from the gateway reaches the log a
+    // few milliseconds after the answer); throws after 5 s.
+    lineAfter: async (before) => {
+      const end = Date.now() + 5000;
+      for (;;) {
+        const entries = await logs();
+        if (entries.length > before) return entries[0];
+        if (Date.now() > end) throw new Error('no usage line within 5 s');
+        await sleep(20);
       }
-      return entries;
+    },
+    // ZP_ENGINE=shadow: the shadow stats of class c (GET /api/gateway/status) once it has compared at least min calls,
+    // or as they are after 5 s. A shadow run passes only when its classes were compared, not just free of diffs.
+    shadowStats: async (c, min) => {
+      const end = Date.now() + 5000;
+      for (;;) {
+        const st = (await call('/api/gateway/status', { method: 'GET' })).json.shadow || {};
+        if ((st[c] && st[c].compared >= min) || Date.now() > end) return st[c] || null;
+        await sleep(50);
+      }
     },
     // A new key: { secret, id }. Defaults: every scope, a high rate limit so cases never limit each other.
     newKey: async (input = {}) => {

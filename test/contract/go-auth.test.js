@@ -67,15 +67,6 @@ test.after(async () => {
 const user = [{ role: 'user', content: 'hi' }];
 const chatCalls = () => h.upstream.requests.filter((r) => r.path === '/chat/completions');
 const bearerOf = (r) => String(r.headers.authorization || '');
-async function lineAfter(before) {
-  const end = Date.now() + 5000;
-  for (;;) {
-    const logs = await h.logs();
-    if (logs.length > before) return logs[0];
-    if (Date.now() > end) throw new Error('no usage line within 5 s');
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}
 // One chat call to provider id (stream or whole): 200, and the provider got a token the token endpoint issued.
 async function chat(id, stream) {
   const before = (await h.logs()).length;
@@ -91,7 +82,7 @@ async function chat(id, stream) {
   const auth = bearerOf(sent.at(-1));
   assert.match(auth, /^Bearer zp-tok-\d+$/);
   assert.ok(h.upstream.tokens.issued.includes(auth.slice(7)), auth);
-  const line = await lineAfter(before);
+  const line = await h.lineAfter(before);
   assert.equal(line.status, 200);
   if (GO) assert.ok(line.ipc, `the go engine served it: ${JSON.stringify(line)}`);
   return { sent, line };
@@ -146,3 +137,16 @@ for (const id of ['o2', 'gsa'])
     assert.ok(!h.upstream.tokens.revoked.has(bearerOf(sent[1]).slice(7)), 'the replay carries a fresh one');
     assert.ok(h.upstream.tokens.issued.length > issued, 'a new token was fetched');
   });
+
+// ZP_ENGINE=shadow: the six chat calls above (three providers, whole and streamed) were compared with the go engine under
+// the provider-auth switch, with no diff (the two replays are skipped by design: each engine holds its own token); a
+// switch that stopped shadowing would leave the diff log empty and pass without this.
+test(
+  'go auth: the shadow compared the token-auth calls, with no diff',
+  { skip: skip || (process.env.ZP_ENGINE !== 'shadow' && 'only under ZP_ENGINE=shadow') },
+  async () => {
+    const st = await h.shadowStats('provider-auth', 6);
+    assert.ok(st && st.compared >= 6, JSON.stringify(st));
+    assert.equal(st.diffs, 0, JSON.stringify(st));
+  },
+);
