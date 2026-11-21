@@ -48,13 +48,29 @@ var proxyHeaders = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-
 // and net/http reads MaxHeaderBytes plus 4096 bytes before it answers 431 (P4a final review m2, P4b entry condition 6).
 const MaxHeaderBytes = 16384 - 4096
 
-// GoClasses are the route classes the go engine serves; the engine hands the rest of a class's requests to js itself.
-// chat-stream (P4c) is a sub-class of chat the engine picks after it reads the body; Classify never returns it. A
-// config.push that puts another class on go is refused.
-var GoClasses = map[string]bool{"chat": true, "chat-stream": true}
+// Subs are the go engine's path classes and their sub-classes, each sub-class with its own engine and shadow entry
+// (gw/engine Subs; TestFrontSubsMatchTheEngine keeps the two equal). The engine reads a request's body and picks the
+// sub-class: chat-stream (P4c), chat-anthropic, and the P4d classes' own.
+var Subs = map[string][]string{
+	"chat":       {"chat", "chat-stream", "chat-anthropic", "chat-anthropic-stream"},
+	"messages":   {"messages", "messages-stream", "messages-count"},
+	"responses":  {"responses", "responses-stream"},
+	"gemini":     {"gemini", "gemini-stream", "gemini-count"},
+	"embeddings": {"embeddings"},
+}
 
-// chatSubs are the sub-classes of chat, each with its own engine and shadow entry.
-var chatSubs = []string{"chat", "chat-stream"}
+// GoClasses are the classes a config.push may put on go: every sub-class of Subs (a path class is also its own first
+// sub-class). Classify never returns a sub-class that is not a path class. A config.push that puts another class on go
+// is refused.
+var GoClasses = func() map[string]bool {
+	m := map[string]bool{}
+	for _, subs := range Subs {
+		for _, c := range subs {
+			m[c] = true
+		}
+	}
+	return m
+}()
 
 // GoEngine serves a request of a class on the go engine, or hands it to js; Shadow forwards a request of a class on js
 // marked for the compare (gw/engine Engine).
@@ -145,15 +161,16 @@ func (s *Server) SetGoEngine(e GoEngine) {
 	}
 }
 
-// subModes is what the engine reads per sub-class of chat: on go, and shadowed (on js and in the shadow classes).
+// subModes is what the engine reads per sub-class: on go, and shadowed (on js and in the shadow classes).
 func (s *Server) subModes(sub string) (bool, bool) {
 	e := s.engine(sub)
 	return e == "go", e == "js" && (*s.shadow.Load())[sub]
 }
 
-// chatToEngine: the engine reads a chat request when a sub-class is on go (serve) or else shadowed (shadow).
-func (s *Server) chatToEngine() (serve, shadow bool) {
-	for _, sub := range chatSubs {
+// toEngine: the engine reads a request of a path class when one of its sub-classes is on go (serve) or else shadowed
+// (shadow).
+func (s *Server) toEngine(class string) (serve, shadow bool) {
+	for _, sub := range Subs[class] {
 		g, sh := s.subModes(sub)
 		serve, shadow = serve || g, shadow || sh
 	}
@@ -330,9 +347,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Header.Del(OwnHeader)
 	raw := RawPath(r.RequestURI)
 	class := Classify(raw)
-	if class == "chat" && s.goEngine != nil {
-		// chat and its sub-class chat-stream (P4c): the engine reads the body and serves, shadows or forwards each.
-		switch serve, shadow := s.chatToEngine(); {
+	if Subs[class] != nil && s.goEngine != nil {
+		// A class with sub-classes (chat, P4c; messages, responses, gemini, embeddings, P4d): the engine reads the
+		// body and serves, shadows or forwards each request.
+		switch serve, shadow := s.toEngine(class); {
 		case serve:
 			s.goEngine.Serve(class, w, r, raw, s.proxy)
 			return

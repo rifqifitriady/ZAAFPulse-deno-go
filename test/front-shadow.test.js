@@ -40,8 +40,10 @@ test('a capture exists only for a marked request, and is handed out once', async
   assert.deepEqual(takeCapture('00112233445566bb'), {
     providerRequests: [],
     providerResponse: null,
-    client: { status: 401, body: null },
+    upstream: [],
+    client: { status: 401, headers: {}, body: null, truncated: false },
     usage: null,
+    tape: { random: [], now: [] },
   });
 });
 
@@ -60,8 +62,10 @@ test('a refusal leaves its error body and its usage line in the capture (P4e)', 
   assert.deepEqual(takeCapture('00112233445566cc'), {
     providerRequests: [],
     providerResponse: null,
-    client: { status: 400, body },
+    upstream: [],
+    client: { status: 400, headers: {}, body, truncated: false },
     usage: line,
+    tape: { random: [], now: [] },
   });
   // Outside a marked request both are no-ops.
   noteClient('x');
@@ -252,8 +256,10 @@ test('a refusal capture is stored before the answer ends, while the handler is s
   assert.deepEqual(seenAtEnd, {
     providerRequests: [],
     providerResponse: null,
-    client: { status: 429, body: '{"error":{"message":"rate"}}' },
+    upstream: [],
+    client: { status: 429, headers: {}, body: '{"error":{"message":"rate"}}', truncated: false },
     usage: null,
+    tape: { random: [], now: [] },
   });
   release();
   await done;

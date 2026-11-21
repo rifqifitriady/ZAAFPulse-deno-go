@@ -38,10 +38,7 @@ func guardFixture(t *testing.T, name string) (*State, Plan, guardOut, guardCase)
 // jsCapture is what the control plane's capture holds for a fixture's JS answer (cost in USD, as the usage log has it).
 func jsCapture(t *testing.T, want guardOut, prov *ipc.UsageRecord, c guardCase) *Capture {
 	t.Helper()
-	cp := &Capture{Client: &struct {
-		Status int    `json:"status"`
-		Body   string `json:"body"`
-	}{want.Client.Status, want.Client.Body}}
+	cp := &Capture{Client: &CaptureClient{Status: want.Client.Status, Body: want.Client.Body}}
 	if string(want.Usage) != "null" {
 		_ = json.Unmarshal(want.Usage, &cp.Usage)
 		if n, ok := cp.Usage["cost"].(float64); ok {
