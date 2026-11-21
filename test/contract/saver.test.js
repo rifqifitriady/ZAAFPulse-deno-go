@@ -92,5 +92,40 @@ test('/v1/messages with a tool_result: shortened on the translated body', async 
   assert.equal(r.status, 200);
   const tool = lastUp('/chat/completions').body.messages.find((m) => m.role === 'tool');
   assert.ok(tool.content.length < DIFF.length);
-  assert.ok((await lineAfter(before)).savedTokens > 0);
+  const line = await lineAfter(before);
+  assert.ok(line.savedTokens > 0);
+  if (GO) assert.ok(line.ipc, 'served by the go engine');
+});
+
+const anTurn = () => [
+  { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'git diff' } }] },
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: DIFF }] },
+];
+const lastUpEnd = (p) => h.upstream.requests.filter((x) => x.path.endsWith(p)).at(-1);
+
+test('/v1/messages to an Anthropic provider (passthrough): shortened as sent upstream, savedTokens on the line', async () => {
+  const before = (await h.logs()).length;
+  const r = await h.call('/v1/messages', {
+    headers: { 'x-api-key': h.key },
+    body: { model: 'an/claude-x', max_tokens: 10, messages: anTurn() },
+  });
+  assert.equal(r.status, 200);
+  const sent = lastUpEnd('/messages').body.messages[1].content[0].content;
+  assert.ok(sent.length < DIFF.length);
+  const line = await lineAfter(before);
+  assert.equal(line.savedTokens, Math.round((DIFF.length - sent.length) / 4));
+  if (GO) assert.ok(line.ipc, 'served by the go engine');
+});
+
+test('/v1/responses to a Responses-native provider (passthrough): no token saver, as in JS', async () => {
+  const before = (await h.logs()).length;
+  const input = [
+    { role: 'user', content: 'go' },
+    { type: 'function_call', call_id: 'c1', name: 'shell', arguments: '{"command":"git diff"}' },
+    { type: 'function_call_output', call_id: 'c1', output: DIFF },
+  ];
+  const r = await h.call('/v1/responses', { key: h.key, body: { model: 'rs/gpt-5-codex', input } });
+  assert.equal(r.status, 200);
+  assert.equal(lastUpEnd('/responses').body.input[2].output, DIFF);
+  assert.equal((await lineAfter(before)).savedTokens, undefined);
 });

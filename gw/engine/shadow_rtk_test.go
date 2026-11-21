@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate"
 )
 
 // The shadow compares a call the token saver rewrote (spec D14): the saver runs in the compare, the shortened body is
@@ -44,5 +46,35 @@ func TestShadowSaverHandoffLine(t *testing.T) {
 	}
 	if why := s.Save(&p, time.Now()); why != saverOverBudget || len(p.Body) != 0 {
 		t.Fatalf("a second Save: %q, body %d bytes (review m2: the hand-off stands)", why, len(p.Body))
+	}
+}
+
+// Tasks 8-9 review m3: translated and passthrough saver calls through the shadow's own order (compareCaptured: Save,
+// then the guardrails or the refusal, then the compare), from a plan that has not run the saver yet.
+func TestShadowTranslatedSaverFixtures(t *testing.T) {
+	want := map[string]bool{"msg-saver-whole": true, "msg-saver-stream": true, "msg-saver-guard-redact": true,
+		"msg-saver-guard-block": true, "msg-native-saver": true, "msg-native-saver-guard-block": true,
+		"chat-an-saver": true, "resp-saver": true, "gem-saver": true}
+	n := 0
+	for _, f := range loadXlate(t) {
+		if !want[strings.TrimSuffix(f.Name, ".json")] {
+			continue
+		}
+		n++
+		t.Run(f.Name, func(t *testing.T) {
+			s := xlateStateOf(t, f.In)
+			r := xlateRequestOf(f.In)
+			p := s.PlanFor(classOfPath(r.RawPath), r, fixtureNow)
+			if p.Handoff != "" || p.saver == nil {
+				t.Fatalf("handoff %q, saver %v", p.Handoff, p.saver != nil)
+			}
+			p.Env = translate.Default // the compare takes the tape
+			if l := s.compareCaptured(p.Class, &p, xlateCapture(t, f)); l.Outcome != "same" || !l.Saver {
+				t.Fatalf("%+v", l)
+			}
+		})
+	}
+	if n != len(want) {
+		t.Fatalf("%d of %d saver fixtures found", n, len(want))
 	}
 }

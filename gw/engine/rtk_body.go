@@ -18,7 +18,32 @@ const (
 	saverThrows     = "token saver: a message it cannot read"
 	saverArgs       = "token saver: a tool call the engine cannot read"
 	saverOverBudget = "token saver: over its step budget"
+	saverIDs        = "token saver: a tool call id the engine cannot match"
 )
+
+// objectToolIDs: a tool call id or a tool message's tool_call_id is an object or an array. JS's Map finds such an id by
+// identity, and a translator may put one object in both places (lib/gateway/translate.js geminiToOpenAI), which the
+// engine's JSON copy of the translated body cannot see: the call is handed off (Tasks 8-9 review I1).
+func objectToolIDs(body *Value) bool {
+	msgs := body.Get("messages")
+	if msgs == nil || msgs.Kind != Array {
+		return false
+	}
+	isObj := func(v *Value) bool { return v != nil && (v.Kind == Object || v.Kind == Array) }
+	for _, m := range msgs.A {
+		if isObj(m.Get("tool_call_id")) {
+			return true
+		}
+		if tcs := m.Get("tool_calls"); tcs != nil && tcs.Kind == Array {
+			for _, tc := range tcs.A {
+				if isObj(tc.Get("id")) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
 
 // saverTarget is one text the saver looks at: holder[key] is a string; hint is its tool call's "<name> <arg>".
 type saverTarget struct {

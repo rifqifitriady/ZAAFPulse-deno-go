@@ -208,8 +208,9 @@ const saverInput = [
 const saverGemini = {
   contents: [
     { role: 'user', parts: [{ text: 'go' }] },
-    { role: 'model', parts: [{ functionCall: { name: 'shell', args: { command: 'git diff' } } }] },
-    { role: 'user', parts: [{ functionResponse: { name: 'shell', response: { output: SAVER_DIFF } } }] },
+    { role: 'model', parts: [{ functionCall: { name: 'query', args: { sql: 'select' } } }] },
+    // The tool content is JSON.stringify(response): the json filter cuts its 60 rows to 20.
+    { role: 'user', parts: [{ functionResponse: { name: 'query', response: { rows: Array.from({ length: 60 }, (_, i) => ({ id: i, name: `row ${i}`, note: 'x'.repeat(20) })) } } }] },
   ],
 };
 
@@ -338,6 +339,9 @@ const CASES = [
   ['msg-native-saver', 'messages', '/v1/messages', {}, msgs('an/claude-x', { messages: saverTurn(SAVER_DIFF) }), anMsg()],
   ['msg-native-saver-stream', 'messages', '/v1/messages', {}, msgs('an/claude-x', { stream: true, messages: saverTurn(SAVER_DIFF) }), anStream()],
   ['msg-native-saver-guard-block', 'messages', '/v1/messages', { guardrails: { ...OFF, secrets: 'block' } }, msgs('an/claude-x', { messages: saverTurn(`key ${ANT}\n${SAVER_DIFF}`) }), anMsg()],
+  ['msg-saver-guard-redact', 'messages', '/v1/messages', { guardrails: { ...OFF, secrets: 'redact' } }, msgs('oa/m1', { messages: saverTurn(`key ${ANT}\n${SAVER_DIFF}`) }), chatOk()],
+  ['msg-saver-throw', 'messages', '/v1/messages', {}, msgs('oa/m1', { messages: saverTurn(SAVER_DIFF) }), { throw: 'ECONNRESET' }],
+  ['chat-an-saver-stream', 'chatAnthropic', '/v1/chat/completions', {}, { model: 'an/claude-x', stream: true, messages: [{ role: 'user', content: 'go' }, { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Bash', arguments: '{"command":"git diff"}' } }] }, { role: 'tool', tool_call_id: 'c1', content: SAVER_DIFF }] }, anStream()],
   ['chat-an-saver', 'chatAnthropic', '/v1/chat/completions', {}, { model: 'an/claude-x', messages: [{ role: 'user', content: 'go' }, { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Bash', arguments: '{"command":"git diff"}' } }] }, { role: 'tool', tool_call_id: 'c1', content: SAVER_DIFF }] }, anMsg()],
   ['resp-saver', 'responses', '/v1/responses', {}, { model: 'oa/m1', input: saverInput }, chatOk()],
   ['resp-native-saver', 'responses', '/v1/responses', {}, { model: 'op/gpt-6.1', input: saverInput }, respOk()],
