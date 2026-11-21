@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -460,11 +461,9 @@ func TestSetToolsCallsTheToolEndpoint(t *testing.T) {
 		method, path, own, client, body string
 	}
 	got := make(chan seen, 1)
-	release := make(chan struct{})
 	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		got <- seen{r.Method, r.URL.Path, r.Header.Get(OwnHeader), r.Header.Get(ClientHeader), string(b)}
-		<-release
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"r":{"result":{}}}`)
 	})
@@ -474,10 +473,21 @@ func TestSetToolsCallsTheToolEndpoint(t *testing.T) {
 	if e.call == nil {
 		t.Fatal("the engine got no tool call")
 	}
-	go func() { time.Sleep(5500 * time.Millisecond); close(release) }() // past own's 5 s
+	// No limit of its own: the request the transport gets carries the caller's context, with no deadline added.
+	next := s.proxy.Transport
+	var deadline atomic.Bool
+	s.proxy.Transport = roundTripper(func(r *http.Request) (*http.Response, error) {
+		if _, ok := r.Context().Deadline(); ok {
+			deadline.Store(true)
+		}
+		return next.RoundTrip(r)
+	})
 	status, body, err := e.call(context.Background(), []byte(`{"name":"x","arguments":{}}`))
 	if err != nil || status != 200 || string(body) != `{"r":{"result":{}}}` {
 		t.Fatalf("%d %s %v", status, body, err)
+	}
+	if deadline.Load() {
+		t.Fatal("the tool call has a time limit of its own")
 	}
 	r := <-got
 	want := ClientValue(token, s.Addr().String(), false)
@@ -491,3 +501,8 @@ func TestSetToolsCallsTheToolEndpoint(t *testing.T) {
 		t.Fatal("a cancelled context still called")
 	}
 }
+
+// roundTripper is an http.RoundTripper from a function.
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
