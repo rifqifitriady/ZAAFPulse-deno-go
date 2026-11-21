@@ -264,11 +264,12 @@ func SaveTokens(body *Value, format string, b *jsre.Budget) (*SaveResult, string
 // pending body). It runs once per plan. why is a hand-off reason: the control plane answers the request.
 func (s *State) Save(p *Plan, now time.Time) string {
 	if p.saver == nil || p.saverDone {
-		return ""
+		return p.saverWhy
 	}
 	p.saverDone = true
 	hits, why := p.saver.run(p.saver.budget(now))
 	if why != "" {
+		p.saverWhy = why // the body is half done: the plan is not served
 		return why
 	}
 	if len(hits) > 0 {

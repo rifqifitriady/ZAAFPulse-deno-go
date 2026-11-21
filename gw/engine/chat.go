@@ -137,6 +137,7 @@ type Plan struct {
 	// passthrough spreads base into its guard lines too; proxyChat's guard lines carry none).
 	saver     *saverJob
 	saverDone bool
+	saverWhy  string // Save's hand-off reason, returned again on a later call
 	saverHits int
 	keepSaved bool
 }

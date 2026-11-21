@@ -350,6 +350,10 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	if e.modes.Load() == nil {
 		shadowed = sub == "chat" // P4b: the front calls Shadow for a shadowed chat
 	}
+	if p.saver != nil { // a shadowed token-saver also compares the calls the saver looks at (spec D13)
+		_, sh := e.mode(SaverSwitch)
+		shadowed = shadowed || sh
+	}
 	if !shadowed {
 		js.ServeHTTP(w, r)
 		return

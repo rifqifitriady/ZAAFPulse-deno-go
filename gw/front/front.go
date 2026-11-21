@@ -174,8 +174,17 @@ func (s *Server) toEngine(class string) (serve, shadow bool) {
 		g, sh := s.subModes(sub)
 		serve, shadow = serve || g, shadow || sh
 	}
+	if saverClasses[class] {
+		// A shadowed token-saver compares the calls the saver looks at, also while their class is on js (rtk spec D13).
+		_, sh := s.subModes("token-saver")
+		shadow = shadow || sh
+	}
 	return serve, shadow
 }
+
+// saverClasses are the path classes whose calls the token saver can shorten: chat, and the classes translated to chat
+// (lib/gateway/index.js proxyChat) or passed to an Anthropic provider (anthropicPassthrough).
+var saverClasses = map[string]bool{"chat": true, "messages": true, "responses": true, "gemini": true}
 
 // Listen loads the TLS files (when set) and opens the main port. ErrAddrInUse when the port is taken.
 func Listen(cfg Config, logger *log.Logger) (*Server, error) {
