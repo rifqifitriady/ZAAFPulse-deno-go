@@ -177,6 +177,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	})
 	g.engine.SetStaleMs(o.staleMs)
+	// The background token refresh of oauth2 and google-sa providers (P4g Decision 13), until shutdown or exit.
+	tokStop := make(chan struct{})
+	g.stopTokens = sync.OnceFunc(func() { close(tokStop) })
+	defer g.stopTokens()
+	go g.engine.Tokens().Run(tokStop)
 	return g.serve(protocols)
 }
 
@@ -221,6 +226,7 @@ type gateway struct {
 	frontCfg   *ipc.FrontConfig // under mu: the first config.push's front section, opened on ready
 	frontToken string           // under mu: from secrets.handoff, never logged
 	front      *front.Server    // under mu: the main port, once open
+	stopTokens func()           // stops the engine's background token refresh (P4g), once
 }
 
 func (g *gateway) serve(protocols []int) int {
@@ -544,6 +550,9 @@ func (g *gateway) drain() {
 
 func (g *gateway) shutdown(grace time.Duration) {
 	g.log.Printf("shutting down (grace %s)", grace)
+	if g.stopTokens != nil {
+		g.stopTokens()
+	}
 	g.closeFront(grace)
 	g.stopEmitter(grace)
 	g.out.stop(grace)

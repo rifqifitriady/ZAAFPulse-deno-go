@@ -17,6 +17,7 @@ import (
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/provauth"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate"
 )
 
@@ -47,6 +48,7 @@ type State struct {
 	SnapshotAt int64                // epoch ms the snapshot says it was taken
 	spans      bool                 // config.push trace.spans (P4f D8): a span is recorded somewhere
 	logf       func(string, ...any) // the engine's log, set by SetState (recovered panics, P4d)
+	tokens     *Tokens              // the engine's token registry, set by SetState (P4g)
 }
 
 // Spans is whether this generation's calls get trace spans and a usage line naming their trace (P4f D8).
@@ -139,6 +141,8 @@ type Plan struct {
 	Tool     string
 	ToolArgs *Value
 	ToolTier string
+	// auth is the token source of an oauth2 or google-sa target (nil: a key or none); Upstream.Start gets the token.
+	auth *provauth.Cached
 
 	// The token saver (spec the rtk-go design D8, D12): the texts Save shortens in
 	// pending, whether it ran, how many it shortened, and whether every line keeps savedTokens (the Anthropic
@@ -207,7 +211,7 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	if t == nil || (key.PrivateOnly && TierOf(t.Provider) != "private") {
 		return handoff("model: no usable target")
 	}
-	cred, why := s.credential(t)
+	cred, auth, why := s.credential(t)
 	if why != "" {
 		return handoff(why)
 	}
@@ -227,7 +231,7 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: model, URL: t.Provider.BaseURL + "/chat/completions",
 		Header: providerHeader(t, cred), Base: s.base(key, t, model, r), Stream: stream,
 		WantsUsage: so.Truthy() && so.Get("include_usage").Truthy(), Format: "openai", Shape: ShapeOpenAI,
-		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild, saver: job}
+		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild, saver: job, auth: auth}
 	if FormatOf(t.Provider) == "anthropic" {
 		if why := planAnthropicLeg(&p, cred, out); why != "" {
 			return handoff(why)

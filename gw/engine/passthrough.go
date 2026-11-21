@@ -24,14 +24,14 @@ func (s *State) nativePlan(r *Request, key *ipc.GatewayKeyAuth, body *Value, nam
 	if Authorize(key, "llm", model, "") != "" {
 		return handoff("key: not allowed")
 	}
-	cred, why := s.credential(t)
+	cred, auth, why := s.credential(t)
 	if why != "" {
 		return handoff(why)
 	}
 	stream := body.Get("stream").Truthy()
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: name, Stream: stream, Format: format, Shape: sh,
 		Upstream: up, GuardFormat: guardFormat, Env: translate.Default, URL: t.Provider.BaseURL + path,
-		Header: providerHeader(t, cred), Base: s.base(key, t, model, r), build: passBuild}
+		Header: providerHeader(t, cred), Base: s.base(key, t, model, r), build: passBuild, auth: auth}
 	f := format
 	p.Base.Format = &f
 	if stream {

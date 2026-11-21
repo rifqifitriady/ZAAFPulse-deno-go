@@ -147,6 +147,17 @@ func (c *Cached) Token(ctx context.Context) (string, time.Time, error) { return 
 // providers.js accessToken(p, true)). A refresh already running is shared.
 func (c *Cached) Refresh(ctx context.Context) (string, time.Time, error) { return c.get(ctx, true) }
 
+// Expiry is the cached token's expiry; false when no token is cached (none fetched yet, or every refresh failed). The
+// background refresh reads it (gw/engine Tokens.Tick).
+func (c *Cached) Expiry() (time.Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tok == nil {
+		return time.Time{}, false
+	}
+	return c.tok.exp, true
+}
+
 func (c *Cached) get(ctx context.Context, force bool) (string, time.Time, error) {
 	c.mu.Lock()
 	if !force && c.tok != nil && c.tok.exp.Sub(c.clock()) > Lead {

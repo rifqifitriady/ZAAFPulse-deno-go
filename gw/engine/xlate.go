@@ -51,7 +51,7 @@ func (s *State) translatedPlan(r *Request, key *ipc.GatewayKeyAuth, clientModel 
 	if why != "" {
 		return handoff(why)
 	}
-	cred, why := s.credential(t)
+	cred, auth, why := s.credential(t)
 	if why != "" {
 		return handoff(why)
 	}
@@ -74,7 +74,7 @@ func (s *State) translatedPlan(r *Request, key *ipc.GatewayKeyAuth, clientModel 
 		URL: t.Provider.BaseURL + "/chat/completions", Header: providerHeader(t, cred), Upstream: UpChat,
 		GuardFormat: "openai-chat", Env: translate.Default, Tagged: tagged, Soft: soft,
 		Dropped: append([]string(nil), dropped...), Custom: custom, Base: s.base(key, t, model, r),
-		build: translatedBuild, saver: job}
+		build: translatedBuild, saver: job, auth: auth}
 	if tagged && p.Dropped == nil {
 		p.Dropped = []string{}
 	}
