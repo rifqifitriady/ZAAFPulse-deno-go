@@ -1,6 +1,7 @@
 // Shared test helpers: a fake HTTP server that records requests, secrets without Keychain, and a fake `claude`.
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const { createSecrets } = require('../lib/secrets');
 
@@ -15,9 +16,10 @@ function safeJson(s) {
 // routes: { 'GET /path': { status?, body?, headers?, sse?, delayMs?, destroy? } | (req) => same | Promise<same> }
 // sse: a list of raw chunks written one by one as text/event-stream (delayMs apart); destroy: the socket is closed
 // with no answer (a connection reset). Without either, body is sent as JSON (a string as it is).
-async function fakeServer(routes) {
+// tls: { key, cert } (PEM) serves HTTPS instead of HTTP.
+async function fakeServer(routes, { tls } = {}) {
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const handle = (req, res) => {
     let body = '';
     req.on('data', (c) => {
       body += c;
@@ -52,10 +54,11 @@ async function fakeServer(routes) {
       res.writeHead(out.status || 200, { 'content-type': 'application/json', ...(out.headers || {}) });
       res.end(typeof out.body === 'string' ? out.body : JSON.stringify(out.body ?? {}));
     });
-  });
+  };
+  const server = tls ? https.createServer(tls, handle) : http.createServer(handle);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}`,
+    url: `${tls ? 'https' : 'http'}://127.0.0.1:${server.address().port}`,
     requests,
     close: () =>
       new Promise((resolve) => {

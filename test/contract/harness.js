@@ -8,8 +8,8 @@
 //   ZP_ENGINE=front        gateway.engine "front": the Go gateway (built by scripts/ipc/build-stub.js, or ZP_GW_BIN)
 //                          holds the port and forwards every case to the server (P4a T6)
 //   ZP_ENGINE=go           front, with every go class on the go engine (P4b, P4c, P4d: chat, messages, responses, gemini,
-//                          embeddings and their sub-classes; P4g: mcp): the gateway serves the calls it can itself and
-//                          hands the others to the server (gateway.shadowDays 0: no shadow gate)
+//                          embeddings and their sub-classes; P4g: mcp, provider-auth): the gateway serves the calls
+//                          it can itself and hands the others to the server (gateway.shadowDays 0: no shadow gate)
 //   ZP_ENGINE=shadow       front, every go class on js and shadowed: the gateway compares each call with the go engine;
 //                          stop() fails when the server's .data/gateway-shadow.jsonl holds a diff
 // Nothing here reaches the network: the providers point at the fake upstream on 127.0.0.1, price sync is off, and
@@ -23,8 +23,8 @@ const { NO_JUDGE_PORTS } = require('../helpers');
 const { startUpstream } = require('./upstream');
 const { buildStub } = require('../../scripts/ipc/build-stub');
 const permissions = require('../../lib/permissions');
-// Every class the go engine has (P4b chat, P4c chat-stream, the P4d classes, P4g mcp): on go under ZP_ENGINE=go, shadowed under
-// ZP_ENGINE=shadow.
+// Every class the go engine has (P4b chat, P4c chat-stream, the P4d classes, P4g mcp and provider-auth): on go under
+// ZP_ENGINE=go, shadowed under ZP_ENGINE=shadow.
 const { GO_CLASSES } = require('../../lib/front');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -315,13 +315,23 @@ function providerList(upstreamUrl) {
 }
 const ROUTES = [{ name: 'router/fallback', targets: ['oa/fail503', 'oa/m1'], strategy: 'fallback' }];
 
-// start() -> { base, key, keyId, upstream, call, admin, logs, newKey, setGuardrails, stop }. One per test file.
-async function start() {
-  const upstream = await startUpstream();
+// start({ tls }) -> { base, key, keyId, upstream, call, admin, logs, newKey, setGuardrails, stop }. One per test file.
+// tls (P4g): the fake upstream's token endpoint is served over HTTPS too (upstream.tlsUrl), and the spawned server and
+// its gateway trust that run's CA through NODE_EXTRA_CA_CERTS and DENO_CERT (lib/ipc/env.js hands both to the gateway).
+async function start({ tls = false } = {}) {
+  const upstream = await startUpstream({ tls });
   let server = null;
+  let caDir = null;
   try {
     const url = process.env.ZP_CONTRACT_URL;
-    server = url ? { base: url.replace(/\/+$/, ''), stop: async () => {} } : await startServer();
+    let env = {};
+    if (tls && !url) {
+      caDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-contract-ca-'));
+      const caFile = path.join(caDir, 'ca.pem');
+      fs.writeFileSync(caFile, upstream.ca);
+      env = { NODE_EXTRA_CA_CERTS: caFile, DENO_CERT: caFile };
+    }
+    server = url ? { base: url.replace(/\/+$/, ''), stop: async () => {} } : await startServer({ env });
     const c = clientFor(server.base);
     for (const p of providerList(upstream.url)) await c.admin('providers', { action: 'save', ...p });
     for (const r of ROUTES) await c.admin('routes', { action: 'save', ...r });
@@ -340,12 +350,14 @@ async function start() {
           await server.stop();
         } finally {
           await upstream.close(); // also when the server's stop throws (a shadow diff), or the test process hangs
+          if (caDir) fs.rmSync(caDir, { recursive: true, force: true });
         }
       },
     };
   } catch (err) {
     if (server) await server.stop();
     await upstream.close();
+    if (caDir) fs.rmSync(caDir, { recursive: true, force: true });
     throw err;
   }
 }
