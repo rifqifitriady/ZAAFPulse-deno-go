@@ -226,6 +226,32 @@ func TestAuthFixtures(t *testing.T) {
 			if len(f.Out.Clients) != len(f.In.Requests) || len(f.Out.Usage) != len(f.In.Requests) {
 				t.Fatalf("%d requests, %d clients, %d usage", len(f.In.Requests), len(f.Out.Clients), len(f.Out.Usage))
 			}
+			if strings.HasPrefix(f.Name, "rt-") {
+				// A refresh_token grant provider stays on the control plane (spec Decision 19): every request is handed
+				// off, with no token or provider request and no line. The fixture still proves the JS rotation; the
+				// rotation itself is replayed at the provauth level (gw/testdata/provauth/oauth2-rt-rotation.json).
+				for j, rq := range f.In.Requests {
+					req := httptest.NewRequest(rq.Method, "http://127.0.0.1:4777"+rq.Path, strings.NewReader(rq.Body))
+					req.Host, req.RemoteAddr = "127.0.0.1:4777", "127.0.0.1:50000"
+					for k, v := range rq.Headers {
+						req.Header.Set(k, v)
+					}
+					raw, _, _ := strings.Cut(rq.Path, "?")
+					handed := false
+					e.Serve(classOfPath(raw), httptest.NewRecorder(), req, raw, http.HandlerFunc(
+						func(w http.ResponseWriter, r *http.Request) { handed = true }))
+					if !handed {
+						t.Errorf("request %d was not handed off", j)
+					}
+				}
+				mu.Lock()
+				n := len(lines)
+				mu.Unlock()
+				if c := rt.count(); c != 0 || n != 0 {
+					t.Errorf("%d exchanges, %d lines; a refresh_token grant call is the control plane's", c, n)
+				}
+				return
+			}
 			for j, rq := range f.In.Requests {
 				req := httptest.NewRequest(rq.Method, "http://127.0.0.1:4777"+rq.Path, strings.NewReader(rq.Body))
 				req.Host, req.RemoteAddr = "127.0.0.1:4777", "127.0.0.1:50000"
@@ -327,8 +353,11 @@ func TestTokensSourcePerAuthSettings(t *testing.T) {
 	if a == nil || tk.Source(providerOfState(withProvider(s, "az", nil), "az")) != a {
 		t.Fatal("the same settings should give the same source")
 	}
-	if tk.Source(providerOfState(s, "rt")) == a {
+	if tk.Source(providerOfState(s, "vx")) == a {
 		t.Fatal("another provider shares the source")
+	}
+	if tk.Source(providerOfState(s, "rt")) != nil {
+		t.Fatal("a refresh_token grant provider has a source (Decision 19: it stays on the control plane)")
 	}
 	moved := withProvider(s, "az", func(p *ipc.ProviderConfig) {
 		u := "https://login.example.test/other/token"
@@ -512,6 +541,28 @@ func TestTokenErrorIsTheSourceMessage(t *testing.T) {
 	res := up.Call(context.Background(), &p)
 	if res.Why != "az: token refresh failed (401 invalid_client)" || providerCalls != 0 {
 		t.Fatalf("%+v, %d provider calls", res, providerCalls)
+	}
+}
+
+// A refresh_token grant provider is handed off with the Decision 19 reason, also with a registry and a stored secret;
+// the registry makes no source for it, so the background refresh never touches it.
+func TestRefreshGrantStaysOnTheControlPlane(t *testing.T) {
+	s := authUnitState(t)
+	s.tokens = NewTokens(nil, func() *State { return s }, fixedClock)
+	if s.Secrets["rt"] == "" {
+		t.Fatal("the fixture stores no rt secret")
+	}
+	_, src, why := s.credential(&Target{Provider: providerOfState(s, "rt")})
+	if src != nil || why != "provider: refresh-token grant stays on the control plane (P4g Decision 19)" {
+		t.Fatalf("%v %q", src, why)
+	}
+	if len(s.tokens.sources) != 0 {
+		t.Fatalf("sources %v", s.tokens.sources)
+	}
+	cc := withProvider(s, "rt", func(p *ipc.ProviderConfig) { g := "client_credentials"; p.Auth.Grant = &g })
+	cc.tokens = s.tokens
+	if _, src, why := cc.credential(&Target{Provider: providerOfState(cc, "rt")}); src == nil || why != "" {
+		t.Fatalf("a client_credentials grant is served: %v %q", src, why)
 	}
 }
 

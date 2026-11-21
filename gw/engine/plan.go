@@ -113,14 +113,18 @@ func (s *State) target(model string, key *ipc.GatewayKeyAuth) (*Target, string) 
 }
 
 // credential is the provider's API key ("" for none), or for an oauth2 or google-sa provider the engine's token source
-// (P4g Decision 11: the plan carries the source, Upstream.Start gets the token). A provider with no handed value, or a
-// state without a token registry (not installed by an engine), is handed off.
+// (P4g Decision 11: the plan carries the source, Upstream.Start gets the token). A provider with no handed value, a
+// refresh_token grant provider (Decision 19), or a state without a token registry (not installed by an engine), is
+// handed off.
 func (s *State) credential(t *Target) (string, *provauth.Cached, string) {
 	a := t.Provider.Auth
 	if a == nil {
 		return "", nil, ""
 	}
 	if a.Type != "key" {
+		if refreshGrant(t.Provider) {
+			return "", nil, HandRefreshGrant
+		}
 		if !tokenAuth(t.Provider) || s.tokens == nil {
 			return "", nil, "provider: OAuth2 or a service account (P4g)"
 		}

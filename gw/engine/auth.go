@@ -54,10 +54,22 @@ func NewTokens(client *http.Client, state func() *State, clock provauth.Clock) *
 	return &Tokens{client: client, state: state, clock: clock, sources: map[string]tokenEntry{}}
 }
 
-// tokenAuth is whether a provider is called with a token the engine gets (oauth2 or google-sa).
+// tokenAuth is whether a provider is called with a token the engine gets: oauth2 with the client_credentials grant, or
+// google-sa. A refresh_token grant provider is not (refreshGrant).
 func tokenAuth(p *ipc.ProviderConfig) bool {
-	return p != nil && p.Auth != nil && (p.Auth.Type == "oauth2" || p.Auth.Type == "google-sa")
+	return p != nil && p.Auth != nil && (p.Auth.Type == "oauth2" || p.Auth.Type == "google-sa") && !refreshGrant(p)
 }
+
+// refreshGrant is whether a provider uses the OAuth2 refresh_token grant. Its calls stay on the control plane (spec
+// Decision 19): a rotating IdP issues a new refresh token at each refresh, and two engines each keeping their own
+// rotated copy would present a refresh token the IdP already replaced, which its reuse detection answers by revoking
+// the whole token family. The registry never makes a source for it.
+func refreshGrant(p *ipc.ProviderConfig) bool {
+	return p != nil && p.Auth != nil && p.Auth.Type == "oauth2" && strOf(p.Auth.Grant) == "refresh_token"
+}
+
+// HandRefreshGrant is the hand-off reason of a call to a refresh_token grant provider.
+const HandRefreshGrant = "provider: refresh-token grant stays on the control plane (P4g Decision 19)"
 
 func strOf(p *string) string {
 	if p == nil {
