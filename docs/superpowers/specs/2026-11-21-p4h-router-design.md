@@ -93,7 +93,8 @@ Each is the recommended option, pending owner, with the evidence that settled it
    A second copied quirk (found in the Task 4 review): when a target falls back (its body cancelled) and every later
    target throws, proxyChat returns the target that fell back; chatCompletion reads its cancelled body, the runtime
    throws a TypeError, and `handle` answers 502 `upstream_error` with that text, with no line beyond the attempts' 599
-   and fallback lines (`seq-chat-fallback-then-throw`, whole and stream). The text is the runtime's (Decision 15f).
+   and fallback lines (`seq-chat-fallback-then-throw`, whole and stream; the P4d paths in each client's shape and the
+   Responses passthrough loop, `seq-xlate-fallback-then-throw`). The text is the runtime's (Decision 15f).
 8. **Planning stays pure; the take happens in `Serve`** (recommended, pending owner; P4e Decision 4). A route plan holds
    one leg per raw target, each a complete single-target `Plan` built by today's planner for that target (nil for a
    name that does not resolve or a private-only key's external target). `Serve` takes, rotates the legs, drops the nil

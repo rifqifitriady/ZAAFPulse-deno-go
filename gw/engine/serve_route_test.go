@@ -260,12 +260,9 @@ func sequenceEnv(t *testing.T, clock func() int64) {
 // headers, bytes), the same client answer, every usage line, the same provider.note and route.take messages, and the
 // same routing state as JS after each step. A step the engine hands off (the 404 of a route with no usable target) is
 // answered by JS; its messages are applied as the control plane sends them.
-func TestRouteChatSequences(t *testing.T) {
+func TestRouteSequences(t *testing.T) {
 	for _, seq := range loadRouteSeqs(t) {
 		t.Run(seq.Name, func(t *testing.T) {
-			if !strings.HasPrefix(seq.Name, "seq-chat-") {
-				t.Skip("a sequence of the P4d classes: replayed by P4h Task 5")
-			}
 			g := newRouteRig(t, &seq, func(string) (bool, bool) { return true, false })
 			sequenceEnv(t, g.clock.Load)
 			for i, st := range seq.In.Steps {
@@ -285,10 +282,11 @@ func TestRouteChatSequences(t *testing.T) {
 					// The engine hands off targetsFor's 404 with its reason.
 					req := xlateRequestOf(xlateCase{})
 					req.Body = []byte(st.Request.Body)
+					req.RawPath = front.RawPath(st.Request.Path)
 					for k, v := range st.Request.Headers {
 						req.Header.Set(k, v)
 					}
-					if p := g.e.State().PlanChat(req, want.Now); p.Handoff != RouteHandoff+"no usable target" {
+					if p := g.e.State().PlanFor(front.Classify(req.RawPath), req, want.Now); p.Handoff != RouteHandoff+"no usable target" {
 						t.Errorf("%s: handoff %q, want the 404's", name, p.Handoff)
 					}
 					for _, ev := range want.Events {
@@ -470,6 +468,47 @@ func TestRouteLinesUnchecked(t *testing.T) {
 	for i, m := range g.marks {
 		if m == nil || *m != ipc.Unchecked {
 			t.Errorf("line %d (status %d): budget mark %v, want unchecked", i, g.lines[i].Status, m)
+		}
+	}
+}
+
+// A leg the engine would hand off hands off the whole call of every class before any take (spec Decision 8), with its
+// reason prefixed: a round-robin route of two whose second target has no credential takes no rotation, calls no
+// provider and sends no message (count_tokens: an Anthropic leg without its credential).
+func TestRouteHandoffsPerClass(t *testing.T) {
+	var seq routeSeq
+	for _, s := range loadRouteSeqs(t) {
+		if s.Name == "seq-takes-per-class.json" {
+			seq = s
+		}
+	}
+	for i, st := range seq.In.Steps {
+		body, missing := st.Request.Body, "ob"
+		if strings.HasSuffix(st.Request.Path, "/count_tokens") {
+			body, missing = strings.Replace(body, "router/rr2", "router/an", 1), "an"
+		}
+		g := newRouteRig(t, &seq, func(string) (bool, bool) { return true, false })
+		s := *g.e.State()
+		s.Secrets = map[string]string{}
+		for k, v := range g.e.State().Secrets {
+			if k != missing {
+				s.Secrets[k] = v
+			}
+		}
+		g.e.SetState(&s)
+		_, handed := g.serve(st.Request.Method, st.Request.Path, st.Request.Headers, body)
+		_, events := g.take()
+		name := st.Request.Path
+		if !handed || len(g.rt.sent) != 0 || len(events) != 0 || len(g.e.Routes().Snapshot().RR) != 0 {
+			t.Errorf("step %d %s: handed %v, %d provider requests, %d messages", i, name, handed, len(g.rt.sent), len(events))
+		}
+		req := xlateRequestOf(xlateCase{})
+		req.Body, req.RawPath = []byte(body), front.RawPath(st.Request.Path)
+		for k, v := range st.Request.Headers {
+			req.Header.Set(k, v)
+		}
+		if p := s.PlanFor(front.Classify(req.RawPath), req, seq.In.Start); p.Handoff != "route: provider: no credential" {
+			t.Errorf("step %d %s: handoff %q", i, name, p.Handoff)
 		}
 	}
 }

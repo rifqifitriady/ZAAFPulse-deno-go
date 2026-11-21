@@ -117,7 +117,7 @@ func (s *State) deliverTranslated(p *Plan, res ProviderResult, elapsed func() fl
 		return writeAnswer(w, s.Failed(p, res.Why, elapsed()))
 	}
 	raw, _ := io.ReadAll(res.Body)
-	if ok2xx(res.Status) && p.Upstream == UpAnthropic {
+	if ok2xx(res.Status) && p.Upstream == UpAnthropic && !p.converted {
 		conv, why := anthropicWhole(p.Env, raw, p.ClientModel, s.onPanic("the Anthropic leg's whole answer"))
 		if why != "" {
 			return writeAnswer(w, s.Failed(p, why, elapsed())) // P4d Decision 26a

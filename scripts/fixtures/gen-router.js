@@ -749,7 +749,7 @@ const BODY_USED = '<<runtime: body already used>>';
 const BODY_USED_TEXTS = ['Body is unusable: Body has already been read', 'Body already consumed'];
 const bodyUsed = (text) => BODY_USED_TEXTS.reduce((t, m) => t.split(m).join(BODY_USED), text);
 
-// [name, note, steps, opt]; opt: { guardrails, budgets }.
+// [name, note, steps, opt]; opt: { guardrails, budgets, modelMap }.
 const SEQUENCES = [
   [
     'seq-chat-fallback-429',
@@ -966,6 +966,48 @@ const SEQUENCES = [
     ],
   ],
   [
+    'seq-xlate-fallback-then-throw',
+    'the copied quirk on the P4d paths: a target falls back, the last throws, and the cancelled body read answers 502 in the client shape; messages whole and stream, responses translated, gemini, and the responses passthrough loop',
+    [
+      [MSG, msgs('router/fb'), [err(503, 'busy'), THROW], XA],
+      [MSG, msgs('router/fb', { stream: true }), [err(503, 'busy'), THROW], XA],
+      [RESP, { model: 'router/fb', input: 'hi' }, [err(503, 'busy'), THROW]],
+      [
+        '/v1beta/models/router%2Ffb:generateContent',
+        { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+        [err(503, 'busy'), THROW],
+        { auth: 'goog' },
+      ],
+      [RESP, { model: 'router/native', input: 'hi' }, [err(503, 'busy'), THROW]],
+    ],
+  ],
+  [
+    'seq-guard-native-count',
+    'secrets blocked for the external tier: the responses passthrough leg is blocked (its line names routedTo); count_tokens on a route answers the estimate when its leg is blocked',
+    [
+      [RESP, { model: 'router/native', input: `key ${ANT}` }, []],
+      [COUNT, msgs('router/an', { messages: user(`key ${ANT}`) }), [], XA],
+    ],
+    { guardrails: { ...OFF, secrets: 'block' } },
+  ],
+  [
+    'seq-responses-native-mapped',
+    'a model the modelMap sends to a route of native Responses targets: the passthrough lines name the requested model, the fallback and the 599 lines too',
+    [
+      [RESP, { model: 'gpt-x1', input: 'hi' }, [err(503, 'busy'), respOk()]],
+      [RESP, { model: 'gpt-x1', input: 'hi' }, [THROW, err(500, 'down')], { advanceMs: 60000 }],
+    ],
+    { modelMap: [{ match: 'gpt-x*', to: 'router/native' }, ...SEQ_MODEL_MAP] },
+  ],
+  [
+    'seq-messages-reasoning-drop',
+    'adaptChat drops reasoning_effort on a leg that does not take it into the one list every leg shares: once the Gemini target cools, the OpenAI leg drops it and falls back, and the Gemini answer still names it',
+    [
+      [MSG, msgs('router/gem', { thinking: { type: 'adaptive' } }), [R429({ 'retry-after': '30' }), chatOk()], XA],
+      [MSG, msgs('router/gem', { thinking: { type: 'adaptive' } }), [err(500, 'down'), chatOk()], XA],
+    ],
+  ],
+  [
     'seq-chat-rr-402',
     'a round-robin route whose every target a provider budget refuses: 402, and the take happens before it',
     [
@@ -1172,7 +1214,7 @@ function sequenceCases(dataDir) {
       guardrails: opt.guardrails || OFF,
       defaults: { model: '', plannerModel: '', codeModel: '' },
       tokenSaver: true,
-      modelMap: SEQ_MODEL_MAP,
+      modelMap: opt.modelMap || SEQ_MODEL_MAP,
     };
     const service = fakeService(opt.budgets || []);
     const steps = calls.map(([url, body, answers, o = {}]) => {

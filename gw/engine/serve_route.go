@@ -8,9 +8,11 @@ package engine
 // stream, Anthropic leg); no leg answered is the 502 with the last error. Every byte to the client comes after the loop.
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
@@ -28,12 +30,16 @@ const BodyUsedText = "Body already consumed"
 func retryable(status int) bool { return status == 408 || status == 429 || status >= 500 }
 
 // fellBack is proxyChat's line for a target whose retryable answer sent the call on to the next one: the attempt's
-// fields with routedTo, its status, no tokens, no guardrail outcome, no savedTokens.
+// fields with routedTo, its status, no tokens, no guardrail outcome, no savedTokens (responsesPassthrough's keeps
+// requested).
 func (s *State) fellBack(p *Plan, status int, ms float64) ipc.UsageRecord {
 	rec := p.Base
 	name := p.Target.Name
 	msg := "fell back to the next route target"
-	rec.RoutedTo, rec.Guard, rec.Requested, rec.SavedTokens = &name, nil, nil, nil
+	rec.RoutedTo, rec.Guard, rec.SavedTokens = &name, nil, nil
+	if p.Upstream != UpResponsesNative { // responsesPassthrough's rec keeps requested (R9)
+		rec.Requested = nil
+	}
 	rec.Input, rec.Output, rec.Cached = nil, nil, nil
 	rec.Status, rec.Ms, rec.Cost, rec.Error = int64(status), ms, 0, &msg
 	return rec
@@ -41,20 +47,25 @@ func (s *State) fellBack(p *Plan, status int, ms float64) ipc.UsageRecord {
 
 // budgetLegs is allowedTargets over the ordered legs: a leg a budget refuses (the snapshot, or the engine's own lines
 // since it) is dropped; none left is the 402 of the first refusal. unchecked: no fresh snapshot checked a leg kept.
-func (s *State) budgetLegs(legs []*Plan, now, staleMs int64, own []Spent, sh Shape) ([]*Plan, *Answer, bool) {
+// model is the model every leg is checked under (embeddings' modelOf: () => body.model); "" checks each leg's target.
+func (s *State) budgetLegs(legs []*Plan, model string, now, staleMs int64, own []Spent, sh Shape) ([]*Plan, *Answer, bool) {
 	var ok []*Plan
 	refusal := ""
 	unchecked := false
 	for _, l := range legs {
-		in := ipc.CheckInput{KeyID: l.Key.ID, Model: NormalizeModel(l.Target.Name), Provider: l.Target.Provider.ID}
-		d := ipc.Decide(s.Snapshot, now, staleMs, in)
-		m := d.Message
-		if d.Action != ipc.Refuse {
-			m = s.ownRefusal(in, own)
+		m := model
+		if m == "" {
+			m = l.Target.Name
 		}
-		if m != "" {
+		in := ipc.CheckInput{KeyID: l.Key.ID, Model: NormalizeModel(m), Provider: l.Target.Provider.ID}
+		d := ipc.Decide(s.Snapshot, now, staleMs, in)
+		why := d.Message
+		if d.Action != ipc.Refuse {
+			why = s.ownRefusal(in, own)
+		}
+		if why != "" {
 			if refusal == "" {
-				refusal = m
+				refusal = why
 			}
 			continue
 		}
@@ -96,6 +107,10 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 	now := e.now()
 	rr := p.Route.Strategy != nil && *p.Route.Strategy == "round-robin"
 	legs := e.routes.TakeOrder(p.Route.Name, len(p.Route.Targets), p.Takes, rr, p.Legs, now)
+	if p.Upstream == UpCount { // countTokens: the first leg decides; no price rule, no budget, no fallback
+		e.serveRouteCount(w, r, s, p, legs, started, tr, js)
+		return
+	}
 
 	// targetsFor's price rule for a key with a budget, then allowedTargets: 402s without a line.
 	if s.limited(p.Key) {
@@ -112,15 +127,39 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 		}
 		legs = priced
 	}
-	legs, ref, unchecked := s.budgetLegs(legs, now, e.staleMs, e.spend.Live(), p.Shape)
+	byModel := ""
+	if p.Upstream == UpEmbeddings {
+		byModel = p.Model
+	}
+	legs, ref, unchecked := s.budgetLegs(legs, byModel, now, e.staleMs, e.spend.Live(), p.Shape)
 	if ref != nil {
 		e.answerOwn(w, r, s, *ref, started, tr)
 		return
 	}
+	if p.Upstream == UpEmbeddings { // embeddings: the first allowed leg answers, with no fallback (R8)
+		l := legs[0]
+		l.Unchecked = unchecked
+		if l.Policy != nil {
+			if a := s.Guard(l, elapsed()); a != nil {
+				e.guardRefused(w, r, s, l, a, started, tr)
+				return
+			}
+			e.noteFailures(l.Failures)
+		}
+		e.serveDeliver(w, r, s, l, started, tr, js)
+		return
+	}
 
-	// proxyChat's loop.
+	// proxyChat's loop (responsesPassthrough's for a route of native Responses targets: the same rules, R9).
+	failed := func(l *Plan, why string) Answer {
+		if l.Upstream == UpResponsesNative {
+			return s.failedNative(l, why, elapsed())
+		}
+		return s.Failed(l, why, elapsed())
+	}
 	var last *Answer // the 502 of the last call that threw, with its 599 line
 	fell := false    // a leg fell back: proxyChat keeps it as its target, with its body cancelled
+	drop := false    // a leg tried so far dropped reasoning_effort: adaptChat pushed "reasoning" to the shared list
 	for i, l := range legs {
 		l.Unchecked = unchecked
 		if l.Policy != nil {
@@ -145,11 +184,15 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 			continue
 		}
 		resp, why := e.upstream.Start(r.Context(), l)
+		drop = drop || l.dropAdded
 		if why != "" {
-			a := s.Failed(l, why, elapsed())
+			a := failed(l, why)
 			e.emitLine(stamp(a.Usage), unchecked, call)
 			last = &a
 			continue
+		}
+		if drop && l.Tagged && !slices.Contains(l.Dropped, "reasoning") {
+			l.Dropped = append(l.Dropped, "reasoning")
 		}
 		status := resp.StatusCode
 		if !ok2xx(status) && retryable(status) && i < len(legs)-1 {
@@ -171,7 +214,14 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 				last = &a
 				continue
 			}
-			e.answerWhole(w, r, s, l, s.Respond(l, 200, conv, elapsed()), call, started, tr)
+			if l.Format == "openai" {
+				e.answerWhole(w, r, s, l, s.Respond(l, 200, conv, elapsed()), call, started, tr)
+				return
+			}
+			l.converted = true // a translated call: translated() answers from the converted body
+			e.deliverCall(w, r, s, l, started, tr, call, func(context.Context) ProviderResult {
+				return ProviderResult{Status: 200, Header: resp.Header, Body: io.NopCloser(bytes.NewReader(conv))}
+			})
 			return
 		}
 		switch {
@@ -190,9 +240,10 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 		return
 	}
 	if fell {
-		// Copied quirk (spec Decision 7): proxyChat returns the last target that fell back, whose body it cancelled;
-		// chatCompletion reads that body, the runtime throws, and handle's catch answers 502 upstream_error with the
-		// runtime's text. No line beyond the attempts' own.
+		// Copied quirk (spec Decision 7): proxyChat (or responsesPassthrough) returns the last target that fell back,
+		// whose body it cancelled; chatCompletion, translated() or the passthrough reads that body (the !r.ok answer),
+		// the runtime throws, and handle's catch answers 502 upstream_error with the runtime's text in the client's
+		// shape. No line beyond the attempts' own.
 		e.answerOwn(w, r, s, shapeError(p.Shape, http.StatusBadGateway, s.mask(BodyUsedText), "upstream_error", "", ""),
 			started, tr)
 		return
@@ -209,4 +260,24 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 		rec := stamp(a.Usage)
 		e.spans(s, tr, a.Status, started, time.Now(), &rec, provSpan(legs[len(legs)-1]), obs)
 	}
+}
+
+// serveRouteCount is countTokens on a route: resolveAll(model)[0] (taken and ordered by the caller) decides; an
+// estimate leg, or no leg at all, is the estimate; an Anthropic leg is counted by its provider, its guardrails first (a
+// block or a failure is the estimate).
+func (e *Engine) serveRouteCount(w http.ResponseWriter, r *http.Request, s *State, p *Plan, legs []*Plan,
+	started time.Time, tr *callTrace, js http.Handler) {
+	if len(legs) == 0 || legs[0].Upstream == UpNone {
+		e.answerOwn(w, r, s, *p.Self, started, tr)
+		return
+	}
+	l := legs[0]
+	if l.Policy != nil {
+		if a := s.Guard(l, float64(time.Since(started).Microseconds())/1000); a != nil {
+			e.answerOwn(w, r, s, *a, started, tr) // count's Guard answers the estimate, with no line
+			return
+		}
+		e.noteFailures(l.Failures)
+	}
+	e.serveDeliver(w, r, s, l, started, tr, js)
 }
