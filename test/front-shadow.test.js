@@ -109,6 +109,7 @@ test('a route call keeps its tape, every line and its thrown calls; other captur
   });
   const c = takeCapture('00112233445566ee');
   assert.deepEqual(c.routes, [tape]);
+  assert.equal(c.runtime, process.versions.deno ? 'deno' : 'node');
   assert.deepEqual(c.lines, [{ status: 599 }, { status: 599, provider: 'b' }, { status: 200 }]);
   assert.deepEqual(c.upstream, [{ thrown: 'a: ECONNREFUSED' }, { thrown: 'b: token refresh failed', token: true }]);
   // Outside a marked request they are no-ops.

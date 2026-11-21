@@ -136,7 +136,8 @@
               "cached": 1,
               "cost": 0.000038
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -258,7 +259,8 @@
               "error": "down",
               "cost": 0
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       }
     ]

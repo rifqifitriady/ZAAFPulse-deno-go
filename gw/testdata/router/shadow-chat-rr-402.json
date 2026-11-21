@@ -37,7 +37,8 @@
               ]
             }
           ],
-          "lines": []
+          "lines": [],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -69,7 +70,8 @@
               ]
             }
           ],
-          "lines": []
+          "lines": [],
+          "runtime": "<<runtime>>"
         }
       },
       {
@@ -158,7 +160,8 @@
               "cached": 200,
               "cost": 0.006
             }
-          ]
+          ],
+          "runtime": "<<runtime>>"
         }
       }
     ]

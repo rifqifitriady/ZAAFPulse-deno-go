@@ -78,6 +78,12 @@ func routeCaptureOf(t *testing.T, raw json.RawMessage, bodyUsed string) *Capture
 	if c.Client != nil {
 		c.Client.Body = strings.ReplaceAll(c.Client.Body, "<<runtime: body already used>>", bodyUsed)
 	}
+	if c.Runtime == "<<runtime>>" {
+		c.Runtime = "deno"
+		if bodyUsed == NodeBodyUsedText {
+			c.Runtime = "node"
+		}
+	}
 	return c
 }
 
@@ -132,7 +138,7 @@ func routeSteps(t *testing.T) []routeStep {
 // Every route call JS answered in the sequences, captured as the control plane captures a shadowed call, is compared by
 // the engine with no diff (P4h spec Decision 11): JS's orders recomputed from its tape, the legs replayed in JS's order
 // against its provider answers (a call that threw included), every provider request, the client's answer and every
-// line. The used-body text of the fallback-then-throw quirk is either runtime's (spec Decision 15f).
+// line, as the control plane answers on Deno (its runtime; the quirk's text is Deno's, spec Decision 15f).
 func TestShadowRouteSequencesSame(t *testing.T) {
 	steps := routeSteps(t)
 	if len(steps) < 40 {
@@ -140,13 +146,14 @@ func TestShadowRouteSequencesSame(t *testing.T) {
 	}
 	sequenceEnv(t, func() int64 { return 0 })
 	for _, st := range steps {
-		for _, used := range []string{BodyUsedText, NodeBodyUsedText} {
-			p, c := st.plan(), st.cap(used)
-			l := st.s.compareCapturedAt(st.sub, p, c, StaleMs, func() int64 { return st.now })
-			if l.Outcome != "same" || !l.Route {
-				b, _ := json.Marshal(l)
-				t.Errorf("%s (%s): %s", st.name, used, b)
-			}
+		p, c := st.plan(), st.cap(BodyUsedText)
+		if c.Runtime != "deno" {
+			t.Fatalf("%s: runtime %q", st.name, c.Runtime)
+		}
+		l := st.s.compareCapturedAt(st.sub, p, c, StaleMs, func() int64 { return st.now })
+		if l.Outcome != "same" || !l.Route {
+			b, _ := json.Marshal(l)
+			t.Errorf("%s: %s", st.name, b)
 		}
 	}
 }
@@ -200,6 +207,21 @@ func TestShadowRouteDiffs(t *testing.T) {
 	l = run(rr, func(c *Capture) { c.Routes = append(c.Routes, c.Routes[0]) })
 	if !has(l, "route.takes") {
 		t.Errorf("a second take: %+v", l)
+	}
+
+	// Spec Decision 15f: the fallback-then-throw quirk captured under Node (its used-body text) is a client.body diff;
+	// under Deno, the control plane's runtime, it is the same.
+	for _, name := range []string{"seq-chat-fallback-then-throw.json step 0", "seq-xlate-fallback-then-throw.json step 0"} {
+		st := find(name)
+		p, c := st.plan(), st.cap(NodeBodyUsedText)
+		l := st.s.compareCapturedAt(st.sub, p, c, StaleMs, func() int64 { return st.now })
+		if c.Runtime != "node" || !has(l, "client.body") || len(l.Diffs) != 1 {
+			t.Errorf("%s under Node: %+v", name, l)
+		}
+		p, c = st.plan(), st.cap(BodyUsedText)
+		if l := st.s.compareCapturedAt(st.sub, p, c, StaleMs, func() int64 { return st.now }); l.Outcome != "same" {
+			t.Errorf("%s under Deno: %+v", name, l)
+		}
 	}
 
 	quirk := find("seq-chat-fallback-then-throw.json step 0")

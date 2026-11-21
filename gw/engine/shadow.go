@@ -45,6 +45,8 @@ type Capture struct {
 	// empty for a call that resolved no route (shadow_route.go).
 	Routes []CaptureRoute   `json:"routes"`
 	Lines  []map[string]any `json:"lines"`
+	// Runtime: the control plane's runtime ("deno" or "node"), in a route call's capture only (spec Decision 15f).
+	Runtime string `json:"runtime"`
 }
 
 // CaptureTool is the tool call of a captured /mcp tools/call: its name, the JSON text of the arguments it was given,
