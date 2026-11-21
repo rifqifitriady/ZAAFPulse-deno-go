@@ -1,0 +1,8 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"messages\":[null]}",
+    "openai"
+  ],
+  "throws": "Cannot read properties of null (reading 'tool_calls')"
+}

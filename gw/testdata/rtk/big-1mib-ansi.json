@@ -1,0 +1,18 @@
+{
+  "fn": "compressBig",
+  "in": [
+    [
+      [
+        "\u001b[31mred\u001b[0m line\n",
+        60000
+      ]
+    ],
+    ""
+  ],
+  "out": {
+    "filter": "log",
+    "saved": 1079965,
+    "length": 35,
+    "sha256": "9d1b00f7ac9d115d3474cd9c5c4d4297d3ed63bee1588e7c4af8e7577da3848f"
+  }
+}

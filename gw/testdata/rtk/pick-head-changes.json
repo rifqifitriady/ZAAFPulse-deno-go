@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "y\nChanges to be committed:",
+    ""
+  ],
+  "out": "git-status"
+}

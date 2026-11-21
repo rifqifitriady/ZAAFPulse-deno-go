@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "\tmodified:   src/m0.go\r\n\tmodified:   src/m1.go\r\n\tmodified:   src/m2.go\r\n\tmodified:   src/m3.go\r\nwarning: unused 4\r\n\tmodified:   src/m5.go\r\nwarning: unused 6\r\nwarning: unused 7\r\nwarning: unused 8\r\nwarning: unused 8\r\nwarning: unused 8\r\nwarning: unused 8\r\nwarning: unused 8\r\nwarning: unused 13\r\nwarning: unused 14\r\n\tmodified:   src/m1.go\r\n\tmodified:   src/m2.go\r\n\tmodified:   src/m3.go\r\nwarning: unused 18\r\nwarning: unused 19\r\nwarning: unused 20\r\nwarning: unused 21\r\nwarning: unused 22\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\n\tmodified:   src/m6.go\r\nwarning: unused 42\r\nwarning: unused 42\r\nwarning: unused 42",
+    "exec_command go test ./..."
+  ],
+  "out": {
+    "text": "warning: unused 4\r\n  (× 5 similar lines)\n…\nwarning: unused 20\r\nwarning: unused 21\r\nwarning: unused 22\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\nwarning: unused 23\r\n\tmodified:   src/m6.go\r\nwarning: unused 42\r\nwarning: unused 42\r\nwarning: unused 42",
+    "filter": "build",
+    "saved": 381
+  }
+}

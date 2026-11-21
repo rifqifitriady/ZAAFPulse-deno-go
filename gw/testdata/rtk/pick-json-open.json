@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "[1,2",
+    ""
+  ],
+  "out": null
+}

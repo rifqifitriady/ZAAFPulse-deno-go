@@ -45,7 +45,9 @@ power with other apps closed before drawing conclusions from it.
 
 A run takes about 3 minutes (at most 5). Knobs, all optional: `ZP_BENCH_REQUESTS` (2000), `ZP_BENCH_LEVELS`
 (`50,200,500`), `ZP_BENCH_SECONDS` (10), `ZP_BENCH_DELAY_MS` (20), `ZP_BENCH_CHUNKS` (20), `ZP_BENCH_INTERVAL_MS` (25),
-`ZP_BENCH_STARTS` (5), `ZP_BENCH_OUT` (`bench/results`), `ZP_BENCH_HOST` (the host name). A result is only comparable
+`ZP_BENCH_STARTS` (5), `ZP_BENCH_OUT` (`bench/results`), `ZP_BENCH_HOST` (the host name), `ZP_BENCH_TOOL_RESULT` (0;
+a byte count gives each gateway call a tool call and a tool result of that size, so the token saver works on every call;
+the file name gains `-tool<bytes>`). A result is only comparable
 with one taken with the same knobs; the file records them under `config`.
 
 ## The Go gateway (P4c: metric M4, and M3 again)

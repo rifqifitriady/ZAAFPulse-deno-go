@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "> app@1.0.0 test\n\nnpm WARN deprecated thing0@1.0.0: use other\nnpm WARN deprecated thing1@1.0.0: use other\nnpm WARN deprecated thing2@1.0.0: use other\nnpm WARN deprecated thing3@1.0.0: use other\nnpm WARN deprecated thing4@1.0.0: use other\nnpm WARN deprecated thing5@1.0.0: use other\nnpm WARN deprecated thing6@1.0.0: use other\nnpm WARN deprecated thing7@1.0.0: use other\nnpm WARN deprecated thing8@1.0.0: use other\nnpm WARN deprecated thing9@1.0.0: use other\nnpm WARN deprecated thing10@1.0.0: use other\nnpm WARN deprecated thing11@1.0.0: use other\nnpm WARN deprecated thing12@1.0.0: use other\nnpm WARN deprecated thing13@1.0.0: use other\nnpm WARN deprecated thing14@1.0.0: use other\nnpm WARN deprecated thing15@1.0.0: use other\nnpm WARN deprecated thing16@1.0.0: use other\nnpm WARN deprecated thing17@1.0.0: use other\nnpm WARN deprecated thing18@1.0.0: use other\nnpm WARN deprecated thing19@1.0.0: use other\n\nsummary line 0\nsummary line 1\nsummary line 2\nsummary line 3\nsummary line 4\nsummary line 5\nsummary line 6\nsummary line 7\nsummary line 8\nsummary line 9\nsummary line 10\nsummary line 11\nsummary line 12\nsummary line 13\nsummary line 14\nsummary line 15\nsummary line 16\nsummary line 17\nsummary line 18\nsummary line 19\nsummary line 20\nsummary line 21\nsummary line 22\nsummary line 23\nsummary line 24\nsummary line 25\nsummary line 26\nsummary line 27\nsummary line 28\nsummary line 29",
+    "Bash cargo build"
+  ],
+  "out": {
+    "text": "npm WARN deprecated thing0@1.0.0: use other\n  (× 5 similar lines)\n…\nsummary line 5\nsummary line 6\nsummary line 7\nsummary line 8\nsummary line 9\nsummary line 10\nsummary line 11\nsummary line 12\nsummary line 13\nsummary line 14\nsummary line 15\nsummary line 16\nsummary line 17\nsummary line 18\nsummary line 19\nsummary line 20\nsummary line 21\nsummary line 22\nsummary line 23\nsummary line 24\nsummary line 25\nsummary line 26\nsummary line 27\nsummary line 28\nsummary line 29",
+    "filter": "build",
+    "saved": 916
+  }
+}

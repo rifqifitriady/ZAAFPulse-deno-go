@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "commit 1234567\n",
+    ""
+  ],
+  "out": "git-log"
+}

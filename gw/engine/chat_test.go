@@ -162,9 +162,9 @@ func TestChatHandoffs(t *testing.T) {
 		}},
 		{"oauth2", "provider: OAuth2", func(s *State, r *Request) { s.Gateway.Providers[0].Auth = &ipc.ProviderAuth{Type: "oauth2"} }},
 		{"credential missing", "provider: no credential", func(s *State, r *Request) { delete(s.Secrets, "oa") }},
-		{"tool results", "token saver:", func(s *State, r *Request) {
+		{"a message the token saver cannot read", "token saver: a message it cannot read", func(s *State, r *Request) {
 			s.Gateway.TokenSaver = true
-			r.Body = []byte(`{"model":"oa/m1","messages":[{"role":"tool","tool_call_id":"c","content":"x"}]}`)
+			r.Body = []byte(`{"model":"oa/m1","messages":[null]}`)
 		}},
 	} {
 		s := stateFor(t, base)
@@ -174,14 +174,28 @@ func TestChatHandoffs(t *testing.T) {
 			t.Errorf("%s: handoff %q, want %q", c.name, p.Handoff, c.why)
 		}
 	}
-	// The token saver off by header: served.
-	s := stateFor(t, base)
-	s.Gateway.TokenSaver = true
-	r := requestFor(base)
-	r.Body = []byte(`{"model":"oa/m1","messages":[{"role":"tool","tool_call_id":"c","content":"x"}]}`)
-	r.Header.Set("X-Zp-Token-Saver", "OFF")
-	if p := s.PlanChat(r, fixtureNow); p.Handoff != "" {
-		t.Errorf("token saver off: %s", p.Handoff)
+	// A long tool result is the engine's since the token saver's port (spec D1): planned with the saver's job; the
+	// header turns it off (no job); a short one gives no job either.
+	long := `{"model":"oa/m1","messages":[{"role":"tool","tool_call_id":"c","content":"` + strings.Repeat("x", 700) + `"}]}`
+	for _, c := range []struct {
+		name, body, header string
+		job                bool
+	}{
+		{"long tool result", long, "", true},
+		{"header off", long, "OFF", false},
+		{"short tool result", `{"model":"oa/m1","messages":[{"role":"tool","tool_call_id":"c","content":"x"}]}`, "", false},
+	} {
+		s := stateFor(t, base)
+		s.Gateway.TokenSaver = true
+		r := requestFor(base)
+		r.Body = []byte(c.body)
+		if c.header != "" {
+			r.Header.Set("X-Zp-Token-Saver", c.header)
+		}
+		p := s.PlanChat(r, fixtureNow)
+		if p.Handoff != "" || (p.saver != nil) != c.job || (len(p.Body) == 0) != c.job {
+			t.Errorf("%s: handoff %q, job %v, body built %v", c.name, p.Handoff, p.saver != nil, len(p.Body) > 0)
+		}
 	}
 }
 

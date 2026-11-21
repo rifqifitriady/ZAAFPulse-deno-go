@@ -69,7 +69,8 @@ func isWord(u uint16) bool {
 	return u >= 'a' && u <= 'z' || u >= 'A' && u <= 'Z' || u >= '0' && u <= '9' || u == '_'
 }
 
-func isSpace(u uint16) bool {
+// IsSpace is JavaScript's \s: WhiteSpace and LineTerminator, the set String.prototype.trim removes.
+func IsSpace(u uint16) bool {
 	switch u {
 	case '\t', '\n', '\v', '\f', '\r', ' ', 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff:
 		return true

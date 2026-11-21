@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "",
+    "Bash ls -la"
+  ],
+  "out": "listing"
+}

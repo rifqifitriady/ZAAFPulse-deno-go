@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n\u001b[32mcolored 18\u001b[0m\n\n\u001b[34mcolored 20\u001b[0m\n\n\u001b[36mcolored 22\u001b[0m\n\u001b[37mcolored 23\u001b[0m\nerror: boom 24\n\n\n\n\u001b[34mcolored 28\u001b[0m\n@@ -29,3 +29,4 @@\n\n\u001b[37mcolored 31\u001b[0m\n\u001b[30mcolored 32\u001b[0m\n\n\u001b[32mcolored 34\u001b[0m\n\u001b[33mcolored 35\u001b[0m\n\n\u001b[35mcolored 37\u001b[0m\n\n\n\n\n\n\n\n\n\nerror: boom 47\n\n@@ -49,3 +49,4 @@\nerror: boom 50\n@@ -51,3 +51,4 @@\n@@ -52,3 +52,4 @@\n\n\u001b[36mcolored 54\u001b[0m\nerror: boom 55\n@@ -56,3 +56,4 @@\n\u001b[31mcolored 57\u001b[0m\n\u001b[32mcolored 58\u001b[0m\n\n\n@@ -61,3 +61,4 @@\nerror: boom 62\n\nerror: boom 64\n@@ -65,3 +65,4 @@\n@@ -66,3 +66,4 @@\n\u001b[33mcolored 67\u001b[0m\n@@ -68,3 +68,4 @@\nerror: boom 69",
+    "Bash ＧＩＴ diff"
+  ],
+  "out": {
+    "text": "@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\n@@ -0,3 +0,4 @@\ncolored 18\n\ncolored 20\n\ncolored 22\ncolored 23\nerror: boom 24\n\n\n\ncolored 28\n@@ -29,3 +29,4 @@\n\ncolored 31\ncolored 32\n\ncolored 34\ncolored 35\n\ncolored 37\n\n\n\n\n\n\n\n\n\nerror: boom 47\n\n@@ -49,3 +49,4 @@\nerror: boom 50\n@@ -51,3 +51,4 @@\n@@ -52,3 +52,4 @@\n\ncolored 54\nerror: boom 55\n@@ -56,3 +56,4 @@\ncolored 57\ncolored 58\n\n\n@@ -61,3 +61,4 @@\nerror: boom 62\n\nerror: boom 64\n@@ -65,3 +65,4 @@\n@@ -66,3 +66,4 @@\ncolored 67\n@@ -68,3 +68,4 @@\nerror: boom 69",
+    "filter": "ansi",
+    "saved": 126
+  }
+}

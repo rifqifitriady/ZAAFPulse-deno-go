@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "\u001b[30mcolored 0\u001b[0m\nwarning: unused 1\nwarning: unused 2\nwarning: unused 3\nCompiling crate4 v0.4.0\nCompiling crate5 v0.5.0\nwarning: unused 6\nwarning: unused 7\n\u001b[30mcolored 8\u001b[0m\n\u001b[31mcolored 9\u001b[0m\n\u001b[32mcolored 10\u001b[0m\nwarning: unused 11\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[34mcolored 12\u001b[0m\n\u001b[33mcolored 35\u001b[0m\n\u001b[34mcolored 36\u001b[0m\n\u001b[35mcolored 37\u001b[0m\nwarning: unused 38\nwarning: unused 38\nwarning: unused 38\nwarning: unused 38\nwarning: unused 38\nwarning: unused 38",
+    "Bash maKe"
+  ],
+  "out": {
+    "text": "(2 progress lines)\nwarning: unused 1\n  (× 5 similar lines)\n…\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 12\ncolored 35\ncolored 36\ncolored 37\nwarning: unused 38\nwarning: unused 38\nwarning: unused 38\nwarning: unused 38\nwarning: unused 38\nwarning: unused 38",
+    "filter": "build",
+    "saved": 484
+  }
+}

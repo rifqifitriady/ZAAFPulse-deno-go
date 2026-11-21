@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "[{\"1\":{},\"k0\":90066,\"k2\":{}},680523,\"wwwwwwwwwwwwww\"]",
+    ""
+  ],
+  "out": null
+}

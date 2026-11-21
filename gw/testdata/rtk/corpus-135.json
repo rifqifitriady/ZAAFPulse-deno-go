@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "src/dir0/file0.js:0:0: match 0\n\tmodified:   src/m1.go\n\tmodified:   src/m2.go\n\tmodified:   src/m3.go\nsrc/dir4/file4.js:4:4: match 4\ncommit 8ec8a96b0f48c3aa70ef32ae813c6f08ece533ce\n\tmodified:   src/m6.go\n\tmodified:   src/m0.go\nsrc/dir3/file8.js:8:8: match 8\n\tmodified:   src/m2.go\ncommit 8fc91dde4ab12337b5d9795b9b6017c1b4a658b4\n\tmodified:   src/m4.go\ncommit c90a57991803c15ef2dcc869fef810eb6682ef01",
+    "Grep TODO"
+  ],
+  "out": null
+}

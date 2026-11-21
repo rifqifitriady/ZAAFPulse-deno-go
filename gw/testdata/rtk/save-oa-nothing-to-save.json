@@ -1,0 +1,19 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"model\":\"oa/m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
+    "openai"
+  ],
+  "out": {
+    "body": {
+      "model": "oa/m1",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ]
+    },
+    "result": null
+  }
+}

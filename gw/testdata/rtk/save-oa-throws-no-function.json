@@ -1,0 +1,8 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"a\"}]}]}",
+    "openai"
+  ],
+  "throws": "Cannot read properties of undefined (reading 'name')"
+}
