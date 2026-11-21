@@ -277,6 +277,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		g, sh := e.mode(SaverSwitch)
 		onGo, shadowed = onGo && g, shadowed || sh
 	}
+	if p.TokenAuth() { // a call to a token-auth target also needs the provider-auth switch (P4g spec Decision 14)
+		g, sh := e.mode(AuthSwitch)
+		onGo, shadowed = onGo && g, shadowed || sh
+	}
 	if p.Handoff != "" && onGo {
 		js.ServeHTTP(w, r)
 		return

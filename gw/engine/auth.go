@@ -16,6 +16,11 @@ import (
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/provauth"
 )
 
+// AuthSwitch is the provider-auth switch (spec Decision 14, as the token saver's SaverSwitch): not a path class, read
+// for every call to a token-auth target. Such a call is on go only when its sub-class and this switch are on go, and is
+// compared when this switch is shadowed.
+const AuthSwitch = "provider-auth"
+
 const (
 	// TickEvery is the background refresh's period (providers.js setInterval 60000).
 	TickEvery = 60 * time.Second
