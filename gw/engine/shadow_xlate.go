@@ -111,6 +111,9 @@ func (s *State) CompareTranslated(class string, p *Plan, c *Capture) ShadowLine 
 	case c.Client.Truncated:
 		l.Outcome, l.Reason = "skipped", "the capture is over its limit"
 		return l
+	case tokenReplay(p, c):
+		l.Outcome, l.Reason = "skipped", authReplay
+		return l
 	case calls == 1 && len(c.Upstream) == 0 && len(c.ProviderRequests) > 0:
 		l.Outcome, l.Reason = "skipped", "the provider call failed: no answer to compare"
 		return l
@@ -132,11 +135,7 @@ func (s *State) CompareTranslated(class string, p *Plan, c *Capture) ShadowLine 
 			if pr.URL != p.URL {
 				dt("providerRequest.url", pr.URL, p.URL)
 			}
-			goH := map[string]string{}
-			for k := range p.Header {
-				goH[strings.ToLower(k)] = p.Header.Get(k)
-			}
-			if a, b := headerSet(pr.Headers), headerSet(goH); a != b {
+			if a, b := providerHeaders(p, pr.Headers); a != b {
 				dt("providerRequest.headers", a, b)
 			}
 			jsBody := ""

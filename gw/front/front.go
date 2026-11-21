@@ -61,10 +61,13 @@ var Subs = map[string][]string{
 }
 
 // GoClasses are the classes a config.push may put on go: every sub-class of Subs (a path class is also its own first
-// sub-class), and token-saver, the token saver's switch (rtk spec D13). Classify never returns a sub-class that is not a path class. A config.push that puts another class on go
-// is refused.
+// sub-class), token-saver, the token saver's switch (rtk spec D13), and provider-auth, the switch of token-auth provider
+// calls (P4g spec Decision 14). Classify never returns a sub-class that is not a path class. A config.push that puts
+// another class on go is refused.
 var GoClasses = func() map[string]bool {
-	m := map[string]bool{"token-saver": true} // the token saver's switch: not a path, read by the engine (rtk spec D13)
+	// The token saver's switch (rtk spec D13) and the provider-auth switch (P4g spec Decision 14): not paths, read by the
+	// engine.
+	m := map[string]bool{"token-saver": true, "provider-auth": true}
 	for _, subs := range Subs {
 		for _, c := range subs {
 			m[c] = true
@@ -197,8 +200,18 @@ func (s *Server) toEngine(class string) (serve, shadow bool) {
 		_, sh := s.subModes("token-saver")
 		shadow = shadow || sh
 	}
+	if authClasses[class] {
+		// A shadowed provider-auth compares the calls to a token-auth target, also while their class is on js (P4g spec
+		// Decision 14).
+		_, sh := s.subModes("provider-auth")
+		shadow = shadow || sh
+	}
 	return serve, shadow
 }
+
+// authClasses are the path classes that call a provider, and so may call a token-auth one: the saver's classes and
+// embeddings. mcp calls no provider.
+var authClasses = map[string]bool{"chat": true, "messages": true, "responses": true, "gemini": true, "embeddings": true}
 
 // saverClasses are the path classes whose calls the token saver can shorten: chat, and the classes translated to chat
 // (lib/gateway/index.js proxyChat) or passed to an Anthropic provider (anthropicPassthrough).
