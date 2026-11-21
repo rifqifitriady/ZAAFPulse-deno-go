@@ -664,3 +664,32 @@ func TestRouterSeedExpiredStrikes(t *testing.T) {
 		t.Fatalf("after a 429: %+v, want %+v (JS)", got, want)
 	}
 }
+
+// TakeOrder is Take (as many times as asked, the last n rotates) then Order with the cooling test, under one hold of the
+// mutex; only a round-robin route of two or more targets takes.
+func TestRouterTakeOrder(t *testing.T) {
+	var sent []string
+	r := NewRouteState(func(typ string, body any) { sent = append(sent, typ) })
+	leg := func(id string) *Plan { return &Plan{Target: &Target{Provider: &ipc.ProviderConfig{ID: id}}} }
+	legs := []*Plan{leg("a"), leg("b"), leg("c")}
+	r.Note("a", 429, http.Header{"Retry-After": {"10"}}, 1000, true)
+	ids := func(ps []*Plan) string {
+		var s []string
+		for _, p := range ps {
+			s = append(s, p.Target.Provider.ID)
+		}
+		return strings.Join(s, ",")
+	}
+	if got := ids(r.TakeOrder("r", 3, 2, true, legs, 2000)); got != "b,c,a" { // n 0 then 1: b,c,a; a cools: b,c,a
+		t.Errorf("two takes: %s", got)
+	}
+	if got := ids(r.TakeOrder("r", 3, 1, true, legs, 2000)); got != "c,b,a" { // n 2: c,a,b; a last
+		t.Errorf("third take: %s", got)
+	}
+	if got := ids(r.TakeOrder("f", 3, 1, false, legs, 20000)); got != "a,b,c" { // a fallback route: no take; a cooled off
+		t.Errorf("fallback: %s", got)
+	}
+	if len(sent) != 3 || r.Peek("r", 3) != 0 || r.Peek("f", 3) != 0 {
+		t.Errorf("sent %v, peek %d", sent, r.Peek("r", 3))
+	}
+}

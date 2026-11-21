@@ -90,6 +90,10 @@ Each is the recommended option, pending owner, with the evidence that settled it
    messages-count 1, responses 2, gemini 1, embeddings 1. Copied quirk, to be fixed in both engines after G3: a
    `/v1/messages` or `/v1/responses` call takes twice, so a round-robin route of two targets serves those paths from
    its second target every time, and each `GET /v1/models` rotates every route (JS, replicated to go by Decision 3).
+   A second copied quirk (found in the Task 4 review): when a target falls back (its body cancelled) and every later
+   target throws, proxyChat returns the target that fell back; chatCompletion reads its cancelled body, the runtime
+   throws a TypeError, and `handle` answers 502 `upstream_error` with that text, with no line beyond the attempts' 599
+   and fallback lines (`seq-chat-fallback-then-throw`, whole and stream). The text is the runtime's (Decision 15f).
 8. **Planning stays pure; the take happens in `Serve`** (recommended, pending owner; P4e Decision 4). A route plan holds
    one leg per raw target, each a complete single-target `Plan` built by today's planner for that target (nil for a
    name that does not resolve or a private-only key's external target). `Serve` takes, rotates the legs, drops the nil
@@ -139,7 +143,12 @@ Each is the recommended option, pending owner, with the evidence that settled it
     of Decision 3 (a take or a note in flight while the other engine routes); (c) `strikes` when both engines note 429s
     of one provider within one hop (applied in another order, the back-off of the next 429 may differ by one doubling);
     (d) a route's target count changed by a config push between a take and its echo (the counters may differ by one
-    position until the next take). The shadow reports (a) as a diff and (b)–(d) as `routeView: differs`.
+    position until the next take); (e) an Anthropic leg's whole 2xx that does not convert: the engine's 599 line and
+    502 say `an: <why>` with Go's own text where V8 writes its SyntaxError or TypeError text (the P4d Decision 26a
+    analogue); (f) the cancelled body of Decision 7's second quirk: Node says `Body is unusable: Body has already been
+    read`, Deno `Body already consumed`; the engine writes Deno's (the control plane's runtime), and the generator
+    writes the marker `<<runtime: body already used>>` so Node and Deno give the same bytes. The shadow reports (a),
+    (e) and (f) under Node as a diff and (b)–(d) as `routeView: differs`.
 16. **M3/M4 stay owed** to the program's final quiet-machine step: the results doc adds "chat on a two-target
     round-robin route, whole and 500 streams" to the owed list, every number marked "not quiet-confirmed".
 17. **Implementation order, riskiest first** (recommended, pending owner): (1) function fixtures and the Go port;

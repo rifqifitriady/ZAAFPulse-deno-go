@@ -173,6 +173,7 @@ type routeRig struct {
 	clock  atomic.Int64
 	mu     sync.Mutex
 	lines  []ipc.UsageRecord
+	marks  []*string // each line's budget mark (unchecked or none)
 	events []map[string]any
 	js     int
 }
@@ -187,6 +188,7 @@ func newRouteRig(t *testing.T, seq *routeSeq, modes func(string) (bool, bool)) *
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		g.lines = append(g.lines, r.Record)
+		g.marks = append(g.marks, r.Budget)
 		return 0, nil
 	}, t.Logf)
 	g.e.now = g.clock.Load
@@ -280,6 +282,15 @@ func TestRouteChatSequences(t *testing.T) {
 					if want.Client.Status != http.StatusNotFound || len(want.Requests) != 0 || len(lines) != 0 || len(events) != 0 {
 						t.Fatalf("%s: handed off (js %d, %d lines, %d messages)", name, want.Client.Status, len(lines), len(events))
 					}
+					// The engine hands off targetsFor's 404 with its reason.
+					req := xlateRequestOf(xlateCase{})
+					req.Body = []byte(st.Request.Body)
+					for k, v := range st.Request.Headers {
+						req.Header.Set(k, v)
+					}
+					if p := g.e.State().PlanChat(req, want.Now); p.Handoff != RouteHandoff+"no usable target" {
+						t.Errorf("%s: handoff %q, want the 404's", name, p.Handoff)
+					}
 					for _, ev := range want.Events {
 						applyControl(t, g.e, ev.Type, ev.Body)
 					}
@@ -350,8 +361,11 @@ func checkRouteStep(t *testing.T, name string, g *routeRig, w *httptest.Response
 		}
 		sameJSON(t, name+" provider headers "+strconv.Itoa(j), got.headers, mustJSON(want.Headers))
 	}
-	if w.Code != status || w.Body.String() != body {
-		t.Errorf("%s: client\n got %d %s\nwant %d %s", name, w.Code, w.Body.String(), status, body)
+	// The generator writes the runtime's text for a used body as a marker (Node and Deno differ); the engine writes
+	// Deno's, the control plane's runtime.
+	gotBody := strings.ReplaceAll(w.Body.String(), BodyUsedText, "<<runtime: body already used>>")
+	if w.Code != status || gotBody != body {
+		t.Errorf("%s: client\n got %d %s\nwant %d %s", name, w.Code, gotBody, status, body)
 	}
 	for k, v := range headers {
 		gv := w.Header().Get(k)
@@ -425,5 +439,37 @@ func TestRouteHandoffs(t *testing.T) {
 	}
 	if p := s.PlanChat(r, fixtureNow); p.Handoff != "route: provider: no credential" {
 		t.Errorf("handoff %q", p.Handoff)
+	}
+}
+
+// Without a fresh budget snapshot every line of a route call is marked unchecked (spec Decision 9): the fallback line
+// and the answer's line alike; the 599 line too.
+func TestRouteLinesUnchecked(t *testing.T) {
+	var seq routeSeq
+	for _, s := range loadRouteSeqs(t) {
+		if s.Name == "seq-chat-fallback-500.json" {
+			seq = s
+		}
+	}
+	seq.In.Snapshot.At = seq.In.Start - 24*3600_000 // stale
+	g := newRouteRig(t, &seq, func(string) (bool, bool) { return true, false })
+	st := seq.In.Steps[0]
+	g.rt.answers = []xlateProvider{{Throw: "ECONNREFUSED"}, st.Answers[0], st.Answers[1]}
+	s := *g.e.State()
+	s.Gateway.Routes = append(append([]ipc.RouteConfig(nil), s.Gateway.Routes...),
+		ipc.RouteConfig{Name: "router/fb3", Targets: []string{"op/gpt-6.1", "oa/m1", "ob/m1"}})
+	g.e.SetState(&s)
+	w, handed := g.serve(st.Request.Method, st.Request.Path, st.Request.Headers,
+		strings.Replace(st.Request.Body, "router/fb", "router/fb3", 1))
+	if handed || w.Code != 200 {
+		t.Fatalf("handed %v, status %d", handed, w.Code)
+	}
+	if len(g.lines) != 3 {
+		t.Fatalf("%d lines", len(g.lines))
+	}
+	for i, m := range g.marks {
+		if m == nil || *m != ipc.Unchecked {
+			t.Errorf("line %d (status %d): budget mark %v, want unchecked", i, g.lines[i].Status, m)
+		}
 	}
 }
