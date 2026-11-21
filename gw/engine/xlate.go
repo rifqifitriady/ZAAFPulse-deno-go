@@ -66,6 +66,9 @@ func (s *State) translatedPlan(r *Request, key *ipc.GatewayKeyAuth, clientModel 
 		if job, why = scanSaver(out, "openai"); why != "" {
 			return handoff(why)
 		}
+		if job != nil && objectToolIDs(out) {
+			return handoff(saverIDs)
+		}
 	}
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: clientModel, Stream: stream, Format: format, Shape: sh,
 		URL: t.Provider.BaseURL + "/chat/completions", Header: providerHeader(t, cred), Upstream: UpChat,

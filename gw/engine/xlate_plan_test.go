@@ -105,6 +105,10 @@ func TestTranslatedHandoffs(t *testing.T) {
 		{"/v1beta/models/oa%2Gm1:generateContent", `{"contents":[]}`, "model: the path does not decode"},
 		{"/v1beta/models", `{}`, "path: not a Gemini model call"},
 		{"/v1/messages/x", `{}`, "path: not a messages call"},
+		// Tasks 8-9 review I1: geminiToOpenAI puts one id object in the call and its result; JS's Map matches it by
+		// identity, the engine's JSON copy cannot.
+		{"/v1beta/models/oa%2Fm1:generateContent", `{"contents":[{"role":"model","parts":[{"functionCall":{"id":{"k":1},"name":"shell","args":{"command":"git log"}}}]},` +
+			`{"role":"user","parts":[{"functionResponse":{"name":"shell","response":{"rows":[` + strings.Repeat(`{"a":1,"b":"xyz"},`, 60) + `{"a":1}]}}}]}]}`, saverIDs},
 	} {
 		p := s.PlanFor(classOfPath(c.path), xlateReq(t, c.path, c.body), fixtureNow)
 		if p.Handoff != c.why {
@@ -123,6 +127,22 @@ func TestTranslatedHandoffs(t *testing.T) {
 		string(mustJSON(strings.Repeat("commit 1234567\nAuthor: a\n\n    msg\n    more\n", 40))) + `}]}]}`
 	if p := s.PlanFor("messages", xlateReq(t, "/v1/messages", long), fixtureNow); p.Handoff != "" || p.saver == nil || p.keepSaved {
 		t.Fatalf("handoff %q, saver %v, keepSaved %v", p.Handoff, p.saver != nil, p.keepSaved)
+	}
+}
+
+// count_tokens, Gemini countTokens and embeddings have no token saver in JS (R3): they never plan one.
+func TestNoSaverOnCountAndEmbeddings(t *testing.T) {
+	s := xlateState(t)
+	long := string(mustJSON(strings.Repeat("2026-11-17 INFO step\n", 300)))
+	for _, c := range []struct{ path, body string }{
+		{"/v1/messages/count_tokens", `{"model":"an/claude-x","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":` + long + `}]}]}`},
+		{"/v1beta/models/oa%2Fm1:countTokens", `{"contents":[{"role":"user","parts":[{"text":` + long + `}]}]}`},
+		{"/v1/embeddings", `{"model":"oa/e1","input":` + long + `}`},
+	} {
+		p := s.PlanFor(classOfPath(c.path), xlateReq(t, c.path, c.body), fixtureNow)
+		if p.saver != nil {
+			t.Errorf("%s: planned with the token saver", c.path)
+		}
 	}
 }
 
