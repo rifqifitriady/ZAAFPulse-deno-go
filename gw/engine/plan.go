@@ -203,6 +203,8 @@ func (s *State) PlanFor(class string, r *Request, now int64) Plan {
 		return s.PlanGemini(r, now)
 	case "embeddings":
 		return s.PlanEmbeddings(r, now)
+	case "mcp":
+		return s.PlanMCP(r, now)
 	}
 	return handoff("class: not on the go engine")
 }

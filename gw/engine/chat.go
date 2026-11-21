@@ -131,6 +131,14 @@ type Plan struct {
 	Timeout     time.Duration
 	Detached    bool
 	buildErr    error // the provider body could not be built from the checked body (the Anthropic leg, review m3)
+
+	// P4g. An /mcp tools/call (Upstream UpTool): RPCID is the JSON-RPC id as parsed (null included; nil only on other
+	// plans), Tool params.name, ToolArgs params.arguments ({} when absent or null), ToolTier "private" for an acc_*
+	// tool, else "external". Policy is set when the tier is in the guardrails' scope.
+	RPCID    *Value
+	Tool     string
+	ToolArgs *Value
+	ToolTier string
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }
