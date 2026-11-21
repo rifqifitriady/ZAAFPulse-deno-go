@@ -260,6 +260,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	// The sub-class (P4c, P4d): each has its own engine entry.
 	sub := SubClass(class, &p, req)
 	onGo, shadowed := e.mode(sub)
+	if p.saver != nil { // a call the token saver looks at also needs its switch (spec D13, owner answer 22)
+		g, sh := e.mode(SaverSwitch)
+		onGo, shadowed = onGo && g, shadowed || sh
+	}
 	if p.Handoff != "" && onGo {
 		js.ServeHTTP(w, r)
 		return
@@ -270,6 +274,11 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 			e.shadowRead(sub, w, r, s, &p, js, e.ownFn())
 			return
 		}
+		js.ServeHTTP(w, r)
+		return
+	}
+	// The token saver runs before the rate limit takes the call, so that its hand-off is exact (spec D9, D11).
+	if why := s.Save(&p, time.Now()); why != "" {
 		js.ServeHTTP(w, r)
 		return
 	}

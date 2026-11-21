@@ -11,6 +11,9 @@ import (
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard/jsre"
 )
 
+// SaverSwitch is the token saver's engine switch (spec D13): not a path class, read for every call the saver looks at.
+const SaverSwitch = "token-saver"
+
 const (
 	saverThrows     = "token saver: a message it cannot read"
 	saverArgs       = "token saver: a tool call the engine cannot read"
@@ -254,4 +257,37 @@ func SaveTokens(body *Value, format string, b *jsre.Budget) (*SaveResult, string
 		chars += h.Saved
 	}
 	return &SaveResult{SavedChars: chars, SavedTokens: (chars + 2) / 4, Hits: hits}, ""
+}
+
+// Save is saveTokens on the plan's pending body (spec D8-D12): it shortens the texts scanSaver found, puts savedTokens
+// in the plan's base line, and builds the provider body unless a guardrail check will (Guard builds it from the same
+// pending body). It runs once per plan. why is a hand-off reason: the control plane answers the request.
+func (s *State) Save(p *Plan, now time.Time) string {
+	if p.saver == nil || p.saverDone {
+		return ""
+	}
+	p.saverDone = true
+	hits, why := p.saver.run(p.saver.budget(now))
+	if why != "" {
+		return why
+	}
+	if len(hits) > 0 {
+		chars := 0
+		for _, h := range hits {
+			chars += h.Saved
+		}
+		n := int64((chars + 2) / 4)
+		p.Base.SavedTokens = &n
+		p.saverHits = len(hits)
+	}
+	if p.Policy == nil && p.pending != nil {
+		body := p.pending
+		p.pending = nil
+		if p.build != nil {
+			p.Body = p.build(p, body)
+		} else {
+			p.Body = finishBody(p.Target, body)
+		}
+	}
+	return ""
 }

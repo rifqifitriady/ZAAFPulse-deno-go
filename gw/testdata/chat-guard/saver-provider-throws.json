@@ -1,0 +1,212 @@
+{
+  "secrets": [
+    "enBfZ3VhcmRGaXh0dXJlU2VjcmV0MDEyMzQ1Njc4OWFiY2RlZg==",
+    "c2stb2EtZ3VhcmQtZml4dHVyZS0xMjM0NTY="
+  ],
+  "fn": "chatGuard",
+  "in": [
+    {
+      "config": {
+        "gateway": {
+          "providers": [
+            {
+              "id": "oa",
+              "preset": "custom",
+              "baseUrl": "http://127.0.0.1:9/v1",
+              "approved": true,
+              "tier": "external",
+              "auth": {
+                "type": "key"
+              },
+              "span": {
+                "name": "oa",
+                "address": "127.0.0.1",
+                "port": 9
+              }
+            },
+            {
+              "id": "pv",
+              "preset": "ollama",
+              "baseUrl": "http://127.0.0.1:11434/v1",
+              "span": {
+                "name": "ollama",
+                "address": "127.0.0.1",
+                "port": 11434
+              }
+            }
+          ],
+          "routes": [],
+          "guardrails": {
+            "scope": "external",
+            "secrets": "redact",
+            "pii": "off",
+            "injection": "log"
+          },
+          "defaults": {
+            "model": "",
+            "plannerModel": "",
+            "codeModel": ""
+          },
+          "tokenSaver": true,
+          "modelMap": []
+        },
+        "keys": [
+          {
+            "id": "k1",
+            "name": "k1",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "2a112a7006cd1da46c57e5951470a8dfd3857d7817b10e1701a3bdcf396dea89"
+          },
+          {
+            "id": "k2",
+            "name": "k2",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {
+              "secrets": "block"
+            },
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "c1169397525ee08de6db12932650ccadba516fb8b81f641e5e65f89bc327aaf4"
+          },
+          {
+            "id": "k3",
+            "name": "k3",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": 1,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "f044cc78bef966c2d00d0169ce7f30bc4893fe7251e539a5a407f201aaf594ea"
+          },
+          {
+            "id": "k4",
+            "name": "k4",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "a882a973c69db193f3c62e390193120aadd6788c4a89adb971d70479138806ea"
+          }
+        ],
+        "pricing": {
+          "m1": {
+            "input": 1000000000,
+            "output": 2000000000
+          },
+          "llama-9": {
+            "input": 100000000,
+            "output": 300000000
+          }
+        }
+      },
+      "secrets": {
+        "providers": [
+          {
+            "id": "oa",
+            "value": "<<ZPSECRET:1>>"
+          }
+        ],
+        "mask": [
+          "<<ZPSECRET:1>>"
+        ]
+      },
+      "snapshot": {
+        "budgets": [],
+        "keyCenter": {},
+        "at": 1767225600000
+      },
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer <<ZPSECRET:0>>"
+        },
+        "body": "{\"model\":\"oa/m1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\"}]}"
+      },
+      "provider": {
+        "throw": "ECONNREFUSED"
+      }
+    }
+  ],
+  "out": {
+    "request": {
+      "url": "http://127.0.0.1:9/v1/chat/completions",
+      "headers": {
+        "content-type": "application/json",
+        "accept": "application/json",
+        "authorization": "Bearer <<ZPSECRET:1>>"
+      },
+      "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\"}]}"
+    },
+    "client": {
+      "status": 502,
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*"
+      },
+      "body": "{\"error\":{\"message\":\"oa: ECONNREFUSED\",\"type\":\"upstream_error\"}}"
+    },
+    "usage": {
+      "keyId": "k1",
+      "provider": "oa",
+      "model": "oa/m1",
+      "kind": "chat",
+      "format": "openai",
+      "stream": false,
+      "local": true,
+      "status": 599,
+      "error": "oa: ECONNREFUSED",
+      "cost": 0
+    }
+  }
+}
