@@ -219,6 +219,42 @@ func TestOAuth2TimesOut(t *testing.T) {
 	}
 }
 
+// A token endpoint that refuses the connection: "fetch failed" as fetch rejects, without the provider id, the URL or the
+// address (P4g final review I1).
+func TestOAuth2ConnectionRefused(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL + "/tenant/token"
+	srv.Close() // the port is closed: the connection is refused
+	src := OAuth2(OAuth2Config{TokenURL: url, ClientID: "c"}, secretOf("s"), nil, nil, WithID("azure"))
+	_, _, err := src.Token(context.Background())
+	if err == nil || err.Error() != "fetch failed" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// A body that fails while it is read is read as {}: the missing access_token is the message, as r.json().catch(() =>
+// ({})) gives.
+func TestOAuth2BodyReadError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `{"access_token":"cut`)
+		w.(http.Flusher).Flush()
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			return
+		}
+		c, _, _ := hj.Hijack()
+		_ = c.Close()
+	}))
+	t.Cleanup(srv.Close)
+	src := OAuth2(OAuth2Config{TokenURL: srv.URL, ClientID: "c"}, secretOf("s"), srv.Client(), nil, WithID("azure"))
+	_, _, err := src.Token(context.Background())
+	if err == nil || err.Error() != "azure: token refresh failed (200)" {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestOAuth2Errors(t *testing.T) {
 	srv, _ := endpoint(t, func(n int, r seen) (int, string) {
 		switch {

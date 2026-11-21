@@ -218,12 +218,6 @@ func (c *Cached) fetch(refresh string) (token, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-	timedOut := func(err error) error {
-		if ctx.Err() == context.DeadlineExceeded {
-			return c.fail(formError("token endpoint timed out"))
-		}
-		return c.fail(err)
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(encodeForm(fields)))
 	if err != nil {
 		return token{}, c.fail(err)
@@ -232,7 +226,12 @@ func (c *Cached) fetch(refresh string) (token, error) {
 	req.Header.Set("Accept", "application/json")
 	res, err := c.client.Do(req)
 	if err != nil {
-		return token{}, timedOut(err)
+		if ctx.Err() == context.DeadlineExceeded {
+			return token{}, c.fail(formError("token endpoint timed out"))
+		}
+		// fetch rejects with TypeError "fetch failed" (a refused connection, a DNS or TLS failure); the JS keeps that
+		// message without the provider id, and never the URL or the address Go's error names.
+		return token{}, c.fail(errors.New("fetch failed"))
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 && res.StatusCode < 400 {
@@ -240,12 +239,9 @@ func (c *Cached) fetch(refresh string) (token, error) {
 			"the token endpoint answered with a redirect (%d); it is not followed", res.StatusCode)))
 	}
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxBody))
-	if err != nil {
-		return token{}, timedOut(err)
-	}
 	var j map[string]any
-	if json.Unmarshal(body, &j) != nil {
-		j = nil // not JSON (or not an object): read as {}, as r.json().catch(() => ({}))
+	if err != nil || json.Unmarshal(body, &j) != nil {
+		j = nil // a body that fails while read, or not JSON (or not an object): read as {}, as r.json().catch(() => ({}))
 	}
 	access, _ := j["access_token"].(string)
 	if res.StatusCode < 200 || res.StatusCode > 299 || access == "" {
