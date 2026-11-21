@@ -63,7 +63,7 @@ var Subs = map[string][]string{
 // sub-class). Classify never returns a sub-class that is not a path class. A config.push that puts another class on go
 // is refused.
 var GoClasses = func() map[string]bool {
-	m := map[string]bool{}
+	m := map[string]bool{"token-saver": true} // the token saver's switch: not a path, read by the engine (rtk spec D13)
 	for _, subs := range Subs {
 		for _, c := range subs {
 			m[c] = true
