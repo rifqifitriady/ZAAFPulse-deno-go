@@ -227,7 +227,15 @@ embeddings) when `routes` is shadowed.
 - Fixing the copied quirks of Decision 7 (after G3, both engines).
 - Balances (`balance()`): JS calls the balance APIs itself; P5 moves that egress.
 
+## Owner answers (2026-11-21)
+
+18. **The routing state is replicated both ways** (question 1). Decision 3 stands as an owner decision. The double
+    take of `/v1/messages` and `/v1/responses` (Decision 7) stays copied exactly and is fixed in both engines after G3.
+
 ## Open questions for the owner
+
+Answered on 2026-11-21 (Decision 18); kept as asked.
+
 
 1. **Share the routing state by replicating it both ways (Decision 3)?** From the first commit that wires the notes,
    a JS-served route call skips a provider the go engine saw at 429/503/529 (and the reverse), as v1.x did in one
