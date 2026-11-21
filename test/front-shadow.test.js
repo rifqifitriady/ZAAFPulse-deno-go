@@ -155,6 +155,27 @@ test('the shadow log: a call to a token-auth provider also counts for provider-a
   assert.deepEqual(again.stats(), log.stats(), 'read back after a restart');
 });
 
+test('the shadow log: a route call also counts for routes, its hand-offs by reason (P4h spec Decision 2)', (t) => {
+  const dir = tmpDir(t, 'shadow-log-routes');
+  const now = 1_000_000_000_000;
+  const log = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
+  log.append({ class: 'chat', outcome: 'handoff', reason: 'model: a route' });
+  assert.equal(log.stats().routes, undefined, 'a line that is no route call leaves routes alone');
+  log.append({ class: 'chat', outcome: 'same', route: true });
+  log.append({ class: 'chat', outcome: 'handoff', reason: 'route: no usable target' });
+  const st = log.stats();
+  assert.deepEqual([st.routes.compared, st.routes.handoffs], [1, 1]);
+});
+
+test('routing: routes is a go class with its own gate and note (P4h spec Decision 2)', () => {
+  const gw = { engines: { chat: 'go', routes: 'go' }, shadow: ['routes'] };
+  const r = routing(gw, { gate: (c) => (c === 'routes' ? { ok: false, reason: 'r' } : { ok: true }) });
+  assert.deepEqual([r.engines.chat, r.engines.routes, r.notes.routes], ['go', 'js', 'r']);
+  assert.deepEqual(shadowOf(gw, r.engines), ['routes']);
+  assert.equal(routing(gw).engines.routes, 'go');
+  assert.equal(routing({}).engines.routes, 'js', 'js by default');
+});
+
 test('routing: provider-auth is a go class with its own gate and note (P4g spec Decision 14)', () => {
   const gw = { engines: { chat: 'go', 'provider-auth': 'go' }, shadow: ['provider-auth', 'token-saver'] };
   const r = routing(gw, { gate: (c) => (c === 'provider-auth' ? { ok: false, reason: 'r' } : { ok: true }) });
