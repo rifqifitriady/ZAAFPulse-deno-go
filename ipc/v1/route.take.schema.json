@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "route.take (both directions, P4h Decision 3): one round-robin rotation an engine took on a route, applied by the other with its own target count (a control message, not an outbox event)",
+  "type": "object",
+  "required": [
+    "name",
+    "at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

@@ -412,3 +412,28 @@ test('windowPush: valid ratelimit.window bodies of at most about 1 MiB, bad entr
   assert.equal(all.length, 201);
   assert.deepEqual(all.at(-1), { keyId: 'x', at: [2] });
 });
+
+test('routeStatePush: a valid route.state body, bad entries left out (P4h Decision 3)', () => {
+  const { routeStatePush } = require('../lib/front/push');
+  assert.deepEqual(routeStatePush(undefined), { rr: [], cooldown: [] });
+  const body = routeStatePush({
+    rr: [
+      { name: 'router/x', n: 3 },
+      { name: '', n: 1 },
+      { name: 'router/y', n: -1 },
+      { name: 'router/z', n: 1.5 },
+      null,
+    ],
+    cooldown: [
+      { providerId: 'a', until: 1767225601000.5, strikes: 2, reason: 'HTTP 429' },
+      { providerId: 'b', until: Infinity, strikes: 1, reason: 'HTTP 503' },
+      { providerId: 'c', until: 1, strikes: 0.5, reason: 'x' },
+      { providerId: '', until: 1, strikes: 1, reason: 'x' },
+    ],
+  });
+  assert.deepEqual(body, {
+    rr: [{ name: 'router/x', n: 3 }],
+    cooldown: [{ providerId: 'a', until: 1767225601000.5, strikes: 2, reason: 'HTTP 429' }],
+  });
+  assert.deepEqual(check({ v: 1, type: 'route.state', seq: 2, ts: 0, body }), { errors: [], unknownType: false });
+});

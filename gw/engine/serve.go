@@ -39,6 +39,46 @@ type Engine struct {
 	ids      SpanIDs
 	onTake   func(keyID string, at int64) // a request admitted under a key's window, for the control plane (P4f D16)
 	tokens   *Tokens                      // the provider token registry (P4g Decision 10), outside the generations
+	// routes is the routing state (P4h design D1): rotation counters and cooldowns, outside the generations (a config
+	// push keeps it, as JS keeps its maps), replicated both ways with the control plane (Decision 3).
+	routes *RouteState
+}
+
+// Routes is the engine's routing state.
+func (e *Engine) Routes() *RouteState { return e.routes }
+
+// SetRouteSend gives the engine where to tell each provider answer it reads (provider.note) and each rotation it takes
+// (route.take), for the control plane (P4h Decision 3). send runs under the route state's mutex: it must not block
+// (RouteState). Call it before serving.
+func (e *Engine) SetRouteSend(send func(typ string, body any)) { e.routes.SetSend(send) }
+
+// RouteControl applies a routing message from the control plane (P4h Decision 3): a provider answer it read, a rotation
+// it took (with this engine's target count of the route, Decision 4; nothing when the route is not a round-robin of
+// more than one target here), or the seed of a new session. A remote note or take is never sent back.
+func (e *Engine) RouteControl(body any) {
+	switch b := body.(type) {
+	case *ipc.ProviderNote:
+		h := make(http.Header, len(b.Headers))
+		for k, v := range b.Headers {
+			h.Set(k, v)
+		}
+		e.routes.Note(b.ProviderID, b.Status, h, b.At, true)
+	case *ipc.RouteTake:
+		s := e.State()
+		if s == nil {
+			return
+		}
+		for _, rt := range s.Gateway.Routes {
+			if rt.Name == b.Name {
+				if rt.Strategy != nil && *rt.Strategy == "round-robin" {
+					e.routes.Take(rt.Name, len(rt.Targets), b.At, true)
+				}
+				return
+			}
+		}
+	case *ipc.RouteState:
+		e.routes.Seed(*b)
+	}
 }
 
 // SetOnTake gives the engine where to tell each request it admits under a key's window (P4f D16); call it before
@@ -155,8 +195,15 @@ func (e *Engine) open(p *Plan) int64 {
 // plane: lib/ipc/ingest.js stores it through the JS gateway's own writer).
 func New(up *Upstream, emit func(*ipc.UsageReport) (int64, error), logf func(string, ...any)) *Engine {
 	e := &Engine{limits: NewRateLimiter(), upstream: up, emit: emit, now: NowMs, logf: logf,
-		failAt: map[string]time.Time{}, spend: &Spend{}, staleMs: StaleMs, ids: RandomIDs}
+		failAt: map[string]time.Time{}, spend: &Spend{}, staleMs: StaleMs, ids: RandomIDs, routes: NewRouteState(nil)}
 	e.tokens = NewTokens(up.Client(), e.State, nil)
+	// Every provider answer the engine reads is noted at header time (P4h Decisions 3, 5): its cooldown here, and a
+	// provider.note for the control plane's cooldowns and quota readings, whatever serves the call's class.
+	up.SetOnAnswer(func(p *Plan, status int, h http.Header) {
+		if p.Target != nil && p.Target.Provider != nil {
+			e.routes.Note(p.Target.Provider.ID, status, h, e.now(), false)
+		}
+	})
 	return e
 }
 

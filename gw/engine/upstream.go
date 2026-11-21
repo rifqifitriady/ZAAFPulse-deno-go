@@ -35,7 +35,14 @@ const (
 type Upstream struct {
 	client  *http.Client
 	timeout time.Duration
+	// onAnswer hears every provider answer once its headers are in (after the redirects; both answers of a 401 replay),
+	// as providers.js request() calls noteResponse (P4h Decision 3); nil: nobody.
+	onAnswer func(p *Plan, status int, h http.Header)
 }
+
+// SetOnAnswer gives the upstream who hears each provider answer at header time (the engine's route state); call it
+// before serving.
+func (u *Upstream) SetOnAnswer(f func(p *Plan, status int, h http.Header)) { u.onAnswer = f }
 
 // NewUpstream builds the client from the environment (getenv: os.Getenv).
 func NewUpstream(getenv func(string) string) *Upstream {
@@ -157,6 +164,9 @@ func (u *Upstream) send(ctx context.Context, p *Plan, force bool) (*http.Respons
 		}
 		loc := resp.Header.Get("Location")
 		if resp.StatusCode < 300 || resp.StatusCode >= 400 || loc == "" {
+			if u.onAnswer != nil {
+				u.onAnswer(p, resp.StatusCode, resp.Header)
+			}
 			if p.Timeout > 0 {
 				// A plan's own limit bounds the whole call, its body included, as an AbortSignal.timeout passed to fetch
 				// does (count_tokens, P4d review I1): the timer runs on and is stopped when the body is closed.

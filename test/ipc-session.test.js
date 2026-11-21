@@ -143,3 +143,84 @@ test('an event that cannot be stored ends the session: the events read after it 
   assert.equal(sent.filter((m) => m.type === 'ack').length, 0);
   assert.equal(logs.filter((l) => /could not be stored/.test(l)).length, 1, logs.join('\n'));
 });
+
+// P4h Decision 3: a new session gets the routing state after the rate-limit window and before the budget snapshot (so
+// before ready), built at the hello; provider.note and route.take from the gateway reach onControl, never stored.
+test('a new session gets route.state before budget.snapshot; notes and takes go to onControl', async () => {
+  const child = fakeChild();
+  const sent = [];
+  child.stdin.on('data', (c) => {
+    for (const l of c.toString().split('\n')) if (l) sent.push(JSON.parse(l));
+  });
+  const controls = [];
+  const events = [];
+  const routes = { rr: [{ name: 'router/x', n: 3 }], cooldown: [] };
+  let built = 0;
+  const s = startSession({
+    bin: 'fake',
+    cpVersion: 'test',
+    initial: {
+      ...initial(),
+      window: () => [{ windows: [{ keyId: 'k1', at: [1] }] }],
+      routes: () => {
+        built++;
+        return routes;
+      },
+    },
+    strict: true,
+    spawnImpl: () => child,
+    log: () => {},
+    onControl: (msg) => controls.push(msg),
+    onEvent: (msg) => events.push(msg),
+  });
+  assert.equal(built, 0, 'not built before the hello');
+  const line = (type, seq, body) => JSON.stringify({ v: 1, type, seq, ts: 0, body }) + '\n';
+  const S = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
+  child.stdout.write(line('hello', 1, { protocol: [1], gwVersion: 't', stream: S, outboxFrom: 1 }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(
+    sent.map((m) => m.type),
+    ['hello.ok', 'config.push', 'secrets.handoff', 'ratelimit.window', 'route.state', 'budget.snapshot'],
+  );
+  assert.deepEqual(sent[4].body, routes);
+  const note = { providerId: 'a', status: 429, at: 5, headers: { 'retry-after': '1' } };
+  child.stdout.write(line('provider.note', 2, note) + line('route.take', 3, { name: 'router/x', at: 6 }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(
+    controls.map((m) => [m.type, m.body]),
+    [
+      ['provider.note', note],
+      ['route.take', { name: 'router/x', at: 6 }],
+    ],
+  );
+  assert.deepEqual(events, []);
+  assert.equal(sent.filter((m) => m.type === 'ack').length, 0, 'control messages are never acknowledged');
+  s.kill();
+  await s.exited;
+});
+
+test('a session without a routes source sends no route.state', async () => {
+  const child = fakeChild();
+  const sent = [];
+  child.stdin.on('data', (c) => {
+    for (const l of c.toString().split('\n')) if (l) sent.push(JSON.parse(l));
+  });
+  const s = startSession({ bin: 'fake', cpVersion: 'test', initial: initial(), spawnImpl: () => child, log: () => {} });
+  const S = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
+  child.stdout.write(
+    JSON.stringify({
+      v: 1,
+      type: 'hello',
+      seq: 1,
+      ts: 0,
+      body: { protocol: [1], gwVersion: 't', stream: S, outboxFrom: 1 },
+    }) + '\n',
+  );
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(
+    sent.map((m) => m.type),
+    ['hello.ok', 'config.push', 'secrets.handoff', 'budget.snapshot'],
+  );
+  s.kill();
+  await s.exited;
+});

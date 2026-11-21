@@ -11,10 +11,13 @@ import (
 	"math/big"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
 // CooldownMaxMs is providers.js COOLDOWN_MAX_MS: the longest a provider cools down.
@@ -129,22 +132,13 @@ type Cooldown struct {
 	Reason  string
 }
 
-// providerNote and routeTake are the bodies of provider.note and route.take (spec Decision 3).
-// TODO(P4h Task 2): replace with ipc.ProviderNote and ipc.RouteTake.
-type providerNote struct {
-	ProviderID string            `json:"providerId"`
-	Status     int               `json:"status"`
-	At         int64             `json:"at"`
-	Headers    map[string]string `json:"headers"`
-}
-
-type routeTake struct {
-	Name string `json:"name"`
-	At   int64  `json:"at"`
-}
-
 // RouteState is the routing state of one engine (design D1): providers.js's rr and cooldown maps. One mutex guards
-// both. send, when set, tells the other engine of every local note and take (never of a remote one).
+// both. send, when set, tells the other engine of every local note and take (never of a remote one, spec Decision 3).
+//
+// send runs with the mutex held, so the messages leave in the order the state changed: strikes and rotations are
+// order-sensitive, and two local notes sent after the unlock could reach the other engine swapped. send must therefore
+// not block and must not call back into the RouteState: the gateway's send is an enqueue on a buffered channel that
+// drops a message when the queue is full (gw/cmd/zaafpulse-gw, as ratelimit.take).
 type RouteState struct {
 	mu   sync.Mutex
 	rr   map[string]int
@@ -193,11 +187,10 @@ func (r *RouteState) Note(providerID string, status int, h http.Header, at int64
 	case status >= 200 && status <= 299:
 		delete(r.cool, providerID)
 	}
-	send := r.send
-	r.mu.Unlock()
-	if send != nil && !remote {
-		send("provider.note", providerNote{ProviderID: providerID, Status: status, At: at, Headers: NoteHeaders(h)})
+	if r.send != nil && !remote {
+		r.send(ipc.TypeProviderNote, ipc.ProviderNote{ProviderID: providerID, Status: status, At: at, Headers: NoteHeaders(h)})
 	}
+	r.mu.Unlock()
 }
 
 // Cooling is providers.js coolingDown as a test: the provider has an entry whose until is after now.
@@ -216,14 +209,53 @@ func (r *RouteState) Take(name string, count int, at int64, remote bool) int {
 		return 0
 	}
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	n := r.rr[name] % count
 	r.rr[name] = n + 1
-	send := r.send
-	r.mu.Unlock()
-	if send != nil && !remote {
-		send("route.take", routeTake{Name: name, At: at})
+	if r.send != nil && !remote {
+		r.send(ipc.TypeRouteTake, ipc.RouteTake{Name: name, At: at})
 	}
 	return n
+}
+
+// SetSend replaces where local notes and takes go (nil: nowhere); see RouteState for what send may do.
+func (r *RouteState) SetSend(send func(typ string, body any)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.send = send
+}
+
+// Seed replaces the state with the control plane's (route.state: a new session, before ready; spec Decision 3). The
+// cooldowns come live; the strikes of one that expired before the seed are not carried (providers.js routeState).
+func (r *RouteState) Seed(b ipc.RouteState) {
+	rr := make(map[string]int, len(b.RR))
+	for _, x := range b.RR {
+		rr[x.Name] = x.N
+	}
+	cool := make(map[string]Cooldown, len(b.Cooldown))
+	for _, c := range b.Cooldown {
+		cool[c.ProviderID] = Cooldown{Until: c.Until, Strikes: c.Strikes, Reason: c.Reason}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rr, r.cool = rr, cool
+}
+
+// Snapshot is the whole state as route.state carries it (every cooldown entry, expired ones too), sorted by name and
+// provider id (tests).
+func (r *RouteState) Snapshot() ipc.RouteState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := ipc.RouteState{RR: []ipc.RouteRR{}, Cooldown: []ipc.RouteCooldown{}}
+	for name, n := range r.rr {
+		out.RR = append(out.RR, ipc.RouteRR{Name: name, N: n})
+	}
+	for id, c := range r.cool {
+		out.Cooldown = append(out.Cooldown, ipc.RouteCooldown{ProviderID: id, Until: c.Until, Strikes: c.Strikes, Reason: c.Reason})
+	}
+	slices.SortFunc(out.RR, func(a, b ipc.RouteRR) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(out.Cooldown, func(a, b ipc.RouteCooldown) int { return strings.Compare(a.ProviderID, b.ProviderID) })
+	return out
 }
 
 // Peek is the n the next Take would return, without taking (the shadow's own view, spec Decision 11).
