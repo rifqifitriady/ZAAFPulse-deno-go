@@ -131,10 +131,13 @@ func errorBody(msg, typ, code string) []byte {
 }
 
 // refusal is guard()'s rec(...) then throw: the line proxyChat's rec writes (the call's base without routedTo, no
-// tokens, cost 0) and the client's answer.
+// tokens, cost 0) and the client's answer. responsesPassthrough's rec keeps routedTo (a route's leg, P4h R9).
 func refusal(p *Plan, status int, msg, typ, code string, ms float64, lineErr string, g *ipc.GuardrailOutcome) *Answer {
 	rec := p.Base
-	rec.RoutedTo, rec.Guard = nil, g
+	rec.Guard = g
+	if p.Upstream != UpResponsesNative {
+		rec.RoutedTo = nil
+	}
 	if !p.keepSaved {
 		rec.SavedTokens = nil // proxyChat's guard lines carry no savedTokens (rtk.js R9)
 	}

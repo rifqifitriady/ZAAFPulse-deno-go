@@ -164,6 +164,11 @@ type Plan struct {
 	Legs   []*Plan
 	Takes  int
 	relegs func(body *Value) ([]*Plan, string)
+	// dropAdded: this leg's build added "reasoning" to Dropped (adaptChat pushes it to the translated body's one list,
+	// which every leg shares in JS, so a later leg's answer names it too). converted: the leg's whole Anthropic answer
+	// is already the OpenAI one (the route loop converted it).
+	dropAdded bool
+	converted bool
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }

@@ -48,16 +48,42 @@ func (s *State) PlanCount(r *Request, now int64) Plan {
 	if !ok {
 		return handoff("model: mapping needs the model list")
 	}
-	t, why := s.target(model, key)
-	if why == "model: a route" {
-		return handoff(why) // resolveAll(...)[0] of a route depends on its rotation and cooldowns
-	}
-	if t == nil || FormatOf(t.Provider) != "anthropic" || Authorize(key, "llm", model, "") != "" {
+	if rt := s.routeOf(model); rt != nil {
+		// resolveAll(model)[0]: one take, and the first leg in order decides the provider's count or the estimate.
+		legs, why := s.routeLegs(rt, key, func(t *Target) (Plan, string) { return s.countLeg(r, key, b, m.S, model, t, self) })
+		if why == "no usable target" {
+			legs, why = make([]*Plan, len(rt.Targets)), "" // no target: the estimate, after the take
+		}
+		if why != "" {
+			return handoff(RouteHandoff + why)
+		}
+		self.Model, self.ClientModel, self.Route, self.Legs, self.Takes, self.Upstream = model, m.S, rt, legs, 1, UpCount
 		return self
+	}
+	t, _ := s.target(model, key)
+	if t == nil {
+		return self
+	}
+	p, why := s.countLeg(r, key, b, m.S, model, t, self)
+	if why != "" {
+		return handoff(why)
+	}
+	if p.Upstream == UpNone {
+		return self
+	}
+	return p
+}
+
+// countLeg is countTokens for its target t: the estimate (a target not of the Anthropic format, or a model the key may
+// not use), else the provider's count with the fields count_tokens takes and the guardrails of t's tier.
+func (s *State) countLeg(r *Request, key *ipc.GatewayKeyAuth, b *Value, asked, model string, t *Target, self Plan) (Plan, string) {
+	if FormatOf(t.Provider) != "anthropic" || Authorize(key, "llm", model, "") != "" {
+		self.Target = t // a route's estimate leg: its provider's cooldown orders it
+		return self, ""
 	}
 	cred, auth, why := s.credential(t)
 	if why != "" {
-		return handoff(why)
+		return Plan{}, why
 	}
 	body := NewObject()
 	body.Set("model", Str(t.Model))
@@ -66,7 +92,7 @@ func (s *State) PlanCount(r *Request, now int64) Plan {
 			body.Set(f, v)
 		}
 	}
-	p := Plan{Key: key, Target: t, Model: model, ClientModel: m.S, Upstream: UpCount, Class: SubMessagesCount,
+	p := Plan{Key: key, Target: t, Model: model, ClientModel: asked, Upstream: UpCount, Class: SubMessagesCount,
 		Format: "anthropic", Shape: ShapeAnthropic, GuardFormat: "anthropic", Env: translate.Default,
 		URL: t.Provider.BaseURL + "/messages/count_tokens", Header: providerHeader(t, cred), Timeout: CountTimeout,
 		Self: self.Self, Base: s.base(key, t, model, r), build: passBuild, auth: auth}
@@ -76,7 +102,7 @@ func (s *State) PlanCount(r *Request, now int64) Plan {
 	} else {
 		p.Body = body.Stringify()
 	}
-	return p
+	return p, ""
 }
 
 // planGeminiCount is the Gemini countTokens route: { totalTokens: estimateTokens(body.contents ||

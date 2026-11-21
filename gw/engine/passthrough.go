@@ -59,16 +59,16 @@ func (s *State) nativePlan(r *Request, key *ipc.GatewayKeyAuth, body *Value, nam
 }
 
 // planAnthropicNative: the passthrough when the mapped model's target is an Anthropic-format provider named by it
-// (messagesApi, J4). done false: translate instead.
+// (messagesApi, J4). done false: translate instead (a route always is: its name is never its first target's, P4h).
 func (s *State) planAnthropicNative(r *Request, key *ipc.GatewayKeyAuth, body *Value, name string) (Plan, bool) {
 	model, ok := s.MapModel(name)
 	if !ok {
 		return handoff("model: mapping needs the model list"), true
 	}
-	first, why := s.target(model, key)
-	if why == "model: a route" {
-		return handoff(why), true
+	if s.routeOf(model) != nil {
+		return Plan{}, false
 	}
+	first, _ := s.target(model, key)
 	if first == nil || FormatOf(first.Provider) != "anthropic" || model != first.Name {
 		return Plan{}, false
 	}
@@ -87,23 +87,14 @@ func (s *State) planAnthropicNative(r *Request, key *ipc.GatewayKeyAuth, body *V
 	return p, true
 }
 
-// planResponsesNative: the passthrough when the target takes /responses (responsesApi, J5). done false: translate.
-func (s *State) planResponsesNative(r *Request, key *ipc.GatewayKeyAuth, body *Value, name string) (Plan, bool) {
-	model, ok := s.MapModel(name)
-	if !ok {
-		return handoff("model: mapping needs the model list"), true
-	}
-	t, why := s.target(model, key)
-	if why == "model: a route" {
-		return handoff(why), true
-	}
-	if t == nil || !NativeResponses(t.Provider) {
-		return Plan{}, false
-	}
+// responsesLeg is responsesPassthrough's work for one target t: the client's body with the target's model, the
+// guardrails' policy for its tier, and the lines' fields (requested when the model was mapped, routedTo when the
+// target is not the model).
+func (s *State) responsesLeg(r *Request, key *ipc.GatewayKeyAuth, body *Value, name, model string, t *Target) (Plan, string) {
 	p := s.nativePlan(r, key, body, name, model, t, UpResponsesNative, "responses", "/responses", "responses",
 		ShapeOpenAI, "") // responsesPassthrough has no token saver (R3)
 	if p.Handoff != "" {
-		return p, true
+		return Plan{}, p.Handoff
 	}
 	if model != name {
 		req := jsSlice(name, 80)
@@ -113,7 +104,61 @@ func (s *State) planResponsesNative(r *Request, key *ipc.GatewayKeyAuth, body *V
 	if p.Stream {
 		p.Class = SubResponsesStream
 	}
+	return p, ""
+}
+
+// planResponsesNative: the passthrough when the target takes /responses (responsesApi, J5), or when every usable
+// target of a route does (P4h: a route plan of passthrough legs, taken twice). done false: translate.
+func (s *State) planResponsesNative(r *Request, key *ipc.GatewayKeyAuth, body *Value, name string) (Plan, bool) {
+	model, ok := s.MapModel(name)
+	if !ok {
+		return handoff("model: mapping needs the model list"), true
+	}
+	if rt := s.routeOf(model); rt != nil {
+		return s.responsesRoute(r, key, body, name, model, rt)
+	}
+	t, _ := s.target(model, key)
+	if t == nil || !NativeResponses(t.Provider) {
+		return Plan{}, false
+	}
+	p, why := s.responsesLeg(r, key, body, name, model, t)
+	if why != "" {
+		return handoff(why), true
+	}
 	return p, true
+}
+
+// responsesRoute is responsesApi's every-native test over the route's usable targets (no order needed) and, when it
+// holds, responsesPassthrough over targetsFor: one leg per target. done false: translate.
+func (s *State) responsesRoute(r *Request, key *ipc.GatewayKeyAuth, body *Value, name, model string,
+	rt *ipc.RouteConfig) (Plan, bool) {
+	usable := false
+	for _, n := range rt.Targets {
+		t := Resolve(s.Gateway.Providers, n)
+		if t == nil || (key.PrivateOnly && TierOf(t.Provider) != "private") {
+			continue
+		}
+		if !NativeResponses(t.Provider) {
+			return Plan{}, false
+		}
+		usable = true
+	}
+	if !usable {
+		return Plan{}, false // translated: proxyChat's targetsFor answers the 404
+	}
+	if Authorize(key, "llm", model, "") != "" {
+		return handoff("key: not allowed"), true
+	}
+	legs, why := s.routeLegs(rt, key, func(t *Target) (Plan, string) {
+		return s.responsesLeg(r, key, body, name, model, t)
+	})
+	if why != "" {
+		return handoff(RouteHandoff + why), true
+	}
+	first := firstLeg(legs)
+	return Plan{Key: key, Model: model, ClientModel: name, Route: rt, Legs: legs, Takes: 2, Stream: first.Stream,
+		Format: "responses", Shape: ShapeOpenAI, Upstream: UpResponsesNative, GuardFormat: "responses",
+		Env: translate.Default, Class: first.Class}, true
 }
 
 // withModel is JSON.stringify({ ...o, [k]: { ...o[k], model } }) when o[k].model is a string (k "" : o itself).
@@ -209,20 +254,26 @@ func (s *State) RespondNative(p *Plan, status int, raw []byte, ms float64) Answe
 	return Answer{Status: status, Header: answerHeader(), Body: []byte(body), Usage: rec}
 }
 
+// failedNative is a passthrough's call that threw: the 502 with the provider's id and what failed (masked); for
+// responsesPassthrough also its rec(t, { status: 599, error }) line, requested and routedTo kept.
+func (s *State) failedNative(p *Plan, why string, ms float64) Answer {
+	msg := s.mask(p.Target.Provider.ID + ": " + why)
+	a := shapeError(p.Shape, http.StatusBadGateway, msg, "upstream_error", "", "")
+	if p.Upstream == UpResponsesNative {
+		rec := p.Base
+		rec.Status, rec.Ms, rec.Error, rec.Guard = 599, ms, &msg, nil
+		a.Usage, a.NoLine = rec, false
+	}
+	return a
+}
+
 var responsesDelta = regexp.MustCompile(`^response\.(output_text|function_call_arguments|custom_tool_call_input)\.delta$`)
 
 // deliverNative is a passthrough's answer: a failed call (Anthropic: no line, the route's 502; Responses: the 599 line
 // and the 502), a whole answer, or the provider's events re-emitted with the client's model name.
 func (s *State) deliverNative(p *Plan, res ProviderResult, elapsed func() float64, w ClientWriter) *ipc.UsageRecord {
 	if res.Why != "" {
-		msg := s.mask(p.Target.Provider.ID + ": " + res.Why)
-		a := shapeError(p.Shape, http.StatusBadGateway, msg, "upstream_error", "", "")
-		if p.Upstream == UpResponsesNative {
-			rec := p.Base // responsesPassthrough's rec(t, { status: 599, error }): requested and routedTo kept
-			rec.Status, rec.Ms, rec.Error, rec.Guard = 599, elapsed(), &msg, nil
-			a.Usage, a.NoLine = rec, false
-		}
-		return writeAnswer(w, a)
+		return writeAnswer(w, s.failedNative(p, res.Why, elapsed()))
 	}
 	// anthropicPassthrough streams any 2xx (its body may be null: the read throws inside its catch, an empty stream);
 	// responsesPassthrough answers whole when fetch gives no body (`!r.body`: 204, 205; review m2).

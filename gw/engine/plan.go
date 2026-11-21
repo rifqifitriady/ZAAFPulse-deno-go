@@ -99,13 +99,9 @@ func (s *State) admit(r *Request, now int64, scope string) (*ipc.GatewayKeyAuth,
 	return key, body, ""
 }
 
-// target is resolveAll's one target for a model the key may use: a route is handed off (P4d Decision 9).
+// target is resolveAll's one target for a model that is not a route (the caller looks for a route first: routeOf), for
+// a key that may use it.
 func (s *State) target(model string, key *ipc.GatewayKeyAuth) (*Target, string) {
-	for _, rt := range s.Gateway.Routes {
-		if rt.Name == model {
-			return nil, "model: a route"
-		}
-	}
 	t := Resolve(s.Gateway.Providers, model)
 	if t == nil || (key.PrivateOnly && TierOf(t.Provider) != "private") {
 		return nil, "model: no usable target"
