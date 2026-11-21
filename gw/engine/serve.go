@@ -155,7 +155,12 @@ func New(up *Upstream, emit func(*ipc.UsageReport) (int64, error), logf func(str
 func (e *Engine) SetStaleMs(ms int64) { e.staleMs = ms }
 
 // SetState installs a generation (nil: none yet; every request is handed to the control plane).
-func (e *Engine) SetState(s *State) { e.state.Store(s) }
+func (e *Engine) SetState(s *State) {
+	if s != nil {
+		s.logf = e.logf // the generation logs recovered panics through the engine's log (P4d re-review 3)
+	}
+	e.state.Store(s)
+}
 
 // State is the current generation, or nil.
 func (e *Engine) State() *State { return e.state.Load() }
@@ -241,18 +246,19 @@ func ReadRequest(r *http.Request, rawPath string) *Request {
 		Body: buf, TooBig: len(buf) > MaxBody}
 }
 
-// Serve answers one chat request, or hands it to js (the control plane) unchanged.
+// Serve answers one request of a class the go engine has (chat, and the P4d classes messages, responses, gemini and
+// embeddings), or hands it to js (the control plane) unchanged.
 func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, rawPath string, js http.Handler) {
 	s := e.state.Load()
-	if s == nil || class != "chat" {
+	if s == nil || Subs[class] == nil {
 		js.ServeHTTP(w, r)
 		return
 	}
 	req := ReadRequest(r, rawPath)
 	started := time.Now()
-	p := s.PlanChat(req, e.now())
-	// The sub-class (P4c): a stream is chat-stream, with its own engine entry.
-	sub := subOf(&p, req)
+	p := s.PlanFor(class, req, e.now())
+	// The sub-class (P4c, P4d): each has its own engine entry.
+	sub := SubClass(class, &p, req)
 	onGo, shadowed := e.mode(sub)
 	if p.Handoff != "" && onGo {
 		js.ServeHTTP(w, r)
@@ -270,7 +276,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	tr := e.trace(s, r, rawPath)
 	takeAt := e.now()
 	if wait := e.limits.Take(p.Key.ID, p.Key.RPM, takeAt); wait > 0 {
-		a := RateLimited(p.Key, wait)
+		a := RateLimited(p.Key, wait, p.Shape)
 		write(w, a)
 		if tr != nil {
 			flushAnswer(w)
@@ -281,8 +287,17 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	if e.onTake != nil {
 		e.onTake(p.Key.ID, takeAt) // the control plane's copy of the window (P4f D16)
 	}
-	// The budget (P4e Decision 13): the price rule, the snapshot, and the engine's own spend since it.
-	ref, unchecked := s.Budget(&p, e.now(), e.staleMs, e.spend.Live())
+	if p.Upstream == UpNone { // an answer of the engine's own (a count estimate, P4d): no budget, no line
+		e.answerOwn(w, r, s, *p.Self, started, tr)
+		return
+	}
+	// The budget (P4e Decision 13): the price rule, the snapshot, and the engine's own spend since it. count_tokens
+	// checks none (P4d).
+	var ref *Answer
+	var unchecked bool
+	if p.Upstream != UpCount {
+		ref, unchecked = s.Budget(&p, e.now(), e.staleMs, e.spend.Live())
+	}
 	if ref != nil {
 		if r.Context().Err() == nil {
 			write(w, *ref) // allowedTargets throws before any record: no line
@@ -297,6 +312,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	elapsed := func() float64 { return float64(time.Since(started).Microseconds()) / 1000 }
 	if p.Policy != nil {
 		if a := s.Guard(&p, elapsed()); a != nil {
+			if a.NoLine { // count_tokens: a block or a failure answers the estimate (P4d)
+				e.answerOwn(w, r, s, *a, started, tr)
+				return
+			}
 			if p.Overrun != "" {
 				e.logf("go engine: guardrails: the %s check ran past its limit; the call was refused", p.Overrun)
 			}
@@ -321,6 +340,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 			return
 		}
 		e.noteFailures(p.Failures)
+	}
+	if p.Upstream != UpChat || p.Format != "openai" {
+		e.serveDeliver(w, r, s, &p, started, tr, js) // the P4d paths (serve_xlate.go)
+		return
 	}
 	if p.Stream {
 		if !e.track() {

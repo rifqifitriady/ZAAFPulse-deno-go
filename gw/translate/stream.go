@@ -636,7 +636,9 @@ func eventEnd(b []byte, from int) (int, int) {
 func ReadSSE(r io.Reader, onEvent func(event, data string) error) error {
 	var buf []byte
 	scan := 0 // no event end starts before this offset's newline search
-	chunk := make([]byte, 32*1024)
+	// 4 KiB per read, as the engine's own stream reads (P4c Decision 11): a held stream keeps this buffer (P4d Decision
+	// 24); the events do not depend on how the bytes were split.
+	chunk := make([]byte, 4*1024)
 	for {
 		n, err := r.Read(chunk)
 		buf = append(buf, chunk[:n]...)

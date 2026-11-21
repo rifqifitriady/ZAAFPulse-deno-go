@@ -22,10 +22,7 @@ func captureOf(t *testing.T, c chatCase, want chatOut) *Capture {
 		Body    *string           `json:"body"`
 	}{want.Request.URL, want.Request.Headers, &body})
 	cap.ProviderResponse = &ProviderAnswer{Status: c.Provider.Status, Body: decodeUTF8([]byte(c.Provider.Body))}
-	cap.Client = &struct {
-		Status int    `json:"status"`
-		Body   string `json:"body"`
-	}{want.Client.Status, want.Client.Body}
+	cap.Client = &CaptureClient{Status: want.Client.Status, Body: want.Client.Body}
 	return cap
 }
 

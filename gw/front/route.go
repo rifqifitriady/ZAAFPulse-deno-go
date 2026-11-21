@@ -45,8 +45,10 @@ func Classify(p string) string {
 }
 
 // Canonical reports whether the WHATWG URL parser leaves path p as it is: it starts with one "/" (not "//", which
-// would be read as a host), and has no percent escape, backslash, dot segment or character the parser escapes. Only
-// such a path can be classified without the parser: its pathname is then p itself (gw/testdata/route fixtures).
+// would be read as a host), and has no backslash, dot segment, malformed percent escape or character the parser
+// escapes. A well-formed %XX is kept as it is (P4d Decision 23), but a segment that is a dot segment once %2e reads as
+// "." is resolved by the parser. Only such a path can be classified without the parser: its pathname is then p itself
+// (gw/testdata/route fixtures).
 func Canonical(p string) bool {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return false
@@ -56,17 +58,21 @@ func Canonical(p string) bool {
 		switch {
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
 		case strings.IndexByte("-._~!$&'()*+,;=:@/", c) >= 0:
+		case c == '%' && i+2 < len(p) && isHex(p[i+1]) && isHex(p[i+2]):
+			i += 2
 		default:
 			return false
 		}
 	}
 	for _, seg := range strings.Split(p, "/") {
-		if seg == "." || seg == ".." {
+		if d := strings.ReplaceAll(strings.ToLower(seg), "%2e", "."); d == "." || d == ".." {
 			return false
 		}
 	}
 	return true
 }
+
+func isHex(c byte) bool { return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' }
 
 // RawPath is the path of a request target as the client sent it: the text before "?" (and "#").
 func RawPath(requestURI string) string {
