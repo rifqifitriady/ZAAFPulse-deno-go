@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "  1\tx\n  2\tx\n  3\tx\n  4\tx\n  5\tx\n  6\tx\n  7\tx\n  8\tx\n  9\tx\n  10\tx",
+    ""
+  ],
+  "out": "read"
+}

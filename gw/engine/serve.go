@@ -143,7 +143,11 @@ func (e *Engine) open(p *Plan) int64 {
 	if e.calls == nil || e.emitCall == nil {
 		return 0
 	}
-	return e.calls.Open(e.now(), p.Base)
+	base := p.Base
+	if !p.keepSaved {
+		base.SavedTokens = nil // a recovered 599 line carries no savedTokens, as Failed's (rtk spec D12)
+	}
+	return e.calls.Open(e.now(), base)
 }
 
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
@@ -262,6 +266,10 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	// The sub-class (P4c, P4d): each has its own engine entry.
 	sub := SubClass(class, &p, req)
 	onGo, shadowed := e.mode(sub)
+	if p.saver != nil { // a call the token saver looks at also needs its switch (spec D13, owner answer 22)
+		g, sh := e.mode(SaverSwitch)
+		onGo, shadowed = onGo && g, shadowed || sh
+	}
 	if p.Handoff != "" && onGo {
 		js.ServeHTTP(w, r)
 		return
@@ -274,6 +282,15 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 		}
 		js.ServeHTTP(w, r)
 		return
+	}
+	// The token saver runs before the rate limit takes the call, so that its hand-off is exact (spec D9, D11). A key
+	// already at its limit is answered 429 below without the saver's work, as JS refuses it before saveTokens.
+	if p.saver != nil && e.limits.Wait(p.Key.ID, p.Key.RPM, e.now()) == 0 {
+		if why := s.Save(&p, time.Now()); why != "" {
+			e.logSaverPanic(&p)
+			js.ServeHTTP(w, r)
+			return
+		}
 	}
 	tr := e.trace(s, r, rawPath)
 	takeAt := e.now()
@@ -288,6 +305,13 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	}
 	if e.onTake != nil {
 		e.onTake(p.Key.ID, takeAt) // the control plane's copy of the window (P4f D16)
+	}
+	// The window freed between the look above and the take: the saver runs now. A hand-off here is rare and leaves
+	// this take counted (JS counts the call once more).
+	if why := s.Save(&p, time.Now()); why != "" {
+		e.logSaverPanic(&p)
+		js.ServeHTTP(w, r)
+		return
 	}
 	if p.Upstream == UpTool { // /mcp tools/call (P4g): no budget, the tool run by the control plane
 		e.serveMCP(w, r, s, &p, started, tr)
@@ -571,5 +595,12 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 		if err != nil {
 			return // the provider broke off, or the client left (its context cancelled the call)
 		}
+	}
+}
+
+// logSaverPanic logs a panic out of the token saver (the value only, no prompt text), as the guardrails' GuardPanic.
+func (e *Engine) logSaverPanic(p *Plan) {
+	if p.SaverPanic != "" {
+		e.logf("go engine: token saver: panicked (%s); the call was handed to the control plane", p.SaverPanic)
 	}
 }

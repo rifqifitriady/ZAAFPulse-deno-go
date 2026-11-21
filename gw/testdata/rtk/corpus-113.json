@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    " M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n    message 21\r\n    message 22\r\n M src/s23.ts\r\n    message 24\r\n M src/s25.ts\r\n M src/s26.ts\r\n    message 27\r\n    message 28\r\nerror: boom 29\r\n    message 30\r\n M src/s31.ts\r\n M src/s32.ts\r\n    message 33\r\n    message 34\r\n M src/s35.ts\r\n M src/s36.ts\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\n M src/s47.ts\r\nerror: boom 48\r\n M src/s49.ts\r\nerror: boom 50\r\nerror: boom 51\r\nerror: boom 52\r\n    message 53\r\n M src/s54.ts\r\n    message 55\r\n M src/s56.ts\r\nerror: boom 57\r\n M src/s58.ts\r\n    message 59\r\nerror: boom 60\r\nerror: boom 61\r\n M src/s62.ts\r\n    message 63\r\nerror: boom 64\r\n M src/s65.ts\r\n M src/s66.ts\r\n M src/s67.ts\r\n    message 68\r\nerror: boom 69\r\nerror: boom 70\r\n    message 71\r\n M src/s72.ts\r\nerror: boom 73",
+    "Bash ls -R"
+  ],
+  "out": {
+    "text": " M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n M src/s0.ts\r\n  … 26 more in src omitted\n    message 21\r\n    message 22\r\n    message 24\r\n    message 27\r\n    message 28\r\nerror: boom 29\r\n    message 30\r\n    message 33\r\n    message 34\r\nerror: boom 37\r\nerror: boom 37\r\nerror: boom 37\r\n  … 24 more in . omitted",
+    "filter": "listing",
+    "saved": 712
+  }
+}

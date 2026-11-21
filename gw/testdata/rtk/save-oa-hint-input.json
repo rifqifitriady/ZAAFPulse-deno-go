@@ -1,0 +1,43 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"model\":\"oa/m1\",\"messages\":[{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"exec\",\"arguments\":\"{\\\"input\\\":\\\"npm test\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"> app@1.0.0 test\\nDownloading pkg0@1.0.0\\nDownloading pkg1@1.0.1\\nDownloading pkg2@1.0.2\\nDownloading pkg3@1.0.3\\nDownloading pkg4@1.0.4\\nDownloading pkg5@1.0.5\\nDownloading pkg6@1.0.6\\nDownloading pkg7@1.0.7\\nDownloading pkg8@1.0.8\\nDownloading pkg9@1.0.9\\nnpm WARN deprecated thing0@1.0.0: use other\\nnpm WARN deprecated thing1@1.0.0: use other\\nnpm WARN deprecated thing2@1.0.0: use other\\nnpm ERR! code E0\\nnpm ERR! path /x/0\\nnpm ERR! detail 0\\nnpm ERR! more 0\\nnpm ERR! code E1\\nnpm ERR! path /x/1\\nnpm ERR! detail 1\\nnpm ERR! more 1\\nsummary line 0\\nsummary line 1\\nsummary line 2\\nsummary line 3\\nsummary line 4\\nsummary line 5\\nsummary line 6\\nsummary line 7\\nsummary line 8\\nsummary line 9\\nsummary line 10\\nsummary line 11\\nsummary line 12\\nsummary line 13\\nsummary line 14\\nsummary line 15\\nsummary line 16\\nsummary line 17\\nsummary line 18\\nsummary line 19\\nsummary line 20\\nsummary line 21\\nsummary line 22\\nsummary line 23\\nsummary line 24\\nsummary line 25\\nsummary line 26\\nsummary line 27\\nsummary line 28\\nsummary line 29\"}]}",
+    "openai"
+  ],
+  "out": {
+    "body": {
+      "model": "oa/m1",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "c1",
+              "type": "function",
+              "function": {
+                "name": "exec",
+                "arguments": "{\"input\":\"npm test\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "c1",
+          "content": "(10 progress lines)\nnpm WARN deprecated thing0@1.0.0: use other\n  (× 3 similar lines)\nnpm ERR! code E0\nnpm ERR! path /x/0\nnpm ERR! detail 0\nnpm ERR! more 0\nnpm ERR! code E1\nnpm ERR! path /x/1\nnpm ERR! detail 1\nnpm ERR! more 1\nsummary line 0\n  (× 3 similar lines)\n…\nsummary line 5\nsummary line 6\nsummary line 7\nsummary line 8\nsummary line 9\nsummary line 10\nsummary line 11\nsummary line 12\nsummary line 13\nsummary line 14\nsummary line 15\nsummary line 16\nsummary line 17\nsummary line 18\nsummary line 19\nsummary line 20\nsummary line 21\nsummary line 22\nsummary line 23\nsummary line 24\nsummary line 25\nsummary line 26\nsummary line 27\nsummary line 28\nsummary line 29"
+        }
+      ]
+    },
+    "result": {
+      "savedChars": 329,
+      "savedTokens": 82,
+      "hits": [
+        {
+          "filter": "build",
+          "saved": 329
+        }
+      ]
+    }
+  }
+}

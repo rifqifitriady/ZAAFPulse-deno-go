@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "",
+    "READ x"
+  ],
+  "out": "read"
+}

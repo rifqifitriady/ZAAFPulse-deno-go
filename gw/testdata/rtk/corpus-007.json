@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    " M src/s0.ts\n M src/s1.ts\n M src/s2.ts\n M src/s3.ts\n M src/s4.ts\n M src/s5.ts\n M src/s6.ts\n M src/s7.ts\n M src/s8.ts\n M src/s9.ts\n M src/s10.ts\n M src/s11.ts\n M src/s12.ts\n M src/s13.ts\n M src/s14.ts\n M src/s15.ts\n M src/s16.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts\n M src/s45.ts\n M src/s46.ts\n M src/s47.ts\n M src/s48.ts\n M src/s49.ts\n M src/s50.ts\n M src/s51.ts\n M src/s52.ts\n M src/s53.ts\n M src/s54.ts\n M src/s55.ts\n M src/s56.ts\n M src/s57.ts\n M src/s58.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s59.ts\n M src/s85.ts\n M src/s86.ts\n M src/s87.ts\n M src/s88.ts\n M src/s89.ts\n M src/s90.ts\n M src/s91.ts\n M src/s92.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s93.ts\n M src/s111.ts\n M src/s112.ts\n M src/s113.ts\n M src/s114.ts\n M src/s115.ts\n M src/s116.ts\n M src/s117.ts\n M src/s118.ts",
+    "grep"
+  ],
+  "out": {
+    "text": " M src/s0.ts\n M src/s1.ts\n M src/s2.ts\n M src/s3.ts\n M src/s4.ts\n M src/s5.ts\n M src/s6.ts\n M src/s7.ts\n M src/s8.ts\n M src/s9.ts\n M src/s10.ts\n M src/s11.ts\n M src/s12.ts\n M src/s13.ts\n M src/s14.ts\n M src/s15.ts\n M src/s16.ts\n M src/s17.ts\n M src/s17.ts\n M src/s17.ts",
+    "filter": "grep",
+    "saved": 1394
+  }
+}

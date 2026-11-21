@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "﻿bom 0\n﻿bom 1\n﻿bom 2\n﻿bom 3\n﻿bom 3\n﻿bom 5",
+    ""
+  ],
+  "out": null
+}

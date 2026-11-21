@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "a\nTests passed: 3",
+    ""
+  ],
+  "out": "build"
+}

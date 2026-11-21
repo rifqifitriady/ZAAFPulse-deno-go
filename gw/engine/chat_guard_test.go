@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
@@ -27,6 +28,7 @@ type guardCase struct {
 	Provider struct {
 		Status int    `json:"status"`
 		Body   string `json:"body"`
+		Throw  string `json:"throw"` // the provider call threw (saver-provider-throws)
 	} `json:"provider"`
 }
 
@@ -98,6 +100,11 @@ func TestChatGuardFixtures(t *testing.T) {
 			t.Errorf("%s: handed off: %s", name, p.Handoff)
 			continue
 		}
+		// The token saver runs before the rate limit and the budget (spec D9); a refusal writes no line either way.
+		if why := s.Save(&p, time.Now()); why != "" {
+			t.Errorf("%s: the token saver handed off: %s", name, why)
+			continue
+		}
 		var a *Answer
 		was := checkBody
 		if c.FailChecks {
@@ -145,6 +152,14 @@ func TestChatGuardFixtures(t *testing.T) {
 			got[strings.ToLower(k)] = p.Header.Get(k)
 		}
 		sameJSON(t, name+" provider headers", got, mustJSON(want.Request.Headers))
+		if c.Provider.Throw != "" {
+			a := s.Failed(&p, c.Provider.Throw, 1)
+			if a.Status != want.Client.Status || string(a.Body) != want.Client.Body {
+				t.Errorf("%s: client\n got %d %s\nwant %d %s", name, a.Status, a.Body, want.Client.Status, want.Client.Body)
+			}
+			sameJSON(t, name+" usage", usageMap(a.Usage), want.Usage)
+			continue
+		}
 		var rec ipc.UsageRecord
 		var status int
 		var body string

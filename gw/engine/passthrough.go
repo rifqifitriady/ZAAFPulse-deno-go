@@ -20,7 +20,7 @@ func passBuild(_ *Plan, b *Value) []byte { return b.Stringify() }
 
 // nativePlan is what both passthroughs share once their target is known.
 func (s *State) nativePlan(r *Request, key *ipc.GatewayKeyAuth, body *Value, name, model string, t *Target,
-	up, format, path, guardFormat string, sh Shape) Plan {
+	up, format, path, guardFormat string, sh Shape, saverFormat string) Plan {
 	if Authorize(key, "llm", model, "") != "" {
 		return handoff("key: not allowed")
 	}
@@ -40,8 +40,18 @@ func (s *State) nativePlan(r *Request, key *ipc.GatewayKeyAuth, body *Value, nam
 	}
 	out := body.Clone()
 	out.Set("model", Str(t.Model))
+	if saverFormat != "" && s.tokenSaverOn(r) {
+		// anthropicPassthrough: saveTokens(body, 'anthropic') before guard({...body, model: t.model}) (rtk.js R3).
+		job, why := scanSaver(out, saverFormat)
+		if why != "" {
+			return handoff(why)
+		}
+		p.saver, p.keepSaved = job, true // its guard lines spread base, savedTokens included (R9)
+	}
 	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
 		p.Policy, p.pending = &pol, out
+	} else if p.saver != nil {
+		p.pending = out // State.Save builds Body
 	} else {
 		p.Body = out.Stringify()
 	}
@@ -62,10 +72,8 @@ func (s *State) planAnthropicNative(r *Request, key *ipc.GatewayKeyAuth, body *V
 	if first == nil || FormatOf(first.Provider) != "anthropic" || model != first.Name {
 		return Plan{}, false
 	}
-	if s.tokenSaverOn(r) && hasToolResultBlock(body) {
-		return handoff("token saver: tool results"), true
-	}
-	p := s.nativePlan(r, key, body, name, model, first, UpAnthropicNative, "anthropic", "/messages", "anthropic", ShapeAnthropic)
+	p := s.nativePlan(r, key, body, name, model, first, UpAnthropicNative, "anthropic", "/messages", "anthropic",
+		ShapeAnthropic, "anthropic")
 	if p.Handoff != "" {
 		return p, true
 	}
@@ -92,7 +100,8 @@ func (s *State) planResponsesNative(r *Request, key *ipc.GatewayKeyAuth, body *V
 	if t == nil || !NativeResponses(t.Provider) {
 		return Plan{}, false
 	}
-	p := s.nativePlan(r, key, body, name, model, t, UpResponsesNative, "responses", "/responses", "responses", ShapeOpenAI)
+	p := s.nativePlan(r, key, body, name, model, t, UpResponsesNative, "responses", "/responses", "responses",
+		ShapeOpenAI, "") // responsesPassthrough has no token saver (R3)
 	if p.Handoff != "" {
 		return p, true
 	}

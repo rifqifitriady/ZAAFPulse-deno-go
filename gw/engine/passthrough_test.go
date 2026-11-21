@@ -3,6 +3,7 @@ package engine
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // The client's anthropic-version and anthropic-beta reach the provider as anthropicHeaders keeps them: after the
@@ -39,15 +40,21 @@ func TestPassthroughEventRewrite(t *testing.T) {
 	}
 }
 
-// The token saver on, a tool result in an Anthropic passthrough: handed off (the token saver is P4d's hand-off).
-func TestPassthroughTokenSaverHandsOff(t *testing.T) {
+// The token saver on, a long tool result in an Anthropic passthrough: planned with the saver, savedTokens kept on every
+// line (rtk spec D12); a message saveTokens cannot read is handed off (JS answers).
+func TestPassthroughTokenSaver(t *testing.T) {
 	s := xlateState(t)
-	p := s.PlanMessages(xlateReq(t, "/v1/messages", `{"model":"an/claude-x","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"x"}]}]}`), fixtureNow)
-	if p.Handoff != "token saver: tool results" {
-		t.Fatal(p.Handoff)
+	long := `{"model":"an/claude-x","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":` +
+		string(mustJSON(strings.Repeat("2026-11-17 INFO step\n", 300))) + `}]}]}`
+	p := s.PlanMessages(xlateReq(t, "/v1/messages", long), fixtureNow)
+	if p.Handoff != "" || p.saver == nil || !p.keepSaved || len(p.Body) != 0 {
+		t.Fatalf("handoff %q, saver %v, keepSaved %v, body %d", p.Handoff, p.saver != nil, p.keepSaved, len(p.Body))
+	}
+	if why := s.Save(&p, time.Now()); why != "" || p.Base.SavedTokens == nil || len(p.Body) == 0 {
+		t.Fatalf("save %q, savedTokens %v, body %d", why, p.Base.SavedTokens, len(p.Body))
 	}
 	p = s.PlanMessages(xlateReq(t, "/v1/messages", `{"model":"an/claude-x","messages":[null]}`), fixtureNow)
-	if p.Handoff != "token saver: tool results" {
+	if p.Handoff != saverThrows {
 		t.Fatal(p.Handoff)
 	}
 }

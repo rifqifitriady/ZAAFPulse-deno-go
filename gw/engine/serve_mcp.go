@@ -72,7 +72,7 @@ func (e *Engine) callTool(r *http.Request, s *State, p *Plan, args []byte, tr *c
 	if f == nil {
 		return nil, false
 	}
-	status, answer, err := (*f)(context.WithoutCancel(r.Context()), toolBody(p, args, e.toolTrace(r, s, tr)))
+	status, answer, err := (*f)(context.WithoutCancel(r.Context()), toolEndpointBody(p, args, e.toolTrace(r, s, tr)))
 	if err != nil || status != http.StatusOK {
 		if err != nil {
 			e.logf("go engine: mcp: the tool endpoint failed: %v", err)
@@ -102,9 +102,9 @@ func (e *Engine) toolTrace(r *http.Request, s *State, tr *callTrace) *TraceCtx {
 	return &tc // a sampled one is traced (tr), so this is the unsampled case
 }
 
-// toolBody is the endpoint's request: {"name", "arguments" (the checked arguments' JSON text), "keyId" (the call runs
+// toolEndpointBody is the endpoint's request: {"name", "arguments" (the checked arguments' JSON text), "keyId" (the call runs
 // as the key, for the integrations' audit), "trace"?}.
-func toolBody(p *Plan, args []byte, tc *TraceCtx) []byte {
+func toolEndpointBody(p *Plan, args []byte, tc *TraceCtx) []byte {
 	var b strings.Builder
 	b.WriteString(`{"name":`)
 	jsv.Quote(&b, p.Tool)

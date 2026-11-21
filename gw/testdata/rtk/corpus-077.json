@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "PASS test/0.test.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\nnode_modules/p1/index.js\r\n\r\nnode_modules/p23/index.js\r\nPASS test/24.test.js",
+    "Bash ls -R"
+  ],
+  "out": null
+}
