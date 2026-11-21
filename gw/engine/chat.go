@@ -131,6 +131,14 @@ type Plan struct {
 	Timeout     time.Duration
 	Detached    bool
 	buildErr    error // the provider body could not be built from the checked body (the Anthropic leg, review m3)
+
+	// The token saver (spec the rtk-go design D8, D12): the texts Save shortens in
+	// pending, whether it ran, how many it shortened, and whether every line keeps savedTokens (the Anthropic
+	// passthrough spreads base into its guard lines too; proxyChat's guard lines carry none).
+	saver     *saverJob
+	saverDone bool
+	saverHits int
+	keepSaved bool
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }
@@ -192,19 +200,23 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	if why != "" {
 		return handoff(why)
 	}
-	if s.tokenSaverOn(r) && hasToolMessage(body) {
-		return handoff("token saver: tool results")
-	}
 	stream := body.Get("stream").Truthy()
 	out, why := upstreamBody(body, t, stream)
 	if why != "" {
 		return handoff(why)
 	}
+	var job *saverJob
+	if s.tokenSaverOn(r) {
+		// saveTokens(body, 'openai') before the guardrails (rtk.js R2): the walk now, the filters in Save.
+		if job, why = scanSaver(out, "openai"); why != "" {
+			return handoff(why) // saveTokens would throw, or reads what the engine cannot hold: JS answers (spec D7)
+		}
+	}
 	so := body.Get("stream_options")
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: model, URL: t.Provider.BaseURL + "/chat/completions",
 		Header: providerHeader(t, cred), Base: s.base(key, t, model, r), Stream: stream,
 		WantsUsage: so.Truthy() && so.Get("include_usage").Truthy(), Format: "openai", Shape: ShapeOpenAI,
-		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild}
+		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild, saver: job}
 	if FormatOf(t.Provider) == "anthropic" {
 		if why := planAnthropicLeg(&p, cred, out); why != "" {
 			return handoff(why)
@@ -212,6 +224,8 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	}
 	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
 		p.Policy, p.pending = &pol, out // State.Guard builds Body (P4e)
+	} else if job != nil {
+		p.pending = out // State.Save builds Body
 	} else {
 		p.Body = p.build(&p, out)
 	}
