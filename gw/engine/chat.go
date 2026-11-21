@@ -17,6 +17,7 @@ import (
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate"
 )
 
 // MaxBody is lib/gateway/index.js MAX_BODY: a bigger body is the control plane's 413.
@@ -43,8 +44,9 @@ type State struct {
 	Mask       []string
 	Pricer     *Pricer
 	Snapshot   *ipc.BudgetSnapshot
-	SnapshotAt int64 // epoch ms the snapshot says it was taken
-	spans      bool  // config.push trace.spans (P4f D8): a span is recorded somewhere
+	SnapshotAt int64                // epoch ms the snapshot says it was taken
+	spans      bool                 // config.push trace.spans (P4f D8): a span is recorded somewhere
+	logf       func(string, ...any) // the engine's log, set by SetState (recovered panics, P4d)
 }
 
 // Spans is whether this generation's calls get trace spans and a usage line naming their trace (P4f D8).
@@ -104,6 +106,31 @@ type Plan struct {
 	Overrun    string          // the check that ran past its limit, when Guard refused for that
 	refused    *Answer         // the shadow: the budget refusal the engine would have answered
 	GuardPanic string          // a panic out of the checks, refused as a 500 (for the log)
+
+	// P4d. Class is the sub-class; Format the client's wire format (openai, anthropic, responses, gemini) and Shape
+	// how its refusals are written; Upstream what the provider is asked (Up*). Env draws the translation's ids and
+	// times. ClientModel is the name the client used, which translated answers carry. Soft and Dropped are the
+	// translation's tags (Tagged says the body had them: Gemini's has none); Custom the Responses custom tool names.
+	// GuardFormat is the checks' format; build makes the provider body from the checked one. Self is an answer the
+	// engine gives without a provider (a count estimate); Timeout a limit of its own over the whole provider call, its
+	// body included, as an AbortSignal.timeout passed to fetch (count: 15 s; without one, the 120 s limit covers the
+	// headers only); Detached a call the client's leaving does not cancel (embeddings).
+	Class       string
+	Format      string
+	Shape       Shape
+	Upstream    string
+	Env         *translate.Env
+	ClientModel string
+	Soft        []string
+	Dropped     []string
+	Tagged      bool
+	Custom      []string
+	GuardFormat string
+	build       func(p *Plan, body *Value) []byte
+	Self        *Answer
+	Timeout     time.Duration
+	Detached    bool
+	buildErr    error // the provider body could not be built from the checked body (the Anthropic leg, review m3)
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }
@@ -161,57 +188,60 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	if t == nil || (key.PrivateOnly && TierOf(t.Provider) != "private") {
 		return handoff("model: no usable target")
 	}
-	if FormatOf(t.Provider) != "openai" {
-		return handoff("provider: not the OpenAI format (P4d)")
+	cred, why := s.credential(t)
+	if why != "" {
+		return handoff(why)
 	}
-	cred := ""
-	if a := t.Provider.Auth; a != nil {
-		if a.Type != "key" {
-			return handoff("provider: OAuth2 or a service account (P4g)")
-		}
-		if cred = s.Secrets[t.Provider.ID]; cred == "" {
-			return handoff("provider: no credential")
-		}
-	}
-	if s.Gateway.TokenSaver && !strings.EqualFold(strings.Join(r.Header.Values("X-Zp-Token-Saver"), ", "), "off") &&
-		hasToolMessage(body) {
+	if s.tokenSaverOn(r) && hasToolMessage(body) {
 		return handoff("token saver: tool results")
 	}
 	stream := body.Get("stream").Truthy()
-	out := body.Clone()
-	if stream && StreamUsageOf(t.Provider) {
-		// proxyChat: { ...body, stream_options: { ...(body.stream_options || {}), include_usage: true } }. Spreading a
-		// non-empty string or array gives indexed keys, which the engine does not build: the control plane answers.
-		so := body.Get("stream_options")
-		merged := NewObject()
-		switch {
-		case so != nil && so.Kind == Object:
-			merged = so.Clone()
-		case so != nil && (so.Kind == String && so.S != "" || so.Kind == Array && len(so.A) > 0):
-			return handoff("stream: stream_options is not an object")
-		}
-		merged.Set("include_usage", &Value{Kind: Bool, B: true})
-		out.Set("stream_options", merged)
-	}
-	h := http.Header{}
-	h.Set("Content-Type", "application/json")
-	h.Set("Accept", "application/json")
-	if cred != "" {
-		h.Set("Authorization", "Bearer "+cred)
+	out, why := upstreamBody(body, t, stream)
+	if why != "" {
+		return handoff(why)
 	}
 	so := body.Get("stream_options")
-	p := Plan{Key: key, Target: t, Model: model, URL: t.Provider.BaseURL + "/chat/completions", Header: h,
-		Base: s.base(key, t, model, r), Stream: stream, WantsUsage: so.Truthy() && so.Get("include_usage").Truthy()}
+	p := Plan{Key: key, Target: t, Model: model, ClientModel: model, URL: t.Provider.BaseURL + "/chat/completions",
+		Header: providerHeader(t, cred), Base: s.base(key, t, model, r), Stream: stream,
+		WantsUsage: so.Truthy() && so.Get("include_usage").Truthy(), Format: "openai", Shape: ShapeOpenAI,
+		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild}
+	if FormatOf(t.Provider) == "anthropic" {
+		if why := planAnthropicLeg(&p, cred, out); why != "" {
+			return handoff(why)
+		}
+	}
 	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
 		p.Policy, p.pending = &pol, out // State.Guard builds Body (P4e)
 	} else {
-		p.Body = finishBody(t, out)
+		p.Body = p.build(&p, out)
 	}
 	if stream {
 		v := true
 		p.Base.Stream = &v
 	}
+	p.Class = SubClass("chat", &p, nil)
 	return p
+}
+
+// upstreamBody is proxyChat's upstreamBody: { ...body, stream_options: { ...(body.stream_options || {}), include_usage:
+// true } } for a stream to a provider that reports stream usage, else a copy of body. Spreading a non-empty string or
+// array gives indexed keys, which the engine does not build: the control plane answers.
+func upstreamBody(body *Value, t *Target, stream bool) (*Value, string) {
+	out := body.Clone()
+	if !stream || !StreamUsageOf(t.Provider) {
+		return out, ""
+	}
+	so := body.Get("stream_options")
+	merged := NewObject()
+	switch {
+	case so != nil && so.Kind == Object:
+		merged = so.Clone()
+	case so != nil && (so.Kind == String && so.S != "" || so.Kind == Array && len(so.A) > 0):
+		return nil, "stream: stream_options is not an object"
+	}
+	merged.Set("include_usage", &Value{Kind: Bool, B: true})
+	out.Set("stream_options", merged)
+	return out, ""
 }
 
 // StreamLine is chatCompletion's line after a stream: status 200, the tokens of the last usage chunk, the time to the
@@ -364,27 +394,20 @@ func (s *State) Respond(p *Plan, status int, raw []byte, ms float64) Answer {
 func (s *State) Failed(p *Plan, why string, ms float64) Answer {
 	msg := s.mask(p.Target.Provider.ID + ": " + why)
 	rec := p.Base
-	rec.RoutedTo, rec.Guard = nil, nil // a target that failed carries no guardrail outcome (G8)
+	// proxyChat's 599 line: the attempt's own fields, without routedTo, requested, savedTokens or a guardrail outcome
+	// (a target that failed carries none, G8).
+	rec.RoutedTo, rec.Guard, rec.Requested, rec.SavedTokens = nil, nil, nil, nil
 	rec.Status, rec.Ms, rec.Error = 599, ms, &msg
-	b := NewObject()
-	e := NewObject()
-	e.Set("message", Str(msg))
-	e.Set("type", Str("upstream_error"))
-	b.Set("error", e)
-	return Answer{Status: http.StatusBadGateway, Header: answerHeader(), Body: b.Stringify(), Usage: rec}
+	a := shapeError(p.Shape, http.StatusBadGateway, msg, "upstream_error", "", "")
+	a.Usage, a.NoLine = rec, false
+	return a
 }
 
-// RateLimited is authed's 429 for a key past its requests per minute.
-func RateLimited(key *ipc.GatewayKeyAuth, wait int64) Answer {
-	rpm := key.RPM
-	b := NewObject()
-	e := NewObject()
-	e.Set("message", Str("rate limit of "+NumberString(float64(rpm))+" requests per minute reached"))
-	e.Set("type", Str("rate_limit_error"))
-	b.Set("error", e)
-	h := answerHeader()
-	h.Set("Retry-After", NumberString(float64(wait)))
-	return Answer{Status: http.StatusTooManyRequests, Header: h, Body: b.Stringify()}
+// RateLimited is authed's 429 for a key past its requests per minute, in the client's shape.
+func RateLimited(key *ipc.GatewayKeyAuth, wait int64, sh Shape) Answer {
+	return shapeError(sh, http.StatusTooManyRequests,
+		"rate limit of "+NumberString(float64(key.RPM))+" requests per minute reached", "rate_limit_error", "",
+		NumberString(float64(wait)))
 }
 
 // tokens is usageOf: prompt, completion and cached tokens, 0 when missing; a count that is not a whole number of zero

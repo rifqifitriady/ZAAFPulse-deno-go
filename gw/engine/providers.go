@@ -2,6 +2,7 @@ package engine
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
@@ -141,4 +142,45 @@ func ScopeTier(p *ipc.ProviderConfig, model string) string {
 // target of this tier. The engine serves only calls no check looks at; the checks themselves are P4e.
 func GuardActive(global ipc.GuardrailsPolicy, key *ipc.GatewayKeyAuth, tier string) bool {
 	return checksApply(PolicyFor(global, key), tier)
+}
+
+var takesReasoningEffort = regexp.MustCompile(`(?i)(^|/)(o[1-9]|gpt-5|gpt-oss)`)
+var geminiReasoning = regexp.MustCompile(`gemini-(2\.5|[3-9])`)
+
+// TakesReasoning is providers.js takesReasoning: the provider's reasoning flag, else a model known to take
+// reasoning_effort (o-series, gpt-5+, gpt-oss, Gemini 2.5+ on the gemini preset).
+func TakesReasoning(p *ipc.ProviderConfig, model string) bool {
+	if p.Reasoning != nil {
+		return *p.Reasoning
+	}
+	return takesReasoningEffort.MatchString(model) || (p.Preset == "gemini" && geminiReasoning.MatchString(model))
+}
+
+// AdaptChatTagged is adaptChat for a translated body (P4d): AdaptChat, then a reasoning_effort the translation added
+// (soft) is removed for a model that does not take it, and "reasoning" is added once to dropped (nil: the body had no
+// dropped list, as Gemini's).
+func AdaptChatTagged(p *ipc.ProviderConfig, model string, body *Value, soft []string, dropped *[]string) {
+	AdaptChat(p, model, body)
+	for _, f := range soft {
+		re := body.Get("reasoning_effort")
+		if f != "reasoning_effort" || re == nil || re.Kind == Null || TakesReasoning(p, model) {
+			continue
+		}
+		body.Delete("reasoning_effort")
+		if dropped != nil && !slices.Contains(*dropped, "reasoning") {
+			*dropped = append(*dropped, "reasoning")
+		}
+	}
+}
+
+// NativeResponses is providers.js nativeResponses: an OpenAI-format provider that takes /responses as it is (its
+// responses flag, else the openai and azure-openai presets).
+func NativeResponses(p *ipc.ProviderConfig) bool {
+	if FormatOf(p) != "openai" {
+		return false
+	}
+	if p.Responses != nil {
+		return *p.Responses
+	}
+	return p.Preset == "openai" || p.Preset == "azure-openai"
 }

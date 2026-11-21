@@ -212,7 +212,7 @@
         },
         "engines": { "type": "object", "additionalProperties": { "type": "string", "enum": ["js", "go"] } },
         "shadow": {
-          "description": "P4b: the route classes on js whose requests the gateway compares with the go engine",
+          "description": "P4b: the route classes on js whose requests the gateway compares with the go engine (P4d: and the sub-classes of messages, responses, gemini and chat)",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -220,7 +220,7 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["chat", "chat-stream", "messages", "responses", "embeddings", "models", "gemini", "mcp", "a2a", "skills", "agents"]
+                "enum": ["chat", "chat-stream", "chat-anthropic", "chat-anthropic-stream", "messages", "messages-stream", "messages-count", "responses", "responses-stream", "embeddings", "models", "gemini", "gemini-stream", "gemini-count", "mcp", "a2a", "skills", "agents"]
               }
             }
           }

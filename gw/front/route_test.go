@@ -321,3 +321,20 @@ func TestForwardedWavesReuseUpstreamConnections(t *testing.T) {
 		t.Fatalf("the second wave opened %d new upstream connections (first wave %d)", again, opened)
 	}
 }
+
+// P4d Decision 23: a well-formed %XX is kept by WHATWG, so a path holding one is canonical (its pathname is itself, as
+// the route fixtures show); a dot segment spelled with %2e and a malformed escape are not.
+func TestCanonicalPercentEscapes(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/v1beta/models/oa%2Fm1:generateContent": true, "/v1beta/models/oa%2fm1:generateContent": true,
+		"/v1/chat%2Fcompletions": true, "/v1/%2e/x": false, "/v1/%2E%2E/x": false, "/v1/.%2e/x": false,
+		"/v1/%2e%2e": false, "/v1/a%zz": false, "/v1/a%": false, "/v1/a%2": false,
+	} {
+		if Canonical(p) != want {
+			t.Errorf("%s: %v", p, !want)
+		}
+	}
+	if Classify("/v1beta/models/oa%2Fm1:generateContent") != "gemini" || Classify("/v1/chat%2Fcompletions") != "agents" {
+		t.Fatal("classes")
+	}
+}

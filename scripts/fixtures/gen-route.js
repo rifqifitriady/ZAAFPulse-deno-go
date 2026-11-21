@@ -29,6 +29,15 @@ const RAW = [
   '/v1/models/oa/m1',
   '/v1beta/models/oa%2Fm1:generateContent',
   '/v1beta/models/oa/m1:generateContent',
+  // P4d: WHATWG keeps a well-formed percent escape as it is, so the gateway classifies such a path; a %2e segment is a
+  // dot segment (resolved), a malformed escape is left to the control plane.
+  '/v1beta/models/oa%2fm1:generateContent',
+  '/v1beta/models/caf%C3%A9:generateContent',
+  '/v1/%2e%2E/x',
+  '/v1/.%2e/x',
+  '/v1/%2E/x',
+  '/v1/a%zz',
+  '/v1/a%',
   '/mcp',
   '/a2a',
   '/.well-known/agent-card.json',

@@ -160,10 +160,6 @@ func TestChatHandoffs(t *testing.T) {
 			s.Gateway.Routes = []ipc.RouteConfig{{Name: "router/r", Targets: []string{"oa/m1"}}}
 			r.Body = []byte(`{"model":"router/r"}`)
 		}},
-		{"anthropic format", "provider: not the OpenAI", func(s *State, r *Request) {
-			f := "anthropic"
-			s.Gateway.Providers[0].Format = &f
-		}},
 		{"oauth2", "provider: OAuth2", func(s *State, r *Request) { s.Gateway.Providers[0].Auth = &ipc.ProviderAuth{Type: "oauth2"} }},
 		{"credential missing", "provider: no credential", func(s *State, r *Request) { delete(s.Secrets, "oa") }},
 		{"tool results", "token saver:", func(s *State, r *Request) {
@@ -190,7 +186,7 @@ func TestChatHandoffs(t *testing.T) {
 }
 
 func TestRateLimitedAnswer(t *testing.T) {
-	a := RateLimited(&ipc.GatewayKeyAuth{RPM: 2}, 7)
+	a := RateLimited(&ipc.GatewayKeyAuth{RPM: 2}, 7, ShapeOpenAI)
 	if a.Status != 429 || a.Header.Get("Retry-After") != "7" ||
 		string(a.Body) != `{"error":{"message":"rate limit of 2 requests per minute reached","type":"rate_limit_error"}}` {
 		t.Fatalf("%d %v %s", a.Status, a.Header, a.Body)
