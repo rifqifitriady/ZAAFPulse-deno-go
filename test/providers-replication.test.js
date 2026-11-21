@@ -173,3 +173,13 @@ test('noteHeaders keeps the 13 names noteResponse reads, as Headers.get gives th
   h.append('x-ratelimit-limit-requests', '2');
   assert.deepEqual(noteHeaders(h), { 'retry-after': '3', 'x-ratelimit-limit-requests': '1, 2' });
 });
+
+test('applyNote reads only the note names: a bad header name or an unknown one is dropped, not thrown on', () => {
+  const m = machine();
+  const headers = { 'bad name\n': 'x', 'x-other': '9', 'retry-after': '5', 'x-ratelimit-remaining-tokens': 7 };
+  assert.equal(m.providers.applyNote({ providerId: 'a', status: 429, at: T0, headers }), true);
+  assert.deepEqual(m.providers.routeState().cooldown, [
+    { providerId: 'a', until: T0 + 5000, strikes: 1, reason: 'HTTP 429' },
+  ]);
+  assert.deepEqual(m.told, []);
+});

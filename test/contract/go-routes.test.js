@@ -111,7 +111,10 @@ test.before(async () => {
 });
 test.after(async () => {
   try {
-    for (const x of Object.values(servers)) await x.s.stop();
+    // Every server is stopped, whichever fails; the first failure is thrown once all are done.
+    const stops = await Promise.allSettled(Object.values(servers).map((x) => x.s.stop()));
+    const failed = stops.find((r) => r.status === 'rejected');
+    if (failed) throw failed.reason;
   } finally {
     if (upstream) await upstream.close();
   }
@@ -138,14 +141,26 @@ const fromGo = (lines, go) => {
 
 const quota = async (x) => (await x.c.call('/api/gateway', { method: 'GET' })).json.quota;
 const quotaOf = async (x, id) => (await quota(x)).find((q) => q.id === id);
-// js to go: a route save answers once the gateway applied the generation pushed after every earlier control message.
-const barrier = (x) =>
-  x.c.admin('routes', {
+// js to go: a route save pushes a new generation after every earlier control message; the barrier holds until the
+// gateway's health names it (the save answers after 2 s at most even unconfirmed, so it is checked here, bounded).
+const gatewayStatus = async (x) => (await x.c.call('/api/gateway/status', { method: 'GET' })).json;
+async function barrier(x) {
+  const was = await gatewayStatus(x);
+  await x.c.admin('routes', {
     action: 'save',
     name: `router/barrier-${++barriers}`,
     targets: ['qa/m1'],
     strategy: 'fallback',
   });
+  await until(
+    async () => {
+      const st = await gatewayStatus(x);
+      return st.state === 'ready' && st.gen > was.gen && st.lastHealth && st.lastHealth.gen >= st.gen ? st : null;
+    },
+    'the gateway confirming the config pushed by the barrier save',
+    5000,
+  );
+}
 
 test(
   '(a) a go-served 429 from A: the next js-served /v1/messages route call tries B first',
@@ -275,6 +290,8 @@ test(
     assert.equal((await chat(g, 'router/rr-d')).status, 200);
     assert.deepEqual(order(await linesOf(g, before, 1)), [['qj', 200]]);
     before = (await g.c.logs()).length;
+    // qm's cooldown is the upstream's retry-after (30 s); the restart and the next call must end well within it.
+    const cooledAt = Date.now();
     assert.equal((await chat(g, 'router/cool-d')).status, 200);
     assert.deepEqual(order(await linesOf(g, before, 2)), [
       ['qm', 429],
@@ -286,7 +303,7 @@ test(
       const q = await quotaOf(g, 'qm');
       return q && q.cooldown;
     }, 'the cooldown of qm on the server');
-    const status = async () => (await g.c.call('/api/gateway/status', { method: 'GET' })).json;
+    const status = () => gatewayStatus(g);
     const old = await status();
     assert.equal(old.state, 'ready');
     killHard(old.pid);
@@ -296,7 +313,7 @@ test(
         return st.state === 'ready' && st.pid && st.pid !== old.pid ? st : null;
       },
       'the restarted gateway',
-      30000,
+      15000, // clearly shorter than qm's 30 s cooldown
     );
     before = (await g.c.logs()).length;
     // The main port may refuse for a moment after ready; a refused call reaches no provider.
@@ -305,6 +322,7 @@ test(
       return x.status === 200 ? x : null;
     }, 'a call through the restarted gateway');
     assert.equal(r.status, 200);
+    assert.ok(Date.now() - cooledAt < 25000, "the restart ended well within qm's 30 s cooldown");
     const cooled = await linesOf(g, before, 1);
     assert.deepEqual(order(cooled), [['qn', 200]], 'the new gateway backs off from qm');
     fromGo(cooled, true);

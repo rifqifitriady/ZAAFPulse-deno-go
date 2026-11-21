@@ -438,8 +438,21 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 			js.ServeHTTP(w, r) // the gateway is shutting down
 			return
 		}
-		call := e.open(&p)
+		// Until serveStream takes the stream over, a panic (in Start, its answer hook included) still ends the
+		// stream the gateway's shutdown waits for, and the call's journal entry.
+		var call int64
+		owned := false
+		defer func() {
+			if !owned {
+				if call != 0 {
+					e.calls.End(call)
+				}
+				e.streams.Done()
+			}
+		}()
+		call = e.open(&p)
 		resp, why := e.upstream.Start(r.Context(), &p)
+		owned = true // serveStream ends the stream
 		e.serveStream(w, r, s, &p, req, started, tr, call, resp, why)
 		return
 	}

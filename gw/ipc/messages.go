@@ -386,7 +386,7 @@ type UsageRecord struct {
 	Kind        *string           `json:"kind,omitzero" ipc:"enum=chat|agent|embeddings|mcp"`
 	Format      *string           `json:"format,omitzero" ipc:"enum=openai|anthropic|responses|gemini"`
 	Stream      *bool             `json:"stream,omitzero"`
-	Status      int64             `json:"status" ipc:"min=100,max=599"`
+	Status      int64             `json:"status" ipc:"min=0"`
 	Ms          float64           `json:"ms" ipc:"min=0"`
 	TTFT        Nullable[float64] `json:"ttft,omitzero"`
 	Input       *int64            `json:"input,omitzero" ipc:"min=0"`
