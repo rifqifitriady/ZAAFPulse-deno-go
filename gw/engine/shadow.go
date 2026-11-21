@@ -366,6 +366,10 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		js.ServeHTTP(w, r)
 		return
 	}
+	if p.Upstream == UpTool { // /mcp tools/call has no compare yet (P4g Task 3): a hand-off line, no capture
+		h := handoff("mcp: no shadow compare yet")
+		p = &h
+	}
 	select {
 	case shadowSlots <- struct{}{}:
 	default:
