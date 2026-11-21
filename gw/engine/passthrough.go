@@ -59,13 +59,20 @@ func (s *State) nativePlan(r *Request, key *ipc.GatewayKeyAuth, body *Value, nam
 }
 
 // planAnthropicNative: the passthrough when the mapped model's target is an Anthropic-format provider named by it
-// (messagesApi, J4). done false: translate instead (a route always is: its name is never its first target's, P4h).
+// (messagesApi, J4). done false: translate instead. A route translates too, unless one of its targets resolves to the
+// route's own name (a provider whose id is the route's prefix, e.g. router/x on a provider router): its first target
+// after JS's take may then be that one, and messagesApi passes through, so the call is handed off before any take.
 func (s *State) planAnthropicNative(r *Request, key *ipc.GatewayKeyAuth, body *Value, name string) (Plan, bool) {
 	model, ok := s.MapModel(name)
 	if !ok {
 		return handoff("model: mapping needs the model list"), true
 	}
-	if s.routeOf(model) != nil {
+	if rt := s.routeOf(model); rt != nil {
+		for _, tn := range rt.Targets {
+			if t := Resolve(s.Gateway.Providers, tn); t != nil && t.Name == model {
+				return handoff(RouteHandoff + "a target named as its route"), true
+			}
+		}
 		return Plan{}, false
 	}
 	first, _ := s.target(model, key)

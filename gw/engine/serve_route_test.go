@@ -482,6 +482,9 @@ func TestRouteHandoffsPerClass(t *testing.T) {
 			seq = s
 		}
 	}
+	if seq.Name == "" {
+		t.Fatal("seq-takes-per-class.json not found")
+	}
 	for i, st := range seq.In.Steps {
 		body, missing := st.Request.Body, "ob"
 		if strings.HasSuffix(st.Request.Path, "/count_tokens") {
@@ -510,5 +513,64 @@ func TestRouteHandoffsPerClass(t *testing.T) {
 		if p := s.PlanFor(front.Classify(req.RawPath), req, seq.In.Start); p.Handoff != "route: provider: no credential" {
 			t.Errorf("step %d %s: handoff %q", i, name, p.Handoff)
 		}
+	}
+}
+
+// Final review (P4h): with a provider whose id is router, a route router/x may list router/x itself, which resolves to
+// a target named as the route; messagesApi then passes through when JS's take puts it first. The engine hands such a
+// /v1/messages call off at plan time, before any take, with a route reason.
+func TestRouteSelfNamedTargetHandsOffMessages(t *testing.T) {
+	var seq routeSeq
+	for _, s := range loadRouteSeqs(t) {
+		if s.Name == "seq-takes-per-class.json" {
+			seq = s
+		}
+	}
+	if seq.Name == "" {
+		t.Fatal("seq-takes-per-class.json not found")
+	}
+	var st = seq.In.Steps[0]
+	for _, x := range seq.In.Steps {
+		if x.Request.Path == "/v1/messages" {
+			st = x
+		}
+	}
+	if st.Request.Path != "/v1/messages" {
+		t.Fatal("no /v1/messages step")
+	}
+	body := strings.Replace(st.Request.Body, "router/rr2", "router/x", 1)
+	g := newRouteRig(t, &seq, func(string) (bool, bool) { return true, false })
+	s := *g.e.State()
+	gw := s.Gateway
+	gw.Providers = append([]ipc.ProviderConfig(nil), gw.Providers...)
+	for _, p := range gw.Providers {
+		if p.ID == "an" {
+			p.ID = "router"
+			gw.Providers = append(gw.Providers, p)
+			break
+		}
+	}
+	rr := "round-robin"
+	gw.Routes = append(append([]ipc.RouteConfig(nil), gw.Routes...),
+		ipc.RouteConfig{Name: "router/x", Targets: []string{"oa/m1", "router/x"}, Strategy: &rr})
+	s.Gateway = gw
+	s.Secrets = map[string]string{"router": "sk-router"}
+	for k, v := range g.e.State().Secrets {
+		s.Secrets[k] = v
+	}
+	g.e.SetState(&s)
+	_, handed := g.serve(st.Request.Method, st.Request.Path, st.Request.Headers, body)
+	_, events := g.take()
+	if !handed || len(g.rt.sent) != 0 || len(events) != 0 || len(g.e.Routes().Snapshot().RR) != 0 {
+		t.Fatalf("handed %v, %d provider requests, %d messages, rotation %v", handed, len(g.rt.sent), len(events),
+			g.e.Routes().Snapshot().RR)
+	}
+	req := xlateRequestOf(xlateCase{})
+	req.Body, req.RawPath = []byte(body), front.RawPath(st.Request.Path)
+	for k, v := range st.Request.Headers {
+		req.Header.Set(k, v)
+	}
+	if p := s.PlanFor(front.Classify(req.RawPath), req, seq.In.Start); p.Handoff != RouteHandoff+"a target named as its route" {
+		t.Fatalf("handoff %q", p.Handoff)
 	}
 }
