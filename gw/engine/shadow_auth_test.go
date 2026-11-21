@@ -316,3 +316,91 @@ func TestShadowLineAuthOnlyForTokenPlans(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 }
+
+// tokenFailCapture is the control plane's capture of a call whose own token fetch failed (az-token-fetch-failed: no
+// provider request, 502 "az: fetch failed").
+func tokenFailCapture(t *testing.T) *Capture {
+	t.Helper()
+	f := authFixtureNamed(t, "az-token-fetch-failed.json")
+	cl := f.Out.Clients[0]
+	if len(f.Out.Exchanges) != 1 || cl.Status < 500 {
+		t.Fatalf("fixture: %d exchanges, status %d", len(f.Out.Exchanges), cl.Status)
+	}
+	return &Capture{Client: &CaptureClient{Status: cl.Status, Body: cl.Body}}
+}
+
+// The control plane's token fetch failed before any provider request (P4g final review I3 case a): not comparable,
+// for chat and for a translated class; the line still carries auth: true.
+func TestShadowOwnTokenFetchFailedSkipped(t *testing.T) {
+	s, p := authPlan(t, authFixtureNamed(t, "az-chat-whole.json"))
+	c := tokenFailCapture(t)
+	want := "the control plane's token fetch failed: each engine holds its own token"
+	if l := s.compareCaptured("chat", &p, c); l.Outcome != "skipped" || l.Reason != want || !l.Auth {
+		t.Fatalf("%+v", l)
+	}
+	if l := s.CompareTranslated("chat-anthropic", &p, c); l.Outcome != "skipped" || l.Reason != want {
+		t.Fatalf("translated: %+v", l)
+	}
+}
+
+// The first provider answer was 401 and the control plane made no replay (its refresh failed): case b, skipped.
+func TestShadowOwnRefreshAfter401Skipped(t *testing.T) {
+	f := authFixtureNamed(t, "az-replay-ok.json")
+	s, p := authPlan(t, f)
+	c := authCapture(t, f)
+	one := *c
+	one.ProviderRequests = one.ProviderRequests[:1]
+	one.Upstream = one.Upstream[:1]
+	first := one.Upstream[0]
+	one.ProviderResponse = &first
+	one.Client = &CaptureClient{Status: 502, Body: `{"error":{"message":"az: az: token refresh failed (401 invalid_client)","type":"upstream_error"}}`}
+	want := "the control plane's token fetch failed: each engine holds its own token"
+	if l := s.Compare("chat", &p, &one); l.Outcome != "skipped" || l.Reason != want {
+		t.Fatalf("%+v", l)
+	}
+	if l := s.CompareTranslated("chat-anthropic", &p, &one); l.Outcome != "skipped" || l.Reason != want {
+		t.Fatalf("translated: %+v", l)
+	}
+}
+
+// A key plan with the same captures still diffs: the skip is for token-auth plans only.
+func TestShadowKeyPlanTokenFailureStillDiffs(t *testing.T) {
+	s, p := authPlan(t, authFixtureNamed(t, "az-chat-whole.json"))
+	q := p
+	q.auth = nil
+	if l := s.Compare("chat", &q, tokenFailCapture(t)); l.Outcome != "diff" {
+		t.Fatalf("%+v", l)
+	}
+	f := authFixtureNamed(t, "az-replay-ok.json")
+	c := authCapture(t, f)
+	one := *c
+	one.ProviderRequests = one.ProviderRequests[:1]
+	one.Upstream = one.Upstream[:1]
+	first := one.Upstream[0]
+	one.ProviderResponse = &first
+	one.Client = &CaptureClient{Status: 502, Body: `{}`}
+	if l := s.Compare("chat", &q, &one); l.Outcome != "diff" {
+		t.Fatalf("one 401: %+v", l)
+	}
+}
+
+// A Bearer with an empty token is not normalised to a Bearer with a token (P4g final review m18): the JS sending
+// "Bearer " is a diff against the engine's Bearer <token>.
+func TestSchemeOnlyEmptyBearer(t *testing.T) {
+	if got := schemeOnly(map[string]string{"authorization": "Bearer "})["authorization"]; got != "Bearer " {
+		t.Fatalf("got %q", got)
+	}
+	if got := schemeOnly(map[string]string{"Authorization": "Bearer abc"})["Authorization"]; got != "Bearer "+tokenMark {
+		t.Fatalf("got %q", got)
+	}
+	f := authFixtureNamed(t, "az-chat-whole.json")
+	_, p := authPlan(t, f)
+	js := map[string]string{}
+	for k, v := range authCapture(t, f).ProviderRequests[0].Headers {
+		js[k] = v
+	}
+	js["authorization"] = "Bearer "
+	if a, b := providerHeaders(&p, js); a == b {
+		t.Fatal("an empty Bearer token compares the same")
+	}
+}

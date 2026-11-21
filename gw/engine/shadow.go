@@ -123,6 +123,9 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 	case tokenReplay(p, c):
 		l.Outcome, l.Reason = "skipped", authReplay
 		return l
+	case ownTokenFailed(p, c):
+		l.Outcome, l.Reason = "skipped", authOwnFailure
+		return l
 	case c != nil && c.ProviderResponse == nil && len(c.ProviderRequests) > 0:
 		l.Outcome, l.Reason = "skipped", "the provider call failed: no answer to compare"
 		return l
@@ -288,6 +291,24 @@ func tokenReplay(p *Plan, c *Capture) bool {
 		c.Upstream[0].Status == http.StatusUnauthorized
 }
 
+// authOwnFailure is the reason a capture in which the control plane's own token fetch failed is not compared: the
+// engine holds its own token, which may well be good (P4g final review I3).
+const authOwnFailure = "the control plane's token fetch failed: each engine holds its own token"
+
+// ownTokenFailed: plan p is a token-auth call and the capture shows the control plane's token fetch failing: (a) no
+// provider request and a client answer of 500 or more (a budget's 402 and a rate limit's 429 are below that), or (b)
+// the first provider answer is 401 and the refresh before the replay failed (fewer than two provider requests). Never
+// for a key plan: its failures are compared.
+func ownTokenFailed(p *Plan, c *Capture) bool {
+	if !p.TokenAuth() || c == nil {
+		return false
+	}
+	if len(c.ProviderRequests) == 0 && c.Client != nil && c.Client.Status >= http.StatusInternalServerError {
+		return true
+	}
+	return len(c.Upstream) > 0 && c.Upstream[0].Status == http.StatusUnauthorized && len(c.ProviderRequests) < 2
+}
+
 // tokenMark stands for a token in the header compare of a token-auth plan.
 const tokenMark = "<token>"
 
@@ -313,7 +334,7 @@ func providerHeaders(p *Plan, js map[string]string) (string, string) {
 }
 
 // schemeOnly is h with the credential's value replaced by tokenMark: the scheme of an authorization header is kept; an
-// empty value stays empty.
+// empty value, or a scheme with an empty token ("Bearer "), stays as it is.
 func schemeOnly(h map[string]string) map[string]string {
 	out := make(map[string]string, len(h))
 	for k, v := range h {
@@ -323,8 +344,10 @@ func schemeOnly(h map[string]string) map[string]string {
 				v = tokenMark
 			}
 		case "authorization":
-			if scheme, _, ok := strings.Cut(v, " "); ok {
-				v = scheme + " " + tokenMark
+			if scheme, rest, ok := strings.Cut(v, " "); ok {
+				if rest != "" { // "Bearer " with no token stays as it is: a diff against a Bearer with one
+					v = scheme + " " + tokenMark
+				}
 			} else if v != "" {
 				v = tokenMark
 			}

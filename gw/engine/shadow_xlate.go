@@ -114,6 +114,9 @@ func (s *State) CompareTranslated(class string, p *Plan, c *Capture) ShadowLine 
 	case tokenReplay(p, c):
 		l.Outcome, l.Reason = "skipped", authReplay
 		return l
+	case ownTokenFailed(p, c):
+		l.Outcome, l.Reason = "skipped", authOwnFailure
+		return l
 	case calls == 1 && len(c.Upstream) == 0 && len(c.ProviderRequests) > 0:
 		l.Outcome, l.Reason = "skipped", "the provider call failed: no answer to compare"
 		return l
