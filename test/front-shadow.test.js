@@ -120,7 +120,10 @@ test('the shadow log: a compare in which a token saver shortened something also 
   log.append({ class: 'chat', outcome: 'handoff', reason: 'token saver: over its step budget', saver: true });
   let st = log.stats();
   assert.deepEqual([st.chat.compared, st.messages.compared, st['token-saver'].compared], [2, 1, 2]);
-  assert.equal(st['token-saver'].handoffs, 0, 'only compares count for the switch');
+  assert.equal(st['token-saver'].handoffs, 1, 'a saver hand-off is shown for the switch, not counted as a compare');
+  log.append({ class: 'messages', outcome: 'handoff', reason: 'token saver: the engine\'s saver panicked' });
+  log.append({ class: 'chat', outcome: 'handoff', reason: 'model: a route' });
+  assert.equal(log.stats()['token-saver'].handoffs, 2, 'a token saver hand-off without the saver mark counts too');
   log.append({ class: 'chat', outcome: 'diff', saver: true, diffs: [{ field: 'providerRequest.body', js: 'a', go: 'b' }] });
   st = log.stats();
   assert.equal(st['token-saver'].diffs, 1);

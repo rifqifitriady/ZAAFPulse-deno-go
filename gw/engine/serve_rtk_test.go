@@ -130,3 +130,31 @@ func TestShadowTokenSaverWhileChatOnJS(t *testing.T) {
 		t.Fatalf("the engine called the provider %d times", len(sent()))
 	}
 }
+
+// Final review I1: a panic in the saver while serving hands the call to js with a log line; the client gets js's
+// answer, not a dropped connection.
+func TestServeSaverPanicGoesToJS(t *testing.T) {
+	saverHook = func() { panic("boom") }
+	defer func() { saverHook = nil }()
+	rig, sent := guardRig(t, func(s *State) { s.Gateway.TokenSaver = true })
+	rig.e.SetModes(func(string) (bool, bool) { return true, false })
+	var logged atomic.Bool
+	rig.e.logf = func(f string, a ...any) {
+		if strings.Contains(f, "token saver: panicked") {
+			logged.Store(true)
+		}
+	}
+	js := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(299) })
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rig.e.Serve("chat", w, r, "/v1/chat/completions", js)
+	}))
+	defer gw.Close()
+	rig.url = gw.URL + "/v1/chat/completions"
+	body := `{"model":"oa/m1","messages":[{"role":"tool","tool_call_id":"c","content":` +
+		string(mustJSON(strings.Repeat("2026-11-17 INFO step\n", 300))) + `}]}`
+	resp := rig.post(context.Background(), t, body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != 299 || len(sent()) != 0 || !logged.Load() {
+		t.Fatalf("status %d, provider calls %d, logged %v", resp.StatusCode, len(sent()), logged.Load())
+	}
+}

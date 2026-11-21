@@ -5,6 +5,7 @@ package engine
 // and lists the texts the saver will look at, as pointers into the plan's pending body. run shortens them in place.
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -19,7 +20,11 @@ const (
 	saverArgs       = "token saver: a tool call the engine cannot read"
 	saverOverBudget = "token saver: over its step budget"
 	saverIDs        = "token saver: a tool call id the engine cannot match"
+	saverPanicked   = "token saver: the engine's saver panicked"
 )
+
+// saverHook, when set (tests only), runs before each text the saver shortens: a test injects a panic through it.
+var saverHook func()
 
 // objectToolIDs: a tool call id or a tool message's tool_call_id is an object or an array. JS's Map finds such an id by
 // identity, and a translator may put one object in both places (lib/gateway/translate.js geminiToOpenAI), which the
@@ -240,6 +245,9 @@ func (j *saverJob) budget(now time.Time) *jsre.Budget {
 func (j *saverJob) run(b *jsre.Budget) (hits []rtkHit, why string) {
 	work := func() {
 		for _, t := range j.targets {
+			if saverHook != nil {
+				saverHook()
+			}
 			text, hit, w := compressText(u16(t.holder.Get(t.key).S), t.hint, b)
 			if w != "" {
 				why = w
@@ -287,11 +295,19 @@ func SaveTokens(body *Value, format string, b *jsre.Budget) (*SaveResult, string
 // Save is saveTokens on the plan's pending body (spec D8-D12): it shortens the texts scanSaver found, puts savedTokens
 // in the plan's base line, and builds the provider body unless a guardrail check will (Guard builds it from the same
 // pending body). It runs once per plan. why is a hand-off reason: the control plane answers the request.
-func (s *State) Save(p *Plan, now time.Time) string {
+func (s *State) Save(p *Plan, now time.Time) (handoffWhy string) {
 	if p.saver == nil || p.saverDone {
 		return p.saverWhy
 	}
 	p.saverDone = true
+	// A panic out of the filters is a bug of the port, never an answer JS gives: the call is handed to the control
+	// plane (exact), and the caller logs it. The shadow's compare goroutine has no recover of its own (final review I1).
+	defer func() {
+		if v := recover(); v != nil {
+			p.SaverPanic = fmt.Sprint(v)
+			p.saverWhy, handoffWhy = saverPanicked, saverPanicked
+		}
+	}()
 	hits, why := p.saver.run(p.saver.budget(now))
 	if why != "" {
 		p.saverWhy = why // the body is half done: the plan is not served

@@ -285,6 +285,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	// already at its limit is answered 429 below without the saver's work, as JS refuses it before saveTokens.
 	if p.saver != nil && e.limits.Wait(p.Key.ID, p.Key.RPM, e.now()) == 0 {
 		if why := s.Save(&p, time.Now()); why != "" {
+			e.logSaverPanic(&p)
 			js.ServeHTTP(w, r)
 			return
 		}
@@ -306,6 +307,7 @@ func (e *Engine) Serve(class string, w http.ResponseWriter, r *http.Request, raw
 	// The window freed between the look above and the take: the saver runs now. A hand-off here is rare and leaves
 	// this take counted (JS counts the call once more).
 	if why := s.Save(&p, time.Now()); why != "" {
+		e.logSaverPanic(&p)
 		js.ServeHTTP(w, r)
 		return
 	}
@@ -587,5 +589,12 @@ func (e *Engine) serveStream(w http.ResponseWriter, r *http.Request, s *State, p
 		if err != nil {
 			return // the provider broke off, or the client left (its context cancelled the call)
 		}
+	}
+}
+
+// logSaverPanic logs a panic out of the token saver (the value only, no prompt text), as the guardrails' GuardPanic.
+func (e *Engine) logSaverPanic(p *Plan) {
+	if p.SaverPanic != "" {
+		e.logf("go engine: token saver: panicked (%s); the call was handed to the control plane", p.SaverPanic)
 	}
 }
