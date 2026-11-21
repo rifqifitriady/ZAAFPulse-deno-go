@@ -70,6 +70,9 @@ type ShadowLine struct {
 	Reason  string `json:"reason,omitzero"`
 	Status  int    `json:"status,omitzero"` // the control plane's answer
 	Diffs   []Diff `json:"diffs,omitzero"`
+	// Saver: a token saver shortened a tool result in this call, the engine's or the control plane's (spec D14); the
+	// shadow log also counts such a line for the token-saver switch.
+	Saver bool `json:"saver,omitzero"`
 }
 
 // budgetLag is the reason a budget disagreement is not a diff: the control plane decides on its live spend, the engine
@@ -440,18 +443,7 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 				time.Sleep(20 * time.Millisecond)
 			}
 		}
-		var l ShadowLine
-		ref := p.refused
-		if ref == nil {
-			ref = s.Guard(p, 0)
-		}
-		if ref != nil {
-			l = s.CompareRefusal(sub, p, ref, c)
-		} else if sub == SubChat || sub == SubChatStream {
-			l = s.Compare(sub, p, c)
-		} else {
-			l = s.CompareTranslated(sub, p, c)
-		}
+		l := s.compareCaptured(sub, p, c)
 		if wait > 0 {
 			l = rateLimitedLine(sub, l.Status, wait) // the engine would have answered 429 itself
 		}
@@ -460,4 +452,37 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 			e.logf("shadow: the compare line could not be posted: %v", err)
 		}
 	}()
+}
+
+// compareCaptured is the line for plan p and the control plane's capture c (the shadow's goroutine): the token saver
+// runs first (spec D14; a refusal the budget decided comes before it in JS), then the guardrails or the refusal, then
+// the compare of the class's kind.
+func (s *State) compareCaptured(sub string, p *Plan, c *Capture) ShadowLine {
+	if p.refused == nil && p.Handoff == "" {
+		if why := s.Save(p, time.Now()); why != "" {
+			l := ShadowLine{Class: sub, Outcome: "handoff", Reason: why}
+			if c != nil && c.Client != nil {
+				l.Status = c.Client.Status
+			}
+			return l
+		}
+	}
+	var l ShadowLine
+	ref := p.refused
+	if ref == nil {
+		ref = s.Guard(p, 0)
+	}
+	if ref != nil {
+		l = s.CompareRefusal(sub, p, ref, c)
+	} else if sub == SubChat || sub == SubChatStream {
+		l = s.Compare(sub, p, c)
+	} else {
+		l = s.CompareTranslated(sub, p, c)
+	}
+	jsSaved := false
+	if c != nil {
+		_, jsSaved = c.Usage["savedTokens"]
+	}
+	l.Saver = p.saverHits > 0 || jsSaved
+	return l
 }
