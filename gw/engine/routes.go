@@ -225,8 +225,8 @@ func (r *RouteState) SetSend(send func(typ string, body any)) {
 	r.send = send
 }
 
-// Seed replaces the state with the control plane's (route.state: a new session, before ready; spec Decision 3). The
-// cooldowns come live; the strikes of one that expired before the seed are not carried (providers.js routeState).
+// Seed replaces the state with the control plane's (route.state: a new session, before ready; spec Decision 3). Every
+// cooldown entry comes, expired ones too: their strikes set the next back-off until a 2xx clears them (Decision 4).
 func (r *RouteState) Seed(b ipc.RouteState) {
 	rr := make(map[string]int, len(b.RR))
 	for _, x := range b.RR {

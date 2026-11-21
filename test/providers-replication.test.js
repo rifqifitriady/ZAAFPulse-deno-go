@@ -101,7 +101,10 @@ test('a sequence applied locally and as notes and takes on a second instance giv
       { name: 'router/rr', n: 3 },
       { name: 'router/two', n: 2 },
     ],
-    cooldown: [{ providerId: 'c', until: T0 + 40 + 3000, strikes: 1, reason: 'HTTP 529' }],
+    cooldown: [
+      { providerId: 'c', until: T0 + 40 + 3000, strikes: 1, reason: 'HTTP 529' },
+      { providerId: 'a', until: T0 + 60 + 1000, strikes: 1, reason: 'HTTP 503' }, // expired, kept with its strikes
+    ],
   });
   // The next takes continue alike on both sides.
   assert.deepEqual(
@@ -110,18 +113,38 @@ test('a sequence applied locally and as notes and takes on a second instance giv
   );
 });
 
-test('routeState carries live cooldowns only, with the fractional until of a fractional reset', async () => {
+test('routeState carries every cooldown entry, expired ones too, with the fractional until of a fractional reset', async () => {
   const m = machine();
   m.setClock(T0);
   await m.answer('a', 429, { 'x-ratelimit-remaining-requests': '0', 'x-ratelimit-reset-requests': '1.0005' });
   await m.answer('b', 503, {});
-  assert.deepEqual(m.providers.routeState().cooldown, [
+  const both = [
     { providerId: 'a', until: T0 + 1000.5, strikes: 1, reason: 'HTTP 429' },
     { providerId: 'b', until: T0 + 1000, strikes: 1, reason: 'HTTP 503' },
-  ]);
-  m.setClock(T0 + 1000);
+  ];
+  assert.deepEqual(m.providers.routeState().cooldown, both);
+  m.setClock(T0 + 5000);
+  assert.deepEqual(m.providers.routeState().cooldown, both, 'expired entries keep their strikes until a 2xx');
+  await m.answer('b', 200, {});
+  assert.deepEqual(m.providers.routeState().cooldown, [both[0]]);
+});
+
+// JS side of the seed case gw/engine/routes_test.go TestRouterSeedExpiredStrikes replays: three 429s, the cooldown
+// expires, route.state still carries strikes 3, and the next 429 waits 1000 * 2^3 ms.
+test('an expired entry seeds its strikes: the next 429 doubles from them (JS side of the Go seed case)', async () => {
+  const m = machine();
+  for (const at of [T0, T0 + 10, T0 + 20]) {
+    m.setClock(at);
+    await m.answer('a', 429, {});
+  }
+  m.setClock(T0 + 100000);
+  assert.equal(m.providers.quota().find((q) => q.id === 'a').cooldown, null, 'expired');
   assert.deepEqual(m.providers.routeState().cooldown, [
-    { providerId: 'a', until: T0 + 1000.5, strikes: 1, reason: 'HTTP 429' },
+    { providerId: 'a', until: T0 + 20 + 4000, strikes: 3, reason: 'HTTP 429' },
+  ]);
+  await m.answer('a', 429, {});
+  assert.deepEqual(m.providers.routeState().cooldown, [
+    { providerId: 'a', until: T0 + 100000 + 8000, strikes: 4, reason: 'HTTP 429' },
   ]);
 });
 

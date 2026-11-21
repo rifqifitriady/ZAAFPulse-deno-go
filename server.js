@@ -2345,7 +2345,7 @@ front = createFront({
     secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
     snapshot: () => snapshotPush({ service: costBudgets, keyIds: gateway.rawKeys().map((k) => k.id) }),
     window: () => windowPush(gateway.rateWindows()), // P4f D16: the rate-limit window a new gateway starts with
-    routes: () => routeStatePush(gateway.routeState()), // P4h Decision 3: the rotation counters and live cooldowns
+    routes: () => routeStatePush(gateway.routeState()), // P4h Decision 3: the rotation counters and every cooldown
   },
   // Design rule 2 (P4f D24, owner decision; final review I5): calls that passed a stale budget snapshot are marked,
   // alerted and audited: per alert window, an "opened" entry at the alert and a "closed" one with the window's count

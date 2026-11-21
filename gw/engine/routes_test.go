@@ -647,3 +647,20 @@ func TestEngineRouteReplication(t *testing.T) {
 		t.Fatalf("remote messages were sent back, or the local take was not sent: %+v", got)
 	}
 }
+
+// The Go side of test/providers-replication.test.js's seed case: route.state carries an expired entry with strikes 3
+// (JS keeps it until a 2xx); after the seed the next 429 waits 1000 * 2^3 ms, as JS does, not 1 s.
+func TestRouterSeedExpiredStrikes(t *testing.T) {
+	const t0 = 1767225600000
+	r := NewRouteState(nil)
+	r.Seed(ipc.RouteState{RR: []ipc.RouteRR{}, Cooldown: []ipc.RouteCooldown{
+		{ProviderID: "a", Until: t0 + 20 + 4000, Strikes: 3, Reason: "HTTP 429"}}})
+	if r.Cooling("a", t0+100000) {
+		t.Fatal("the seeded entry is expired")
+	}
+	r.Note("a", 429, http.Header{}, t0+100000, false)
+	want := []ipc.RouteCooldown{{ProviderID: "a", Until: t0 + 100000 + 8000, Strikes: 4, Reason: "HTTP 429"}}
+	if got := r.Snapshot().Cooldown; !reflectEqualJSON(got, want) {
+		t.Fatalf("after a 429: %+v, want %+v (JS)", got, want)
+	}
+}
