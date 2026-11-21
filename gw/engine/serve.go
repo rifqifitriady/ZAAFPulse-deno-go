@@ -106,6 +106,14 @@ func (e *Engine) SetIDs(ids SpanIDs) { e.ids = ids }
 type callTrace struct {
 	tc    TraceCtx
 	facts reqFacts
+	prior []priorLine // a route call's lines before the one that ends it (P4h Decision 10)
+}
+
+// priorLine is a route leg's line written before the call ended (a 599, a fallback): its client span is emitted with the
+// call's, after the server span, in the order the lines were written, as lib/otel.js finishes the pending spans.
+type priorLine struct {
+	rec  ipc.UsageRecord
+	prov *ipc.ProviderSpan
 }
 
 // trace starts a request's trace context when the engine answers it and a span is recorded somewhere (config.push
@@ -138,17 +146,21 @@ func factsOf(r *http.Request, path string) reqFacts {
 
 // spans emits a request's server span and, for a usage line, its client span (P4f D1), as lib/otel.js records them
 // when the response ends: the server span first (a chat call's client span waits for the answer's id and finish
-// reasons), each through the outbox after the usage line.
+// reasons), each through the outbox after the usage line. A route call's earlier lines (t.prior) get theirs first, in
+// order, then the last line's (P4h Decision 10): one client span per usage line, as otel.js makes one per record.
 func (e *Engine) spans(s *State, t *callTrace, status int, started, ended time.Time, rec *ipc.UsageRecord,
 	prov *ipc.ProviderSpan, obs *Observer) {
 	tc, f := t.tc, t.facts
 	out := []ipc.TraceSpanBody{ServerSpan(tc, ServerFacts{Method: f.method, Path: f.path, Proto: f.proto, TLS: f.tls,
 		UserAgent: f.ua, Status: status, StartUs: started.UnixMicro(), EndUs: ended.UnixMicro()})}
+	var o *Observed
+	if obs != nil && (rec != nil || len(t.prior) > 0) {
+		o = obs.Result()
+	}
+	for i := range t.prior {
+		out = append(out, ClientSpan(tc, e.ids(8), &t.prior[i].rec, t.prior[i].prov, o, s.mask))
+	}
 	if rec != nil {
-		var o *Observed
-		if obs != nil {
-			o = obs.Result()
-		}
 		out = append(out, ClientSpan(tc, e.ids(8), rec, prov, o, s.mask))
 	}
 	for i := range out {

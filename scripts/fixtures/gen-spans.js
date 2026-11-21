@@ -8,7 +8,11 @@
 // otel.js newId is deterministic; the Go test draws its ids from the same counter. The server span's times come from
 // performance.now: its st and d are written as 0, and the Go test passes StartUs = EndUs = 0. The client span's times come
 // from the usage entry (ts, ms) and are exact.
-// Writes gw/testdata/spans/<n>-<name>.json as { fn: "spans", in: { request, answer, usage, usageWhen, ends }, out }.
+// Writes gw/testdata/spans/<n>-<name>.json as
+// { fn: "spans", in: { request, answer, prior?, usage, usageWhen, ends }, out }.
+// A route call (P4h Decision 10) records a line per leg it tried before the one that ends the call: `prior`, recorded
+// in the handler before any byte of the answer (proxyChat's loop runs before the answer starts), each its own CLIENT
+// span.
 // Run: node scripts/fixtures/gen-spans.js. No network, environment, subprocess or system access; writes only under
 // gw/testdata, so it runs under the CI fixtures job's Deno flags and gives the same bytes on Node and Deno.
 const { EventEmitter } = require('events');
@@ -50,8 +54,9 @@ const chunk = (c) => (typeof c === 'string' ? c : Buffer.from(c.b64, 'base64'));
 
 // One case: the handler answers with answer.status and answer.chunks (strings, or { b64 } for raw bytes), records the
 // usage entry before the answer ends ("before": a whole answer, lib/gateway/index.js:1030) or right after res.end
-// ("after": a stream, :1124), and the response then emits "finish", or only "close" when the client left.
-async function run({ request, answer, usage, usageWhen = 'before', ends = 'finish' }) {
+// ("after": a stream, :1124), and the response then emits "finish", or only "close" when the client left. The prior
+// lines (a route call's earlier legs: 599s, fallbacks) are recorded first, in order.
+async function run({ request, answer, prior = [], usage, usageWhen = 'before', ends = 'finish' }) {
   const recs = [];
   otel.init({
     getConfig: () => ({ gateway: { providers: PROVIDERS } }),
@@ -63,6 +68,7 @@ async function run({ request, answer, usage, usageWhen = 'before', ends = 'finis
   const u = otel.wrapUsage({ record: (e) => (entry = e) });
   const handler = otel.wrapHandler((req, res) => {
     res.statusCode = answer.status;
+    for (const p of prior) u.record(p);
     const record = () => {
       if (usage) u.record(usage);
     };
@@ -124,6 +130,19 @@ const failed = (status, answerStatus, error) => ({
 // A token shape the secret scanner of lib/signals.js knows, built here so that no such literal sits in the repository.
 const GH_TOKEN = `${'g'}hp_${'A1b2C3d4E5'.repeat(4).slice(0, 36)}`;
 const sse = (...lines) => lines.map((l) => `data: ${l}\n\n`);
+// A route call's lines (lib/gateway/index.js proxyChat): the route's name as model; a leg that threw has no routedTo and
+// no tokens, a leg that fell back names its target, and the answering leg is the usual line.
+const ROUTE = { model: 'router/r1' };
+const PRIOR_TS = 1767225599990;
+const attempt = (provider, more) => {
+  const { input, output, ...rest } = line({ ...ROUTE, ts: PRIOR_TS, ms: 4.25, cost: 0, provider, ...more });
+  return rest;
+};
+const threw = (provider, error, more = {}) => attempt(provider, { status: 599, error, ...more });
+const fellBack = (provider, routedTo, status, more = {}) =>
+  attempt(provider, { routedTo, status, error: 'fell back to the next route target', ...more });
+const answered = (provider, routedTo, more = {}) => line({ ...ROUTE, provider, routedTo, ...more });
+const routed = (more) => ({ request: {}, answer: { status: 200, chunks: [ok('chatcmpl-r')] }, ...more });
 
 const CASES = [
   ['whole-200', whole()],
@@ -385,20 +404,84 @@ const CASES = [
       usage: line({ kind: 'embeddings' }),
     },
   ],
+  // Route calls (P4h Decision 10): every line of the call is its own CLIENT span, in the order recorded, after the
+  // server span. A leg that threw (599, no routedTo) or fell back (its status, routedTo, no tokens) comes first.
+  ['route-fallback-429-then-200', routed({ prior: [fellBack('oa', 'oa/m1', 429)], usage: answered('op', 'op/m2') })],
+  ['route-throw-then-200', routed({ prior: [threw('v6', 'fetch failed')], usage: answered('oa', 'oa/m1') })],
+  [
+    'route-stream-fallback',
+    {
+      request: {},
+      usageWhen: 'after',
+      prior: [fellBack('oa', 'oa/m1', 503, { stream: true })],
+      answer: {
+        status: 200,
+        chunks: sse(
+          '{"id":"c5","choices":[{"delta":{"content":"h"}}]}',
+          '{"id":"c5","choices":[{"delta":{},"finish_reason":"stop"}]}',
+          '[DONE]',
+        ),
+      },
+      usage: answered('op', 'op/m2', { stream: true, ttft: 2.5 }),
+    },
+  ],
+  [
+    'route-anthropic-throw-fallback-200',
+    {
+      request: { path: '/v1/messages' },
+      prior: [
+        threw('oa', 'fetch failed', { format: 'anthropic' }),
+        fellBack('op', 'op/m2', 500, { format: 'anthropic' }),
+      ],
+      answer: {
+        status: 200,
+        chunks: [body({ type: 'message', id: 'msg_3', role: 'assistant', content: [], stop_reason: 'end_turn' })],
+      },
+      usage: answered('v6', 'v6/m3', { format: 'anthropic' }),
+    },
+  ],
+  [
+    'route-all-threw-502',
+    {
+      request: {},
+      prior: [threw('oa', 'fetch failed'), threw('op', 'connect ECONNREFUSED 127.0.0.1:9')],
+      answer: { status: 502, chunks: [body({ error: { message: 'connect ECONNREFUSED 127.0.0.1:9' } })] },
+      usage: null,
+    },
+  ],
+  [
+    'route-fallback-then-guard-block',
+    {
+      request: {},
+      prior: [fellBack('oa', 'oa/m1', 429)],
+      answer: { status: 400, chunks: [body({ error: { message: 'blocked' } })] },
+      usage: line({ ...ROUTE, provider: 'op', status: 400, input: 0, output: 0, cost: 0, error: 'blocked: a secret' }),
+    },
+  ],
+  [
+    'route-fallback-then-throw-502',
+    {
+      request: {},
+      prior: [fellBack('oa', 'oa/m1', 429), threw('op', 'fetch failed')],
+      answer: { status: 502, chunks: [body({ error: { message: 'Body already consumed' } })] },
+      usage: null,
+    },
+  ],
 ];
 
 // Each case also carries the span attributes the control plane pushes for its provider (lib/front/push.js, P4f D4), as
 // the Go side reads them from config.push.
-const withProvider = (args) =>
-  args.usage
-    ? {
-        ...args,
-        providerSpan: otel.providerSpanAttrs(
-          PROVIDERS.find((p) => p.id === args.usage.provider),
-          args.usage.provider,
-        ),
-      }
-    : args;
+// A route call's prior lines carry theirs in priorProviderSpans, in order.
+const providerSpan = (u) =>
+  otel.providerSpanAttrs(
+    PROVIDERS.find((p) => p.id === u.provider),
+    u.provider,
+  );
+const withProvider = (args) => ({
+  ...args,
+  ...(args.usage ? { providerSpan: providerSpan(args.usage) } : {}),
+  ...(args.prior ? { priorProviderSpans: args.prior.map(providerSpan) } : {}),
+});
 
 function generate() {
   return writeCases(

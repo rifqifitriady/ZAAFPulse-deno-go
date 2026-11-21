@@ -102,6 +102,15 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 		}
 		return rec
 	}
+	// A leg's line that does not end the call (a 599, a fallback): written now, through the leg's journal entry, and
+	// kept for its client span, emitted with the call's spans when the call ends (P4h Decision 10).
+	attempt := func(l *Plan, rec ipc.UsageRecord, unchecked bool, call int64) {
+		rec = stamp(rec)
+		e.emitLine(rec, unchecked, call)
+		if tr != nil {
+			tr.prior = append(tr.prior, priorLine{rec: rec, prov: provSpan(l)})
+		}
+	}
 
 	// resolveAll: the take (once per resolveAll of the JS path; the last one's n orders), then the order.
 	now := e.now()
@@ -179,7 +188,7 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 				e.answerOwn(w, r, s, a, started, tr)
 				return
 			}
-			e.emitLine(stamp(a.Usage), unchecked, call)
+			attempt(l, a.Usage, unchecked, call)
 			last = &a
 			continue
 		}
@@ -187,7 +196,7 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 		drop = drop || l.dropAdded
 		if why != "" {
 			a := failed(l, why)
-			e.emitLine(stamp(a.Usage), unchecked, call)
+			attempt(l, a.Usage, unchecked, call)
 			last = &a
 			continue
 		}
@@ -197,7 +206,7 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 		status := resp.StatusCode
 		if !ok2xx(status) && retryable(status) && i < len(legs)-1 {
 			_ = resp.Body.Close()
-			e.emitLine(stamp(s.fellBack(l, status, elapsed())), unchecked, call)
+			attempt(l, s.fellBack(l, status, elapsed()), unchecked, call)
 			fell = true
 			continue
 		}
@@ -210,7 +219,7 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 			conv, why := anthropicWhole(l.Env, raw, l.ClientModel, s.onPanic("the Anthropic leg's whole answer"))
 			if why != "" {
 				a := s.Failed(l, why, elapsed())
-				e.emitLine(stamp(a.Usage), unchecked, call)
+				attempt(l, a.Usage, unchecked, call)
 				last = &a
 				continue
 			}
@@ -248,7 +257,7 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 			started, tr)
 		return
 	}
-	// No target answered: the 502 with the last error, masked (its 599 line is out).
+	// No target answered: the 502 with the last error, masked (its 599 line is out, and its span is with the others).
 	a := *last
 	if r.Context().Err() == nil {
 		write(w, a)
@@ -257,8 +266,7 @@ func (e *Engine) serveRoute(w http.ResponseWriter, r *http.Request, s *State, p 
 		flushAnswer(w)
 		obs := NewObserver()
 		obs.Feed(a.Body)
-		rec := stamp(a.Usage)
-		e.spans(s, tr, a.Status, started, time.Now(), &rec, provSpan(legs[len(legs)-1]), obs)
+		e.spans(s, tr, a.Status, started, time.Now(), nil, nil, obs)
 	}
 }
 
