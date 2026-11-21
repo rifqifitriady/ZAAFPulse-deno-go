@@ -30,7 +30,7 @@ test('the config.push body with its front section is a valid v1 message; a go en
   assert.equal(frontSection({ host: 'h', port: 1, upstreamPort: 1, engines: { 'messages-stream': 'go' } }).engines['messages-stream'], 'go');
   assert.throws(
     () => frontSection({ host: 'h', port: 1, upstreamPort: 1, engines: { models: 'go' } }),
-    /engine "go" for models is not available: only chat, chat-stream, chat-anthropic, .*embeddings, mcp, token-saver, provider-auth can run on go/,
+    /engine "go" for models is not available: only chat, chat-stream, chat-anthropic, .*embeddings, mcp, token-saver, provider-auth, routes can run on go/,
   );
 });
 
