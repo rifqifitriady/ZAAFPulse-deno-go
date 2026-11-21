@@ -1,0 +1,8 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"a\",\"name\":{\"toString\":0},\"input\":{}}]}]}",
+    "anthropic"
+  ],
+  "throws": "Cannot convert object to primitive value"
+}

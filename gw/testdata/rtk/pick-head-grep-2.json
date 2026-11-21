@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "a.js:1:x\nb.ts:2-y",
+    ""
+  ],
+  "out": null
+}

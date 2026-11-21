@@ -81,6 +81,7 @@ const { serverSinks } = require('./lib/ipc/server-sinks');
 const { gwEnv } = require('./lib/ipc/env');
 const { createFront, engineOf, routing, shadowOf, gwArgs } = require('./lib/front');
 const { createShadowLog, shadowEndpoints } = require('./lib/front/shadow-log');
+const { toolEndpoint } = require('./lib/front/tools');
 const { configPush, secretsPush, snapshotPush, windowPush } = require('./lib/front/push');
 const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
@@ -2321,7 +2322,11 @@ front = createFront({
   ingest: fi && fi.ingest,
   engines: () => frontRouting().engines,
   shadow: (engines) => shadowOf(rawConfig().gateway, engines),
-  own: shadowEndpoints({ shadowLog }),
+  // The gateway's own requests: the go engine's /mcp tool calls (P4g), then the shadow endpoints (404 for the rest).
+  own: ((tools, shadow) => (req, res) => tools(req, res) || shadow(req, res))(
+    toolEndpoint({ getIntegrations: () => getIntegrations() }),
+    shadowEndpoints({ shadowLog }),
+  ),
   // Each generation, from the state the JS gateway reads (P4b): config.json, keys.json, the effective prices, the
   // provider credentials, the blocking budgets and the keys' cost centers.
   sources: {

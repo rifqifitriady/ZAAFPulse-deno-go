@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "a.js:1:x\nb/c.ts:2-y\nd.md:3:z",
+    ""
+  ],
+  "out": "grep"
+}

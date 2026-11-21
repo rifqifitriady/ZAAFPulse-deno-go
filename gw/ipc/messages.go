@@ -97,7 +97,8 @@ type FrontShadow struct {
 }
 
 // RouteClass is one of the gateway's route classes (gw/front Classes), or a sub-class: chat-stream (P4c), and the P4d
-// sub-classes (gw/front Subs).
+// sub-classes (gw/front Subs); or token-saver, the token saver's switch (rtk spec D13); or provider-auth, the switch of
+// token-auth provider calls (P4g spec Decisions 14, 17).
 type RouteClass string
 
 func (c *RouteClass) UnmarshalJSON(b []byte) error {
@@ -108,7 +109,7 @@ func (c *RouteClass) UnmarshalJSON(b []byte) error {
 	switch s {
 	case "chat", "chat-stream", "chat-anthropic", "chat-anthropic-stream", "messages", "messages-stream", "messages-count",
 		"responses", "responses-stream", "embeddings", "models", "gemini", "gemini-stream", "gemini-count", "mcp", "a2a",
-		"skills", "agents":
+		"skills", "agents", "token-saver", "provider-auth":
 		*c = RouteClass(s)
 		return nil
 	}

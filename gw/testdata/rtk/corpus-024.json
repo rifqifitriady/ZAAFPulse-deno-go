@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "error: boom 0\nerror: boom 1\nerror: boom 2\nerror: boom 3\nerror: boom 4\nerror: boom 5\nerror: boom 6\nerror: boom 7\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 8\nerror: boom 26\nerror: boom 27\nerror: boom 28\nerror: boom 29\nerror: boom 30\nerror: boom 31\nerror: boom 32\nerror: boom 33\nerror: boom 34\nerror: boom 35\nerror: boom 36\nerror: boom 37\nerror: boom 38\nerror: boom 39\nerror: boom 40\nerror: boom 41\nerror: boom 42\nerror: boom 43\nerror: boom 44\nerror: boom 45\nerror: boom 46\nerror: boom 47\nerror: boom 48\nerror: boom 49\nerror: boom 50\nerror: boom 51\nerror: boom 52\nerror: boom 53\nerror: boom 54\nerror: boom 55\nerror: boom 56\nerror: boom 57\nerror: boom 58\nerror: boom 59\nerror: boom 60\nerror: boom 61\nerror: boom 62\nerror: boom 63\nerror: boom 63\nerror: boom 63\nerror: boom 63\nerror: boom 63\nerror: boom 63\nerror: boom 63\nerror: boom 70\nerror: boom 70\nerror: boom 70\nerror: boom 70\nerror: boom 74\nerror: boom 75\nerror: boom 76\nerror: boom 77\nerror: boom 78\nerror: boom 79\nerror: boom 80\nerror: boom 81\nerror: boom 82\nerror: boom 83\nerror: boom 84\nerror: boom 85\nerror: boom 86\nerror: boom 87\nerror: boom 88\nerror: boom 89\nerror: boom 90\nerror: boom 91\nerror: boom 92\nerror: boom 93\nerror: boom 94\nerror: boom 95\nerror: boom 96",
+    "cat"
+  ],
+  "out": null
+}

@@ -1,0 +1,8 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"messages\":[{\"role\":\"user\",\"content\":[null]}]}",
+    "anthropic"
+  ],
+  "throws": "Cannot read properties of null (reading 'type')"
+}

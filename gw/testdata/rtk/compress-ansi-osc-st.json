@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "\u001b]0;title 0\u001b\\text 0\n\u001b]0;title 1\u001b\\text 1\n\u001b]0;title 2\u001b\\text 2\n\u001b]0;title 3\u001b\\text 3\n\u001b]0;title 4\u001b\\text 4\n\u001b]0;title 5\u001b\\text 5\n\u001b]0;title 6\u001b\\text 6\n\u001b]0;title 7\u001b\\text 7\n\u001b]0;title 8\u001b\\text 8\n\u001b]0;title 9\u001b\\text 9\n\u001b]0;title 10\u001b\\text 10\n\u001b]0;title 11\u001b\\text 11\n\u001b]0;title 12\u001b\\text 12\n\u001b]0;title 13\u001b\\text 13\n\u001b]0;title 14\u001b\\text 14\n\u001b]0;title 15\u001b\\text 15\n\u001b]0;title 16\u001b\\text 16\n\u001b]0;title 17\u001b\\text 17\n\u001b]0;title 18\u001b\\text 18\n\u001b]0;title 19\u001b\\text 19\n\u001b]0;title 20\u001b\\text 20\n\u001b]0;title 21\u001b\\text 21\n\u001b]0;title 22\u001b\\text 22\n\u001b]0;title 23\u001b\\text 23\n\u001b]0;title 24\u001b\\text 24\n\u001b]0;title 25\u001b\\text 25\n\u001b]0;title 26\u001b\\text 26\n\u001b]0;title 27\u001b\\text 27\n\u001b]0;title 28\u001b\\text 28\n\u001b]0;title 29\u001b\\text 29\n\u001b]0;title 30\u001b\\text 30\n\u001b]0;title 31\u001b\\text 31\n\u001b]0;title 32\u001b\\text 32\n\u001b]0;title 33\u001b\\text 33\n\u001b]0;title 34\u001b\\text 34\n\u001b]0;title 35\u001b\\text 35\n\u001b]0;title 36\u001b\\text 36\n\u001b]0;title 37\u001b\\text 37\n\u001b]0;title 38\u001b\\text 38\n\u001b]0;title 39\u001b\\text 39",
+    ""
+  ],
+  "out": {
+    "text": "text 39",
+    "filter": "ansi",
+    "saved": 852
+  }
+}

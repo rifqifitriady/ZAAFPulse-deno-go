@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    " M src/s0.ts\n M src/s0.ts\n M src/s2.ts\nnode_modules/p3/index.js\nnode_modules/p4/index.js\nnode_modules/p5/index.js\n M src/s6.ts\nnode_modules/p7/index.js\nnode_modules/p8/index.js\n M src/s9.ts\nnode_modules/p10/index.js\nnode_modules/p11/index.js\n M src/s12.ts\n M src/s13.ts\nnode_modules/p14/index.js\n M src/s15.ts\n M src/s16.ts\n M src/s17.ts\n M src/s18.ts\n M src/s19.ts\n M src/s20.ts\nnode_modules/p21/index.js\nnode_modules/p22/index.js\nnode_modules/p23/index.js\nnode_modules/p24/index.js\nnode_modules/p25/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p26/index.js\nnode_modules/p37/index.js\n M src/s38.ts\nnode_modules/p39/index.js\n M src/s40.ts\nnode_modules/p41/index.js\nnode_modules/p42/index.js\n M src/s43.ts\n M src/s44.ts\n M src/s45.ts\nnode_modules/p46/index.js\nnode_modules/p47/index.js\nnode_modules/p48/index.js\n M src/s49.ts\n M src/s50.ts\n M src/s51.ts\nnode_modules/p52/index.js\nnode_modules/p53/index.js\nnode_modules/p54/index.js\nnode_modules/p54/index.js\nnode_modules/p54/index.js\nnode_modules/p54/index.js\nnode_modules/p54/index.js\nnode_modules/p54/index.js",
+    "Bash git status"
+  ],
+  "out": null
+}

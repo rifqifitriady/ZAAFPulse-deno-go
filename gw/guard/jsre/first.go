@@ -223,7 +223,7 @@ func (re *Regexp) filter() *prefilter {
 		f, empty := firstOf(re.root, re.icase)
 		re.pre.ok = !empty
 		re.pre.set = *f
-		re.pre.anchored = anchoredAt(re.root)
+		re.pre.anchored = !re.multiline && anchoredAt(re.root)
 		for u := range re.pre.ascii {
 			re.pre.ascii[u] = f.has(uint16(u))
 		}

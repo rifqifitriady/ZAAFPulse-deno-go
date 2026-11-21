@@ -225,6 +225,12 @@ func TestChatStreamSubClassDispatch(t *testing.T) {
 		{map[string]string{"chat": "go", "chat-stream": "js"}, nil, "serve"},
 		{map[string]string{"chat": "js", "chat-stream": "js"}, []string{"chat-stream"}, "shadow"},
 		{map[string]string{"chat": "js"}, []string{"chat"}, "shadow"},
+		// rtk spec D13: a shadowed token-saver compares chat calls while chat is on js; on go it alone serves nothing.
+		{map[string]string{"chat": "js", "token-saver": "js"}, []string{"token-saver"}, "shadow"},
+		{map[string]string{"chat": "js", "token-saver": "go"}, nil, "js"},
+		// P4g Decision 14: a shadowed provider-auth compares chat calls while chat is on js; on go it alone serves nothing.
+		{map[string]string{"chat": "js", "provider-auth": "js"}, []string{"provider-auth"}, "shadow"},
+		{map[string]string{"chat": "js", "provider-auth": "go"}, nil, "js"},
 	} {
 		s := startFront(t, up.port(), func(cfg *Config) { cfg.Engines = c.engines })
 		e := &recEngine{calls: make(chan string, 1)}
@@ -250,6 +256,43 @@ func TestChatStreamSubClassDispatch(t *testing.T) {
 		if onGo != (c.engines["chat-stream"] == "go") || shadowed != (c.engines["chat-stream"] != "go" && slices.Contains(c.shadow, "chat-stream")) {
 			t.Errorf("%v %v: modes(chat-stream) = %v %v", c.engines, c.shadow, onGo, shadowed)
 		}
+	}
+}
+
+// P4g Decision 14: while provider-auth is shadowed, the front gives the engine every provider class (chat, messages,
+// responses, gemini, embeddings) on js, and not mcp, which calls no provider; a shadowed token-saver gives it the
+// saver's classes only (embeddings is not one).
+func TestProviderAuthShadowClasses(t *testing.T) {
+	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "js") })
+	paths := map[string]string{"chat": "/v1/chat/completions", "messages": "/v1/messages", "responses": "/v1/responses",
+		"gemini": "/v1beta/models/g:generateContent", "embeddings": "/v1/embeddings", "mcp": "/mcp"}
+	for _, sw := range []string{"provider-auth", "token-saver"} {
+		for class, path := range paths {
+			want := "shadow"
+			if class == "mcp" || (sw == "token-saver" && class == "embeddings") {
+				want = "js"
+			}
+			s := startFront(t, up.port(), func(cfg *Config) { cfg.Engines = map[string]string{class: "js", sw: "js"} })
+			e := &recEngine{calls: make(chan string, 1)}
+			s.SetGoEngine(e)
+			s.SetShadow([]string{sw})
+			resp, err := http.Post(frontURL(s)+path, "application/json", strings.NewReader("{}"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			got := "js"
+			select {
+			case got = <-e.calls:
+			default:
+			}
+			if got != want {
+				t.Errorf("%s shadowed, %s: %s, want %s", sw, class, got, want)
+			}
+		}
+	}
+	if !GoClasses["provider-auth"] {
+		t.Fatal("provider-auth is not a go class")
 	}
 }
 

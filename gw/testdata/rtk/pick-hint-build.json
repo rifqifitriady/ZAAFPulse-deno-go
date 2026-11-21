@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "",
+    "npm test"
+  ],
+  "out": "build"
+}

@@ -37,6 +37,19 @@ type Capture struct {
 		Random []string `json:"random"`
 		Now    []int64  `json:"now"`
 	} `json:"tape"`
+	// P4g: the integration tool a /mcp tools/call ran (lib/gateway/shadow.js noteTool); nil when the control plane
+	// answered before calling it.
+	Tool *CaptureTool `json:"tool"`
+}
+
+// CaptureTool is the tool call of a captured /mcp tools/call: its name, the JSON text of the arguments it was given,
+// the tool endpoint's answer for its value (ToolReply's endpoint: {"r":…}, {} or {"thrown":true}), and why it cannot be
+// replayed (Skip; "" when it can).
+type CaptureTool struct {
+	Name string  `json:"name"`
+	Args string  `json:"args"`
+	R    *string `json:"r"`
+	Skip string  `json:"skip"`
 }
 
 // CaptureClient is the control plane's answer in a capture.
@@ -70,6 +83,12 @@ type ShadowLine struct {
 	Reason  string `json:"reason,omitzero"`
 	Status  int    `json:"status,omitzero"` // the control plane's answer
 	Diffs   []Diff `json:"diffs,omitzero"`
+	// Saver: a token saver shortened a tool result in this call, the engine's or the control plane's (spec D14); the
+	// shadow log also counts such a line for the token-saver switch.
+	Saver bool `json:"saver,omitzero"`
+	// Auth: the call's target is a token-auth provider (P4g spec Decision 14); the shadow log also counts such a line
+	// for the provider-auth switch.
+	Auth bool `json:"auth,omitzero"`
 }
 
 // budgetLag is the reason a budget disagreement is not a diff: the control plane decides on its live spend, the engine
@@ -101,6 +120,12 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 	d := func(field string, js, gov any) { l.Diffs = append(l.Diffs, Diff{field, js, gov}) }
 	dt := func(field, js, gov string) { a, b := digest(js, gov); d(field, a, b) }
 	switch {
+	case tokenReplay(p, c):
+		l.Outcome, l.Reason = "skipped", authReplay
+		return l
+	case ownTokenFailed(p, c):
+		l.Outcome, l.Reason = "skipped", authOwnFailure
+		return l
 	case c != nil && c.ProviderResponse == nil && len(c.ProviderRequests) > 0:
 		l.Outcome, l.Reason = "skipped", "the provider call failed: no answer to compare"
 		return l
@@ -124,11 +149,7 @@ func (s *State) Compare(class string, p *Plan, c *Capture) ShadowLine {
 		if pr.URL != p.URL {
 			dt("providerRequest.url", pr.URL, p.URL)
 		}
-		goH := map[string]string{}
-		for k := range p.Header {
-			goH[strings.ToLower(k)] = p.Header.Get(k)
-		}
-		if a, b := headerSet(pr.Headers), headerSet(goH); a != b {
+		if a, b := providerHeaders(p, pr.Headers); a != b {
 			dt("providerRequest.headers", a, b)
 		}
 		jsBody := ""
@@ -259,6 +280,83 @@ func text(v any) string {
 	return s
 }
 
+// authReplay is the reason a capture in which the control plane replayed a token-auth call after a 401 is not compared:
+// the engine's token is not the one the provider refused (P4g spec Decision 15).
+const authReplay = "a token refresh replay: each engine holds its own token"
+
+// tokenReplay: plan p is a token-auth call and the control plane's capture has two provider requests, the first one
+// answered 401 (lib/gateway/providers.js request: refresh once and replay).
+func tokenReplay(p *Plan, c *Capture) bool {
+	return p.TokenAuth() && c != nil && len(c.ProviderRequests) == 2 && len(c.Upstream) > 0 &&
+		c.Upstream[0].Status == http.StatusUnauthorized
+}
+
+// authOwnFailure is the reason a capture in which the control plane's own token fetch failed is not compared: the
+// engine holds its own token, which may well be good (P4g final review I3).
+const authOwnFailure = "the control plane's token fetch failed: each engine holds its own token"
+
+// ownTokenFailed: plan p is a token-auth call and the capture shows the control plane's token fetch failing: (a) no
+// provider request and a client answer of 500 or more (a budget's 402 and a rate limit's 429 are below that), or (b)
+// the first provider answer is 401 and the refresh before the replay failed (fewer than two provider requests). Never
+// for a key plan: its failures are compared.
+func ownTokenFailed(p *Plan, c *Capture) bool {
+	if !p.TokenAuth() || c == nil {
+		return false
+	}
+	if len(c.ProviderRequests) == 0 && c.Client != nil && c.Client.Status >= http.StatusInternalServerError {
+		return true
+	}
+	return len(c.Upstream) > 0 && c.Upstream[0].Status == http.StatusUnauthorized && len(c.ProviderRequests) < 2
+}
+
+// tokenMark stands for a token in the header compare of a token-auth plan.
+const tokenMark = "<token>"
+
+// providerHeaders is the header text of the control plane's provider request (js) and of plan p's. A token-auth plan's
+// headers hold no credential (Upstream.Start sets the token it gets) and each engine holds its own token, so its
+// credential is compared by name and scheme only (P4g spec Decision 15): "authorization: Bearer <token>", or
+// "x-api-key: <token>" for an Anthropic-format provider. A missing header or another scheme is still a diff. The engine
+// never fetches a token for the shadow.
+func providerHeaders(p *Plan, js map[string]string) (string, string) {
+	goH := map[string]string{}
+	for k := range p.Header {
+		goH[strings.ToLower(k)] = p.Header.Get(k)
+	}
+	if !p.TokenAuth() {
+		return headerSet(js), headerSet(goH)
+	}
+	if FormatOf(p.Target.Provider) == "anthropic" {
+		goH["x-api-key"] = tokenMark
+	} else {
+		goH["authorization"] = "Bearer " + tokenMark
+	}
+	return headerSet(schemeOnly(js)), headerSet(schemeOnly(goH))
+}
+
+// schemeOnly is h with the credential's value replaced by tokenMark: the scheme of an authorization header is kept; an
+// empty value, or a scheme with an empty token ("Bearer "), stays as it is.
+func schemeOnly(h map[string]string) map[string]string {
+	out := make(map[string]string, len(h))
+	for k, v := range h {
+		switch strings.ToLower(k) {
+		case "x-api-key":
+			if v != "" {
+				v = tokenMark
+			}
+		case "authorization":
+			if scheme, rest, ok := strings.Cut(v, " "); ok {
+				if rest != "" { // "Bearer " with no token stays as it is: a diff against a Bearer with one
+					v = scheme + " " + tokenMark
+				}
+			} else if v != "" {
+				v = tokenMark
+			}
+		}
+		out[k] = v
+	}
+	return out
+}
+
 // headerSet is a header map as one text, the credential replaced by its hash prefix.
 func headerSet(h map[string]string) string {
 	low := make(map[string]string, len(h))
@@ -347,6 +445,14 @@ func (e *Engine) Shadow(class string, w http.ResponseWriter, r *http.Request, ra
 	if e.modes.Load() == nil {
 		shadowed = sub == "chat" // P4b: the front calls Shadow for a shadowed chat
 	}
+	if p.saver != nil { // a shadowed token-saver also compares the calls the saver looks at (spec D13)
+		_, sh := e.mode(SaverSwitch)
+		shadowed = shadowed || sh
+	}
+	if p.TokenAuth() { // a shadowed provider-auth also compares the calls to a token-auth target (P4g spec Decision 14)
+		_, sh := e.mode(AuthSwitch)
+		shadowed = shadowed || sh
+	}
 	if !shadowed {
 		js.ServeHTTP(w, r)
 		return
@@ -385,7 +491,7 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		}
 		// The budget, decided now on the snapshot (cheap); the guardrail checks run after the answer, off this path.
 		// count_tokens and the engine's own answers check no budget (P4d).
-		if p.Upstream != UpNone && p.Upstream != UpCount {
+		if p.Upstream != UpNone && p.Upstream != UpCount && p.Upstream != UpTool { // no budget on /mcp (P4g)
 			if ref, unchecked := s.Budget(p, e.now(), e.staleMs, nil); ref != nil {
 				p.refused = ref
 			} else {
@@ -440,18 +546,8 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 				time.Sleep(20 * time.Millisecond)
 			}
 		}
-		var l ShadowLine
-		ref := p.refused
-		if ref == nil {
-			ref = s.Guard(p, 0)
-		}
-		if ref != nil {
-			l = s.CompareRefusal(sub, p, ref, c)
-		} else if sub == SubChat || sub == SubChatStream {
-			l = s.Compare(sub, p, c)
-		} else {
-			l = s.CompareTranslated(sub, p, c)
-		}
+		l := s.compareCaptured(sub, p, c)
+		e.logSaverPanic(p)
 		if wait > 0 {
 			l = rateLimitedLine(sub, l.Status, wait) // the engine would have answered 429 itself
 		}
@@ -460,4 +556,46 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 			e.logf("shadow: the compare line could not be posted: %v", err)
 		}
 	}()
+}
+
+// compareCaptured is the line for plan p and the control plane's capture c (the shadow's goroutine): the token saver
+// runs first (spec D14; a refusal the budget decided comes before it in JS), then the guardrails or the refusal, then
+// the compare of the class's kind.
+func (s *State) compareCaptured(sub string, p *Plan, c *Capture) ShadowLine {
+	l := s.compareCapturedLine(sub, p, c)
+	l.Auth = p.TokenAuth()
+	return l
+}
+
+func (s *State) compareCapturedLine(sub string, p *Plan, c *Capture) ShadowLine {
+	if p.Upstream == UpTool && p.Handoff == "" { // /mcp tools/call (P4g): no saver, its own guardrails (shadow_mcp.go)
+		return s.CompareMCP(sub, p, c)
+	}
+	if p.refused == nil && p.Handoff == "" {
+		if why := s.Save(p, time.Now()); why != "" {
+			l := ShadowLine{Class: sub, Outcome: "handoff", Reason: why}
+			if c != nil && c.Client != nil {
+				l.Status = c.Client.Status
+			}
+			return l
+		}
+	}
+	var l ShadowLine
+	ref := p.refused
+	if ref == nil {
+		ref = s.Guard(p, 0)
+	}
+	if ref != nil {
+		l = s.CompareRefusal(sub, p, ref, c)
+	} else if sub == SubChat || sub == SubChatStream {
+		l = s.Compare(sub, p, c)
+	} else {
+		l = s.CompareTranslated(sub, p, c)
+	}
+	jsSaved := false
+	if c != nil {
+		_, jsSaved = c.Usage["savedTokens"]
+	}
+	l.Saver = p.saverHits > 0 || jsSaved
+	return l
 }

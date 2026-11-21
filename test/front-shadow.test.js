@@ -109,6 +109,69 @@ test('the shadow log: counts per class, and the switch rule (owner: 1 clean day 
   assert.ok(!fs.readFileSync(path.join(dir, 's.jsonl'), 'utf8').includes('undefined'));
 });
 
+test('the shadow log: a compare in which a token saver shortened something also counts for token-saver (rtk spec D13)', (t) => {
+  const dir = tmpDir(t, 'shadow-log-saver');
+  const now = 1_000_000_000_000;
+  const log = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
+  log.append({ class: 'chat', outcome: 'same' });
+  assert.equal(log.stats()['token-saver'], undefined, 'a line without saver leaves token-saver alone');
+  log.append({ class: 'chat', outcome: 'same', saver: true });
+  log.append({ class: 'messages', outcome: 'same', saver: true });
+  log.append({ class: 'chat', outcome: 'handoff', reason: 'token saver: over its step budget', saver: true });
+  let st = log.stats();
+  assert.deepEqual([st.chat.compared, st.messages.compared, st['token-saver'].compared], [2, 1, 2]);
+  assert.equal(st['token-saver'].handoffs, 1, 'a saver hand-off is shown for the switch, not counted as a compare');
+  log.append({ class: 'messages', outcome: 'handoff', reason: 'token saver: the engine\'s saver panicked' });
+  log.append({ class: 'chat', outcome: 'handoff', reason: 'model: a route' });
+  assert.equal(log.stats()['token-saver'].handoffs, 2, 'a token saver hand-off without the saver mark counts too');
+  log.append({ class: 'chat', outcome: 'diff', saver: true, diffs: [{ field: 'providerRequest.body', js: 'a', go: 'b' }] });
+  st = log.stats();
+  assert.equal(st['token-saver'].diffs, 1);
+  assert.match(log.gate('token-saver').reason, /last token-saver compare differed/);
+  const again = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
+  assert.deepEqual(again.stats(), log.stats(), 'read back after a restart');
+});
+
+test('the shadow log: a call to a token-auth provider also counts for provider-auth (P4g spec Decision 14)', (t) => {
+  const dir = tmpDir(t, 'shadow-log-auth');
+  const now = 1_000_000_000_000;
+  const log = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
+  log.append({ class: 'chat', outcome: 'same' });
+  assert.equal(log.stats()['provider-auth'], undefined, 'a line without auth leaves provider-auth alone');
+  log.append({ class: 'chat', outcome: 'same', auth: true });
+  log.append({ class: 'embeddings', outcome: 'same', auth: true });
+  log.append({ class: 'chat', outcome: 'skipped', reason: 'a token refresh replay: each engine holds its own token', auth: true });
+  let st = log.stats();
+  assert.deepEqual([st.chat.compared, st.embeddings.compared, st['provider-auth'].compared], [2, 1, 2]);
+  assert.equal(st['provider-auth'].handoffs, 1, 'a skipped replay is shown for the switch, not counted as a compare');
+  log.append({ class: 'chat', outcome: 'same', auth: true, saver: true });
+  st = log.stats();
+  assert.deepEqual([st['provider-auth'].compared, st['token-saver'].compared], [3, 1], 'a line can count for both switches');
+  log.append({ class: 'messages', outcome: 'diff', auth: true, diffs: [{ field: 'providerRequest.headers', js: 'a', go: 'b' }] });
+  st = log.stats();
+  assert.equal(st['provider-auth'].diffs, 1);
+  assert.match(log.gate('provider-auth').reason, /last provider-auth compare differed/);
+  const again = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
+  assert.deepEqual(again.stats(), log.stats(), 'read back after a restart');
+});
+
+test('routing: provider-auth is a go class with its own gate and note (P4g spec Decision 14)', () => {
+  const gw = { engines: { chat: 'go', 'provider-auth': 'go' }, shadow: ['provider-auth', 'token-saver'] };
+  const r = routing(gw, { gate: (c) => (c === 'provider-auth' ? { ok: false, reason: 'r' } : { ok: true }) });
+  assert.deepEqual([r.engines.chat, r.engines['provider-auth'], r.notes['provider-auth']], ['go', 'js', 'r']);
+  assert.deepEqual(shadowOf(gw, r.engines), ['token-saver', 'provider-auth']);
+  assert.equal(routing(gw).engines['provider-auth'], 'go');
+  assert.equal(routing(gw, { gate: (c) => (c === 'chat' ? { ok: false } : { ok: true }) }).engines['provider-auth'], 'go', 'its own record');
+});
+
+test('routing: token-saver is a go class with its own gate and note (rtk spec D13)', () => {
+  const gw = { engines: { chat: 'go', 'token-saver': 'go' }, shadow: ['token-saver'] };
+  const r = routing(gw, { gate: (c) => (c === 'token-saver' ? { ok: false, reason: 'r' } : { ok: true }) });
+  assert.deepEqual([r.engines.chat, r.engines['token-saver'], r.notes['token-saver']], ['go', 'js', 'r']);
+  assert.deepEqual(shadowOf(gw, r.engines), ['token-saver']);
+  assert.equal(routing(gw).engines['token-saver'], 'go');
+});
+
 test('routing: go only when asked and the gate met, and not while OTLP export captures content; shadow only for a class on js', () => {
   const gw = { engines: { chat: 'go' }, shadow: ['chat', 'messages'] };
   assert.equal(routing(gw, { gate: () => ({ ok: true }) }).engines.chat, 'go');

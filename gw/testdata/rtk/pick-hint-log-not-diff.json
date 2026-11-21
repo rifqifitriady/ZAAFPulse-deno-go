@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "",
+    "git log | head; diff"
+  ],
+  "out": "git-log"
+}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/provauth"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate"
 )
 
@@ -47,6 +48,7 @@ type State struct {
 	SnapshotAt int64                // epoch ms the snapshot says it was taken
 	spans      bool                 // config.push trace.spans (P4f D8): a span is recorded somewhere
 	logf       func(string, ...any) // the engine's log, set by SetState (recovered panics, P4d)
+	tokens     *Tokens              // the engine's token registry, set by SetState (P4g)
 }
 
 // Spans is whether this generation's calls get trace spans and a usage line naming their trace (P4f D8).
@@ -131,6 +133,27 @@ type Plan struct {
 	Timeout     time.Duration
 	Detached    bool
 	buildErr    error // the provider body could not be built from the checked body (the Anthropic leg, review m3)
+
+	// P4g. An /mcp tools/call (Upstream UpTool): RPCID is the JSON-RPC id as parsed (null included; nil only on other
+	// plans), Tool params.name, ToolArgs params.arguments ({} when absent or null), ToolTier "private" for an acc_*
+	// tool, else "external". Policy is set when the tier is in the guardrails' scope.
+	RPCID    *Value
+	Tool     string
+	ToolArgs *Value
+	ToolTier string
+	// auth is the token source of an oauth2 or google-sa target (nil: a key or none); Upstream.Start gets the token.
+	auth *provauth.Cached
+
+	// The token saver (spec the rtk-go design D8, D12): the texts Save shortens in
+	// pending, whether it ran, how many it shortened, and whether every line keeps savedTokens (the Anthropic
+	// passthrough spreads base into its guard lines too; proxyChat's guard lines carry none).
+	saver     *saverJob
+	saverDone bool
+	saverWhy  string // Save's hand-off reason, returned again on a later call
+	// SaverPanic is a panic out of the token saver (a bug, never a JS answer), handed off and logged (final review I1).
+	SaverPanic string
+	saverHits  int
+	keepSaved  bool
 }
 
 func handoff(why string) Plan { return Plan{Handoff: why} }
@@ -188,23 +211,27 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	if t == nil || (key.PrivateOnly && TierOf(t.Provider) != "private") {
 		return handoff("model: no usable target")
 	}
-	cred, why := s.credential(t)
+	cred, auth, why := s.credential(t)
 	if why != "" {
 		return handoff(why)
-	}
-	if s.tokenSaverOn(r) && hasToolMessage(body) {
-		return handoff("token saver: tool results")
 	}
 	stream := body.Get("stream").Truthy()
 	out, why := upstreamBody(body, t, stream)
 	if why != "" {
 		return handoff(why)
 	}
+	var job *saverJob
+	if s.tokenSaverOn(r) {
+		// saveTokens(body, 'openai') before the guardrails (rtk.js R2): the walk now, the filters in Save.
+		if job, why = scanSaver(out, "openai"); why != "" {
+			return handoff(why) // saveTokens would throw, or reads what the engine cannot hold: JS answers (spec D7)
+		}
+	}
 	so := body.Get("stream_options")
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: model, URL: t.Provider.BaseURL + "/chat/completions",
 		Header: providerHeader(t, cred), Base: s.base(key, t, model, r), Stream: stream,
 		WantsUsage: so.Truthy() && so.Get("include_usage").Truthy(), Format: "openai", Shape: ShapeOpenAI,
-		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild}
+		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild, saver: job, auth: auth}
 	if FormatOf(t.Provider) == "anthropic" {
 		if why := planAnthropicLeg(&p, cred, out); why != "" {
 			return handoff(why)
@@ -212,6 +239,8 @@ func (s *State) PlanChat(r *Request, now int64) Plan {
 	}
 	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
 		p.Policy, p.pending = &pol, out // State.Guard builds Body (P4e)
+	} else if job != nil {
+		p.pending = out // State.Save builds Body
 	} else {
 		p.Body = p.build(&p, out)
 	}
@@ -261,19 +290,6 @@ func (s *State) StreamLine(p *Plan, cs *ChatStream, ms float64) ipc.UsageRecord 
 	}
 	rec.Cost = s.Pricer.Cost(model, float64(in), float64(out), float64(cached))
 	return rec
-}
-
-func hasToolMessage(body *Value) bool {
-	msgs := body.Get("messages")
-	if msgs == nil || msgs.Kind != Array {
-		return false
-	}
-	for _, m := range msgs.A {
-		if r := m.Get("role"); r != nil && r.Kind == String && r.S == "tool" {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *State) base(key *ipc.GatewayKeyAuth, t *Target, model string, r *Request) ipc.UsageRecord {

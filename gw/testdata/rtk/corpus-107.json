@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "﻿bom 0\n+ added line 1 é\n﻿bom 2\n+ added line 3 é\n﻿bom 4\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n+ added line 5 é\n    message 29\n﻿bom 30\n+ added line 31 é\n﻿bom 32\n﻿bom 33\n﻿bom 34\n﻿bom 35\n    message 36\n+ added line 37 é\n﻿bom 38\n+ added line 39 é\n    message 40\n﻿bom 41\n+ added line 42 é\n﻿bom 43\n﻿bom 44\n+ added line 45 é\n﻿bom 46\n+ added line 47 é\n﻿bom 48\n﻿bom 49\n﻿bom 50\n    message 51\n﻿bom 52\n+ added line 53 é\n+ added line 54 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é",
+    "Bash cargo build"
+  ],
+  "out": {
+    "text": "+ added line 42 é\n﻿bom 43\n﻿bom 44\n+ added line 45 é\n﻿bom 46\n+ added line 47 é\n﻿bom 48\n﻿bom 49\n﻿bom 50\n    message 51\n﻿bom 52\n+ added line 53 é\n+ added line 54 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é\n+ added line 55 é",
+    "filter": "build",
+    "saved": 618
+  }
+}

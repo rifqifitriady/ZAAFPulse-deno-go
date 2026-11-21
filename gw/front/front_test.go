@@ -2,6 +2,7 @@ package front
 
 import (
 	"bufio"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -21,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -441,3 +443,66 @@ func TestProxyHeadersPassThrough(t *testing.T) {
 		}
 	}
 }
+
+// toolEngine records the tool call the front gives it (P4g: SetTools, as SetOwn).
+type toolEngine struct {
+	recEngine
+	call func(ctx context.Context, body []byte) (int, []byte, error)
+}
+
+func (e *toolEngine) SetTools(f func(ctx context.Context, body []byte) (int, []byte, error)) {
+	e.call = f
+}
+
+// P4g: an engine that calls tools gets the front's call: POST /_zp/mcp/call on the internal port as the gateway itself
+// (X-Zp-Own, the signed client header naming the gateway), with the caller's context and no 5 s limit of its own.
+func TestSetToolsCallsTheToolEndpoint(t *testing.T) {
+	type seen struct {
+		method, path, own, client, body string
+	}
+	got := make(chan seen, 1)
+	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got <- seen{r.Method, r.URL.Path, r.Header.Get(OwnHeader), r.Header.Get(ClientHeader), string(b)}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"r":{"result":{}}}`)
+	})
+	s := startFront(t, up.port(), nil)
+	e := &toolEngine{recEngine: recEngine{calls: make(chan string, 1)}}
+	s.SetGoEngine(e)
+	if e.call == nil {
+		t.Fatal("the engine got no tool call")
+	}
+	// No limit of its own: the request the transport gets carries the caller's context, with no deadline added.
+	next := s.proxy.Transport
+	var deadline atomic.Bool
+	s.proxy.Transport = roundTripper(func(r *http.Request) (*http.Response, error) {
+		if _, ok := r.Context().Deadline(); ok {
+			deadline.Store(true)
+		}
+		return next.RoundTrip(r)
+	})
+	status, body, err := e.call(context.Background(), []byte(`{"name":"x","arguments":{}}`))
+	if err != nil || status != 200 || string(body) != `{"r":{"result":{}}}` {
+		t.Fatalf("%d %s %v", status, body, err)
+	}
+	if deadline.Load() {
+		t.Fatal("the tool call has a time limit of its own")
+	}
+	r := <-got
+	want := ClientValue(token, s.Addr().String(), false)
+	if r.method != "POST" || r.path != "/_zp/mcp/call" || r.own != "1" || r.client != want || r.body != `{"name":"x","arguments":{}}` {
+		t.Fatalf("%+v", r)
+	}
+	// The caller's context ends the call.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := e.call(ctx, []byte(`{}`)); err == nil {
+		t.Fatal("a cancelled context still called")
+	}
+}
+
+// roundTripper is an http.RoundTripper from a function.
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

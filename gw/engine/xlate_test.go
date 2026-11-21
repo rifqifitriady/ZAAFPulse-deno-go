@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/front"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
@@ -263,6 +264,10 @@ func planXlate(t *testing.T, f xlateFixture) (*State, Plan) {
 		t.Fatalf("handed off: %s", p.Handoff)
 	}
 	p.Env = counterEnv()
+	// The token saver runs before the rate limit, the budget and the guardrails (rtk spec D9).
+	if why := s.Save(&p, time.Now()); why != "" {
+		t.Fatalf("the token saver handed off: %s", why)
+	}
 	return s, p
 }
 

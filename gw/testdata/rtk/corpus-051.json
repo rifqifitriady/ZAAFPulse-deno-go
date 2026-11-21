@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "diff --git a/x0 b/x0\ndiff --git a/x1 b/x1\n\n\ndiff --git a/x4 b/x4\ndiff --git a/x5 b/x5\ndiff --git a/x6 b/x6\n\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\ndiff --git a/x8 b/x8\n\n\nwarning: unused 33\n\ndiff --git a/x35 b/x35\n\nwarning: unused 37\n\ndiff --git a/x39 b/x39\ndiff --git a/x40 b/x40\nwarning: unused 41\n\ndiff --git a/x43 b/x43\ndiff --git a/x44 b/x44\ndiff --git a/x45 b/x45\n\nwarning: unused 47\nwarning: unused 48\nwarning: unused 49\n\n\ndiff --git a/x52 b/x52\n\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54\nwarning: unused 54",
+    ""
+  ],
+  "out": null
+}

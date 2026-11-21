@@ -3,6 +3,10 @@
 // MCP server (JSON-RPC at /mcp). What it answers is picked by the upstream model name the gateway sends, so one server
 // serves every case: m1 answers, fail400/fail401/fail429/fail500/fail503 fail with that status, reset closes the
 // connection, garbage answers 200 with a body that is not JSON, tools answers with a tool call. No network.
+// P4g: it is also the token endpoint of the token-auth providers (POST /token: the client_credentials, refresh_token and
+// jwt-bearer grants), over HTTP and, with startUpstream({ tls: true }), over HTTPS with a certificate made for the run
+// (an OAuth2 token URL must be https://); a token revoked with revoke() is answered 401 by the chat route.
+const crypto = require('crypto');
 const { fakeServer } = require('../helpers');
 
 // 1000 input and 500 output tokens: US$0.002 at the contract price of m1 ($1 in, $2 out per million).
@@ -203,10 +207,113 @@ function mcp(r) {
   return { body: { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'Method not found' } } };
 }
 
-// startUpstream() -> { url, requests, close }: requests holds every call ({ method, path, query, headers, body }).
-function startUpstream() {
-  return fakeServer({
-    'POST /chat/completions': chat,
+const JWT_BEARER = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+// The token endpoint: a form with a known grant and its fields gets a new access token (zp-tok-<n>, an hour); anything
+// else 400 invalid_request. Every form is recorded in tokens.forms, every token issued in tokens.issued.
+function tokenEndpoint(tokens) {
+  return (r) => {
+    const form = Object.fromEntries(new URLSearchParams(typeof r.body === 'string' ? r.body : ''));
+    tokens.forms.push({ form, contentType: r.headers['content-type'] });
+    const g = form.grant_type;
+    const ok =
+      g === 'client_credentials'
+        ? !!(form.client_id && form.client_secret)
+        : g === 'refresh_token'
+          ? !!(form.client_id && form.refresh_token)
+          : g === JWT_BEARER && !!form.assertion;
+    if (!ok) return { status: 400, body: { error: 'invalid_request' } };
+    const access = `zp-tok-${tokens.issued.length + 1}`;
+    tokens.issued.push(access);
+    return { body: { access_token: access, token_type: 'Bearer', expires_in: 3600 } };
+  };
+}
+
+// A minimal DER writer, enough for two X.509 v3 certificates (ECDSA P-256 with SHA-256).
+function der(tag, ...parts) {
+  const body = Buffer.concat(parts);
+  const len = [];
+  for (let n = body.length; n > 0; n >>= 8) len.unshift(n & 255);
+  const head = body.length < 128 ? [body.length] : [0x80 | len.length, ...len];
+  return Buffer.concat([Buffer.from([tag, ...head]), body]);
+}
+const seq = (...parts) => der(0x30, ...parts);
+function oid(text) {
+  const [a, b, ...rest] = text.split('.').map(Number);
+  const out = [40 * a + b];
+  for (const v of rest) {
+    const bytes = [v & 127];
+    for (let x = v >> 7; x > 0; x >>= 7) bytes.unshift(0x80 | (x & 127));
+    out.push(...bytes);
+  }
+  return der(0x06, Buffer.from(out));
+}
+const utcTime = (d) => der(0x17, Buffer.from(`${d.toISOString().replace(/[-:T]/g, '').slice(2, 14)}Z`));
+const commonName = (cn) => seq(der(0x31, seq(oid('2.5.4.3'), der(0x0c, Buffer.from(cn)))));
+const ext = (id, value) => seq(oid(id), der(0x01, Buffer.from([0xff])), der(0x04, value)); // critical
+const ECDSA_SHA256 = seq(oid('1.2.840.10045.4.3.2'));
+function certificate({ subject, issuer, publicKey, signKey, extensions }) {
+  const serial = crypto.randomBytes(8);
+  serial[0] = (serial[0] & 0x7f) | 0x40; // positive, minimal
+  const now = Date.now();
+  const tbs = seq(
+    der(0xa0, der(0x02, Buffer.from([2]))),
+    der(0x02, serial),
+    ECDSA_SHA256,
+    commonName(issuer),
+    seq(utcTime(new Date(now - 3600e3)), utcTime(new Date(now + 86400e3))),
+    commonName(subject),
+    publicKey.export({ type: 'spki', format: 'der' }),
+    der(0xa3, seq(...extensions)),
+  );
+  const sig = crypto.sign('sha256', tbs, signKey);
+  const body = seq(tbs, ECDSA_SHA256, der(0x03, Buffer.from([0]), sig));
+  return `-----BEGIN CERTIFICATE-----\n${body.toString('base64').replace(/.{64}/g, '$&\n')}\n-----END CERTIFICATE-----\n`;
+}
+// testCertificates() -> { ca, key, cert } (PEM): a CA made for this run and a server certificate it signed for 127.0.0.1
+// and localhost. Nothing is written to disk here; the CA reaches the server under test as NODE_EXTRA_CA_CERTS/DENO_CERT.
+function testCertificates() {
+  const ec = () => crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const ca = ec();
+  const leaf = ec();
+  const caName = 'zaafpulse contract CA';
+  const caPem = certificate({
+    subject: caName,
+    issuer: caName,
+    publicKey: ca.publicKey,
+    signKey: ca.privateKey,
+    extensions: [
+      ext('2.5.29.19', seq(der(0x01, Buffer.from([0xff])))), // basicConstraints: CA
+      ext('2.5.29.15', der(0x03, Buffer.from([1, 0x06]))), // keyUsage: keyCertSign, cRLSign
+    ],
+  });
+  const cert = certificate({
+    subject: '127.0.0.1',
+    issuer: caName,
+    publicKey: leaf.publicKey,
+    signKey: ca.privateKey,
+    extensions: [
+      ext('2.5.29.15', der(0x03, Buffer.from([7, 0x80]))), // keyUsage: digitalSignature
+      seq(oid('2.5.29.37'), der(0x04, seq(oid('1.3.6.1.5.5.7.3.1')))), // extKeyUsage: serverAuth
+      seq(
+        oid('2.5.29.17'),
+        der(0x04, seq(der(0x87, Buffer.from([127, 0, 0, 1])), der(0x82, Buffer.from('localhost')))),
+      ),
+    ],
+  });
+  return { ca: caPem, key: leaf.privateKey.export({ type: 'pkcs8', format: 'pem' }), cert };
+}
+
+// startUpstream({ tls }) -> { url, tlsUrl, ca, requests, tokens, revoke, close }: requests holds every call to url
+// ({ method, path, query, headers, body }); tokens { forms, issued } the token endpoint's record (both servers);
+// revoke() makes every token issued so far answered 401 at the chat route (a token the provider no longer takes).
+// With tls, POST /token is served over HTTPS too, at tlsUrl, trusting the PEM ca.
+async function startUpstream({ tls = false } = {}) {
+  const tokens = { forms: [], issued: [], revoked: new Set() };
+  const token = tokenEndpoint(tokens);
+  const bearer = (r) => String(r.headers.authorization || '').replace(/^Bearer /, '');
+  const main = await fakeServer({
+    'POST /chat/completions': (r) =>
+      tokens.revoked.has(bearer(r)) ? { status: 401, body: { error: { message: 'token revoked' } } } : chat(r),
     'POST /messages': messages,
     'POST /messages/count_tokens': (r) =>
       r.body && r.body.model === 'broken' ? { status: 500, body: {} } : { body: { input_tokens: 4242 } },
@@ -214,7 +321,23 @@ function startUpstream() {
     'POST /embeddings': embeddings,
     'GET /models': { body: { data: [{ id: 'm1', created: 1700000000 }, { id: 'm2' }, { id: 'claude-x' }] } },
     'POST /mcp': mcp,
+    'POST /token': token,
   });
+  const certs = tls ? testCertificates() : null;
+  const secure = certs
+    ? await fakeServer({ 'POST /token': token }, { tls: { key: certs.key, cert: certs.cert } })
+    : null;
+  return {
+    url: main.url,
+    requests: main.requests,
+    tokens,
+    revoke: () => tokens.issued.forEach((t) => tokens.revoked.add(t)),
+    ...(secure ? { tlsUrl: secure.url, ca: certs.ca } : {}),
+    close: async () => {
+      await main.close();
+      if (secure) await secure.close();
+    },
+  };
 }
 
-module.exports = { startUpstream, USAGE, INJECTION, TOOL_CALL };
+module.exports = { startUpstream, USAGE, INJECTION, TOOL_CALL, JWT_BEARER };

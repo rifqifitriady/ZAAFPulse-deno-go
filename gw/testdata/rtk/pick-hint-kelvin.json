@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "",
+    "maKe"
+  ],
+  "out": "build"
+}

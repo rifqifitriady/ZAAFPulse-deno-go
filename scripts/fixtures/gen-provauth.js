@@ -146,6 +146,21 @@ const CASES = {
     ],
     steps: [{ now: T0 }, { now: T0 + 1 }],
   },
+  // fetch rejects (Node and Deno: TypeError 'fetch failed', a refused connection or a DNS failure): the message as it
+  // is, without the provider id; the next call tries again.
+  'oauth2-fetch-failed': {
+    auth: cc(),
+    secret: 's',
+    responses: [{ throws: 'fetch failed' }, ok({ access_token: 'after', expires_in: 3600 })],
+    steps: [{ now: T0 }, { now: T0 + 1000 }],
+  },
+  // The answer's body fails while it is read: r.json().catch(() => ({})) reads it as {}.
+  'oauth2-body-error': {
+    auth: cc(),
+    secret: 's',
+    responses: [{ status: 200, bodyError: 'terminated' }],
+    steps: [{ now: T0 }],
+  },
   'oauth2-redirect-302': {
     auth: cc(),
     secret: 's',
@@ -252,6 +267,15 @@ async function runCase(c) {
     requests.push({ url, method: init.method, headers: init.headers, body: init.body });
     const r = responses.shift();
     if (!r) throw new Error('no response queued');
+    if (r.throws) throw new TypeError(r.throws);
+    if (r.bodyError) {
+      const body = new ReadableStream({
+        start(ctrl) {
+          ctrl.error(new TypeError(r.bodyError));
+        },
+      });
+      return new Response(body, { status: r.status, headers: r.headers || {} });
+    }
     return new Response(r.body === '' ? null : r.body, { status: r.status, headers: r.headers || {} });
   };
   // The background refresh (a 60 s interval) is not part of a step.
@@ -311,4 +335,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { generate, DIR };
+module.exports = { generate, DIR, TEST_KEY }; // TEST_KEY: gen-auth.js signs its service account JWT with it

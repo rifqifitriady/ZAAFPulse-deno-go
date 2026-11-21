@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    " M src/s0.ts\n+ added line 1 é\n nbsp 2 ls\n nbsp 3 ls\n nbsp 4 ls\n M src/s5.ts\n M src/s6.ts\n+ added line 7 é\n nbsp 8 ls\n M src/s9.ts\n nbsp 10 ls\n nbsp 11 ls\n M src/s12.ts\n M src/s13.ts\nnpm ERR! failed 14\n M src/s15.ts\n nbsp 16 ls\n nbsp 17 ls\n M src/s18.ts\n nbsp 19 ls\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s27.ts\n M src/s28.ts\n M src/s29.ts\nnpm ERR! failed 30\n nbsp 31 ls\n+ added line 32 é\n nbsp 33 ls\nnpm ERR! failed 34\nnpm ERR! failed 35\n M src/s36.ts\nnpm ERR! failed 37\n+ added line 38 é\n nbsp 39 ls\n nbsp 40 ls\n nbsp 41 ls\n+ added line 42 é\n+ added line 43 é\n+ added line 44 é",
+    "Bash rg foo | head"
+  ],
+  "out": {
+    "text": "npm ERR! failed 14\n M src/s15.ts\n nbsp 16 ls\n  (× 2 similar lines)\nnpm ERR! failed 30\n nbsp 31 ls\n+ added line 32 é\n nbsp 33 ls\nnpm ERR! failed 34\n  (× 2 similar lines)\n M src/s36.ts\nnpm ERR! failed 37\n+ added line 38 é\n nbsp 39 ls\n  (× 2 similar lines)\n…\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s20.ts\n M src/s27.ts\n M src/s28.ts\n M src/s29.ts\nnpm ERR! failed 30\n nbsp 31 ls\n+ added line 32 é\n nbsp 33 ls\nnpm ERR! failed 34\nnpm ERR! failed 35\n M src/s36.ts\nnpm ERR! failed 37\n+ added line 38 é\n nbsp 39 ls\n nbsp 40 ls\n nbsp 41 ls\n+ added line 42 é\n+ added line 43 é\n+ added line 44 é",
+    "filter": "build",
+    "saved": 9
+  }
+}

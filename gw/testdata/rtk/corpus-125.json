@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "error: boom 0\r\n\r\n[2/40] building\r\nerror: boom 3\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 44\r\nerror: boom 45\r\nerror: boom 46\r\n\r\n\r\n[49/40] building\r\nerror: boom 50\r\nerror: boom 51\r\n[52/40] building\r\n\r\nerror: boom 54\r\nerror: boom 54\r\nerror: boom 54\r\nerror: boom 54\r\nerror: boom 54\r\nerror: boom 54\r\nerror: boom 54\r\n\r\nerror: boom 62\r\n\r\n[64/40] building\r\n\r\n\r\n[67/40] building\r\n\r\n[69/40] building\r\nerror: boom 70\r\n[71/40] building\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\nerror: boom 82\r\n\r\nerror: boom 84\r\n[85/40] building\r\n\r\nerror: boom 87\r\nerror: boom 88\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\nerror: boom 108\r\nerror: boom 109\r\n[110/40] building\r\n\r\n\r\nerror: boom 113\r\n[114/40] building\r\n[115/40] building\r\nerror: boom 116\r\n[117/40] building\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n[125/40] building\r\n[126/40] building\r\n[127/40] building\r\nerror: boom 128\r\n[129/40] building\r\n\r\n\r\n[132/40] building\r\n\r\n[134/40] building\r\n[135/40] building\r\n\r\nerror: boom 137\r\n[138/40] building\r\n[139/40] building\r\n[140/40] building\r\nerror: boom 141\r\n[142/40] building\r\n[143/40] building\r\n[144/40] building\r\n[145/40] building\r\n[146/40] building\r\n[147/40] building\r\nerror: boom 148\r\n\r\n\r\n\r\n\r\n\r\n\r\n[155/40] building\r\nerror: boom 156\r\n\r\n[158/40] building\r\n\r\n\r\nerror: boom 161\r\n\r\n\r\nerror: boom 164\r\n\r\n[166/40] building\r\n\r\nerror: boom 168\r\n[169/40] building\r\nerror: boom 170\r\n\r\nerror: boom 172\r\nerror: boom 173\r\nerror: boom 173\r\nerror: boom 173\r\nerror: boom 173\r\nerror: boom 173\r\nerror: boom 173",
+    "Bash ls -R"
+  ],
+  "out": {
+    "text": "error: boom 0\r\n[2/40] building\r\nerror: boom 3\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\nerror: boom 20\r\n  … 84 more in . omitted",
+    "filter": "listing",
+    "saved": 1590
+  }
+}

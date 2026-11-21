@@ -5,8 +5,9 @@
 //
 // Supported: alternation, groups (capturing, (?:), (?=), (?!), (?<=), (?<!)), quantifiers * + ? {n} {n,} {n,m} and
 // their lazy forms, character classes with ranges and the \d \w \s escapes, ., ^, $, \b, \B, backreferences \1-\9,
-// escapes \n \r \t \v \f \0 \xHH \uHHHH \cX, and the flags i and g (g is the caller's business: Exec takes a start).
-// Not supported (not used by the ported patterns): the u, y, m, s flags, named groups, \k, \p.
+// escapes \n \r \t \v \f \0 \xHH \uHHHH \cX, and the flags i, g and m (g is the caller's business: Exec takes a
+// start; m lets ^ and $ also match next to a line terminator, for the token saver's patterns).
+// Not supported (not used by the ported patterns): the u, y, s flags, named groups, \k, \p.
 package jsre
 
 import (
@@ -27,14 +28,15 @@ type parser struct {
 
 // Regexp is a compiled pattern.
 type Regexp struct {
-	src   string
-	flags string
-	root  *node
-	ncap  int
-	icase bool
-	pre   prefilter
-	prog  lazyProg
-	vms   sync.Pool // idle *vm, reused across calls (ExecB, TestB, EachB)
+	src       string
+	flags     string
+	root      *node
+	ncap      int
+	icase     bool
+	multiline bool // m: ^ and $ also match next to a line terminator
+	pre       prefilter
+	prog      lazyProg
+	vms       sync.Pool // idle *vm, reused across calls (ExecB, TestB, EachB)
 }
 
 // String is the pattern source.
@@ -46,10 +48,10 @@ func (re *Regexp) Flags() string { return re.flags }
 // NumCap is the number of capturing groups.
 func (re *Regexp) NumCap() int { return re.ncap }
 
-// Compile parses a pattern with flags ("", "i", "g", "gi").
+// Compile parses a pattern with flags (any of i, g and m).
 func Compile(src, flags string) (*Regexp, error) {
 	for _, f := range flags {
-		if f != 'i' && f != 'g' {
+		if f != 'i' && f != 'g' && f != 'm' {
 			return nil, fmt.Errorf("jsre: flag %q not supported", f)
 		}
 	}
@@ -62,7 +64,8 @@ func Compile(src, flags string) (*Regexp, error) {
 	if err != nil {
 		return nil, err
 	}
-	re := &Regexp{src: src, flags: flags, root: n, ncap: p.total, icase: p.icase}
+	re := &Regexp{src: src, flags: flags, root: n, ncap: p.total, icase: p.icase,
+		multiline: strings.ContainsRune(flags, 'm')}
 	if progSize(n) > maxInsts {
 		return nil, fmt.Errorf("jsre: /%s/ is too large after expanding counted repeats", src)
 	}
@@ -397,9 +400,9 @@ func classEscape(c rune) func(uint16) bool {
 	case 'W':
 		return func(u uint16) bool { return !isWord(u) }
 	case 's':
-		return isSpace
+		return IsSpace
 	case 'S':
-		return func(u uint16) bool { return !isSpace(u) }
+		return func(u uint16) bool { return !IsSpace(u) }
 	}
 	return nil
 }
