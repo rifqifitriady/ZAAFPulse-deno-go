@@ -316,3 +316,36 @@ func TestExpiresIn(t *testing.T) {
 		}
 	}
 }
+
+func TestCachedExpiry(t *testing.T) {
+	srv, _ := endpoint(t, func(n int, _ seen) (int, string) {
+		if n == 2 {
+			return 401, `{"error":"invalid_client"}`
+		}
+		return 200, fmt.Sprintf(`{"access_token":"cc-%d","expires_in":%d}`, n, 600*n)
+	})
+	clk := &clock{now: t0}
+	src := OAuth2(OAuth2Config{TokenURL: srv.URL, ClientID: "app"}, secretOf("s"), srv.Client(), clk.Now)
+	if _, ok := src.Expiry(); ok {
+		t.Fatal("an expiry before any token")
+	}
+	if _, _, err := src.Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if exp, ok := src.Expiry(); !ok || !exp.Equal(t0.Add(10*time.Minute)) {
+		t.Fatalf("expiry %v %v", exp, ok)
+	}
+	if _, _, err := src.Refresh(context.Background()); err == nil {
+		t.Fatal("the second refresh should fail")
+	}
+	if exp, ok := src.Expiry(); !ok || !exp.Equal(t0.Add(10*time.Minute)) {
+		t.Fatalf("a failed refresh keeps the expiry: %v %v", exp, ok)
+	}
+	clk.Set(t0.Add(time.Minute))
+	if _, _, err := src.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if exp, ok := src.Expiry(); !ok || !exp.Equal(t0.Add(time.Minute+30*time.Minute)) {
+		t.Fatalf("expiry after a refresh %v %v", exp, ok)
+	}
+}

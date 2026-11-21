@@ -38,6 +38,7 @@ type Engine struct {
 	emitSpan func(*ipc.TraceSpanBody) error // the trace spans (P4f D1); nil: none
 	ids      SpanIDs
 	onTake   func(keyID string, at int64) // a request admitted under a key's window, for the control plane (P4f D16)
+	tokens   *Tokens                      // the provider token registry (P4g Decision 10), outside the generations
 }
 
 // SetOnTake gives the engine where to tell each request it admits under a key's window (P4f D16); call it before
@@ -153,9 +154,14 @@ func (e *Engine) open(p *Plan) int64 {
 // New is an engine that calls providers through up and hands each usage line to emit (the outbox, then the control
 // plane: lib/ipc/ingest.js stores it through the JS gateway's own writer).
 func New(up *Upstream, emit func(*ipc.UsageReport) (int64, error), logf func(string, ...any)) *Engine {
-	return &Engine{limits: NewRateLimiter(), upstream: up, emit: emit, now: NowMs, logf: logf,
+	e := &Engine{limits: NewRateLimiter(), upstream: up, emit: emit, now: NowMs, logf: logf,
 		failAt: map[string]time.Time{}, spend: &Spend{}, staleMs: StaleMs, ids: RandomIDs}
+	e.tokens = NewTokens(up.Client(), e.State, nil)
+	return e
 }
+
+// Tokens is the engine's provider token registry; the gateway runs its background refresh (Tokens.Run).
+func (e *Engine) Tokens() *Tokens { return e.tokens }
 
 // SetStaleMs sets the age at which a budget snapshot is stale (--stale-ms); call it before serving.
 func (e *Engine) SetStaleMs(ms int64) { e.staleMs = ms }
@@ -163,7 +169,8 @@ func (e *Engine) SetStaleMs(ms int64) { e.staleMs = ms }
 // SetState installs a generation (nil: none yet; every request is handed to the control plane).
 func (e *Engine) SetState(s *State) {
 	if s != nil {
-		s.logf = e.logf // the generation logs recovered panics through the engine's log (P4d re-review 3)
+		s.logf = e.logf     // the generation logs recovered panics through the engine's log (P4d re-review 3)
+		s.tokens = e.tokens // token-auth targets get their source from the engine's registry (P4g)
 	}
 	e.state.Store(s)
 }

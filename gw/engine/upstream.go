@@ -82,10 +82,32 @@ type Result struct {
 	Why    string
 }
 
+// Client is the provider client (proxy env, trusted roots); gw/provauth copies it for the token endpoints.
+func (u *Upstream) Client() *http.Client {
+	if u == nil {
+		return nil
+	}
+	return u.client
+}
+
 // Start sends the plan's request and returns the provider's answer once its headers are in, its body unread, or Why the
 // call failed. Closing the answer's body ends the call. ctx ends when the client goes away. The 120 s limit covers
 // the headers only; the body has none, as in JS. A plan's own limit (Plan.Timeout) covers the body too.
+//
+// A token-auth plan (P4g) gets its token inside the limit and sends it on its copy of the headers (never on p.Header);
+// a token error fails the call with the source's message. A 401 answer (after the redirects) is replayed once: the
+// body closed, the token refreshed, the request sent again with a new limit (providers.js request).
 func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) {
+	resp, why := u.send(ctx, p, false)
+	if why == "" && resp.StatusCode == http.StatusUnauthorized && p.auth != nil {
+		_ = resp.Body.Close()
+		return u.send(ctx, p, true)
+	}
+	return resp, why
+}
+
+// send is one attempt of Start; force refreshes the token first (the replay).
+func (u *Upstream) send(ctx context.Context, p *Plan, force bool) (*http.Response, string) {
 	ctx, cancel := context.WithCancel(ctx)
 	var timedOut atomic.Bool
 	limit := u.timeout
@@ -98,6 +120,24 @@ func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) 
 		cancel()
 		return nil, why
 	}
+	header := p.Header.Clone()
+	if p.auth != nil {
+		get := p.auth.Token
+		if force {
+			get = p.auth.Refresh
+		}
+		tok, _, err := get(ctx)
+		if err != nil {
+			switch {
+			case timedOut.Load():
+				return fail("timed out")
+			case ctx.Err() != nil:
+				return fail(ErrorCode(err)) // the client left while the token was on its way
+			}
+			return fail(err.Error()) // "<id>: token refresh failed (…)", masked by the source
+		}
+		setToken(header, p.Target, tok)
+	}
 	current := p.URL
 	for hop := 0; hop <= maxRedirects; hop++ {
 		// An in-memory body (bytes.Reader): net/http then writes the headers and the body in one go. A body type it does
@@ -107,7 +147,7 @@ func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) 
 		if err != nil {
 			return fail("fetch failed")
 		}
-		req.Header = p.Header.Clone()
+		req.Header = header.Clone()
 		resp, err := u.client.Do(req)
 		if err != nil {
 			if timedOut.Load() {
