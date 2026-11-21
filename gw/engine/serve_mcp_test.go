@@ -452,37 +452,3 @@ func TestToolProvSpan(t *testing.T) {
 		t.Fatalf("%+v", p)
 	}
 }
-
-// Until the mcp compare exists (P4g Task 3), a shadowed mcp request is forwarded unmarked (no capture asked for) and
-// gets a hand-off line; the
-// shadow path never runs a chat compare on it (which would read a provider target it has not).
-func TestShadowedMCPIsAHandoffForNow(t *testing.T) {
-	c := mcpCaseNamed(t, "call-redact-args.json")
-	e := New(NewUpstream(func(string) string { return "" }), func(*ipc.UsageReport) (int64, error) { return 0, nil }, t.Logf)
-	e.SetState(mcpStateOf(t, c))
-	e.SetModes(func(string) (bool, bool) { return false, true })
-	lines := make(chan string, 4)
-	own := func(method, path string, body []byte) (int, []byte, error) {
-		lines <- method + " " + path + " " + string(body)
-		return 204, nil, nil
-	}
-	js := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
-	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(c.Request.Body))
-	req.Host, req.RemoteAddr = "127.0.0.1:4777", "127.0.0.1:50000"
-	for k, v := range c.Request.Headers {
-		req.Header.Set(k, v)
-	}
-	w := httptest.NewRecorder()
-	e.Shadow("mcp", w, req, "/mcp", js, own)
-	if w.Code != 200 {
-		t.Fatalf("%d", w.Code)
-	}
-	select {
-	case l := <-lines:
-		if !strings.HasPrefix(l, "POST /_zp/shadow ") || !strings.Contains(l, `"class":"mcp"`) || !strings.Contains(l, `"outcome":"handoff"`) {
-			t.Fatalf("line %s", l)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no shadow line")
-	}
-}

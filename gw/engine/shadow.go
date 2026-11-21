@@ -37,6 +37,19 @@ type Capture struct {
 		Random []string `json:"random"`
 		Now    []int64  `json:"now"`
 	} `json:"tape"`
+	// P4g: the integration tool a /mcp tools/call ran (lib/gateway/shadow.js noteTool); nil when the control plane
+	// answered before calling it.
+	Tool *CaptureTool `json:"tool"`
+}
+
+// CaptureTool is the tool call of a captured /mcp tools/call: its name, the JSON text of the arguments it was given,
+// the tool endpoint's answer for its value (ToolReply's endpoint: {"r":…}, {} or {"thrown":true}), and why it cannot be
+// replayed (Skip; "" when it can).
+type CaptureTool struct {
+	Name string  `json:"name"`
+	Args string  `json:"args"`
+	R    *string `json:"r"`
+	Skip string  `json:"skip"`
 }
 
 // CaptureClient is the control plane's answer in a capture.
@@ -373,10 +386,6 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		js.ServeHTTP(w, r)
 		return
 	}
-	if p.Upstream == UpTool { // /mcp tools/call has no compare yet (P4g Task 3): a hand-off line, no capture
-		h := handoff("mcp: no shadow compare yet")
-		p = &h
-	}
 	select {
 	case shadowSlots <- struct{}{}:
 	default:
@@ -396,7 +405,7 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 		}
 		// The budget, decided now on the snapshot (cheap); the guardrail checks run after the answer, off this path.
 		// count_tokens and the engine's own answers check no budget (P4d).
-		if p.Upstream != UpNone && p.Upstream != UpCount {
+		if p.Upstream != UpNone && p.Upstream != UpCount && p.Upstream != UpTool { // no budget on /mcp (P4g)
 			if ref, unchecked := s.Budget(p, e.now(), e.staleMs, nil); ref != nil {
 				p.refused = ref
 			} else {
@@ -467,6 +476,9 @@ func (e *Engine) shadowRead(sub string, w http.ResponseWriter, r *http.Request, 
 // runs first (spec D14; a refusal the budget decided comes before it in JS), then the guardrails or the refusal, then
 // the compare of the class's kind.
 func (s *State) compareCaptured(sub string, p *Plan, c *Capture) ShadowLine {
+	if p.Upstream == UpTool && p.Handoff == "" { // /mcp tools/call (P4g): no saver, its own guardrails (shadow_mcp.go)
+		return s.CompareMCP(sub, p, c)
+	}
 	if p.refused == nil && p.Handoff == "" {
 		if why := s.Save(p, time.Now()); why != "" {
 			l := ShadowLine{Class: sub, Outcome: "handoff", Reason: why}
