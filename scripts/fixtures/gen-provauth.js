@@ -311,4 +311,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { generate, DIR };
+module.exports = { generate, DIR, TEST_KEY }; // TEST_KEY: gen-auth.js signs its service account JWT with it
