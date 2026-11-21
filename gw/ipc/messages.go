@@ -561,7 +561,7 @@ type RouteTake struct {
 	At   int64  `json:"at" ipc:"min=0"`
 }
 
-// RouteState seeds a new gateway with the control plane's rotation counters and live cooldowns (P4h Decision 3), after
+// RouteState seeds a new gateway with the control plane's rotation counters and every cooldown entry (P4h Decision 3), after
 // ratelimit.window and before budget.snapshot.
 type RouteState struct {
 	RR       []RouteRR       `json:"rr"`
@@ -574,7 +574,7 @@ type RouteRR struct {
 	N    int    `json:"n" ipc:"min=0"`
 }
 
-// RouteCooldown is one provider's live cooldown. Until is epoch ms and may be fractional (a fractional retry-after or
+// RouteCooldown is one provider's cooldown entry, expired ones too (their strikes set the next back-off). Until is epoch ms and may be fractional (a fractional retry-after or
 // reset gives a fractional until in JS too; P4h plan deviation of Task 1).
 type RouteCooldown struct {
 	ProviderID string  `json:"providerId" ipc:"minlen=1"`
