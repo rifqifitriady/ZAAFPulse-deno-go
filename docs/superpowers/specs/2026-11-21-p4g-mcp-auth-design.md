@@ -69,8 +69,9 @@ instruction is to follow the recommended option: every choice below is "Decision
    result check → the line → the reply. No budget check (JS has none on `/mcp`). The policy and scope are
    `guard.ResolvePolicy` and the P4e scope test with tier `private` for `acc_*`.
 5. **Lines and spans as JS:** a line only when J3 writes one, through the outbox (kind `mcp`, cost 0 as the JS
-   pricer gives a call without tokens); the server span for every served call and the client span for a line, as
-   `lib/otel.js` builds them for kind `mcp` (proven by the spans fixtures or a contract case; if the Go span builder
+   pricer gives a call without tokens); the server span when the call writes a line or the tool's own span ran inside
+   it (as `lib/otel.js` requestContext's done: `format || ctx.children`; no span for a 429 on `/mcp`) and the client
+   span for a line, as `lib/otel.js` builds them for kind `mcp` (proven by the spans fixtures or a contract case; if the Go span builder
    cannot give the same span, the class hands off while `trace.spans` is on and this is recorded). **No call journal
    entry**: JS writes the line only at the end and only sometimes, so a 599 recovered line would be a line JS never
    writes.
@@ -138,6 +139,14 @@ instruction is to follow the recommended option: every choice below is "Decision
     (`ipc/v1/config.push.schema.json`, `gw/ipc/messages.go`), as `token-saver` does: an additive enum value.
 18. **Live provider smoke tests are manual and deferred** (S10's exit): listed in the results document with their
     steps; nothing is sent to a real provider or token endpoint by this branch's tests, which use local fakes only.
+19. **The refresh_token grant stays on the control plane** (recommended, pending owner; final review I2). An IdP that
+    rotates refresh tokens issues a new one at each refresh; two engines each keeping their own rotated copy would
+    present one the IdP already replaced, and reuse detection then revokes the whole token family. So the engine hands
+    off every call to an oauth2 provider whose grant is `refresh_token` (reason `provider: refresh-token grant stays on
+    the control plane (P4g Decision 19)`) and its token registry never makes a source for one; under shadow such a
+    call is a hand-off, not a compare. client_credentials and google-sa providers are served. The `rt-rotation`
+    fixture stays: it still proves the JS rotation, and the Go engine test asserts the hand-off for each of its
+    requests (the rotation itself is replayed by `gw/testdata/provauth/oauth2-rt-rotation.json`).
 
 ## Design
 
@@ -203,10 +212,20 @@ As rtk D13/D14 with `provider-auth`, `auth: true`, and `authClasses` in `toEngin
    test calls), not the gateway's.
 3. After a change of a provider's auth settings the engine fetches a new token at once; JS keeps the cached token until
    it expires. A change of the stored secret alone behaves as JS (read at the next refresh).
-4. Two token caches while both engines serve calls of one provider: twice the token requests at most.
+4. Two token caches for client_credentials and google-sa providers while both engines serve calls of one provider:
+   twice the token requests at most (refresh_token providers stay on js, Decision 19).
 5. The arguments reach the integration through `JSON.stringify`/`JSON.parse` (Go to the control plane): the same
    value for any JSON value the engine parses; a lone surrogate or a `__proto__` key are handed off by `engine.Parse`
    rules as in P4b.
+6. A tool answer the engine cannot parse (a lone-surrogate escape, nesting too deep, over 64 MiB) gives -32603 with
+   no line.
+7. A detached tool call still running when the gateway shuts down past its grace may lose its guardrail line.
+8. A client leaving during a token fetch is named as a cancelled fetch, where JS names the provider abort "timed
+   out".
+9. During a config rollout a plan built on the previous auth settings can replace the registry's source once (an
+   extra token request).
+10. The Go background refresh keeps refreshing cached tokens of a provider whose calls went back to js (until the
+    process restarts or the provider's settings change).
 
 ## Out of scope
 
