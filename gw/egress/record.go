@@ -33,7 +33,7 @@ type Record struct {
 	BytesOut int64   `json:"bytesOut"`
 	BytesIn  int64   `json:"bytesIn"`
 	MS       float64 `json:"ms"`
-	Via      string  `json:"via"` // proxy | tunnel | engine
+	Via      string  `json:"via"` // proxy | tunnel | engine | check
 }
 
 // Outcomes and vias.
@@ -46,6 +46,7 @@ const (
 	ViaProxy           = "proxy"
 	ViaTunnel          = "tunnel"
 	ViaEngine          = "engine"
+	ViaCheck           = "check" // a /check verdict: the only records the control plane's egress gate counts
 )
 
 // Error codes (X-ZP-Egress-Error and Record.Error).

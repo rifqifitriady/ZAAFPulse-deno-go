@@ -385,7 +385,7 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, resp *http.Respo
 }
 
 // check is "/check": the verdict for the call the headers describe (the allow-list, or the address literal in public
-// mode), recorded "checked" or "would-refuse", answered 204 or 403 with X-ZP-Egress-Error; nothing is connected and
+// mode), recorded "checked" or "would-refuse" with via "check" (the control plane's gate counts only these), answered 204 or 403 with X-ZP-Egress-Error; nothing is connected and
 // the body is not read. The call's method comes from X-ZP-Egress-Method (default GET).
 func (s *Server) check(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -401,7 +401,7 @@ func (s *Server) check(w http.ResponseWriter, r *http.Request) {
 	if method == "" {
 		method = http.MethodGet
 	}
-	rec := s.newRecord(c.purpose, method, c.url, ViaProxy, s.now())
+	rec := s.newRecord(c.purpose, method, c.url, ViaCheck, s.now())
 	host, port := target(c.url)
 	code := ""
 	if c.public {

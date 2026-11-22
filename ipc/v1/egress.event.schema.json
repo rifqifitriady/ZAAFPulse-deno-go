@@ -17,6 +17,6 @@
     "bytesOut": { "type": "integer", "minimum": 0 },
     "bytesIn": { "type": "integer", "minimum": 0 },
     "ms": { "type": "number", "minimum": 0 },
-    "via": { "type": "string", "enum": ["proxy", "tunnel", "engine"] }
+    "via": { "type": "string", "enum": ["proxy", "tunnel", "engine", "check"] }
   }
 }

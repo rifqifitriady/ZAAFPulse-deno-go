@@ -126,8 +126,8 @@ func invalidEgress(ev *ipc.EgressEvent) string {
 		return "a byte count is negative"
 	case !(ev.MS >= 0):
 		return "ms is negative"
-	case ev.Via != egress.ViaProxy && ev.Via != egress.ViaTunnel && ev.Via != egress.ViaEngine:
-		return "via is not proxy, tunnel or engine"
+	case ev.Via != egress.ViaProxy && ev.Via != egress.ViaTunnel && ev.Via != egress.ViaEngine && ev.Via != egress.ViaCheck:
+		return "via is not proxy, tunnel, engine or check"
 	}
 	return ""
 }
