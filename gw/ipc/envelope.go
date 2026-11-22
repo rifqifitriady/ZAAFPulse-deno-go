@@ -54,6 +54,7 @@ var bodies = map[string]func() any{
 	TypeProviderNote:    func() any { return new(ProviderNote) },
 	TypeRouteTake:       func() any { return new(RouteTake) },
 	TypeRouteState:      func() any { return new(RouteState) },
+	TypeEgressEvent:     func() any { return new(EgressEvent) },
 }
 
 // Types lists the v1 message types, sorted.

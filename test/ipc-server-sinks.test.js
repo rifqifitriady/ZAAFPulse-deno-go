@@ -8,6 +8,7 @@ const path = require('path');
 const { serverSinks } = require('../lib/ipc/server-sinks');
 const { createIngest } = require('../lib/ipc/ingest');
 const { createAudit } = require('../lib/audit');
+const { createEgressLog } = require('../lib/egress-log');
 const { tmpDir } = require('./ipc-stub');
 const { createGateway } = require('../lib/gateway');
 const { secretsFor } = require('./helpers');
@@ -50,6 +51,7 @@ test('server.js builds the ingest from strict writers, never from its wrapped on
   assert.match(call, /\bgovernance,/);
   assert.match(call, /mcpAudit: audit,/);
   assert.match(call, /\btraceStore,/);
+  assert.match(call, /\begressLog,/);
 });
 
 test('usage: stored strictly with its mark, then the budget report once', (t) => {
@@ -142,4 +144,47 @@ test('a write that fails is not marked: governance null, an unwritable usage log
   assert.equal(spans.mark(STREAM), 1);
   assert.throws(() => sinks.writeSpans([span.body.span]), /trace store is off/);
   assert.equal(ingest.mark(STREAM), 0);
+});
+
+test('egress.event: stored strictly in the egress log with its mark; no egress log is a store failure (P5)', (t) => {
+  const dir = tmpDir(t, 'sinks-egress');
+  const base = {
+    recordUsage: () => ({}),
+    budgetRecord: () => {},
+    governance: { record: () => ({}) },
+    mcpAudit: createAudit(path.join(dir, 'mcp-audit.jsonl')),
+    traceStore: null,
+    traceDir: path.join(dir, 'traces'),
+  };
+  const msg = {
+    type: 'egress.event',
+    seq: 1,
+    body: {
+      ts: 1,
+      purpose: 'pricing',
+      method: 'GET',
+      scheme: 'https',
+      host: 'prices.example.com',
+      port: 443,
+      outcome: 'ok',
+      status: 200,
+      bytesOut: 0,
+      bytesIn: 5,
+      ms: 1,
+      via: 'proxy',
+    },
+  };
+  const off = createIngest({ ...serverSinks(base), log: () => {} });
+  assert.throws(() => off.handle(msg, STREAM), /egress log is off/);
+  assert.equal(off.mark(STREAM), 0);
+  const egressLog = createEgressLog({ dir });
+  const ingest = createIngest({ ...serverSinks({ ...base, egressLog }), log: () => {} });
+  assert.equal(ingest.handle(msg, STREAM), true);
+  const lines = fs.readFileSync(path.join(dir, 'egress.jsonl'), 'utf8').trim().split('\n');
+  assert.equal(lines.length, 1);
+  assert.deepEqual(JSON.parse(lines[0]), { ...msg.body, ipc: { stream: STREAM, seq: 1 } });
+  fs.rmSync(path.join(dir, 'egress.jsonl'));
+  fs.mkdirSync(path.join(dir, 'egress.jsonl')); // a folder: the append fails
+  assert.throws(() => ingest.handle({ ...msg, seq: 2 }, STREAM));
+  assert.equal(ingest.mark(STREAM), 1);
 });

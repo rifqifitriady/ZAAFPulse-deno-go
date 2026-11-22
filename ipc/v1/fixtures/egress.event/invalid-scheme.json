@@ -1,0 +1,1 @@
+{"v":1,"type":"egress.event","seq":55,"ts":1767225700041,"body":{"ts":1767225700040,"purpose":"pricing","method":"GET","scheme":"ftp","host":"prices.example.com","port":21,"outcome":"ok","bytesOut":0,"bytesIn":0,"ms":1,"via":"proxy"}}
