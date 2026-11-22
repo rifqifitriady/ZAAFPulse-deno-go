@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/egress"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/engine"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/front"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
@@ -156,7 +158,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// The sender stops before the outbox closes (defers run last first): what it still holds goes out on the next start.
 	g.out = newSender(box, g.ch.SendLine, logger.Printf)
 	defer g.out.stop(time.Second)
-	g.engine = engine.New(engine.NewUpstream(os.Getenv), g.emitUsage, g.log.Printf)
+	// The engine's own provider calls and token fetches are recorded as egress events (P5 Decision 9, via "engine"); the
+	// wrapper goes on before engine.New, whose token sources copy the client.
+	g.upstream = engine.NewUpstream(os.Getenv)
+	g.upstream.WrapTransport(func(rt http.RoundTripper) http.RoundTripper {
+		return egress.RecordingTransport(rt, "gateway", g.recordEgress)
+	})
+	g.engine = engine.New(g.upstream, g.emitUsage, g.log.Printf)
 	g.calls = calls
 	g.engine.SetCalls(calls, g.emitCallUsage)
 	// The go engine's trace spans (P4f D1): stored, then sent after the call's usage line, like every event.
@@ -246,6 +254,8 @@ type gateway struct {
 	frontCfg   *ipc.FrontConfig // under mu: the first config.push's front section, opened on ready
 	frontToken string           // under mu: from secrets.handoff, never logged
 	front      *front.Server    // under mu: the main port, once open
+	upstream   *engine.Upstream // the engine's provider client (the egress endpoint copies its settings, P5)
+	egress     *egress.Server   // under mu: the egress endpoint (P5), from the first config.push with an egress section
 	stopTokens func()           // stops the engine's background token refresh (P4g), once
 }
 
@@ -315,6 +325,7 @@ func (g *gateway) handle(msg ipc.Message) int {
 		if code := g.applyFront(b.Front); code >= 0 {
 			return code
 		}
+		g.applyEgress(b.Egress)
 		g.mu.Lock()
 		g.cfgGen, g.cfgBody = b.Gen, b
 		g.mu.Unlock()
@@ -326,6 +337,9 @@ func (g *gateway) handle(msg ipc.Message) int {
 		}
 		g.mu.Lock()
 		g.secGen, g.secrets, g.mask, g.frontToken = b.Gen, m, b.Mask, b.FrontToken
+		if g.egress != nil && b.FrontToken != "" {
+			g.egress.SetToken(egress.DeriveToken(b.FrontToken))
+		}
 		if g.cfgBody != nil && g.cfgBody.Gen == b.Gen {
 			st := engine.NewState(g.cfgBody, b)
 			if g.snap != nil {
@@ -412,7 +426,8 @@ func (g *gateway) maybeReady() int {
 			return code
 		}
 	}
-	if err := g.ch.Send(ipc.TypeReady, ipc.Ready{Gen: gen}, "", ""); err != nil {
+	// The egress endpoint listens before ready, which names its port (P5 Decision 2).
+	if err := g.ch.Send(ipc.TypeReady, ipc.Ready{Gen: gen, Egress: g.openEgress(tok)}, "", ""); err != nil {
 		g.log.Printf("ready: %v", err)
 		return -1
 	}
@@ -564,6 +579,7 @@ func (g *gateway) sendHealth() {
 func (g *gateway) drain() {
 	g.log.Print("the control plane closed the channel: exiting")
 	g.closeFront(0) // nothing to forward to any more
+	g.closeEgress(0)
 	g.stopEmitter(time.Second)
 	// The control plane is gone: nothing can be sent any more, and what is unsent stays in the outbox. Do not hold the
 	// exit (on Windows a running gateway exe keeps its folder locked).
@@ -575,7 +591,10 @@ func (g *gateway) shutdown(grace time.Duration) {
 	if g.stopTokens != nil {
 		g.stopTokens()
 	}
+	end := time.Now().Add(grace)
 	g.closeFront(grace)
+	// After the front (a call it still serves may be using the endpoint), within what is left of the same grace.
+	g.closeEgress(time.Until(end))
 	g.stopEmitter(grace)
 	g.out.stop(grace)
 }

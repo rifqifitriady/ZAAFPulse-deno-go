@@ -177,3 +177,42 @@ func TestUpstreamStart(t *testing.T) {
 		t.Fatal("closing the body did not end the call")
 	}
 }
+
+type countingRT struct {
+	rt http.RoundTripper
+	n  int
+}
+
+func (c *countingRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.n++
+	return c.rt.RoundTrip(r)
+}
+
+// P5: WrapTransport puts a wrapper around every provider call (the gateway's recording RoundTripper), Transport stays the
+// unwrapped *http.Transport (the egress endpoint copies it), and the token sources' copy of the client keeps the wrapper.
+func TestUpstreamWrapTransport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+	up := NewUpstream(func(string) string { return "" })
+	base := up.Transport()
+	if base == nil || up.Client().Transport != base {
+		t.Fatalf("transport %v", base)
+	}
+	c := &countingRT{}
+	up.WrapTransport(func(rt http.RoundTripper) http.RoundTripper { c.rt = rt; return c })
+	if up.Transport() != base || c.rt != base {
+		t.Fatal("Transport is not the unwrapped one")
+	}
+	if res := up.Call(context.Background(), planTo(srv.URL)); res.Status != 200 || c.n != 1 {
+		t.Fatalf("%+v, %d round trips seen", res, c.n)
+	}
+	e := New(up, nil, t.Logf)
+	if e.Tokens().client.Transport != c {
+		t.Fatal("the token sources do not see the wrapped client")
+	}
+	if (&Upstream{}).Transport() != nil {
+		t.Fatal("an upstream not built by NewUpstream has no transport")
+	}
+}
