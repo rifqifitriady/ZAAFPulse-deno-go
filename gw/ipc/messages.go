@@ -620,7 +620,7 @@ type RouteCooldown struct {
 
 // EgressEvent is one outbound connection the gateway made or refused (P5 Decision 9): Outcome ok (an answer came, any
 // status), error (a failure code in Error), refused (allow-list, enforce), would-refuse (allow-list, report) or checked;
-// Via proxy, tunnel or engine (the engine's own provider calls). Status 0 is none. Bytes are body bytes. No path, query
+// Via proxy, tunnel, engine (the engine's own provider calls) or check (a /check verdict). Status 0 is none. Bytes are body bytes. No path, query
 // or header is recorded.
 type EgressEvent struct {
 	TS       int64   `json:"ts" ipc:"min=0"`
@@ -635,5 +635,5 @@ type EgressEvent struct {
 	BytesOut int64   `json:"bytesOut" ipc:"min=0"`
 	BytesIn  int64   `json:"bytesIn" ipc:"min=0"`
 	MS       float64 `json:"ms" ipc:"min=0"`
-	Via      string  `json:"via" ipc:"enum=proxy|tunnel|engine"`
+	Via      string  `json:"via" ipc:"enum=proxy|tunnel|engine|check"`
 }

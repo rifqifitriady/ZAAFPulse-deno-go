@@ -51,7 +51,7 @@ a reply (`hello`) and `"re"` on the reply (`hello.ok`, `hello.refused`).
 | `error` | gw → cp | `code`, `message` (a protocol problem, before the gateway exits 3) |
 | `ratelimit.take` | both | `keyId`, `at` (P4f: one request admitted under a key's window; a control message, not stored) |
 | `ratelimit.window` | cp → gw | `windows[{keyId, at[]}]` (P4f: the last minute's takes per key, before `budget.snapshot`) |
-| `egress.event` | gw → cp | `ts`, `purpose`, `method`, `scheme`, `host`, `port`, `status?`, `outcome`, `error?`, `bytesOut`, `bytesIn`, `ms`, `via` (P5: one outbound connection) |
+| `egress.event` | gw → cp | `ts`, `purpose`, `method`, `scheme`, `host`, `port`, `status?`, `outcome`, `error?`, `bytesOut`, `bytesIn`, `ms`, `via` (`proxy`, `tunnel`, `engine`, `check`; P5: one outbound connection) |
 
 Budget rule: no snapshot, or `now - at > 5000`: the call passes and its usage record carries `budget: "unchecked"`,
 except that a blocking budget in scope that the snapshot shows as `exceeded` is always refused (402
@@ -88,7 +88,8 @@ starting with `fatal: `.
 
 - `egress.event` (gateway to control plane, an outbox event with its durable `seq`, as `usage.report`): one outbound
   connection the gateway made or refused, through its egress endpoint (`via` `proxy` for a forwarded request,
-  `tunnel` for a `CONNECT`) or by the engine itself (`via` `engine`: provider calls and token fetches). `scheme` is
+  `tunnel` for a `CONNECT`) or by the engine itself (`via` `engine`: provider calls and token fetches); `via` `check` is a `/check` verdict
+  (`checked` or `would-refuse`, nothing connected), the only records the control plane's egress gate counts. `scheme` is
   `http`, `https` or `tcp` (a tunnel); `outcome` is `ok` (an answer came, whatever its `status`), `error` (`error`
   holds the failure code), `refused` (the allow-list, enforced), `would-refuse` (the allow-list, reported) or
   `checked`. `bytesOut` and `bytesIn` are body bytes, decoded. No path, query or header is recorded. The control plane

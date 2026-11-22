@@ -578,11 +578,11 @@ func TestCheck(t *testing.T) {
 		t.Fatalf("listed: %d", ok.StatusCode)
 	}
 	if r := rec.wait(t, 1)[0]; r.Outcome != "checked" || r.Method != "PUT" || r.Host != "listed.test" ||
-		r.Port != 443 || r.Purpose != "connectors:test" || r.Status != 0 {
+		r.Port != 443 || r.Purpose != "connectors:test" || r.Status != 0 || r.Via != ViaCheck {
 		t.Fatalf("record %+v", r)
 	}
 	expectError(t, check("http://listed.test/", nil), 403, "EGRESS_REFUSED") // port 80 is not listed
-	if r := rec.wait(t, 1)[0]; r.Outcome != "would-refuse" || r.Method != "GET" {
+	if r := rec.wait(t, 1)[0]; r.Outcome != "would-refuse" || r.Method != "GET" || r.Via != ViaCheck {
 		t.Fatalf("record %+v", r)
 	}
 	expectError(t, check("http://10.0.0.1/", map[string]string{"X-ZP-Egress-Public": "1"}), 403, "EGRESS_PRIVATE")
