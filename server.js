@@ -71,7 +71,7 @@ const egressClient = require('./lib/egress');
 const { egressRouting, createEgressGate } = require('./lib/egress-switch');
 const { writeDiscovery, removeDiscovery } = require('./lib/egress-discovery');
 const { allowList } = require('./lib/egress-allow');
-const { createEgressStatus, lockdownNow } = require('./lib/egress-status');
+const { createEgressStatus, lockdownNow, clientLock } = require('./lib/egress-status');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
@@ -291,18 +291,39 @@ const EGRESS_DISCOVERY = path.join(DIR, '.data', 'egress.json');
 process.on('exit', () => removeDiscovery(EGRESS_DISCOVERY));
 // Points the client at the endpoint with each class's gated engine (direct when no gateway is ready), and writes or
 // removes the discovery file to match; returns the engines.
+function readEgressGate() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(DIR, '.data', 'egress-gate.json'), 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+// P5 Decisions 14, 16: whether the client must never send a non-loopback call direct. A Deno launch whose net grant is
+// scoped (the locked-down launch line, lib/permissions.js netScope) could not reach out anyway: it fails loudly with
+// EGRESS_UNAVAILABLE while no gateway is ready. The single-file build keeps its baked grant, so there the lock-down is
+// the client's alone, while lockdownState says it is in force. Node has no lock-down.
+const EGRESS_GRANT = (() => {
+  const d = require('./lib/permissions').describe();
+  return { deno: d.runtime === 'deno', scoped: !!(d.grants && d.grants.net === 'scoped'), singleFile: !!d.singleFile };
+})();
+function egressLockNow() {
+  return clientLock(EGRESS_GRANT, () =>
+    require('./lib/permissions').lockdownState({ config: rawConfig(), env: process.env, gate: readEgressGate() }).inForce,
+  );
+}
 function applyEgress() {
   egressRouted = egressRoutingNow();
   const engines = egressRouted.engines;
+  const lockdown = egressLockNow();
   const opts = egressEndpoint
     ? {
         port: egressEndpoint.port,
         token: egressClient.deriveToken(egressEndpoint.token),
         engines,
-        lockdown: false,
+        lockdown,
       }
     : null;
-  egressClient.configure(opts);
+  egressClient.configure(opts || (lockdown ? { lockdown: true } : null));
   try {
     if (opts) writeDiscovery(EGRESS_DISCOVERY, opts);
     else removeDiscovery(EGRESS_DISCOVERY);
@@ -349,12 +370,7 @@ const egressStatus = createEgressStatus({
     const ec = cfg.egress && typeof cfg.egress === 'object' ? cfg.egress : {};
     const eg = egressRouted || egressRoutingNow();
     const perms = require('./lib/permissions');
-    let gate = {};
-    try {
-      gate = JSON.parse(fs.readFileSync(path.join(DIR, '.data', 'egress-gate.json'), 'utf8')) || {};
-    } catch {
-      gate = {};
-    }
+    const gate = readEgressGate();
     return {
       mode: ENGINE,
       port: front ? front.egressPort : null,
@@ -1790,7 +1806,7 @@ const handler = async (req, res) => {
         ...front.status(),
         notes: frontRouting().notes,
         shadow: shadowLog.stats(),
-        egress: { port: front.egressPort, engines: eg.engines, notes: eg.notes, lockdown: false },
+        egress: { port: front.egressPort, engines: eg.engines, notes: eg.notes, lockdown: egressClient.state().lockdown },
       });
     }
     // P5 Decision 10: the egress records for the Compliance page (owner only, as /api/gateway/status: it is no viewer
