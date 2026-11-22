@@ -103,3 +103,14 @@ test('countsByClass of nothing; the lock-down as this launch runs it', () => {
   assert.match(wide.why, /not launched with the narrowed net grant/);
   assert.equal(lockdownNow(null, deno).why, 'not asked');
 });
+
+test('clientLock: a scoped Deno grant always locks; the single-file build locks while the config has it in force', () => {
+  const { clientLock } = require('../lib/egress-status');
+  const yes = () => true;
+  const no = () => false;
+  assert.equal(clientLock({ deno: false, scoped: false, singleFile: false }, yes), false); // Node
+  assert.equal(clientLock({ deno: true, scoped: true, singleFile: false }, no), true); // the locked-down launch
+  assert.equal(clientLock({ deno: true, scoped: false, singleFile: false }, yes), false); // deno run, not narrowed
+  assert.equal(clientLock({ deno: true, scoped: false, singleFile: true }, yes), true); // the client's lock alone
+  assert.equal(clientLock({ deno: true, scoped: false, singleFile: true }, no), false);
+});
