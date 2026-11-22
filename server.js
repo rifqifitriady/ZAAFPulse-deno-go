@@ -67,6 +67,7 @@ const { createIntegrations } = require('./lib/integrations');
 const { createSecrets } = require('./lib/secrets');
 const { createAudit } = require('./lib/audit');
 const { createEgressLog } = require('./lib/egress-log');
+const egressClient = require('./lib/egress');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
@@ -2344,6 +2345,7 @@ front = createFront({
         keys: gateway.rawKeys(),
         pricing: config.pricing,
         trace: { spans: pushedTrace },
+        egress: rawConfig().egress, // P5: the egress section (each class's switch; the allow-list from P5c)
       });
     },
     secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
@@ -2375,6 +2377,18 @@ front = createFront({
     else if (msg.type === 'route.take' && msg.body) gateway.noteRouteTake(msg.body);
   },
   beforeAck: fi ? fi.beforeAck : undefined,
+  // P5: the egress client follows the gateway: its endpoint on each ready, direct again when the gateway is gone.
+  onEgress: (e) =>
+    egressClient.configure(
+      e
+        ? {
+            port: e.port,
+            token: egressClient.deriveToken(e.token),
+            engines: egressClient.switches((rawConfig().egress || {}).classes),
+            lockdown: false,
+          }
+        : null,
+    ),
   log: (line) => console.error(line),
   onServing: (mode) => {
     serving();

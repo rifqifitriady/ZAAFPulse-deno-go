@@ -437,3 +437,22 @@ test('routeStatePush: a valid route.state body, bad entries left out (P4h Decisi
   });
   assert.deepEqual(check({ v: 1, type: 'route.state', seq: 2, ts: 0, body }), { errors: [], unknownType: false });
 });
+
+test('configPush: the egress section (P5): an empty allow-list in report mode and each class’s switch', () => {
+  const body = configPush({
+    gateway: {},
+    keys: [],
+    pricing: {},
+    egress: { classes: { gateway: 'go', mcp: 'check', notify: 'proxy' }, allowList: 'enforce' },
+  });
+  assert.deepEqual(body.egress.allow, []);
+  assert.equal(body.egress.allowList, 'report', 'enforce comes with the allow-list (P5c)');
+  assert.equal(body.egress.classes.gateway, 'go');
+  assert.equal(body.egress.classes.mcp, 'check');
+  assert.equal(body.egress.classes.notify, 'direct', 'a value that is not a switch is direct');
+  assert.equal(body.egress.classes.otel, 'direct');
+  const none = configPush({ gateway: {}, keys: [], pricing: {} });
+  assert.ok(Object.values(none.egress.classes).every((v) => v === 'direct'));
+  const front = frontSection({ host: '127.0.0.1', port: 4777, upstreamPort: 5000 });
+  assert.deepEqual(check(msg('config.push', { ...body, front })), { errors: [], unknownType: false });
+});
