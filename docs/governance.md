@@ -141,6 +141,7 @@ of AI meets a law or a standard.
 | Trace retention | traces are kept at least 183 days (6 months) | they are kept less | tracing is off |
 | AI inventory reviewed | every item is reviewed, every high or unacceptable one has a decision and every unacceptable one is blocked, every inventory source was read and every AI client file could be read | some are reviewed, or a source or an AI client file could not be read ("N AI client files could not be read") | none is |
 | Runtime permissions (MEASURE 2.7, A.6) | ZAAFPulse runs on Deno, every permission (read, write, net, env, run, sys) is an allow-list and run holds no interpreter or launcher (never the case today) | it runs on Deno and a permission is unrestricted or all but denied entries (net's denied hosts; write in the single-file build, which Deno reports as partial), run includes an interpreter or launcher (node, osascript, powershell, cmd, open, brew, claude, codex …), or (Linux) agent control is lost because `/proc` is unreadable and `ps` or `lsof` is missing | it runs on Node.js: no runtime permission sandbox |
+| Network egress is mediated and logged (MEASURE 2.7, A.6, Art. 12) | every outbound caller class is on `go` (its calls leave through the Go gateway's egress endpoint, each one recorded), the allow-list enforces, and the server's Deno net grant is narrowed to loopback | the gateway runs in front mode but a class is still `direct` or `check`, the allow-list only reports, or the lock-down is not in force (the evidence says why) | no gateway runs (js mode): every outbound call leaves directly |
 
 **Runtime permissions.** Under Deno ZAAFPulse runs with the permission set of its entry point in `deno.json`
 (`server`, `cli`, `mcp-stdio`): read all files, write only the data folder, the temp folder, the skill folders and the
@@ -156,6 +157,21 @@ once. Signals (pause, resume, stop) go through the `kill` program, since Deno al
 allowed. On Windows there is no `kill` program and no pause: whether a process is still alive is asked of `tasklist`
 (on the run list for that), and a stop goes through `taskkill`, as under Node. The single-file build reports its
 unscoped write as "all but denied entries", like net with its denied hosts.
+
+**Network egress.** In front mode the Go gateway offers an egress endpoint on `127.0.0.1`; each outbound caller class
+(`gateway`, `connectors`, `mcp`, `routers`, `pricing`, `evals`, `agents`, `notify`, `brain`, `public`, `otel`,
+`runtimes`) moves to it with `config.json` `egress.classes.<class>`: `direct`, `check` (the call goes direct and the
+gateway records what its allow-list would say) or `go`, after 1 clean day and 20 checks (a class that passed stays on
+`go` until a check disagrees). Every call through the gateway, and every provider call the gateway makes itself, is
+recorded in `.data/egress.jsonl` (time, purpose, method, host, port, status, outcome, bytes, duration; never a path, a
+query or a header); a call the allow-list refuses also gets an `egress.refused` entry in the audit chain. The
+allow-list is built from `config.json` (`egress.allowList`: `report`, the default, or `enforce`). `GET /api/egress`
+(owner) shows the classes, the allow-list, the lock-down and the last records. `egress.lockdown: true` narrows the
+server's Deno net grant to `127.0.0.1`, `localhost` and `[::1]` at a `deno run` launch once every class is on `go`
+and the gateway runs in front mode; turn it off with `"lockdown": false` and a restart (a service: install it again) or
+`ZAAFPULSE_EGRESS_LOCKDOWN=0`. The single-file build keeps the net grant it was built with and applies the lock-down
+in the egress client only. Programs ZAAFPulse starts (Claude Code, Codex, model servers) are outside Deno's
+permissions and outside the gateway.
 
 **Run is not a sandbox boundary.** The run list holds interpreters and launchers that ZAAFPulse needs: `node` (a
 Claude Code installed as `cli.js`), `osascript`, `powershell`, `cmd`, `open`, `xdg-open`, `brew`, `claude`, `codex`,
