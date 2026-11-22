@@ -72,10 +72,16 @@ test('the launch line narrows net only when the lock-down is in force', () => {
   assert.ok(netArg(cmd({ config: lockedConfig({ gateDays: 0, gateMinChecks: 0 }), gate: {}, env })));
   assert.equal(netScopeOf('cli', lockedConfig(), passedGate()), null);
   assert.equal(netScopeOf('mcp-stdio', lockedConfig(), passedGate()), null);
-  // A listen host that could widen the grant is refused loudly.
-  assert.throws(
-    () => cmd({ config: lockedConfig(), gate: passedGate(), env: { ...env, ZAAFPULSE_HOST: 'a,example.com' } }),
-    /--allow-net: .* holds a comma/,
+  // A listen host that is a name (it would grant every port of whatever it resolves to; tcsh exports HOST as the
+  // machine's name) keeps the set's entry and says why; an IPv6 address is bracketed.
+  for (const name of ['my-mac.local', 'a,example.com']) {
+    const o = { config: lockedConfig(), gate: passedGate(), env: { ...env, HOST: name } };
+    assert.equal(netArg(cmd(o)), undefined);
+    assert.match(permissions.lockdownState(o).why, /is a name: the lock-down needs an address/);
+  }
+  assert.equal(
+    netArg(cmd({ config: lockedConfig(), gate: passedGate(), env: { ...env, ZAAFPULSE_HOST: '::' } })),
+    '--allow-net=127.0.0.1,localhost,[::1],[::]',
   );
 });
 function netScopeOf(set, config, gate) {
@@ -173,4 +179,23 @@ test('a locked-down launch cannot connect out directly; loopback and the gateway
     10000,
     'the egress record of the probe call',
   );
+});
+
+test("a CLI --allow-net never lifts the set's deny of cloud metadata", { skip }, () => {
+  const r = spawnSync(
+    DENO,
+    [
+      'run',
+      '-q',
+      '--no-prompt',
+      `--config=${permissions.CONFIG}`,
+      '-P=server',
+      '--allow-net=169.254.169.254,127.0.0.1',
+      path.join(__dirname, 'fixtures', 'egress', 'metadata.js'),
+    ],
+    { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: os.tmpdir() } },
+  );
+  const out = JSON.parse(String(r.stdout).trim().split('\n').pop());
+  assert.equal(out.name, 'NotCapable', out.message);
+  assert.match(out.message, /Requires net access to "169\.254\.169\.254/);
 });
