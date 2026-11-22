@@ -9,14 +9,7 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const net = require('net');
-const {
-  writeDiscovery,
-  removeDiscovery,
-  createDiscoveryLoader,
-  probePort,
-  PROBE_TTL_MS,
-} = require('../lib/egress-discovery');
+const { writeDiscovery, removeDiscovery, createDiscoveryLoader } = require('../lib/egress-discovery');
 const egress = require('../lib/egress');
 
 const isWin = process.platform === 'win32';
@@ -101,50 +94,23 @@ test('loader: configures from a file whose pid is alive, re-reads a changed file
   assert.match(lines[1], /could not be read/);
 });
 
-test('loader: a pid that cannot be checked (an old registration) is settled by probing the endpoint', async (t) => {
+test('loader: a pid that cannot be checked (an old registration) goes direct, said once per file', async (t) => {
   const dir = tmp(t);
   const file = path.join(dir, 'egress.json');
   const calls = [];
+  const lines = [];
   // The run grant of an AI client registered before P5 holds neither kill nor tasklist.
   const kill = () => {
     throw new Error("kill: not allowed by this build's run permissions");
   };
-  let clock = 0;
-  const listening = new Set([4444]);
-  const probes = [];
-  const loader = createDiscoveryLoader({
-    file,
-    configure: (o) => calls.push(o),
-    kill,
-    now: () => clock,
-    probe: async (port) => {
-      probes.push(port);
-      return listening.has(port);
-    },
-  });
-  // The dashboard runs: its endpoint answers, so its file is used.
-  writeDiscovery(file, { ...ST, port: 4444 }, 100);
-  assert.equal(await loader.refresh(), true);
-  assert.equal(calls.at(-1).port, 4444);
-  // The answer stands for PROBE_TTL_MS for the same file.
-  assert.equal(await loader.refresh(), true);
-  assert.deepEqual(probes, [4444]);
-  // The dashboard crashed and left its file: nothing listens behind the port, so the calls go direct (not
-  // ECONNREFUSED through a dead endpoint).
-  listening.delete(4444);
-  clock += PROBE_TTL_MS + 1;
+  const loader = createDiscoveryLoader({ file, configure: (o) => calls.push(o), kill, log: (l) => lines.push(l) });
+  writeDiscovery(file, ST, 100);
+  // Whatever listens on the file's port is never trusted with the token or the calls: direct.
   assert.equal(await loader.refresh(), false);
-  assert.equal(calls.at(-1), null);
-  assert.deepEqual(probes, [4444, 4444]);
-});
-
-test('probePort: true for a listener on 127.0.0.1, false for a closed port', async () => {
-  const srv = net.createServer();
-  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
-  const port = srv.address().port;
-  assert.equal(await probePort(port), true);
-  await new Promise((r) => srv.close(r));
-  assert.equal(await probePort(port), false);
+  assert.equal(await loader.refresh(), false);
+  assert.deepEqual(calls, [null]);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /cannot be checked under this registration; going direct/);
 });
 
 test('server.js writes the file on each egress change and removes it when the gateway is gone or it exits', () => {
