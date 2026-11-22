@@ -101,8 +101,9 @@ No update check exists in this tree (the README's update notes are P6). DNS: onl
 9. **Every egress is recorded by Go, as a new IPC event type `egress.event`** (gateway to control plane, durable in the
    outbox with its `seq`, as `usage.report`): `{ts, purpose, method, scheme, host, port, status?, outcome, error?,
    bytesOut, bytesIn, ms, via}`. `outcome`: `ok` (an answer came, any status), `error` (a failure code), `refused`
-   (allow-list, enforce), `would-refuse` (allow-list, report), `checked` (Decision 11). `via`: `proxy`, `tunnel` or
-   `engine` (G1: the engine's own provider calls and token fetches, through a recording `RoundTripper` on its client).
+   (allow-list, enforce), `would-refuse` (allow-list, report), `checked` (Decision 11). `via`: `proxy`, `tunnel`,
+   `engine` (G1: the engine's own provider calls and token fetches, through a recording `RoundTripper` on its client)
+   or `check` (a `/check` verdict, Decision 11; added in the Task 5 review round).
    No path, query or header is recorded (a key may sit in a query). Bytes are body bytes (decoded), not wire bytes.
 10. **The control plane stores them in `.data/egress.jsonl`** with the writers' strict mode (store, mark, acknowledge;
    `lib/ipc/ingest.js`), with the MCP audit log's rotation; a `refused` one also gets a governance chain entry
@@ -117,7 +118,9 @@ No update check exists in this tree (the README's update notes are P6). DNS: onl
    `POST /check` (same token, same headers, no body sent anywhere) for the allow-list verdict, which Go records as
    `checked` or `would-refuse`. A class asked for `go` runs on go only after its gate: the owner's rule (1 clean day and
    20 checked calls, `egress.gateDays`/`egress.gateMinChecks`, defaults 1 and 20), clean meaning no `would-refuse` and
-   no check error; until then it stays `check` and `/api/gateway/status` says why. Calls of a `go` class go direct when
+   no check error; until then it stays `check` and `/api/gateway/status` says why. Only `/check` verdicts (`via:
+   check`) and the client's check errors are evidence. The gate is sticky: a class that met it stays on `go` (kept in
+   `.data/egress-gate.json`) until a diff of its own or until the owner sets it to `direct` or `check`. Calls of a `go` class go direct when
    no gateway is ready (js mode, fallback, a restart), except under the lock-down (Decision 14).
 12. **One client module, `lib/egress.js`, process-wide.** `egress.fetchFor(class, detail?)` returns a fetch-compatible
    function; `egress.connect(class, host, port)` returns a socket (the tunnel or `net.connect`). Unconfigured (tests,
