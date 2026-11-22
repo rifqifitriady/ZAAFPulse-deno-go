@@ -257,7 +257,9 @@ test('the same calls direct and through the gateway reach the fake and the calle
   // port, and a "would-refuse" before each hop (the allow-list is empty, in report mode).
   const records = () => stores.egress.tail(1000).filter((r) => r.purpose === `${PURPOSE}:${DETAIL}`);
   await waitFor(
-    () => records().filter((r) => r.outcome === 'ok').length === proxiedRequests && records().some((r) => r.error),
+    () =>
+      records().filter((r) => r.outcome === 'ok').length === proxiedRequests &&
+      records().some((r) => r.outcome === 'error'),
     10000,
     'the egress records in .data/egress.jsonl',
   );
