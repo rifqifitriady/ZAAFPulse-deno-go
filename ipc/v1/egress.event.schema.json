@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "egress.event (gateway to control plane, P5): one outbound connection the gateway made or refused, for .data/egress.jsonl; no path, query or header is recorded",
+  "type": "object",
+  "required": ["ts", "purpose", "method", "scheme", "host", "port", "outcome", "bytesOut", "bytesIn", "ms", "via"],
+  "additionalProperties": false,
+  "properties": {
+    "ts": { "type": "integer", "minimum": 0 },
+    "purpose": { "type": "string", "minLength": 1 },
+    "method": { "type": "string", "minLength": 1 },
+    "scheme": { "type": "string", "enum": ["http", "https", "tcp"] },
+    "host": { "type": "string", "minLength": 1 },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "status": { "type": "integer", "minimum": 100, "maximum": 999 },
+    "outcome": { "type": "string", "enum": ["ok", "error", "refused", "would-refuse", "checked"] },
+    "error": { "type": "string", "minLength": 1 },
+    "bytesOut": { "type": "integer", "minimum": 0 },
+    "bytesIn": { "type": "integer", "minimum": 0 },
+    "ms": { "type": "number", "minimum": 0 },
+    "via": { "type": "string", "enum": ["proxy", "tunnel", "engine"] }
+  }
+}

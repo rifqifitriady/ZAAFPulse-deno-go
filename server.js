@@ -66,6 +66,7 @@ const { createOpenRouter } = require('./lib/openrouter');
 const { createIntegrations } = require('./lib/integrations');
 const { createSecrets } = require('./lib/secrets');
 const { createAudit } = require('./lib/audit');
+const { createEgressLog } = require('./lib/egress-log');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
@@ -260,6 +261,8 @@ const memo = new Map();
 
 // Integrations are rebuilt whenever config.json changes on disk (they are edited in the file).
 const audit = createAudit(path.join(DIR, '.cache', 'mcp-audit.jsonl'));
+// P5: the gateway's outbound connections (egress.event), .data/egress.jsonl.
+const egressLog = createEgressLog({ dir: path.join(DIR, '.data') });
 let integ = { mtimeMs: -1, registry: null };
 function getIntegrations() {
   let mtimeMs = 0;
@@ -616,6 +619,7 @@ function frontIngest() {
     // P4f D9: a span is stored only while tracing is on, then exported when OTLP export is on.
     traceOn: tracingOn,
     exportSpan: (span, extra) => otel.exportRecord(span, extra),
+    egressLog,
   });
   const markFile = createMarkFile(files.marksFile);
   // P4f D25: the gateway's spans are written in batches, before each ack (every 100 ms or 256 events), as the JS

@@ -31,6 +31,8 @@ const (
 	TypeProviderNote = "provider.note"
 	TypeRouteTake    = "route.take"
 	TypeRouteState   = "route.state"
+	// P5 Decision 9: one outbound connection the gateway made or refused (an outbox event, as usage.report).
+	TypeEgressEvent = "egress.event"
 )
 
 // Hello is the gateway's first message: the protocols it speaks, its version, its durable event stream and the
@@ -60,8 +62,35 @@ type ConfigPush struct {
 	Gateway GatewayConfig         `json:"gateway"`
 	Keys    []GatewayKeyAuth      `json:"keys"`
 	Pricing map[string]PriceEntry `json:"pricing"`
-	Front   *FrontConfig          `json:"front,omitzero"` // P4a: present when the gateway holds the main port
-	Trace   *TraceSwitch          `json:"trace,omitzero"` // P4f D8: whether a span is recorded anywhere
+	Front   *FrontConfig          `json:"front,omitzero"`  // P4a: present when the gateway holds the main port
+	Trace   *TraceSwitch          `json:"trace,omitzero"`  // P4f D8: whether a span is recorded anywhere
+	Egress  *EgressConfig         `json:"egress,omitzero"` // P5 Decision 19: the egress endpoint's allow-list
+}
+
+// EgressConfig is the egress endpoint's allow-list (P5): AllowList "report" records a connection the list does not
+// allow as would-refuse and makes it; "enforce" refuses it. Classes, each caller class's switch, is informational.
+type EgressConfig struct {
+	Allow     []EgressRule            `json:"allow"`
+	AllowList string                  `json:"allowList" ipc:"enum=report|enforce"`
+	Classes   map[string]EgressSwitch `json:"classes,omitzero"`
+}
+
+// EgressRule allows a host (a name, an address or "*.suffix") on one port, or on any port when Port is 0 (absent).
+type EgressRule struct {
+	Host string `json:"host" ipc:"minlen=1"`
+	Port int    `json:"port,omitzero" ipc:"min=1,max=65535"`
+}
+
+// EgressSwitch is a caller class's switch: "direct", "check" or "go".
+type EgressSwitch string
+
+func (s *EgressSwitch) UnmarshalJSON(b []byte) error {
+	var v string
+	if err := json.Unmarshal(b, &v); err != nil || (v != "direct" && v != "check" && v != "go") {
+		return fmt.Errorf("egress switch %s is not \"direct\", \"check\" or \"go\"", b)
+	}
+	*s = EgressSwitch(v)
+	return nil
 }
 
 // TraceSwitch says whether the control plane records gateway spans (the local trace store on, or OTLP export on;
@@ -359,7 +388,13 @@ type Ack struct {
 }
 
 type Ready struct {
-	Gen int64 `json:"gen" ipc:"min=1"`
+	Gen    int64        `json:"gen" ipc:"min=1"`
+	Egress *ReadyEgress `json:"egress,omitzero"` // P5: the egress endpoint, when it listens
+}
+
+// ReadyEgress is the port of the gateway's egress endpoint on 127.0.0.1 (P5).
+type ReadyEgress struct {
+	Port int `json:"port" ipc:"min=1,max=65535"`
 }
 
 type Health struct {
@@ -581,4 +616,24 @@ type RouteCooldown struct {
 	Until      float64 `json:"until" ipc:"min=0"`
 	Strikes    int     `json:"strikes" ipc:"min=0"`
 	Reason     string  `json:"reason"`
+}
+
+// EgressEvent is one outbound connection the gateway made or refused (P5 Decision 9): Outcome ok (an answer came, any
+// status), error (a failure code in Error), refused (allow-list, enforce), would-refuse (allow-list, report) or checked;
+// Via proxy, tunnel or engine (the engine's own provider calls). Status 0 is none. Bytes are body bytes. No path, query
+// or header is recorded.
+type EgressEvent struct {
+	TS       int64   `json:"ts" ipc:"min=0"`
+	Purpose  string  `json:"purpose" ipc:"minlen=1"`
+	Method   string  `json:"method" ipc:"minlen=1"`
+	Scheme   string  `json:"scheme" ipc:"enum=http|https|tcp"`
+	Host     string  `json:"host" ipc:"minlen=1"`
+	Port     int     `json:"port" ipc:"min=1,max=65535"`
+	Status   int     `json:"status,omitzero" ipc:"min=100,max=999"`
+	Outcome  string  `json:"outcome" ipc:"enum=ok|error|refused|would-refuse|checked"`
+	Error    string  `json:"error,omitzero" ipc:"minlen=1"`
+	BytesOut int64   `json:"bytesOut" ipc:"min=0"`
+	BytesIn  int64   `json:"bytesIn" ipc:"min=0"`
+	MS       float64 `json:"ms" ipc:"min=0"`
+	Via      string  `json:"via" ipc:"enum=proxy|tunnel|engine"`
 }

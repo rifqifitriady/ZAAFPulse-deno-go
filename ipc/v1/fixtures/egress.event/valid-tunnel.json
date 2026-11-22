@@ -1,0 +1,1 @@
+{"v":1,"type":"egress.event","seq":53,"ts":1767225700021,"body":{"ts":1767225700020,"purpose":"brain","method":"CONNECT","scheme":"tcp","host":"db.example.org","port":5432,"outcome":"ok","bytesOut":4096,"bytesIn":16384,"ms":5021,"via":"tunnel"}}
