@@ -91,7 +91,8 @@ test('countsByClass of nothing; the lock-down as this launch runs it', () => {
   const met = { asked: true, inForce: true, why: '' };
   const deno = { runtime: 'deno', grants: { net: 'scoped' } };
   assert.deepEqual(lockdownNow(met, deno), { asked: true, inForce: true, why: '' });
-  assert.deepEqual(lockdownNow({ asked: false, inForce: false, why: 'egress.lockdown is off' }, deno), {
+  const wideDeno = { runtime: 'deno', grants: { net: 'all but denied' } };
+  assert.deepEqual(lockdownNow({ asked: false, inForce: false, why: 'egress.lockdown is off' }, wideDeno), {
     asked: false,
     inForce: false,
     why: 'egress.lockdown is off',
@@ -101,7 +102,17 @@ test('countsByClass of nothing; the lock-down as this launch runs it', () => {
   const wide = lockdownNow(met, { runtime: 'deno', grants: { net: 'all but denied' } });
   assert.equal(wide.inForce, false);
   assert.match(wide.why, /not launched with the narrowed net grant/);
-  assert.equal(lockdownNow(null, deno).why, 'not asked');
+  assert.equal(lockdownNow(null, wideDeno).why, 'not asked');
+  // The fallback taken without a new launch: the grant is still narrowed, and the why says so.
+  assert.match(
+    lockdownNow({ asked: false, inForce: false, why: 'egress.lockdown is off' }, deno).why,
+    /^egress.lockdown is off; but this launch's net grant is still narrowed.*service install/,
+  );
+  assert.equal(lockdownNow({ asked: false, inForce: false, why: 'x' }, { runtime: 'node' }).why, 'x');
+  // A scoped grant that still holds an outside host is not the lock-down.
+  const outside = lockdownNow(met, { ...deno, outsideNet: true });
+  assert.equal(outside.inForce, false);
+  assert.match(outside.why, /not to loopback only/);
 });
 
 test('clientLock: a scoped Deno grant always locks; the single-file build locks while the config has it in force', () => {

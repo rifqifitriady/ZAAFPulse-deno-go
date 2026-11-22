@@ -4,6 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { createEgressLog, READ_LIMIT } = require('../lib/egress-log');
 const { tmpDir } = require('./ipc-stub');
@@ -116,4 +117,31 @@ test('counts and tail read at most the newest READ_LIMIT bytes, not both whole f
   assert.equal(c.old, undefined, 'the rotated file is past the limit');
   assert.ok(c.new.total < n && c.new.total > n - 200, `${c.new.total} of ${n}`);
   assert.ok(reads.reduce((x, y) => x + y, 0) <= READ_LIMIT, 'bytes read');
+});
+
+test('counts: truncated when the 2 MB read is cut inside the window, not otherwise', (t) => {
+  const { createEgressLog, READ_LIMIT } = require('../lib/egress-log');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-egress-trunc-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const log = createEgressLog({ dir });
+  const rec = (ts) => ({
+    ts,
+    purpose: 'connectors',
+    method: 'GET',
+    scheme: 'https',
+    host: 'h',
+    port: 443,
+    outcome: 'ok',
+    bytesOut: 0,
+    bytesIn: 0,
+    ms: 1,
+    via: 'proxy',
+    pad: 'x'.repeat(400),
+  });
+  const lines = [];
+  for (let i = 0; i < Math.ceil((READ_LIMIT * 1.5) / 500); i++) lines.push(JSON.stringify(rec(1000 + i)));
+  fs.writeFileSync(log.file, lines.join('\n') + '\n');
+  assert.equal(log.counts(0).truncated, true); // the window starts before the oldest record read
+  assert.equal(log.counts(1e12).truncated, false); // nothing in the window
+  assert.ok(!Object.keys(log.counts(0)).includes('truncated'));
 });
