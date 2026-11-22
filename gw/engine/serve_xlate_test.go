@@ -187,7 +187,8 @@ func sseChunk(content string) string {
 }
 
 // The engine serves each class by its sub-class's mode: messages on go, messages-stream on js, so a stream goes to the
-// control plane; count_tokens' estimate and embeddings are served; a route is handed off.
+// control plane; count_tokens' estimate and embeddings are served; a route is handed off while the routes switch is on
+// js.
 func TestServeDispatchByClass(t *testing.T) {
 	g := newXlateRig(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/embeddings") {
@@ -195,7 +196,7 @@ func TestServeDispatchByClass(t *testing.T) {
 			return
 		}
 		chatWhole(w, r)
-	}), func(sub string) (bool, bool) { return sub != SubMessagesStream, false })
+	}), func(sub string) (bool, bool) { return sub != SubMessagesStream && sub != RouteSwitch, false })
 	resp, body := g.post(context.Background(), t, "/v1/messages", `{"model":"oa/m1","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}`)
 	if resp.StatusCode != 200 || !strings.Contains(body, `"type":"message"`) || resp.Header.Get("Content-Type") != "application/json" {
 		t.Fatalf("%d %s", resp.StatusCode, body)

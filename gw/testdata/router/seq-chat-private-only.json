@@ -1,0 +1,612 @@
+{
+  "secrets": [
+    "enBfcm91dGVyRml4dHVyZVNlY3JldDAxMjM0NTY3ODlhYmNkNQ==",
+    "enBfcm91dGVyRml4dHVyZVNlY3JldDAxMjM0NTY3ODlhYmNk",
+    "c2stYW4tcm91dGVyLWZpeHR1cmUtNjU0MzIx",
+    "c2stb2Etcm91dGVyLWZpeHR1cmUtMTIzNDU2",
+    "c2stb2Itcm91dGVyLWZpeHR1cmUtNzc4ODk5"
+  ],
+  "fn": "sequence",
+  "in": {
+    "note": "a private-only key: a mixed route keeps its private target only; a route of external targets is 404",
+    "configPush": {
+      "gateway": {
+        "providers": [
+          {
+            "id": "oa",
+            "preset": "custom",
+            "baseUrl": "http://127.0.0.1:9/v1",
+            "approved": true,
+            "tier": "external",
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "oa",
+              "address": "127.0.0.1",
+              "port": 9
+            }
+          },
+          {
+            "id": "ob",
+            "preset": "custom",
+            "baseUrl": "http://127.0.0.1:13/v1",
+            "approved": true,
+            "tier": "external",
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "ob",
+              "address": "127.0.0.1",
+              "port": 13
+            }
+          },
+          {
+            "id": "op",
+            "preset": "openai",
+            "baseUrl": "http://127.0.0.1:8/v1",
+            "approved": true,
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "openai",
+              "address": "127.0.0.1",
+              "port": 8
+            }
+          },
+          {
+            "id": "op2",
+            "preset": "openai",
+            "baseUrl": "http://127.0.0.1:7/v1",
+            "approved": true,
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "openai",
+              "address": "127.0.0.1",
+              "port": 7
+            }
+          },
+          {
+            "id": "an",
+            "preset": "anthropic",
+            "baseUrl": "http://127.0.0.1:10/v1",
+            "approved": true,
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "anthropic",
+              "address": "127.0.0.1",
+              "port": 10
+            }
+          },
+          {
+            "id": "pv",
+            "preset": "ollama",
+            "baseUrl": "http://127.0.0.1:11434/v1",
+            "span": {
+              "name": "ollama",
+              "address": "127.0.0.1",
+              "port": 11434
+            }
+          },
+          {
+            "id": "gm",
+            "preset": "gemini",
+            "baseUrl": "http://127.0.0.1:12/v1beta/openai",
+            "approved": true,
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "gcp.gemini",
+              "address": "127.0.0.1",
+              "port": 12
+            }
+          }
+        ],
+        "routes": [
+          {
+            "name": "router/fb",
+            "targets": [
+              "oa/m1",
+              "ob/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/rr2",
+            "targets": [
+              "oa/m1",
+              "ob/m1"
+            ],
+            "strategy": "round-robin"
+          },
+          {
+            "name": "router/rr3",
+            "targets": [
+              "oa/m1",
+              "ob/m1",
+              "op/gpt-6.1"
+            ],
+            "strategy": "round-robin"
+          },
+          {
+            "name": "router/mix",
+            "targets": [
+              "pv/llama-9",
+              "oa/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/an",
+            "targets": [
+              "an/claude-x",
+              "oa/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/native",
+            "targets": [
+              "op/gpt-6.1",
+              "op2/gpt-6.1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/gem",
+            "targets": [
+              "gm/gemini-2.5-pro",
+              "oa/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/emb",
+            "targets": [
+              "oa/e1",
+              "ob/e1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/priced",
+            "targets": [
+              "oa/nopr",
+              "ob/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/unpriced",
+            "targets": [
+              "oa/nopr",
+              "ob/nopr2"
+            ],
+            "strategy": "fallback"
+          }
+        ],
+        "guardrails": {
+          "scope": "external",
+          "secrets": "off",
+          "pii": "off",
+          "injection": "off"
+        },
+        "defaults": {
+          "model": "",
+          "plannerModel": "",
+          "codeModel": ""
+        },
+        "tokenSaver": true,
+        "modelMap": [
+          {
+            "match": "claude-*",
+            "to": "router/rr2"
+          }
+        ]
+      },
+      "keys": [
+        {
+          "id": "k1",
+          "name": "k1",
+          "scopes": [
+            "llm"
+          ],
+          "models": [],
+          "agents": [],
+          "knowledge": [],
+          "budgetUSD": null,
+          "rpm": 10000,
+          "privateOnly": false,
+          "expiresAt": null,
+          "revokedAt": null,
+          "guardrails": {},
+          "prefix": "zp_routerF…",
+          "approveOwnRuns": false,
+          "createdAt": 1,
+          "lastUsedAt": null,
+          "hash": "28a9c32172074ff9d6f0afa42572407d6874a715e66e4373202b991333f9fafe"
+        },
+        {
+          "id": "k3",
+          "name": "k3",
+          "scopes": [
+            "llm"
+          ],
+          "models": [],
+          "agents": [],
+          "knowledge": [],
+          "budgetUSD": 1,
+          "rpm": 10000,
+          "privateOnly": false,
+          "expiresAt": null,
+          "revokedAt": null,
+          "guardrails": {},
+          "prefix": "zp_routerF…",
+          "approveOwnRuns": false,
+          "createdAt": 1,
+          "lastUsedAt": null,
+          "hash": "7bd8a61ff646ac231bd5289ba83aa44b972351f353b5af5b952514ee5beeb0d6"
+        },
+        {
+          "id": "k5",
+          "name": "k5",
+          "scopes": [
+            "llm"
+          ],
+          "models": [],
+          "agents": [],
+          "knowledge": [],
+          "budgetUSD": null,
+          "rpm": 10000,
+          "privateOnly": true,
+          "expiresAt": null,
+          "revokedAt": null,
+          "guardrails": {},
+          "prefix": "zp_routerF…",
+          "approveOwnRuns": false,
+          "createdAt": 1,
+          "lastUsedAt": null,
+          "hash": "f7dfc2084b7612afe54312bca00d6f060929ea004f19c48b515f195a17a0e46b"
+        }
+      ],
+      "pricing": {
+        "m1": {
+          "input": 1000000000,
+          "output": 2000000000
+        },
+        "llama-9": {
+          "input": 100000000,
+          "output": 300000000,
+          "cacheRead": 10000000
+        },
+        "gpt-6.1": {
+          "input": 2000000000,
+          "output": 8000000000
+        },
+        "claude-x": {
+          "input": 3000000000,
+          "output": 15000000000,
+          "cacheRead": 300000000
+        },
+        "e1": {
+          "input": 20000000,
+          "output": 0
+        },
+        "gemini-2.5-pro": {
+          "input": 1250000000,
+          "output": 10000000000
+        }
+      }
+    },
+    "secretsPush": {
+      "providers": [
+        {
+          "id": "oa",
+          "value": "<<ZPSECRET:3>>"
+        },
+        {
+          "id": "ob",
+          "value": "<<ZPSECRET:4>>"
+        },
+        {
+          "id": "op",
+          "value": "<<ZPSECRET:3>>"
+        },
+        {
+          "id": "op2",
+          "value": "<<ZPSECRET:4>>"
+        },
+        {
+          "id": "an",
+          "value": "<<ZPSECRET:2>>"
+        },
+        {
+          "id": "gm",
+          "value": "<<ZPSECRET:3>>"
+        }
+      ],
+      "mask": [
+        "<<ZPSECRET:3>>",
+        "<<ZPSECRET:4>>",
+        "<<ZPSECRET:2>>"
+      ]
+    },
+    "snapshot": {
+      "budgets": [],
+      "keyCenter": {},
+      "at": 1767225600000
+    },
+    "start": 1767225600000,
+    "steps": [
+      {
+        "advanceMs": 0,
+        "request": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "headers": {
+            "content-type": "application/json",
+            "user-agent": "claude-cli/9.9.9",
+            "authorization": "Bearer <<ZPSECRET:0>>"
+          },
+          "body": "{\"model\":\"router/mix\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+        },
+        "answers": [
+          {
+            "status": 200,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+          }
+        ]
+      },
+      {
+        "advanceMs": 0,
+        "request": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "headers": {
+            "content-type": "application/json",
+            "user-agent": "claude-cli/9.9.9",
+            "authorization": "Bearer <<ZPSECRET:0>>"
+          },
+          "body": "{\"model\":\"router/fb\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+        },
+        "answers": []
+      },
+      {
+        "advanceMs": 0,
+        "request": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "headers": {
+            "content-type": "application/json",
+            "user-agent": "claude-cli/9.9.9",
+            "authorization": "Bearer <<ZPSECRET:0>>"
+          },
+          "body": "{\"model\":\"router/rr2\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+        },
+        "answers": []
+      },
+      {
+        "advanceMs": 0,
+        "request": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "headers": {
+            "content-type": "application/json",
+            "user-agent": "claude-cli/9.9.9",
+            "authorization": "Bearer <<ZPSECRET:1>>"
+          },
+          "body": "{\"model\":\"router/rr2\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+        },
+        "answers": [
+          {
+            "status": 200,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+          }
+        ]
+      }
+    ]
+  },
+  "out": {
+    "steps": [
+      {
+        "now": 1767225600000,
+        "requests": [
+          {
+            "url": "http://127.0.0.1:11434/v1/chat/completions",
+            "method": "POST",
+            "headers": {
+              "content-type": "application/json",
+              "accept": "application/json"
+            },
+            "body": "{\"model\":\"llama-9\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+          }
+        ],
+        "client": {
+          "status": 200,
+          "headers": {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "access-control-allow-origin": "*",
+            "retry-after": null,
+            "x-zp-dropped": null
+          },
+          "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"router/mix\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+        },
+        "usage": [
+          {
+            "keyId": "k5",
+            "provider": "pv",
+            "model": "router/mix",
+            "routedTo": "pv/llama-9",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 200,
+            "input": 1000,
+            "output": 500,
+            "cached": 200,
+            "cost": 232000,
+            "ttft": "absent"
+          }
+        ],
+        "events": [
+          {
+            "type": "provider.note",
+            "body": {
+              "providerId": "pv",
+              "status": 200,
+              "at": 1767225600000,
+              "headers": {}
+            }
+          }
+        ],
+        "state": {
+          "rr": [],
+          "cooldown": []
+        }
+      },
+      {
+        "now": 1767225600000,
+        "requests": [],
+        "client": {
+          "status": 404,
+          "headers": {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "access-control-allow-origin": "*",
+            "retry-after": null,
+            "x-zp-dropped": null
+          },
+          "body": "{\"error\":{\"message\":\"this key may use private models only\",\"type\":\"invalid_request_error\"}}"
+        },
+        "usage": [],
+        "events": [],
+        "state": {
+          "rr": [],
+          "cooldown": []
+        }
+      },
+      {
+        "now": 1767225600000,
+        "requests": [],
+        "client": {
+          "status": 404,
+          "headers": {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "access-control-allow-origin": "*",
+            "retry-after": null,
+            "x-zp-dropped": null
+          },
+          "body": "{\"error\":{\"message\":\"this key may use private models only\",\"type\":\"invalid_request_error\"}}"
+        },
+        "usage": [],
+        "events": [
+          {
+            "type": "route.take",
+            "body": {
+              "name": "router/rr2",
+              "at": 1767225600000
+            }
+          }
+        ],
+        "state": {
+          "rr": [
+            {
+              "name": "router/rr2",
+              "n": 1
+            }
+          ],
+          "cooldown": []
+        }
+      },
+      {
+        "now": 1767225600000,
+        "requests": [
+          {
+            "url": "http://127.0.0.1:13/v1/chat/completions",
+            "method": "POST",
+            "headers": {
+              "content-type": "application/json",
+              "accept": "application/json",
+              "authorization": "Bearer <<ZPSECRET:4>>"
+            },
+            "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+          }
+        ],
+        "client": {
+          "status": 200,
+          "headers": {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "access-control-allow-origin": "*",
+            "retry-after": null,
+            "x-zp-dropped": null
+          },
+          "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"router/rr2\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+        },
+        "usage": [
+          {
+            "keyId": "k1",
+            "provider": "ob",
+            "model": "router/rr2",
+            "routedTo": "ob/m1",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 200,
+            "input": 1000,
+            "output": 500,
+            "cached": 200,
+            "cost": 2000000,
+            "ttft": "absent"
+          }
+        ],
+        "events": [
+          {
+            "type": "route.take",
+            "body": {
+              "name": "router/rr2",
+              "at": 1767225600000
+            }
+          },
+          {
+            "type": "provider.note",
+            "body": {
+              "providerId": "ob",
+              "status": 200,
+              "at": 1767225600000,
+              "headers": {}
+            }
+          }
+        ],
+        "state": {
+          "rr": [
+            {
+              "name": "router/rr2",
+              "n": 2
+            }
+          ],
+          "cooldown": []
+        }
+      }
+    ]
+  }
+}

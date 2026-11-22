@@ -3,8 +3,10 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -220,6 +222,159 @@ func TestClientHasTheAnswerBeforeTheSpans(t *testing.T) {
 				t.Fatal("no span")
 			}
 			rig.oneLine(t)
+		})
+	}
+}
+
+// fakeCalls is a call journal that counts: each Open's id, the lines that closed it and whether it ended with no line.
+type fakeCalls struct {
+	mu     sync.Mutex
+	next   int64
+	opened []int64
+	closed map[int64]int
+	ended  map[int64]int
+}
+
+func (f *fakeCalls) Open(int64, ipc.UsageRecord) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.next++
+	f.opened = append(f.opened, f.next)
+	return f.next
+}
+
+func (f *fakeCalls) End(id int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ended[id]++
+}
+
+// P4h Decision 10: every route call sequence JS recorded, served by the engine with spans on and a call journal. Each
+// step's usage lines (599s, fallbacks, guard refusals, the answer) each get one CLIENT span, in the order written, after
+// the step's one server span, built from that line (ClientSpan's bytes are proven by gw/testdata/spans, route cases
+// included); every line but a guard refusal closes its own leg's journal entry, opened before the leg's call, and every
+// entry opened is closed exactly once (by its line, or ended when the leg wrote none).
+func TestRouteCallsJournalAndSpanEveryLine(t *testing.T) {
+	for _, seq := range loadRouteSeqs(t) {
+		t.Run(seq.Name, func(t *testing.T) {
+			g := newRouteRig(t, &seq, func(string) (bool, bool) { return true, false })
+			sequenceEnv(t, g.clock.Load)
+			st := *g.e.State()
+			st.spans = true
+			g.e.SetState(&st)
+			var mu sync.Mutex
+			var spans []ipc.TraceSpanBody
+			var tags []int64 // per line, the journal entry it closed (0: none)
+			g.e.SetSpanEmitter(func(b *ipc.TraceSpanBody) error {
+				mu.Lock()
+				defer mu.Unlock()
+				spans = append(spans, *b)
+				return nil
+			})
+			fc := &fakeCalls{closed: map[int64]int{}, ended: map[int64]int{}}
+			emit := g.e.emit
+			g.e.emit = func(r *ipc.UsageReport) (int64, error) {
+				mu.Lock()
+				tags = append(tags, 0)
+				mu.Unlock()
+				return emit(r)
+			}
+			g.e.SetCalls(fc, func(r *ipc.UsageReport, call int64) (int64, error) {
+				fc.mu.Lock()
+				fc.closed[call]++
+				fc.mu.Unlock()
+				mu.Lock()
+				tags = append(tags, call)
+				mu.Unlock()
+				return emit(r)
+			})
+			provs := map[string]*ipc.ProviderSpan{}
+			for _, p := range g.e.State().Gateway.Providers {
+				provs[p.ID] = p.Span
+			}
+			for i, step := range seq.In.Steps {
+				want := seq.Out.Steps[i]
+				g.clock.Store(want.Now)
+				g.rt.mu.Lock()
+				g.rt.answers, g.rt.sent = append([]xlateProvider(nil), step.Answers...), nil
+				g.rt.mu.Unlock()
+				w, handed := g.serve(step.Request.Method, step.Request.Path, step.Request.Headers, step.Request.Body)
+				lines, _ := g.take()
+				mu.Lock()
+				got, tagged := spans, tags
+				spans, tags = nil, nil
+				mu.Unlock()
+				fc.mu.Lock()
+				opened := fc.opened
+				fc.opened = nil
+				fc.mu.Unlock()
+				name := seq.Name + " step " + strconv.Itoa(i)
+				if handed {
+					if len(got) != 0 || len(lines) != 0 || len(opened) != 0 {
+						t.Fatalf("%s: handed off, yet %d spans, %d lines, %d journal entries", name, len(got), len(lines),
+							len(opened))
+					}
+					for _, ev := range want.Events {
+						applyControl(t, g.e, ev.Type, ev.Body)
+					}
+					continue
+				}
+				if len(lines) != len(want.Usage) {
+					t.Fatalf("%s: %d lines, want %d", name, len(lines), len(want.Usage))
+				}
+				// The journal: a line per leg, each closing the entry its leg opened; a guard refusal writes its line
+				// with none (no provider call; P4e Decision 14, as a single-target call's).
+				if len(tagged) != len(lines) {
+					t.Fatalf("%s: %d lines tagged, %d written", name, len(tagged), len(lines))
+				}
+				seen := map[int64]bool{}
+				for j, id := range tagged {
+					refusal := lines[j].Guard != nil && lines[j].Status >= 400
+					if id == 0 {
+						if !refusal {
+							t.Errorf("%s: line %d (%d %v) was not journalled", name, j, lines[j].Status, ptrText(lines[j].Error))
+						}
+						continue
+					}
+					if seen[id] {
+						t.Errorf("%s: journal entry %d closed by two lines", name, id)
+					}
+					seen[id] = true
+				}
+				for _, id := range opened {
+					fc.mu.Lock()
+					c, e := fc.closed[id], fc.ended[id]
+					fc.mu.Unlock()
+					if c+e != 1 {
+						t.Errorf("%s: journal entry %d closed %d times, ended %d times", name, id, c, e)
+					}
+				}
+				// The spans: the server span, then one client span per line, in order.
+				if len(got) != 1+len(lines) {
+					t.Fatalf("%s: %d spans for %d lines", name, len(got), len(lines))
+				}
+				server := got[0]
+				if server.Span.K != "server" || !bytes.Contains(server.Span.A,
+					[]byte(`"http.response.status_code":`+strconv.Itoa(w.Code))) {
+					t.Fatalf("%s: server span %+v", name, server.Span)
+				}
+				obs := NewObserver()
+				obs.Feed(w.Body.Bytes())
+				o := obs.Result()
+				tc := TraceCtx{TraceID: server.Span.T, SpanID: server.Span.S, Sampled: true}
+				for j := range lines {
+					c := got[1+j]
+					if lines[j].TraceID == nil || *lines[j].TraceID != server.Span.T {
+						t.Errorf("%s: line %d names trace %v, not %s", name, j, ptrText(lines[j].TraceID), server.Span.T)
+					}
+					wantSpan := ClientSpan(tc, c.Span.S, &lines[j], provs[lines[j].Provider], o, g.e.State().mask)
+					gb, _ := json.Marshal(c)
+					wb, _ := json.Marshal(wantSpan)
+					if !bytes.Equal(gb, wb) {
+						t.Errorf("%s: span of line %d\n got %s\nwant %s", name, j, gb, wb)
+					}
+				}
+			}
 		})
 	}
 }

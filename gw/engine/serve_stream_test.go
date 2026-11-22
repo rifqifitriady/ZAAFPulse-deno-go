@@ -519,3 +519,20 @@ func TestNoStreamStartsOnceShutdownWaits(t *testing.T) {
 		t.Fatal("a stream started after the shutdown began waiting")
 	}
 }
+
+// Final review (P4h): a panic before serveStream takes a stream over (in the provider call's start, its answer hook
+// included) still ends the stream, so the gateway's shutdown does not wait for it.
+func TestStreamPanicInAnswerHookEndsTheStream(t *testing.T) {
+	g := newStreamRig(t, sseProvider([]string{"data: [DONE]\n\n"}, nil))
+	g.e.upstream.SetOnAnswer(func(*Plan, int, http.Header) { panic("boom") })
+	req, _ := http.NewRequest("POST", g.url, strings.NewReader(streamBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", g.key)
+	if resp, err := http.DefaultClient.Do(req); err == nil { // net/http recovers the panic and drops the connection
+		_, _ = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+	}
+	if !g.e.Wait(2 * time.Second) {
+		t.Fatal("a panic in the answer hook left the stream counted: Wait blocked")
+	}
+}

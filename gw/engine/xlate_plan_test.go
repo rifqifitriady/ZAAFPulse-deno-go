@@ -97,7 +97,6 @@ func TestTranslatedHandoffs(t *testing.T) {
 		{"/v1/messages", `{"model":"oa/m1"}`, "body: messages is not an array"},
 		{"/v1/messages", `{"model":7,"messages":[]}`, "model: missing"},
 		{"/v1/messages", `{"model":"llama3","messages":[]}`, "model: mapping needs the model list"},
-		{"/v1/messages", `{"model":"router/x","messages":[]}`, "model: a route"},
 		{"/v1/messages", `{"model":"zz/none","messages":[]}`, "model: mapping needs the model list"},
 		{"/v1/messages", `{"model":"oa/m1","messages":[],"tool_choice":{"type":"tool","name":"web_search"},"tools":[{"type":"web_search_20250305","name":"web_search"}]}`, "translate: the request cannot be translated"},
 		{"/v1/responses", `{"model":"oa/m1","input":"hi","previous_response_id":"r1"}`, "translate: the request cannot be translated"},
@@ -113,6 +112,22 @@ func TestTranslatedHandoffs(t *testing.T) {
 		p := s.PlanFor(classOfPath(c.path), xlateReq(t, c.path, c.body), fixtureNow)
 		if p.Handoff != c.why {
 			t.Errorf("%s %s: %q", c.path, c.body, p.Handoff)
+		}
+	}
+	// A route (P4h) is a route plan: messages and responses take twice (Decision 7), Gemini once; router/x has a chat
+	// target, so responses is translated.
+	for _, c := range []struct {
+		path, body string
+		takes      int
+		up         string
+	}{
+		{"/v1/messages", `{"model":"router/x","messages":[]}`, 2, UpChat},
+		{"/v1/responses", `{"model":"router/x","input":"hi"}`, 2, UpChat},
+		{"/v1beta/models/router%2Fx:generateContent", `{"contents":[]}`, 1, UpChat},
+	} {
+		p := s.PlanFor(classOfPath(c.path), xlateReq(t, c.path, c.body), fixtureNow)
+		if p.Handoff != "" || p.Route == nil || p.Takes != c.takes || p.Upstream != c.up || len(p.Legs) != 2 {
+			t.Errorf("%s: %+v", c.path, p)
 		}
 	}
 	// The token saver off by header: translated and served, without the saver.

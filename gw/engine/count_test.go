@@ -46,8 +46,11 @@ func TestCountEstimatePlans(t *testing.T) {
 			t.Errorf("%s: %+v", body, p)
 		}
 	}
-	if p := s.PlanCount(xlateReq(t, "/v1/messages/count_tokens", `{"model":"router/x"}`), fixtureNow); p.Handoff != "model: a route" {
-		t.Fatal(p.Handoff)
+	// A route (P4h): one take, then its first leg in order decides; oa/m1 is an estimate leg, op/gpt-6.1 too.
+	p := s.PlanCount(xlateReq(t, "/v1/messages/count_tokens", `{"model":"router/x"}`), fixtureNow)
+	if p.Handoff != "" || p.Route == nil || p.Takes != 1 || p.Self == nil || len(p.Legs) != 2 ||
+		p.Legs[0].Upstream != UpNone || p.Legs[0].Target == nil {
+		t.Fatalf("%+v", p)
 	}
 }
 
@@ -58,7 +61,12 @@ func TestEmbeddingsPlan(t *testing.T) {
 	if p.Handoff != "" || !p.Detached || p.Base.Format != nil || p.Base.Stream != nil || *p.Base.Kind != "embeddings" {
 		t.Fatalf("%+v", p)
 	}
-	for _, body := range []string{`{"input":"x"}`, `{"model":["oa/e1"]}`, `{"model":"router/x"}`} {
+	// A route (P4h): one take, the first allowed leg, no fallback.
+	if p := s.PlanEmbeddings(xlateReq(t, "/v1/embeddings", `{"model":"router/x","input":"x"}`), fixtureNow); p.Handoff != "" ||
+		p.Route == nil || p.Takes != 1 || len(p.Legs) != 2 || !p.Legs[0].Detached || p.Legs[0].Base.RoutedTo != nil {
+		t.Fatalf("%+v", p)
+	}
+	for _, body := range []string{`{"input":"x"}`, `{"model":["oa/e1"]}`} {
 		if p := s.PlanEmbeddings(xlateReq(t, "/v1/embeddings", body), fixtureNow); p.Handoff == "" {
 			t.Errorf("%s served", body)
 		}

@@ -245,7 +245,7 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 | S2 | OpenAI-compatible pass-through, non-streaming | Contract cases green; M3 met: **chat on go behind the shadow in P4b** (2026-11-12, `docs/migration/2026-11-12-p4b-results.md`); M3 is re-measured in P4c |
 | S3 | Streaming SSE | M4 met at 500 streams: **met in P4c** for OpenAI-format chat streams (2026-11-13, `docs/migration/2026-11-13-p4c-results.md`; local run on the owner's laptop, private tier; a quiet-machine confirmation and the external tier after P4e to follow) |
 | S4 | API-key auth, per-key allow-lists and modes | Contract cases green: **met in P4b** (2026-11-12, `docs/migration/2026-11-12-p4b-results.md`) |
-| S5 | Translate (Anthropic, OpenAI, Gemini, routers, Ollama/local) | Fixtures from `translate` tests pass byte-for-byte: **met in P4d** (2026-11-17, `docs/migration/2026-11-17-p4d-results.md`) for /v1/messages (with count_tokens), /v1/responses, Gemini, /v1/embeddings and chat to Anthropic-format providers, whole and streamed; router presets and Ollama/local served; `router/*` routes and names only the model cache maps stay on js (G3 prerequisites); the token saver acting moved to go behind its own switch (2026-11-21, `docs/migration/2026-11-21-rtk-go-results.md`) |
+| S5 | Translate (Anthropic, OpenAI, Gemini, routers, Ollama/local) | Fixtures from `translate` tests pass byte-for-byte: **met in P4d** (2026-11-17, `docs/migration/2026-11-17-p4d-results.md`) for /v1/messages (with count_tokens), /v1/responses, Gemini, /v1/embeddings and chat to Anthropic-format providers, whole and streamed; router presets and Ollama/local served; names only the model cache maps stay on js; the token saver acting moved to go behind its own switch (2026-11-21, `docs/migration/2026-11-21-rtk-go-results.md`); `router/*` routes (round-robin, fallback, cooldowns from provider headers, quota readings) are now served on go behind the `routes` switch, the routing state replicated both ways with the control plane (2026-11-22, `docs/migration/2026-11-21-p4h-results.md`; the switch turns on after the sub-classes it rides on, under the owner's rule: 1 clean day, 20 compares) |
 | S6 | Guardrails: secrets, PII and injection; block → 400 `guardrail_blocked` | Fixtures from the guardrail tests pass: **met in P4e** for OpenAI-format chat, whole and streamed (2026-11-16, `docs/migration/2026-11-16-p4e-results.md`; the other formats come with P4d) |
 | S7 | Budget guard, fail open (§11.6) | Kill-IPC test: metered calls pass, each marked `budget_unchecked` and alerted; a spent budget in the snapshot is still refused: **met in P4e** (2026-11-16, `docs/migration/2026-11-16-p4e-results.md`) |
 | S8 | Usage, audit events and trace spans over IPC | Ledger and audit identical to JS for the same run: **met in P4f** (2026-11-17, `docs/migration/2026-11-17-p4f-results.md`) |
@@ -263,7 +263,8 @@ Prerequisites of G3 (owner decisions 2026-11-17, P4d spec Decisions 28–29):
   then every request it would act on is handed to js: **met** (2026-11-21, `docs/migration/2026-11-21-rtk-go-results.md`);
   the `token-saver` switch moves to go under the owner's switch rule;
 - routes (`router/*`: round-robin and cooldowns from provider headers) move to go, with the provider quota readings;
-  until then every route call is handed to js.
+  until then every route call is handed to js: **met** (2026-11-22, `docs/migration/2026-11-21-p4h-results.md`); the
+  `routes` switch moves to go under the owner's switch rule (1 clean day, 20 compares), after the sub-classes it rides on.
 
 Agents, orchestrator, collab, a2a, workflows, knowledge, memory and skills **stay in Deno**. They call the gateway
 like any client.

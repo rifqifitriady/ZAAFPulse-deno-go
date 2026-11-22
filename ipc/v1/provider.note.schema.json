@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "provider.note (both directions, P4h Decisions 3, 4): one provider answer an engine read, for the other engine's cooldowns and the control plane's quota readings (a control message, not an outbox event); at is the observer's clock, headers the rate-limit names noteResponse reads and retry-after, lower case, values joined with \", \"",
+  "type": "object",
+  "required": [
+    "providerId",
+    "status",
+    "at",
+    "headers"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599
+    },
+    "at": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "headers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

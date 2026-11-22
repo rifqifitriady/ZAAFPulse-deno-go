@@ -26,13 +26,32 @@ func (s *State) PlanEmbeddings(r *Request, now int64) Plan {
 	if Authorize(key, "llm", model, "") != "" {
 		return handoff("key: not allowed")
 	}
+	if rt := s.routeOf(model); rt != nil {
+		// targetsFor(body.model): one take; the first allowed leg answers, with no fallback (P4h R8).
+		legs, why := s.routeLegs(rt, key, func(t *Target) (Plan, string) { return s.embeddingsLeg(r, key, body, model, t) })
+		if why != "" {
+			return handoff(RouteHandoff + why)
+		}
+		return Plan{Key: key, Model: model, ClientModel: model, Route: rt, Legs: legs, Takes: 1, Upstream: UpEmbeddings,
+			Class: SubEmbeddings, Format: "openai", Shape: ShapeOpenAI, Env: translate.Default}
+	}
 	t, why := s.target(model, key)
 	if why != "" {
 		return handoff(why)
 	}
-	cred, auth, why := s.credential(t)
+	p, why := s.embeddingsLeg(r, key, body, model, t)
 	if why != "" {
 		return handoff(why)
+	}
+	return p
+}
+
+// embeddingsLeg is embeddings' work for its target t: the client's body with the target's model, the guardrails of
+// t's tier, and the line's fields (no routedTo, no format, no stream).
+func (s *State) embeddingsLeg(r *Request, key *ipc.GatewayKeyAuth, body *Value, model string, t *Target) (Plan, string) {
+	cred, auth, why := s.credential(t)
+	if why != "" {
+		return Plan{}, why
 	}
 	kind := "embeddings"
 	p := Plan{Key: key, Target: t, Model: model, ClientModel: model, Upstream: UpEmbeddings, Class: SubEmbeddings,
@@ -48,7 +67,7 @@ func (s *State) PlanEmbeddings(r *Request, now int64) Plan {
 	} else {
 		p.Body = out.Stringify()
 	}
-	return p
+	return p, ""
 }
 
 // RespondEmbeddings is embeddings' answer for the provider's status and body.

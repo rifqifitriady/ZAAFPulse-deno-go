@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "route.state (control plane to gateway, P4h Decision 3): the rotation counters and the live cooldowns, sent after ratelimit.window and before budget.snapshot when a session starts",
+  "type": "object",
+  "required": [
+    "rr",
+    "cooldown"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "rr": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "n"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "cooldown": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "providerId",
+          "until",
+          "strikes",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "until": {
+            "type": "number",
+            "minimum": 0
+          },
+          "strikes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

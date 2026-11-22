@@ -1,0 +1,1431 @@
+{
+  "fn": "resolveAll",
+  "in": {
+    "providers": [
+      {
+        "id": "a",
+        "preset": "openai",
+        "baseUrl": "https://a.example.test/v1",
+        "approved": true,
+        "aliases": {
+          "fast": "m-fast"
+        }
+      },
+      {
+        "id": "b",
+        "preset": "groq",
+        "baseUrl": "https://b.example.test/v1",
+        "approved": true
+      },
+      {
+        "id": "c",
+        "preset": "anthropic",
+        "baseUrl": "https://c.example.test/v1",
+        "approved": true,
+        "format": "anthropic"
+      },
+      {
+        "id": "loc",
+        "preset": "ollama",
+        "baseUrl": "http://localhost:11434/v1"
+      },
+      {
+        "id": "off",
+        "preset": "openai",
+        "baseUrl": "https://off.example.test/v1",
+        "approved": true,
+        "enabled": false
+      },
+      {
+        "id": "ext",
+        "preset": "openai",
+        "baseUrl": "https://ext.example.test/v1",
+        "approved": false
+      }
+    ],
+    "routes": [
+      {
+        "name": "router/one",
+        "targets": [
+          "a/m1"
+        ],
+        "strategy": "fallback"
+      },
+      {
+        "name": "router/one-rr",
+        "targets": [
+          "a/m1"
+        ],
+        "strategy": "round-robin"
+      },
+      {
+        "name": "router/two",
+        "targets": [
+          "a/m1",
+          "b/m1"
+        ],
+        "strategy": "fallback"
+      },
+      {
+        "name": "router/two-rr",
+        "targets": [
+          "a/m1",
+          "b/m1"
+        ],
+        "strategy": "round-robin"
+      },
+      {
+        "name": "router/three-rr",
+        "targets": [
+          "a/m1",
+          "b/m1",
+          "c/m1"
+        ],
+        "strategy": "round-robin"
+      },
+      {
+        "name": "router/eight-rr",
+        "targets": [
+          "a/m1",
+          "nope/x",
+          "b/m1",
+          "off/m1",
+          "fast",
+          "ext/m1",
+          "loc/m1",
+          "c/m1"
+        ],
+        "strategy": "round-robin"
+      },
+      {
+        "name": "router/eight",
+        "targets": [
+          "loc/m1",
+          "a/m1",
+          "a/m2",
+          "b/m1",
+          "b/m2",
+          "c/m1",
+          "c/m2",
+          "loc/m2"
+        ]
+      },
+      {
+        "name": "router/dead",
+        "targets": [
+          "nope/x",
+          "off/m1",
+          "ext/m1"
+        ],
+        "strategy": "round-robin"
+      },
+      {
+        "name": "router/mixed-rr",
+        "targets": [
+          "a/m1",
+          "loc/m1",
+          "b/m1"
+        ],
+        "strategy": "round-robin"
+      },
+      {
+        "name": "router/two-rr",
+        "targets": [
+          "c/m1"
+        ],
+        "strategy": "fallback"
+      }
+    ],
+    "sequences": [
+      {
+        "note": "fallback and round-robin rotation over 1, 2, 3 and 8 targets",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "call": "router/one"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/one-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/two"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/one-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/two-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/two-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/two-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/two-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/two-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/three-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/three-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/three-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/three-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight"
+          }
+        ]
+      },
+      {
+        "note": "unresolvable, disabled, unapproved, alias, plain model and unknown names",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "call": "router/dead"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/dead"
+          },
+          {
+            "at": 1767225600000,
+            "call": "fast"
+          },
+          {
+            "at": 1767225600000,
+            "call": "b/m1"
+          },
+          {
+            "at": 1767225600000,
+            "call": "b/"
+          },
+          {
+            "at": 1767225600000,
+            "call": "off/m1"
+          },
+          {
+            "at": 1767225600000,
+            "call": "ext/m1"
+          },
+          {
+            "at": 1767225600000,
+            "call": "zzz"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/nope"
+          },
+          {
+            "at": 1767225600000,
+            "call": ""
+          },
+          {
+            "at": 1767225600000,
+            "call": "/m1"
+          }
+        ]
+      },
+      {
+        "note": "a private-only key: rotation still counts, external targets drop",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "call": "router/mixed-rr",
+            "privateOnly": true
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/mixed-rr",
+            "privateOnly": true
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/mixed-rr"
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/mixed-rr",
+            "privateOnly": true
+          },
+          {
+            "at": 1767225600000,
+            "call": "router/eight",
+            "privateOnly": true
+          },
+          {
+            "at": 1767225600000,
+            "call": "a/m1",
+            "privateOnly": true
+          },
+          {
+            "at": 1767225600000,
+            "call": "loc/m9",
+            "privateOnly": true
+          }
+        ]
+      },
+      {
+        "note": "cooling targets move to the back, in stable order, until the cooldown ends",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "call": "router/three-rr"
+          },
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 429,
+            "headers": {
+              "retry-after": "30"
+            }
+          },
+          {
+            "at": 1767225601000,
+            "call": "router/three-rr"
+          },
+          {
+            "at": 1767225601000,
+            "call": "router/three-rr"
+          },
+          {
+            "at": 1767225601000,
+            "call": "router/two"
+          },
+          {
+            "at": 1767225601000,
+            "call": "router/eight"
+          },
+          {
+            "at": 1767225601000,
+            "provider": "c",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225601000,
+            "call": "router/eight"
+          },
+          {
+            "at": 1767225601000,
+            "call": "router/eight-rr"
+          },
+          {
+            "at": 1767225601000,
+            "call": "a/m1"
+          },
+          {
+            "at": 1767225601000,
+            "call": "fast"
+          },
+          {
+            "at": 1767225602000,
+            "call": "router/eight"
+          },
+          {
+            "at": 1767225631000,
+            "call": "router/two"
+          },
+          {
+            "at": 1767225631000,
+            "provider": "b",
+            "status": 429,
+            "headers": {}
+          },
+          {
+            "at": 1767225631000,
+            "call": "router/two"
+          },
+          {
+            "at": 1767225631000,
+            "provider": "b",
+            "status": 200,
+            "headers": {}
+          },
+          {
+            "at": 1767225631000,
+            "call": "router/two"
+          }
+        ]
+      }
+    ]
+  },
+  "out": [
+    [
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "a/m2",
+            "provider": "a",
+            "model": "m2"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "b/m2",
+            "provider": "b",
+            "model": "m2"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "c/m2",
+            "provider": "c",
+            "model": "m2"
+          },
+          {
+            "name": "loc/m2",
+            "provider": "loc",
+            "model": "m2"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "a/m2",
+            "provider": "a",
+            "model": "m2"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "b/m2",
+            "provider": "b",
+            "model": "m2"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "c/m2",
+            "provider": "c",
+            "model": "m2"
+          },
+          {
+            "name": "loc/m2",
+            "provider": "loc",
+            "model": "m2"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "order": []
+      },
+      {
+        "order": []
+      },
+      {
+        "order": [
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/",
+            "provider": "b",
+            "model": ""
+          }
+        ]
+      },
+      {
+        "order": []
+      },
+      {
+        "order": []
+      },
+      {
+        "order": []
+      },
+      {
+        "order": []
+      },
+      {
+        "order": []
+      },
+      {
+        "order": []
+      }
+    ],
+    [
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "loc/m2",
+            "provider": "loc",
+            "model": "m2"
+          }
+        ]
+      },
+      {
+        "order": []
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m9",
+            "provider": "loc",
+            "model": "m9"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "cooldown": {
+          "a": {
+            "until": 1767225630000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "b/m2",
+            "provider": "b",
+            "model": "m2"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "c/m2",
+            "provider": "c",
+            "model": "m2"
+          },
+          {
+            "name": "loc/m2",
+            "provider": "loc",
+            "model": "m2"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "a/m2",
+            "provider": "a",
+            "model": "m2"
+          }
+        ]
+      },
+      {
+        "cooldown": {
+          "a": {
+            "until": 1767225630000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": {
+            "until": 1767225602000,
+            "strikes": 1,
+            "reason": "HTTP 503"
+          },
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "b/m2",
+            "provider": "b",
+            "model": "m2"
+          },
+          {
+            "name": "loc/m2",
+            "provider": "loc",
+            "model": "m2"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "a/m2",
+            "provider": "a",
+            "model": "m2"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "c/m2",
+            "provider": "c",
+            "model": "m2"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "fast",
+            "provider": "a",
+            "model": "m-fast"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "loc/m1",
+            "provider": "loc",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          },
+          {
+            "name": "b/m2",
+            "provider": "b",
+            "model": "m2"
+          },
+          {
+            "name": "c/m1",
+            "provider": "c",
+            "model": "m1"
+          },
+          {
+            "name": "c/m2",
+            "provider": "c",
+            "model": "m2"
+          },
+          {
+            "name": "loc/m2",
+            "provider": "loc",
+            "model": "m2"
+          },
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "a/m2",
+            "provider": "a",
+            "model": "m2"
+          }
+        ]
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225632000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      },
+      {
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "order": [
+          {
+            "name": "a/m1",
+            "provider": "a",
+            "model": "m1"
+          },
+          {
+            "name": "b/m1",
+            "provider": "b",
+            "model": "m1"
+          }
+        ]
+      }
+    ]
+  ]
+}

@@ -39,10 +39,12 @@ type spanCase struct {
 		Status int               `json:"status"`
 		Chunks []json.RawMessage `json:"chunks"`
 	} `json:"answer"`
-	Usage        map[string]any    `json:"usage"`
-	UsageWhen    string            `json:"usageWhen"`
-	Ends         string            `json:"ends"`
-	ProviderSpan *ipc.ProviderSpan `json:"providerSpan"`
+	Prior        []map[string]any    `json:"prior"` // a route call's earlier lines (P4h Decision 10)
+	Usage        map[string]any      `json:"usage"`
+	UsageWhen    string              `json:"usageWhen"`
+	Ends         string              `json:"ends"`
+	ProviderSpan *ipc.ProviderSpan   `json:"providerSpan"`
+	PriorSpans   []*ipc.ProviderSpan `json:"priorProviderSpans"`
 }
 
 type spanOut struct {
@@ -114,6 +116,16 @@ func replaySpans(t *testing.T, in *spanCase) (*string, []ipc.TraceSpanBody) {
 		}
 	}
 	traceID := tc.TraceID
+	// A route call's earlier lines: each a chat call's span, recorded (its id drawn) in order, before the last line's.
+	var prior []ipc.TraceSpanBody
+	for i, m := range in.Prior {
+		rec := usageOf(t, m)
+		var o *Observed
+		if obs != nil {
+			o = obs.Result()
+		}
+		prior = append(prior, ClientSpan(tc, ids(8), rec, in.PriorSpans[i], o, nil))
+	}
 	var client *ipc.TraceSpanBody
 	chatPending := false
 	if in.Usage != nil {
@@ -137,11 +149,9 @@ func replaySpans(t *testing.T, in *spanCase) (*string, []ipc.TraceSpanBody) {
 		out = append(out, *client)
 	}
 	out = append(out, server)
+	out = append(out, prior...)
 	if client != nil && chatPending {
 		out = append(out, *client)
-	}
-	if in.Usage == nil {
-		return &traceID, out
 	}
 	return &traceID, out
 }
@@ -173,7 +183,7 @@ func TestSpansMatchTheJSFixtures(t *testing.T) {
 			if want.TraceID != nil {
 				wantTrace = *want.TraceID
 			}
-			if traceID != nil && in.Usage != nil {
+			if traceID != nil && (in.Usage != nil || len(in.Prior) > 0) {
 				gotTrace = *traceID
 			}
 			if gotTrace != wantTrace {
