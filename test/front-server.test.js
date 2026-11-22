@@ -68,6 +68,21 @@ test('status: the egress classes after their gate (P5 Decision 11); no endpoint 
   assert.equal(st.egress.engines.notify, 'direct');
   assert.equal(st.egress.engines.brain, 'direct');
   assert.deepEqual(Object.keys(st.egress.notes), ['gateway']);
+  // GET /api/egress (P5 Decision 10) and the network_egress control (Decision 18): js mode, so off.
+  const eg = await (await fetch(`${s.base}/api/egress`, { signal: AbortSignal.timeout(5000) })).json();
+  assert.equal(eg.mode, 'js');
+  assert.equal(eg.port, null);
+  assert.equal(eg.engines.gateway, 'check');
+  assert.equal(eg.allowList, 'report');
+  assert.ok(eg.allow.some((r) => r.host === 'openrouter.ai' && r.port === 443));
+  assert.equal(eg.allowCount, eg.allow.length);
+  assert.deepEqual(eg.lockdown, { asked: false, inForce: false, why: 'egress.lockdown is off' });
+  assert.deepEqual(eg.last, []);
+  assert.deepEqual(eg.counts24h, { perClass: {}, total: 0, refused: 0, wouldRefuse: 0 });
+  const ctl = await (await fetch(`${s.base}/api/governance/controls`, { signal: AbortSignal.timeout(10000) })).json();
+  const ne = ctl.controls.find((c) => c.id === 'network_egress');
+  assert.equal(ne.status, 'off');
+  assert.match(ne.evidence[1], /child processes/);
 });
 
 test('front mode: dashboard and gateway through Go; /v1/traces sees a loopback client and its forwarding headers', async (t) => {

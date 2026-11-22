@@ -71,6 +71,7 @@ const egressClient = require('./lib/egress');
 const { egressRouting, createEgressGate } = require('./lib/egress-switch');
 const { writeDiscovery, removeDiscovery } = require('./lib/egress-discovery');
 const { allowList } = require('./lib/egress-allow');
+const { createEgressStatus, lockdownNow } = require('./lib/egress-status');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
@@ -339,6 +340,32 @@ function egressAllowNow(cfg = rawConfig()) {
 }
 // The allow-list last pushed (JSON), to push again when a save or the minute loop finds it changed.
 let pushedAllow = null;
+// P5 Decisions 10, 18: GET /api/egress and the network_egress control (lib/egress-status.js, cached 10 s). The lock-down
+// is lib/permissions.js lockdownState (asked, conditions met) and in force only when this launch's net grant is scoped.
+const egressStatus = createEgressStatus({
+  log: egressLog,
+  state: () => {
+    const cfg = rawConfig();
+    const ec = cfg.egress && typeof cfg.egress === 'object' ? cfg.egress : {};
+    const eg = egressRouted || egressRoutingNow();
+    const perms = require('./lib/permissions');
+    let gate = {};
+    try {
+      gate = JSON.parse(fs.readFileSync(path.join(DIR, '.data', 'egress-gate.json'), 'utf8')) || {};
+    } catch {
+      gate = {};
+    }
+    return {
+      mode: ENGINE,
+      port: front ? front.egressPort : null,
+      engines: eg.engines,
+      notes: eg.notes,
+      allow: egressAllowNow(cfg),
+      allowList: ec.allowList,
+      lockdown: lockdownNow(perms.lockdownState({ config: cfg, env: process.env, gate }), perms.describe()),
+    };
+  },
+});
 
 let integ = { mtimeMs: -1, registry: null };
 function getIntegrations() {
@@ -1496,6 +1523,21 @@ async function controlState() {
     }),
     // P2: what the Deno permission sandbox holds (lib/permissions.js); { runtime: 'node' } under Node.
     runtimePermissions: () => require('./lib/permissions').describe(),
+    // P5 Decision 18: the egress classes, the allow-list, the lock-down and the last 24 h of records.
+    egress: () => {
+      const e = egressStatus();
+      const grants = require('./lib/permissions').describe().grants;
+      return {
+        mode: e.mode,
+        port: e.port,
+        engines: e.engines,
+        allowList: e.allowList,
+        allowCount: e.allowCount,
+        lockdown: e.lockdown,
+        counts24h: e.counts24h,
+        netGrant: grants ? grants.net : null,
+      };
+    },
   };
   const names = Object.keys(parts);
   const values = await Promise.all(names.map((k) => invSource(parts[k])));
@@ -1751,6 +1793,9 @@ const handler = async (req, res) => {
         egress: { port: front.egressPort, engines: eg.engines, notes: eg.notes, lockdown: false },
       });
     }
+    // P5 Decision 10: the egress records for the Compliance page (owner only, as /api/gateway/status: it is no viewer
+    // read, so the role check above refuses anyone else). Cached 10 s; the log reads are bounded.
+    if (url.pathname === '/api/egress' && req.method === 'GET') return send(res, 200, egressStatus());
     const gwAdmin = url.pathname.match(/^\/api\/gateway\/([a-z]+)$/);
     if (gwAdmin) {
       // Only the request log is read with GET. Every other admin route writes (defaults, settings), spends tokens
