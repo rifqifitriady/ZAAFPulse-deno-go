@@ -81,8 +81,8 @@ No update check exists in this tree (the README's update notes are P6). DNS: onl
    `EGRESS_PRIVATE` (public mode), `EGRESS_REDIRECTS` (over 20), `EGRESS_REDIRECT` (`-Redirect: error`),
    `EGRESS_UNAVAILABLE` (client side: no ready gateway under the lock-down, Decision 14). A caller's abort closes the
    loopback request and Go cancels the target request. No other timeout is added.
-6. **Redirects follow fetch's rules in Go** for `follow`: at most 20; 301/302 with POST and every 303 but HEAD become a
-   GET without body and body headers; `Authorization` is dropped on a cross-origin hop. Each hop is checked against the
+6. **Redirects follow fetch's rules in Go** for `follow`: at most 20; 301/302 with POST and a 303 with any method but GET or
+   HEAD become a GET without body and body headers; `Authorization` is dropped on a cross-origin hop. Each hop is checked against the
    allow-list and recorded. `manual` returns the 3xx (every caller that handles redirects itself: `fetchSameOrigin`,
    `brain/apps.js`, `safeFetch`); `error` fails.
 7. **Public mode (E12) moves the SSRF guard into Go's dialer.** `-Public: 1` makes Go refuse, at connect time, every
@@ -216,6 +216,12 @@ The riskiest step, narrowing Deno's grant, is last and off by default.
 4. Trusted roots are Go's (system plus `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `DENO_CERT`), as for the engine.
 5. Recorded bytes are decoded body bytes.
 6. A gateway restart cuts the egress calls in flight (they fail like a dropped connection; callers retry as today).
+7. The SSRF set is stricter than before P5, on both runtimes (`lib/net.js isPrivateAddress` and `gw/egress IsPrivate`
+   together, proven by `gw/testdata/egress/private.json`): IPv6 `::/96` (the deprecated IPv4-compatible
+   `::a.b.c.d`, besides `::` and `::1`), NAT64's local-use `64:ff9b:1::/48` (inside the refused `64:ff9b::/32`), the
+   deprecated site-local `fec0::/10`, Teredo `2001:0::/32` (refused whole) and 6to4 `2002::/16` when the IPv4 address
+   it embeds is private are refused too. An IPv4-mapped address written in hex groups (`::ffff:7f00:1`) is judged as
+   its IPv4 address on the JS side as Go always did (before, JS refused every such text form).
 
 ## Owner questions (recommendation taken; none blocks P5a–P5d)
 

@@ -124,22 +124,45 @@ func errorCode(err error) (code, message string) {
 	return "EPROTO", message
 }
 
+// RefusedError is a round trip the allow-list refused in enforce mode (RecordingTransport): nothing was sent. Its text
+// starts with EGRESS_REFUSED, and EgressCode names it, so a caller that names failures by code (gw/engine ErrorCode)
+// reads the same code a proxied call gets in X-ZP-Egress-Error.
+type RefusedError struct {
+	Host string
+	Port int
+}
+
+func (e *RefusedError) Error() string {
+	return CodeRefused + ": " + net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) + " is not on the egress allow-list"
+}
+
+// EgressCode is the failure's code, EGRESS_REFUSED.
+func (e *RefusedError) EgressCode() string { return CodeRefused }
+
 // RecordingTransport records every round trip of rt (the engine's own provider and token calls, spec Decision 9) as a
 // Record with via "engine": one per round trip, emitted when the answer's body ends (EOF, an error or Close), or at
-// once when the round trip fails. Bytes are counted as the bodies are read.
-func RecordingTransport(rt http.RoundTripper, purpose string, record func(Record)) http.RoundTripper {
+// once when the round trip fails. Bytes are counted as the bodies are read (a body the transport asks again through
+// GetBody, for a retry, is counted from zero).
+//
+// policy gives the allow-list each round trip is checked against (spec Decision 13: the engine's own calls are checked
+// too); nil, or a nil *Policy, checks nothing. A miss in enforce mode is refused: nothing is sent, the record is
+// "refused" and the error a *RefusedError. A miss in report mode is recorded "would-refuse" and the call goes on (its
+// own record follows, as a proxied hop's).
+func RecordingTransport(rt http.RoundTripper, purpose string, policy func() *Policy,
+	record func(Record)) http.RoundTripper {
 	if rt == nil {
 		rt = http.DefaultTransport
 	}
 	if purpose == "" {
 		purpose = unspecified
 	}
-	return &recordingTransport{rt: rt, purpose: purpose, record: record}
+	return &recordingTransport{rt: rt, purpose: purpose, policy: policy, record: record}
 }
 
 type recordingTransport struct {
 	rt      http.RoundTripper
 	purpose string
+	policy  func() *Policy
 	record  func(Record)
 }
 
@@ -152,11 +175,36 @@ func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 	rec := Record{TS: start.UnixMilli(), Purpose: t.purpose, Method: method, Scheme: req.URL.Scheme, Host: host,
 		Port: port, Via: ViaEngine}
+	if t.policy != nil {
+		if pol := t.policy(); pol != nil && !pol.Allows(host, port) {
+			if pol.Mode == ModeEnforce {
+				if req.Body != nil {
+					_ = req.Body.Close() // a RoundTripper closes the body, on an error too
+				}
+				rec.Outcome, rec.Error, rec.MS = OutcomeRefused, CodeRefused, ms(start)
+				t.emit(rec)
+				return nil, &RefusedError{Host: host, Port: port}
+			}
+			wr := rec
+			wr.Outcome, wr.Error = OutcomeWouldRefuse, CodeRefused
+			t.emit(wr)
+		}
+	}
 	out := &counter{}
 	sent := req
 	if req.Body != nil && req.Body != http.NoBody {
 		sent = req.Clone(req.Context())
 		sent.Body = &countingBody{ReadCloser: req.Body, n: out}
+		if req.GetBody != nil {
+			sent.GetBody = func() (io.ReadCloser, error) {
+				b, err := req.GetBody()
+				if err != nil {
+					return nil, err
+				}
+				out.Store(0) // the body is sent again from its start
+				return &countingBody{ReadCloser: b, n: out}, nil
+			}
+		}
 	}
 	resp, err := t.rt.RoundTrip(sent)
 	if err != nil {

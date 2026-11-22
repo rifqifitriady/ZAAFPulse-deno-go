@@ -121,6 +121,9 @@ func (s *Server) SetPolicy(p Policy) {
 	s.policy.Store(&p)
 }
 
+// Policy is the allow-list in force (never nil; a caller must not change it).
+func (s *Server) Policy() *Policy { return s.policy.Load() }
+
 // Handler serves "/" (forward), "/check" and CONNECT.
 func (s *Server) Handler() http.Handler { return http.HandlerFunc(s.serve) }
 

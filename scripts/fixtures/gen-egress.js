@@ -1,6 +1,6 @@
 // Fixtures for the Go egress proxy's public mode (P5, Task 2): the real lib/net.js isPrivateAddress run over every range
-// boundary it knows, IPv4-mapped IPv6, NAT64, IPv6 unique-local, link-local and multicast, and the public neighbours of
-// each range, written to gw/testdata/egress/private.json as { fn, in: [ip], out: [{ ip, private }] }.
+// boundary it knows, IPv4-mapped and IPv4-compatible IPv6, NAT64 (well-known and local-use), IPv6 unique-local,
+// link-local, site-local and multicast, Teredo and 6to4, and the public neighbours of each range, written to gw/testdata/egress/private.json as { fn, in: [ip], out: [{ ip, private }] }.
 // gw/egress/private_test.go replays every entry against IsPrivate. Addresses are written in the canonical form a
 // resolver gives (and Go's net.IP.String() prints), the only form the dialer ever sees; a few non-addresses show that
 // anything that is not an address counts as private.
@@ -91,6 +91,17 @@ const V6 = [
   '64:ff9b::7f00:1',
   '64:ff9a::1',
   '64:ff9c::1',
+  // NAT64 local-use 64:ff9b:1::/48 (inside 64:ff9b::/32, refused whole)
+  '64:ff9b:1::',
+  '64:ff9b:1:ffff:ffff:ffff:ffff:ffff',
+  '64:ff9b:2::1',
+  // IPv4-compatible ::a.b.c.d (::/96, deprecated): refused whatever the IPv4 address
+  '::102:304',
+  '::808:808',
+  '::7f00:1',
+  '::ffff',
+  '::1:0:0:0',
+  '0:0:0:1::',
   // unique local fc00::/7
   'fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
   'fc00::',
@@ -102,12 +113,30 @@ const V6 = [
   'fe80::',
   'fe80::1',
   'febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
+  // site-local fec0::/10 (deprecated)
   'fec0::',
+  'fec0::1',
+  'fedc:ba98::1',
+  'feff::',
   // multicast ff00::/8
   'feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
   'ff00::',
   'ff02::1',
   'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
+  // Teredo 2001:0::/32
+  '2001::',
+  '2001:0:4136:e378:8000:63bf:3fff:fdd2',
+  '2001:0:ffff:ffff:ffff:ffff:ffff:ffff',
+  '2001:1::1',
+  // 6to4 2002::/16: private when the IPv4 address in its next 32 bits is
+  '2002::',
+  '2002:a00:1::',
+  '2002:7f00:1::1',
+  '2002:a9fe:a9fe::',
+  '2002:c0a8:101::',
+  '2002:808:808::',
+  '2002:5db8:d822::1',
+  '2003::1',
   // public
   '2001:4860:4860::8888',
   '2606:4700::1111',

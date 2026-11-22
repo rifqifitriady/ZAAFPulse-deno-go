@@ -257,6 +257,12 @@ func ErrorCode(err error) string {
 	if errors.As(err, &rf) {
 		return string(rf)
 	}
+	// A call the gateway's egress allow-list refused (gw/egress RecordingTransport, P5 Decision 13): named by its code,
+	// EGRESS_REFUSED, as a proxied fetch's err.cause.code names it. Matched by method: gw/engine does not import gw/egress.
+	var eg interface{ EgressCode() string }
+	if errors.As(err, &eg) {
+		return eg.EgressCode()
+	}
 	// Winsock codes (Windows) by the names Node gives them there (re-review N4); no Unix errno is this large.
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
