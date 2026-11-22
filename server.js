@@ -304,7 +304,19 @@ function readEgressGate() {
 // the client's alone, while lockdownState says it is in force. Node has no lock-down.
 const EGRESS_GRANT = (() => {
   const d = require('./lib/permissions').describe();
-  return { deno: d.runtime === 'deno', scoped: !!(d.grants && d.grants.net === 'scoped'), singleFile: !!d.singleFile };
+  // A scoped grant is not necessarily loopback only: an outside sentinel must be refused too (final review M3).
+  let outsideNet = false;
+  try {
+    outsideNet = globalThis.Deno.permissions.querySync({ name: 'net', host: 'example.com:443' }).state === 'granted';
+  } catch {
+    outsideNet = false;
+  }
+  return {
+    deno: d.runtime === 'deno',
+    scoped: !!(d.grants && d.grants.net === 'scoped'),
+    singleFile: !!d.singleFile,
+    outsideNet,
+  };
 })();
 function egressLockNow() {
   return clientLock(EGRESS_GRANT, () =>
@@ -345,7 +357,8 @@ function allowSecret(ref, field) {
   try {
     value = gwSecrets.resolve(ref, field);
   } catch {
-    value = null; // not resolvable now: nothing on the list; the caller fails on its own
+    // Not resolvable now: nothing on the list, and not kept (final review M8), so the next look tries again.
+    return null;
   }
   allowSecrets.set(k, { at: Date.now(), value });
   return value;
@@ -378,7 +391,10 @@ const egressStatus = createEgressStatus({
       notes: eg.notes,
       allow: egressAllowNow(cfg),
       allowList: ec.allowList,
-      lockdown: lockdownNow(perms.lockdownState({ config: cfg, env: process.env, gate }), perms.describe()),
+      lockdown: lockdownNow(perms.lockdownState({ config: cfg, env: process.env, gate }), {
+        ...perms.describe(),
+        outsideNet: EGRESS_GRANT.outsideNet,
+      }),
     };
   },
 });
@@ -467,6 +483,8 @@ function govRecord(entry) {
 // config.change entry with its field-level changes, secrets masked (lib/governance/diff.js). A write that changed
 // nothing is no entry.
 function configChanged(before, after) {
+  // A saved config may name new secret references or a stored value changed with it: the allow-list reads them again.
+  allowSecrets.clear();
   // The gateway section changed: a new config generation for the gateway in front, or front again after a fallback.
   if (front && JSON.stringify((before || {}).gateway) !== JSON.stringify((after || {}).gateway)) {
     // From a request: the main port goes back to the gateway only once that request's answer is sent.
@@ -1552,6 +1570,7 @@ async function controlState() {
         lockdown: e.lockdown,
         counts24h: e.counts24h,
         netGrant: grants ? grants.net : null,
+        locked: egressClient.state().lockdown, // the client never goes direct (EGRESS_UNAVAILABLE without a gateway)
       };
     },
   };
@@ -2557,6 +2576,9 @@ front = createFront({
   },
   onListenError: portTaken,
 });
+// P5 final review M1: the client's switches and lock from the first moment, not from the gateway's first ready or the
+// first minute tick (a locked launch fails loudly with EGRESS_UNAVAILABLE until the gateway is ready).
+applyEgress();
 front.start().catch(portTaken);
 
 // Sessions are written within a second; flush them when launchd, Ctrl-C or a closed terminal stops the server.

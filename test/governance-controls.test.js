@@ -642,7 +642,12 @@ test('network egress: off in js mode, in place only with every condition, partia
     ],
     [{ lockdown: { asked: false, inForce: false } }, /^lock-down not in force: not asked$/],
     [{ netGrant: 'all but denied' }, /^lock-down in force/],
-    [{ port: null }, /egress endpoint is not ready/],
+    [{ port: null }, /egress endpoint is not ready: calls on go leave directly meanwhile$/],
+    [
+      { allowList: 'report', counts24h: { total: 3, refused: 0, wouldRefuse: 1, truncated: true } },
+      /would be refused \(the newest 2 MB of the log only\)$/,
+    ],
+    [{ port: null, locked: true }, /not ready: outbound calls fail with EGRESS_UNAVAILABLE meanwhile/],
     [{ engines: {} }, /^0 of 0 caller classes on go$/],
   ];
   for (const [v, re] of cases) {
