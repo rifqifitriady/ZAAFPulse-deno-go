@@ -58,9 +58,9 @@ const egressDiscovery = createDiscoveryLoader({
   configure: (opts) => egress.configure(opts && { ...opts, log }),
   log,
 });
-const callTool = (...args) => {
+const callTool = async (...args) => {
   try {
-    egressDiscovery.refresh();
+    await egressDiscovery.refresh();
   } catch (err) {
     log(`egress: ${err.message}`);
   }
