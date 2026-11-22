@@ -71,7 +71,7 @@ test('every source in one config gives the expected list, sorted and unique, por
     got.map((r) => `${r.host}:${r.port}`),
     [
       '*.pinecone.io:443',
-      '*.roamresearch.com:443',
+      '*.roamresearch.com:undefined',
       'abc.apps.dynatrace.com:443',
       'abc.live.dynatrace.com:443',
       'agent.example.com:443',
@@ -133,7 +133,7 @@ test('loopback, unparsable and unknown-scheme URLs are skipped; IPv6 without bra
   assert.deepEqual(ruleOf('http://Example.COM./'), { host: 'example.com', port: 80 });
   assert.deepEqual(ruleOf('https://127.0.0.2:8443'), { host: '127.0.0.2', port: 8443 }, 'only the granted loopback');
   const wild = allowList({ brain: { sources: [{ type: 'roam' }, { type: 'pinecone' }] } });
-  assert.ok(wild.some((r) => r.host === '*.roamresearch.com' && r.port === 443));
+  assert.ok(wild.some((r) => r.host === '*.roamresearch.com' && r.port === undefined)); // any port (peer redirect)
   assert.ok(wild.some((r) => r.host === '*.pinecone.io' && r.port === 443));
 });
 
