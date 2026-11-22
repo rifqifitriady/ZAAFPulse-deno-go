@@ -68,6 +68,7 @@ const { createSecrets } = require('./lib/secrets');
 const { createAudit } = require('./lib/audit');
 const { createEgressLog } = require('./lib/egress-log');
 const egressClient = require('./lib/egress');
+const { egressRouting, gateFromLog } = require('./lib/egress-switch');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
@@ -264,6 +265,44 @@ const memo = new Map();
 const audit = createAudit(path.join(DIR, '.cache', 'mcp-audit.jsonl'));
 // P5: the gateway's outbound connections (egress.event), .data/egress.jsonl.
 const egressLog = createEgressLog({ dir: path.join(DIR, '.data') });
+// Each egress caller class's engine (P5 Decision 11, lib/egress-switch.js): direct, check, or go once its gate is met
+// in the egress log (the newest EGRESS_GATE_TAIL records of .data/egress.jsonl, plus the checks the client could not
+// ask). One read of the log per call, one gate per rule.
+const EGRESS_GATE_TAIL = 20000;
+const egressRoutingNow = () => {
+  let records = null;
+  const gates = new Map();
+  return egressRouting(rawConfig().egress, {
+    gate: (c, rule) => {
+      const k = `${rule.days}/${rule.min}`;
+      if (!gates.has(k)) {
+        if (!records) records = [...egressLog.tail(EGRESS_GATE_TAIL), ...egressClient.checkErrorRecords()];
+        gates.set(k, gateFromLog(records, rule, Date.now()));
+      }
+      return gates.get(k)[c];
+    },
+  });
+};
+// The ready gateway's egress endpoint ({ port, token: the front token }), or null; the classes last pushed to it.
+let egressEndpoint = null;
+let pushedEgress = null;
+// Points the egress client at the endpoint with each class's gated engine (direct when no gateway is ready); returns
+// the engines.
+function applyEgress() {
+  const engines = egressRoutingNow().engines;
+  egressClient.configure(
+    egressEndpoint
+      ? {
+          port: egressEndpoint.port,
+          token: egressClient.deriveToken(egressEndpoint.token),
+          engines,
+          lockdown: false,
+        }
+      : null,
+  );
+  return engines;
+}
+
 let integ = { mtimeMs: -1, registry: null };
 function getIntegrations() {
   let mtimeMs = 0;
@@ -361,7 +400,11 @@ function configChanged(before, after) {
     front.push(); // OTLP export on or off moves chat between the engines (final review I2), and the trace switch
   } else if (front && JSON.stringify((before || {}).tracing) !== JSON.stringify((after || {}).tracing)) {
     front.push(); // the local trace store on or off: the gateway's trace switch (P4f D8)
+  } else if (front && JSON.stringify((before || {}).egress) !== JSON.stringify((after || {}).egress)) {
+    front.push(); // P5: the egress classes the gateway shows (and the allow-list from P5c)
   }
+  // P5: the egress client takes a changed switch or gate rule at once.
+  if (JSON.stringify((before || {}).egress) !== JSON.stringify((after || {}).egress)) applyEgress();
   try {
     const d = govDiff(before, after);
     if (!d.changes.length) return;
@@ -1659,8 +1702,15 @@ const handler = async (req, res) => {
       return send(res, 200, redactGateway(await gateway.admin('', 'GET'), role));
     // The gateway process (P4a D6): mode, state, restarts. Before the admin routes, whose pattern it matches; owner only
     // (it is no viewer read, so the role check above refuses anyone else).
-    if (url.pathname === '/api/gateway/status' && req.method === 'GET')
-      return send(res, 200, { ...front.status(), notes: frontRouting().notes, shadow: shadowLog.stats() });
+    if (url.pathname === '/api/gateway/status' && req.method === 'GET') {
+      const eg = egressRoutingNow();
+      return send(res, 200, {
+        ...front.status(),
+        notes: frontRouting().notes,
+        shadow: shadowLog.stats(),
+        egress: { port: front.egressPort, engines: eg.engines, notes: eg.notes, lockdown: false },
+      });
+    }
     const gwAdmin = url.pathname.match(/^\/api\/gateway\/([a-z]+)$/);
     if (gwAdmin) {
       // Only the request log is read with GET. Every other admin route writes (defaults, settings), spends tokens
@@ -2304,8 +2354,12 @@ const frontRouting = () =>
 // the gateway was last pushed (final review I2).
 // The trace switch too (P4f D8): tracing or OTLP export turned on or off without a save (an environment variable read at
 // start, a store that failed to open) reaches the gateway within a minute.
+// P5 Decision 11: each egress class's engine, its gate looked at in the same minute: the client follows at once, and
+// the gateway gets a new push when the classes it shows changed.
 setInterval(() => {
-  if (front && !front.pushIfChanged(frontRouting().engines) && pushedTrace !== null && traceLive() !== pushedTrace)
+  const egressNow = JSON.stringify(applyEgress());
+  if (!front || front.pushIfChanged(frontRouting().engines)) return;
+  if ((pushedTrace !== null && traceLive() !== pushedTrace) || (pushedEgress !== null && egressNow !== pushedEgress))
     front.push();
 }, 60000).unref();
 // gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
@@ -2340,12 +2394,16 @@ front = createFront({
   sources: {
     config: () => {
       pushedTrace = traceLive();
+      const ec = rawConfig().egress;
+      const egressEngines = egressRoutingNow().engines;
+      pushedEgress = JSON.stringify(egressEngines);
       return configPush({
         gateway: rawConfig().gateway,
         keys: gateway.rawKeys(),
         pricing: config.pricing,
         trace: { spans: pushedTrace },
-        egress: rawConfig().egress, // P5: the egress section (each class's switch; the allow-list from P5c)
+        // P5: the egress section: each class's engine after its gate (shown by the gateway); the allow-list from P5c.
+        egress: { ...(ec && typeof ec === 'object' ? ec : {}), classes: egressEngines },
       });
     },
     secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
@@ -2378,17 +2436,10 @@ front = createFront({
   },
   beforeAck: fi ? fi.beforeAck : undefined,
   // P5: the egress client follows the gateway: its endpoint on each ready, direct again when the gateway is gone.
-  onEgress: (e) =>
-    egressClient.configure(
-      e
-        ? {
-            port: e.port,
-            token: egressClient.deriveToken(e.token),
-            engines: egressClient.switches((rawConfig().egress || {}).classes),
-            lockdown: false,
-          }
-        : null,
-    ),
+  onEgress: (e) => {
+    egressEndpoint = e ? { port: e.port, token: e.token } : null;
+    applyEgress();
+  },
   log: (line) => console.error(line),
   onServing: (mode) => {
     serving();

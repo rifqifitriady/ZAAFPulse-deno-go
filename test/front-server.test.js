@@ -51,6 +51,25 @@ test('js mode (the default): the server holds the port, no gateway process', asy
   assert.ok(Object.values(st.engines).every((e) => e === 'js'));
 });
 
+test('status: the egress classes after their gate (P5 Decision 11); no endpoint in js mode', async (t) => {
+  const config = { ...SEED_CONFIG, egress: { classes: { gateway: 'go', mcp: 'check', notify: 'bogus' } } };
+  const s = await startServer({
+    runtime: RUNTIME,
+    config,
+    env: { ZAAFPULSE_GW_BIN: path.join(__dirname, 'no-such-gateway') },
+  });
+  t.after(() => s.stop());
+  const st = await status(s.base);
+  assert.equal(st.egress.port, null);
+  assert.equal(st.egress.lockdown, false);
+  assert.equal(st.egress.engines.gateway, 'check'); // asked go, nothing checked yet
+  assert.match(st.egress.notes.gateway, /0 of 20 gateway calls checked clean/);
+  assert.equal(st.egress.engines.mcp, 'check');
+  assert.equal(st.egress.engines.notify, 'direct');
+  assert.equal(st.egress.engines.brain, 'direct');
+  assert.deepEqual(Object.keys(st.egress.notes), ['gateway']);
+});
+
 test('front mode: dashboard and gateway through Go; /v1/traces sees a loopback client and its forwarding headers', async (t) => {
   if (!stubBin(t)) return;
   const s = await startServer({ runtime: RUNTIME, config: FRONT });
