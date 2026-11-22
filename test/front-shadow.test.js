@@ -12,6 +12,9 @@ const {
   noteAnswer,
   noteClient,
   noteUsage,
+  noteRoute,
+  noteLine,
+  noteThrown,
   takeCapture,
 } = require('../lib/gateway/shadow');
 const { createShadowLog, shadowEndpoints, DAY } = require('../lib/front/shadow-log');
@@ -70,6 +73,68 @@ test('a refusal leaves its error body and its usage line in the capture (P4e)', 
   // Outside a marked request both are no-ops.
   noteClient('x');
   noteUsage({});
+});
+
+test('a route call keeps its tape, every line and its thrown calls; other captures stay as they were (P4h)', async () => {
+  // No route resolved: a thrown call and the lines leave the capture exactly as before.
+  const plain = { statusCode: 502 };
+  await withShadow(
+    '00112233445566dd',
+    async () => {
+      noteProviderRequest('http://p/v1/chat/completions', {}, '{}');
+      noteThrown('p: ECONNREFUSED', false);
+      noteLine({ status: 599 });
+    },
+    plain,
+  );
+  assert.deepEqual(takeCapture('00112233445566dd'), {
+    providerRequests: [{ url: 'http://p/v1/chat/completions', headers: {}, body: '{}' }],
+    providerResponse: null,
+    upstream: [],
+    client: { status: 502, headers: {}, body: null, truncated: false },
+    usage: null,
+    tape: { random: [], now: [] },
+  });
+  // A route call: the tape, every line in order, the thrown calls in upstream (a token failure marked).
+  const tape = { name: 'router/r', n: 1, cooling: ['b'], order: ['a/m', 'b/m'] };
+  await withShadow('00112233445566ee', async () => {
+    noteRoute(tape);
+    noteProviderRequest('http://a/v1/chat/completions', {}, '{}');
+    noteThrown('a: ECONNREFUSED', false);
+    noteLine({ status: 599 });
+    noteThrown('b: token refresh failed', true);
+    noteLine({ status: 599, provider: 'b' });
+    noteAnswer({ status: 200, body: '{}' }, { status: 200, body: '{}' }, { status: 200 });
+    noteLine({ status: 200 });
+  });
+  const c = takeCapture('00112233445566ee');
+  assert.deepEqual(c.routes, [tape]);
+  assert.equal(c.runtime, process.versions.deno ? 'deno' : 'node');
+  assert.deepEqual(c.lines, [{ status: 599 }, { status: 599, provider: 'b' }, { status: 200 }]);
+  assert.deepEqual(c.upstream, [{ thrown: 'a: ECONNREFUSED' }, { thrown: 'b: token refresh failed', token: true }]);
+  // Outside a marked request they are no-ops.
+  noteRoute(tape);
+  noteLine({});
+  noteThrown('x', false);
+});
+
+test('the shadow log: routeView is counted per class and for routes, outside the diff gate (P4h Decision 11)', (t) => {
+  const dir = tmpDir(t, 'shadow-log-routeview');
+  const now = 1_000_000_000_000;
+  const log = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
+  log.append({ class: 'chat', outcome: 'same', route: true, routeView: 'same' });
+  log.append({ class: 'chat', outcome: 'same', route: true, routeView: 'differs' });
+  log.append({ class: 'messages', outcome: 'same', route: true, routeView: 'differs' });
+  log.append({ class: 'chat', outcome: 'same', route: true, routeView: 'nonsense' });
+  const st = log.stats();
+  assert.deepEqual(st.chat.routeView, { same: 1, differs: 1 });
+  assert.deepEqual(st.messages.routeView, { same: 0, differs: 1 });
+  assert.deepEqual(st.routes.routeView, { same: 1, differs: 2 });
+  assert.deepEqual([st.routes.compared, st.routes.diffs], [4, 0], 'a view that differs is no diff');
+  assert.deepEqual(log.gate('routes', { days: 0, min: 4 }), { ok: true });
+  log.append({ class: 'embeddings', outcome: 'same' });
+  assert.equal(log.stats().embeddings.routeView, undefined, 'a line that is no route call has none');
+  assert.deepEqual(createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now }).stats(), log.stats());
 });
 
 test('the shadow log: counts per class, and the switch rule (owner: 1 clean day and 20 compares; a diff restarts it)', (t) => {
@@ -153,6 +218,27 @@ test('the shadow log: a call to a token-auth provider also counts for provider-a
   assert.match(log.gate('provider-auth').reason, /last provider-auth compare differed/);
   const again = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
   assert.deepEqual(again.stats(), log.stats(), 'read back after a restart');
+});
+
+test('the shadow log: a route call also counts for routes, its hand-offs by reason (P4h spec Decision 2)', (t) => {
+  const dir = tmpDir(t, 'shadow-log-routes');
+  const now = 1_000_000_000_000;
+  const log = createShadowLog({ file: path.join(dir, 's.jsonl'), now: () => now });
+  log.append({ class: 'chat', outcome: 'handoff', reason: 'model: a route' });
+  assert.equal(log.stats().routes, undefined, 'a line that is no route call leaves routes alone');
+  log.append({ class: 'chat', outcome: 'same', route: true });
+  log.append({ class: 'chat', outcome: 'handoff', reason: 'route: no usable target' });
+  const st = log.stats();
+  assert.deepEqual([st.routes.compared, st.routes.handoffs], [1, 1]);
+});
+
+test('routing: routes is a go class with its own gate and note (P4h spec Decision 2)', () => {
+  const gw = { engines: { chat: 'go', routes: 'go' }, shadow: ['routes'] };
+  const r = routing(gw, { gate: (c) => (c === 'routes' ? { ok: false, reason: 'r' } : { ok: true }) });
+  assert.deepEqual([r.engines.chat, r.engines.routes, r.notes.routes], ['go', 'js', 'r']);
+  assert.deepEqual(shadowOf(gw, r.engines), ['routes']);
+  assert.equal(routing(gw).engines.routes, 'go');
+  assert.equal(routing({}).engines.routes, 'js', 'js by default');
 });
 
 test('routing: provider-auth is a go class with its own gate and note (P4g spec Decision 14)', () => {

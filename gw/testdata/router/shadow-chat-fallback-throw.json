@@ -1,0 +1,219 @@
+{
+  "secrets": [
+    "c2stb2Etcm91dGVyLWZpeHR1cmUtMTIzNDU2",
+    "c2stb2Itcm91dGVyLWZpeHR1cmUtNzc4ODk5"
+  ],
+  "fn": "shadow",
+  "in": {
+    "seq": "seq-chat-fallback-throw"
+  },
+  "out": {
+    "steps": [
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:9/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+            },
+            {
+              "url": "http://127.0.0.1:13/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:1>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+            }
+          ],
+          "providerResponse": {
+            "status": 200,
+            "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+          },
+          "upstream": [
+            {
+              "thrown": "oa: ECONNREFUSED"
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}",
+              "ended": "eof",
+              "truncated": false
+            }
+          ],
+          "client": {
+            "headers": {
+              "content-type": "application/json"
+            },
+            "status": 200,
+            "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"router/fb\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "ob",
+            "model": "router/fb",
+            "routedTo": "ob/m1",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 200,
+            "ms": 0,
+            "input": 1000,
+            "output": 500,
+            "cached": 200,
+            "cost": 0.002
+          },
+          "tape": {
+            "random": [],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/fb",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "oa/m1",
+                "ob/m1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/fb",
+              "kind": "chat",
+              "format": "openai",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 599,
+              "ms": 0,
+              "error": "oa: ECONNREFUSED",
+              "cost": 0
+            },
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "ob",
+              "model": "router/fb",
+              "routedTo": "ob/m1",
+              "kind": "chat",
+              "format": "openai",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 200,
+              "ms": 0,
+              "input": 1000,
+              "output": 500,
+              "cached": 200,
+              "cost": 0.002
+            }
+          ],
+          "runtime": "<<runtime>>"
+        }
+      },
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:9/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+            }
+          ],
+          "providerResponse": {
+            "status": 200,
+            "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+          },
+          "upstream": [
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}",
+              "ended": "eof",
+              "truncated": false
+            }
+          ],
+          "client": {
+            "headers": {
+              "content-type": "application/json"
+            },
+            "status": 200,
+            "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"router/fb\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "oa",
+            "model": "router/fb",
+            "routedTo": "oa/m1",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 200,
+            "ms": 0,
+            "input": 1000,
+            "output": 500,
+            "cached": 200,
+            "cost": 0.002
+          },
+          "tape": {
+            "random": [],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/fb",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "oa/m1",
+                "ob/m1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/fb",
+              "routedTo": "oa/m1",
+              "kind": "chat",
+              "format": "openai",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 200,
+              "ms": 0,
+              "input": 1000,
+              "output": 500,
+              "cached": 200,
+              "cost": 0.002
+            }
+          ],
+          "runtime": "<<runtime>>"
+        }
+      }
+    ]
+  }
+}

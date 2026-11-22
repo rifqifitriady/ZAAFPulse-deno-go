@@ -54,8 +54,9 @@ const CASES = [
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }, (r) => assert.match(r.text, /^data: /), true],
   ['embeddings', '/v1/embeddings', () => ({ authorization: `Bearer ${h.key}` }), { model: 'oa/m1', input: 'hi' },
     (r) => assert.equal(r.status, 200), true],
-  ['messages to a route: handed to the server', '/v1/messages', xKey,
-    { model: 'router/fallback', max_tokens: 9, messages: user }, (r) => assert.equal(r.status, 200), false],
+  // P4h: the routes switch is on go with the classes (the harness puts every GO_CLASSES entry on go).
+  ['messages to a route: served on go', '/v1/messages', xKey,
+    { model: 'router/fallback', max_tokens: 9, messages: user }, (r) => assert.equal(r.status, 200), true],
 ];
 
 for (const [name, p, headers, body, check, byGo] of CASES)

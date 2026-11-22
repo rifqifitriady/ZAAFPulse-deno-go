@@ -1,0 +1,150 @@
+{
+  "fn": "spans",
+  "in": {
+    "request": {},
+    "answer": {
+      "status": 200,
+      "chunks": [
+        "{\"id\":\"chatcmpl-r\",\"object\":\"chat.completion\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}"
+      ]
+    },
+    "prior": [
+      {
+        "ts": 1767225599990,
+        "ms": 4.25,
+        "status": 599,
+        "cost": 0,
+        "keyId": "k1",
+        "provider": "v6",
+        "model": "router/r1",
+        "kind": "chat",
+        "format": "openai",
+        "stream": false,
+        "local": true,
+        "error": "fetch failed"
+      }
+    ],
+    "usage": {
+      "ts": 1767225600000,
+      "ms": 12.345,
+      "status": 200,
+      "input": 1000,
+      "output": 500,
+      "cost": 0.002,
+      "keyId": "k1",
+      "provider": "oa",
+      "model": "router/r1",
+      "kind": "chat",
+      "format": "openai",
+      "stream": false,
+      "local": true,
+      "routedTo": "oa/m1"
+    },
+    "providerSpan": {
+      "name": "oa",
+      "address": "127.0.0.1",
+      "port": 9
+    },
+    "priorProviderSpans": [
+      {
+        "name": "ollama",
+        "address": "[::1]",
+        "port": 11434
+      }
+    ]
+  },
+  "out": {
+    "traceId": "01010101010101010101010101010101",
+    "spans": [
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0202020202020202",
+          "p": null,
+          "n": "POST /v1/chat/completions",
+          "k": "server",
+          "st": 0,
+          "d": 0,
+          "ok": true,
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "http.request.method": "POST",
+            "http.route": "/v1/chat/completions",
+            "url.path": "/v1/chat/completions",
+            "url.scheme": "http",
+            "network.protocol.version": "1.1",
+            "http.response.status_code": 200
+          }
+        }
+      },
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0303030303030303",
+          "p": "0202020202020202",
+          "n": "chat router/r1",
+          "k": "client",
+          "st": 1767225599985750,
+          "d": 4250,
+          "ok": false,
+          "err": "fetch failed",
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.provider.name": "ollama",
+            "gen_ai.request.model": "router/r1",
+            "gen_ai.response.model": "router/r1",
+            "server.address": "[::1]",
+            "server.port": 11434,
+            "gen_ai.request.stream": false,
+            "zaafpulse.cost.usd": 0,
+            "zaafpulse.api_key.id": "k1",
+            "zaafpulse.provider.id": "v6",
+            "zaafpulse.request.kind": "chat",
+            "zaafpulse.request.format": "openai",
+            "error.type": "netwo\u0072k_error"
+          }
+        },
+        "otlp": {
+          "message": "fetch failed"
+        }
+      },
+      {
+        "span": {
+          "t": "01010101010101010101010101010101",
+          "s": "0404040404040404",
+          "p": "0202020202020202",
+          "n": "chat router/r1",
+          "k": "client",
+          "st": 1767225599987655,
+          "d": 12345,
+          "ok": true,
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.provider.name": "oa",
+            "gen_ai.request.model": "router/r1",
+            "gen_ai.response.model": "oa/m1",
+            "server.address": "127.0.0.1",
+            "server.port": 9,
+            "gen_ai.request.stream": false,
+            "gen_ai.usage.input_tokens": 1000,
+            "gen_ai.usage.output_tokens": 500,
+            "zaafpulse.cost.usd": 0.002,
+            "zaafpulse.api_key.id": "k1",
+            "zaafpulse.provider.id": "oa",
+            "zaafpulse.request.kind": "chat",
+            "zaafpulse.request.format": "openai",
+            "gen_ai.response.id": "chatcmpl-r",
+            "gen_ai.response.finish_reasons": [
+              "stop"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

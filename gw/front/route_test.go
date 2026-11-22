@@ -231,6 +231,9 @@ func TestChatStreamSubClassDispatch(t *testing.T) {
 		// P4g Decision 14: a shadowed provider-auth compares chat calls while chat is on js; on go it alone serves nothing.
 		{map[string]string{"chat": "js", "provider-auth": "js"}, []string{"provider-auth"}, "shadow"},
 		{map[string]string{"chat": "js", "provider-auth": "go"}, nil, "js"},
+		// P4h Decision 2: a shadowed routes switch compares chat calls while chat is on js; on go it alone serves nothing.
+		{map[string]string{"chat": "js", "routes": "js"}, []string{"routes"}, "shadow"},
+		{map[string]string{"chat": "js", "routes": "go"}, nil, "js"},
 	} {
 		s := startFront(t, up.port(), func(cfg *Config) { cfg.Engines = c.engines })
 		e := &recEngine{calls: make(chan string, 1)}
@@ -261,12 +264,13 @@ func TestChatStreamSubClassDispatch(t *testing.T) {
 
 // P4g Decision 14: while provider-auth is shadowed, the front gives the engine every provider class (chat, messages,
 // responses, gemini, embeddings) on js, and not mcp, which calls no provider; a shadowed token-saver gives it the
-// saver's classes only (embeddings is not one).
+// saver's classes only (embeddings is not one); a shadowed routes switch the route classes, the provider classes (P4h
+// Decision 2).
 func TestProviderAuthShadowClasses(t *testing.T) {
 	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "js") })
 	paths := map[string]string{"chat": "/v1/chat/completions", "messages": "/v1/messages", "responses": "/v1/responses",
 		"gemini": "/v1beta/models/g:generateContent", "embeddings": "/v1/embeddings", "mcp": "/mcp"}
-	for _, sw := range []string{"provider-auth", "token-saver"} {
+	for _, sw := range []string{"provider-auth", "token-saver", "routes"} {
 		for class, path := range paths {
 			want := "shadow"
 			if class == "mcp" || (sw == "token-saver" && class == "embeddings") {
@@ -291,8 +295,8 @@ func TestProviderAuthShadowClasses(t *testing.T) {
 			}
 		}
 	}
-	if !GoClasses["provider-auth"] {
-		t.Fatal("provider-auth is not a go class")
+	if !GoClasses["provider-auth"] || !GoClasses["routes"] {
+		t.Fatal("provider-auth or routes is not a go class")
 	}
 }
 

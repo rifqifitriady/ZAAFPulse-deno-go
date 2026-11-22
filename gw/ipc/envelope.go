@@ -51,6 +51,9 @@ var bodies = map[string]func() any{
 	TypeError:           func() any { return new(ErrorBody) },
 	TypeRateLimitTake:   func() any { return new(RateLimitTake) },
 	TypeRateLimitWindow: func() any { return new(RateLimitWindow) },
+	TypeProviderNote:    func() any { return new(ProviderNote) },
+	TypeRouteTake:       func() any { return new(RouteTake) },
+	TypeRouteState:      func() any { return new(RouteState) },
 }
 
 // Types lists the v1 message types, sorted.

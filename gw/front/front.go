@@ -61,13 +61,13 @@ var Subs = map[string][]string{
 }
 
 // GoClasses are the classes a config.push may put on go: every sub-class of Subs (a path class is also its own first
-// sub-class), token-saver, the token saver's switch (rtk spec D13), and provider-auth, the switch of token-auth provider
-// calls (P4g spec Decision 14). Classify never returns a sub-class that is not a path class. A config.push that puts
-// another class on go is refused.
+// sub-class), token-saver, the token saver's switch (rtk spec D13), provider-auth, the switch of token-auth provider
+// calls (P4g spec Decision 14), and routes, the switch of route calls (P4h spec Decision 2). Classify never returns a
+// sub-class that is not a path class. A config.push that puts another class on go is refused.
 var GoClasses = func() map[string]bool {
-	// The token saver's switch (rtk spec D13) and the provider-auth switch (P4g spec Decision 14): not paths, read by the
-	// engine.
-	m := map[string]bool{"token-saver": true, "provider-auth": true}
+	// The token saver's switch (rtk spec D13), the provider-auth switch (P4g spec Decision 14) and the routes switch
+	// (P4h spec Decision 2): not paths, read by the engine.
+	m := map[string]bool{"token-saver": true, "provider-auth": true, "routes": true}
 	for _, subs := range Subs {
 		for _, c := range subs {
 			m[c] = true
@@ -204,6 +204,10 @@ func (s *Server) toEngine(class string) (serve, shadow bool) {
 		// A shadowed provider-auth compares the calls to a token-auth target, also while their class is on js (P4g spec
 		// Decision 14).
 		_, sh := s.subModes("provider-auth")
+		shadow = shadow || sh
+		// A shadowed routes switch compares the route calls, also while their class is on js (P4h spec Decision 2, D6):
+		// the provider classes are the route classes.
+		_, sh = s.subModes("routes")
 		shadow = shadow || sh
 	}
 	return serve, shadow

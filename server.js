@@ -82,7 +82,7 @@ const { gwEnv } = require('./lib/ipc/env');
 const { createFront, engineOf, routing, shadowOf, gwArgs } = require('./lib/front');
 const { createShadowLog, shadowEndpoints } = require('./lib/front/shadow-log');
 const { toolEndpoint } = require('./lib/front/tools');
-const { configPush, secretsPush, snapshotPush, windowPush } = require('./lib/front/push');
+const { configPush, secretsPush, snapshotPush, windowPush, routeStatePush } = require('./lib/front/push');
 const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
 const { createReceiver } = require('./lib/trace/otlp');
@@ -597,6 +597,9 @@ const gateway = createGateway({
 // One rate-limit window across the engines (P4f D16): a request this server admits under a key goes to the gateway in
 // front (a control message; nothing while no gateway is ready).
 gateway.onRateTake((keyId, at) => front && front.sendControl('ratelimit.take', { keyId, at }));
+// The routing state across the engines (P4h Decision 3): each provider answer this server reads (provider.note) and each
+// round-robin take (route.take) goes to the gateway in front, a control message (nothing while none is ready).
+gateway.onRouteEvent((type, body) => front && front.sendControl(type, body));
 
 // The IPC ingest of the Go gateway (P4a E3, E4): strict writers of its own (lib/ipc/server-sinks.js), never the
 // wrapped ones (the gateway's usage.record, govRecord, the trace recorder), and the marks from the stores' tails and
@@ -2342,6 +2345,7 @@ front = createFront({
     secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
     snapshot: () => snapshotPush({ service: costBudgets, keyIds: gateway.rawKeys().map((k) => k.id) }),
     window: () => windowPush(gateway.rateWindows()), // P4f D16: the rate-limit window a new gateway starts with
+    routes: () => routeStatePush(gateway.routeState()), // P4h Decision 3: the rotation counters and every cooldown
   },
   // Design rule 2 (P4f D24, owner decision; final review I5): calls that passed a stale budget snapshot are marked,
   // alerted and audited: per alert window, an "opened" entry at the alert and a "closed" one with the window's count
@@ -2362,6 +2366,9 @@ front = createFront({
   // P4f D16: a request the go engine admitted counts in the key's window here.
   onControl: (msg) => {
     if (msg.type === 'ratelimit.take' && msg.body) gateway.noteRateTake(msg.body.keyId, msg.body.at);
+    // P4h Decision 3: a provider answer the go engine read, and a round-robin take it made.
+    else if (msg.type === 'provider.note' && msg.body) gateway.noteProvider(msg.body);
+    else if (msg.type === 'route.take' && msg.body) gateway.noteRouteTake(msg.body);
   },
   beforeAck: fi ? fi.beforeAck : undefined,
   log: (line) => console.error(line),

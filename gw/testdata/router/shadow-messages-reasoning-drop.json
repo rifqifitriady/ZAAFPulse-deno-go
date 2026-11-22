@@ -1,0 +1,279 @@
+{
+  "secrets": [
+    "c2stb2Etcm91dGVyLWZpeHR1cmUtMTIzNDU2"
+  ],
+  "fn": "shadow",
+  "in": {
+    "seq": "seq-messages-reasoning-drop"
+  },
+  "out": {
+    "steps": [
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:12/v1beta/openai/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"gemini-2.5-pro\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":64,\"reasoning_effort\":\"medium\",\"stream\":false}"
+            },
+            {
+              "url": "http://127.0.0.1:9/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":64,\"stream\":false}"
+            }
+          ],
+          "providerResponse": null,
+          "upstream": [
+            {
+              "status": 429,
+              "contentType": "application/json",
+              "body": "",
+              "ended": "cut",
+              "truncated": false
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}",
+              "ended": "eof",
+              "truncated": false
+            }
+          ],
+          "client": {
+            "status": 200,
+            "headers": {
+              "content-type": "application/json",
+              "x-zp-dropped": "reasoning"
+            },
+            "body": "{\"id\":\"msg_010101010101010101010101\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"router/gem\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":800,\"output_tokens\":500,\"cache_read_input_tokens\":200,\"cache_creation_input_tokens\":0}}",
+            "truncated": false
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "oa",
+            "model": "router/gem",
+            "routedTo": "oa/m1",
+            "kind": "chat",
+            "format": "anthropic",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 200,
+            "ms": 0,
+            "input": 1000,
+            "output": 500,
+            "cached": 200,
+            "cost": 0.002
+          },
+          "tape": {
+            "random": [
+              "010101010101010101010101"
+            ],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/gem",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "gm/gemini-2.5-pro",
+                "oa/m1"
+              ]
+            },
+            {
+              "name": "router/gem",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "gm/gemini-2.5-pro",
+                "oa/m1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "gm",
+              "model": "router/gem",
+              "routedTo": "gm/gemini-2.5-pro",
+              "kind": "chat",
+              "format": "anthropic",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 429,
+              "ms": 0,
+              "error": "fell back to the next route target",
+              "cost": 0
+            },
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/gem",
+              "routedTo": "oa/m1",
+              "kind": "chat",
+              "format": "anthropic",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 200,
+              "ms": 0,
+              "input": 1000,
+              "output": 500,
+              "cached": 200,
+              "cost": 0.002
+            }
+          ],
+          "runtime": "<<runtime>>"
+        }
+      },
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:9/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":64,\"stream\":false}"
+            },
+            {
+              "url": "http://127.0.0.1:12/v1beta/openai/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"gemini-2.5-pro\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":64,\"reasoning_effort\":\"medium\",\"stream\":false}"
+            }
+          ],
+          "providerResponse": null,
+          "upstream": [
+            {
+              "status": 500,
+              "contentType": "application/json",
+              "body": "",
+              "ended": "cut",
+              "truncated": false
+            },
+            {
+              "status": 200,
+              "contentType": "application/json",
+              "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}",
+              "ended": "eof",
+              "truncated": false
+            }
+          ],
+          "client": {
+            "status": 200,
+            "headers": {
+              "content-type": "application/json",
+              "x-zp-dropped": "reasoning"
+            },
+            "body": "{\"id\":\"msg_020202020202020202020202\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"router/gem\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":800,\"output_tokens\":500,\"cache_read_input_tokens\":200,\"cache_creation_input_tokens\":0}}",
+            "truncated": false
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "gm",
+            "model": "router/gem",
+            "routedTo": "gm/gemini-2.5-pro",
+            "kind": "chat",
+            "format": "anthropic",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 200,
+            "ms": 0,
+            "input": 1000,
+            "output": 500,
+            "cached": 200,
+            "cost": 0.00625
+          },
+          "tape": {
+            "random": [
+              "020202020202020202020202"
+            ],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/gem",
+              "n": 0,
+              "cooling": [
+                "gm"
+              ],
+              "order": [
+                "oa/m1",
+                "gm/gemini-2.5-pro"
+              ]
+            },
+            {
+              "name": "router/gem",
+              "n": 0,
+              "cooling": [
+                "gm"
+              ],
+              "order": [
+                "oa/m1",
+                "gm/gemini-2.5-pro"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/gem",
+              "routedTo": "oa/m1",
+              "kind": "chat",
+              "format": "anthropic",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 500,
+              "ms": 0,
+              "error": "fell back to the next route target",
+              "cost": 0
+            },
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "gm",
+              "model": "router/gem",
+              "routedTo": "gm/gemini-2.5-pro",
+              "kind": "chat",
+              "format": "anthropic",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 200,
+              "ms": 0,
+              "input": 1000,
+              "output": 500,
+              "cached": 200,
+              "cost": 0.00625
+            }
+          ],
+          "runtime": "<<runtime>>"
+        }
+      }
+    ]
+  }
+}
