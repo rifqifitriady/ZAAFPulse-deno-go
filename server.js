@@ -69,6 +69,7 @@ const { createAudit } = require('./lib/audit');
 const { createEgressLog } = require('./lib/egress-log');
 const egressClient = require('./lib/egress');
 const { egressRouting, createEgressGate } = require('./lib/egress-switch');
+const { writeDiscovery, removeDiscovery } = require('./lib/egress-discovery');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
@@ -282,21 +283,30 @@ const egressRoutingNow = () =>
 // The ready gateway's egress endpoint ({ port, token: the front token }), or null; the classes last pushed to it.
 let egressEndpoint = null;
 let pushedEgress = null;
-// Points the egress client at the endpoint with each class's gated engine (direct when no gateway is ready); returns
-// the engines.
+// P5 Decision 15: the discovery file the stdio MCP server (mcp.js) reads to use the same endpoint; present only while
+// the gateway is ready (lib/egress-discovery.js), removed when it is gone and when this process exits.
+const EGRESS_DISCOVERY = path.join(DIR, '.data', 'egress.json');
+process.on('exit', () => removeDiscovery(EGRESS_DISCOVERY));
+// Points the client at the endpoint with each class's gated engine (direct when no gateway is ready), and writes or
+// removes the discovery file to match; returns the engines.
 function applyEgress() {
   egressRouted = egressRoutingNow();
   const engines = egressRouted.engines;
-  egressClient.configure(
-    egressEndpoint
-      ? {
-          port: egressEndpoint.port,
-          token: egressClient.deriveToken(egressEndpoint.token),
-          engines,
-          lockdown: false,
-        }
-      : null,
-  );
+  const opts = egressEndpoint
+    ? {
+        port: egressEndpoint.port,
+        token: egressClient.deriveToken(egressEndpoint.token),
+        engines,
+        lockdown: false,
+      }
+    : null;
+  egressClient.configure(opts);
+  try {
+    if (opts) writeDiscovery(EGRESS_DISCOVERY, opts);
+    else removeDiscovery(EGRESS_DISCOVERY);
+  } catch (err) {
+    console.error(`egress: the discovery file ${EGRESS_DISCOVERY} could not be written: ${err.message}`);
+  }
   return engines;
 }
 

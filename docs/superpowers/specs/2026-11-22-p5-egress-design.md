@@ -159,9 +159,9 @@ No update check exists in this tree (the README's update notes are P6). DNS: onl
    start with `ZAAFPULSE_EGRESS_LOCKDOWN=0`, which wins over the config; a service install computes its launch line at
    install time, so `zaafpulse service install` again applies either. The lock-down can always be turned off.
 15. **The stdio MCP server (X2) uses the dashboard's proxy when one runs.** The server writes
-   `.data/egress.json` (`{pid, port, token, classes, lockdown}`, mode 0600, removed on stop) when its gateway is ready;
-   `mcp.js` configures `lib/egress.js` from it on each call (re-read when its mtime changes, ignored when the pid is
-   gone). Without it, `mcp.js` goes direct. Its own net grant is not narrowed in P5 (owner question Q2).
+   `.data/egress.json` (`{pid, port, token, engines, lockdown}`: `engines` the gated engine of each class, as the
+   client is configured; mode 0600, written with a rename, removed on stop) when its gateway is ready; `mcp.js`
+   configures `lib/egress.js` from it on each call (re-read when it changes, ignored when the pid is gone). Without it, `mcp.js` goes direct. Its own net grant is not narrowed in P5 (owner question Q2).
 16. **The compiled single-file binary keeps the broad net grant baked in P5** (as it keeps an unscoped write, P2), and
    gets the lock-down in code only: with `egress.lockdown` on, `lib/egress.js` refuses direct non-loopback calls as in
    Decision 14. The Compliance control says "enforced by the egress client; Deno's grant is not narrowed in the

@@ -51,7 +51,7 @@
       "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal"] },
       "env": true,
       "sys": ["homedir", "uid", "gid", "userInfo", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
-      "run": ["ps", "lsof", "vm_stat", "powershell.exe", "which", "where", "security", "secret-tool"]
+      "run": ["ps", "lsof", "vm_stat", "powershell.exe", "which", "where", "security", "secret-tool", "kill", "tasklist"]
     }
   }
 }
