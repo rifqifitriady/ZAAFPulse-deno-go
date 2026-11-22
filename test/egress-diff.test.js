@@ -6,8 +6,10 @@
 // and the hop-by-hop ones; a gzip answer's content-encoding and content-length, known difference 1) and body. Every
 // call through the endpoint leaves its records in .data/egress.jsonl through the outbox and the ingest.
 //
-// The fake listens on 127.0.0.1, which the client always sends direct; the calls name it as [::ffff:7f00:1] (the same
-// address, IPv4-mapped), which is not a loopback name to the client. Run it on Node and on Deno
+// The fake listens on 127.0.0.1, which the client always sends direct (also as [::ffff:7f00:1], review M2), so the
+// client is configured with its test-only testLoopbackGo, which sends loopback targets through the endpoint too. The
+// calls name the fake as [::ffff:7f00:1] (the same address, IPv4-mapped), so the NO_PROXY runs below can exempt the
+// fake's name without exempting 127.0.0.1, the loopback leg's own address. Run it on Node and on Deno
 // (`deno test -A test/egress-diff.test.js`), and with HTTP_PROXY=http://127.0.0.1:9 set: the loopback leg to the
 // endpoint (node:http to 127.0.0.1) never takes the proxy from the environment, and Go's proxy rule leaves a loopback
 // target direct. Deno's own fetch (and Node's with NODE_USE_ENV_PROXY=1) takes HTTP_PROXY even for 127.0.0.1, so the
@@ -185,7 +187,15 @@ test('the same calls direct and through the gateway reach the fake and the calle
     onEgress: (p) => {
       port = p;
       egress.configure(
-        p ? { port: p, token: egress.deriveToken(frontToken), engines: { [PURPOSE]: 'go' }, lockdown: false } : null,
+        p
+          ? {
+              port: p,
+              token: egress.deriveToken(frontToken),
+              engines: { [PURPOSE]: 'go' },
+              lockdown: false,
+              testLoopbackGo: true,
+            }
+          : null,
       );
     },
   });

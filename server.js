@@ -68,7 +68,7 @@ const { createSecrets } = require('./lib/secrets');
 const { createAudit } = require('./lib/audit');
 const { createEgressLog } = require('./lib/egress-log');
 const egressClient = require('./lib/egress');
-const { egressRouting, gateFromLog } = require('./lib/egress-switch');
+const { egressRouting, createEgressGate } = require('./lib/egress-switch');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
@@ -265,31 +265,28 @@ const memo = new Map();
 const audit = createAudit(path.join(DIR, '.cache', 'mcp-audit.jsonl'));
 // P5: the gateway's outbound connections (egress.event), .data/egress.jsonl.
 const egressLog = createEgressLog({ dir: path.join(DIR, '.data') });
-// Each egress caller class's engine (P5 Decision 11, lib/egress-switch.js): direct, check, or go once its gate is met
-// in the egress log (the newest EGRESS_GATE_TAIL records of .data/egress.jsonl, plus the checks the client could not
-// ask). One read of the log per call, one gate per rule.
-const EGRESS_GATE_TAIL = 20000;
-const egressRoutingNow = () => {
-  let records = null;
-  const gates = new Map();
-  return egressRouting(rawConfig().egress, {
-    gate: (c, rule) => {
-      const k = `${rule.days}/${rule.min}`;
-      if (!gates.has(k)) {
-        if (!records) records = [...egressLog.tail(EGRESS_GATE_TAIL), ...egressClient.checkErrorRecords()];
-        gates.set(k, gateFromLog(records, rule, Date.now()));
-      }
-      return gates.get(k)[c];
-    },
-  });
-};
+// Each egress caller class's engine (P5 Decision 11, lib/egress-switch.js): direct, check, or go once its gate is met.
+// The gate is sticky (review I1): its evidence (the /check verdicts of .data/egress.jsonl, both files) is read once
+// here, then fed as the ingest stores each record and as the client reports a check it could not ask; a class that met
+// it stays on go (.data/egress-gate.json) until a diff of its own or the owner sets it to direct or check.
+const egressGate = createEgressGate({
+  file: path.join(DIR, '.data', 'egress-gate.json'),
+  evidence: () => egressLog.scan('"via":"check"'),
+  log: (line) => console.error(line),
+});
+egressClient.onCheckError((rec) => egressGate.note(rec));
+// The routing last applied (each ready, config save and minute): what /api/gateway/status shows (review M8).
+let egressRouted = null;
+const egressRoutingNow = () =>
+  egressRouting(rawConfig().egress, { gate: (c, rule) => egressGate.gate(c, rule), forget: (c) => egressGate.forget(c) });
 // The ready gateway's egress endpoint ({ port, token: the front token }), or null; the classes last pushed to it.
 let egressEndpoint = null;
 let pushedEgress = null;
 // Points the egress client at the endpoint with each class's gated engine (direct when no gateway is ready); returns
 // the engines.
 function applyEgress() {
-  const engines = egressRoutingNow().engines;
+  egressRouted = egressRoutingNow();
+  const engines = egressRouted.engines;
   egressClient.configure(
     egressEndpoint
       ? {
@@ -664,6 +661,7 @@ function frontIngest() {
     traceOn: tracingOn,
     exportSpan: (span, extra) => otel.exportRecord(span, extra),
     egressLog,
+    afterEgress: (e) => egressGate.note(e), // each stored record also reaches the sticky gate (review I1)
   });
   const markFile = createMarkFile(files.marksFile);
   // P4f D25: the gateway's spans are written in batches, before each ack (every 100 ms or 256 events), as the JS
@@ -1703,7 +1701,7 @@ const handler = async (req, res) => {
     // The gateway process (P4a D6): mode, state, restarts. Before the admin routes, whose pattern it matches; owner only
     // (it is no viewer read, so the role check above refuses anyone else).
     if (url.pathname === '/api/gateway/status' && req.method === 'GET') {
-      const eg = egressRoutingNow();
+      const eg = egressRouted || egressRoutingNow();
       return send(res, 200, {
         ...front.status(),
         notes: frontRouting().notes,
@@ -2395,7 +2393,8 @@ front = createFront({
     config: () => {
       pushedTrace = traceLive();
       const ec = rawConfig().egress;
-      const egressEngines = egressRoutingNow().engines;
+      egressRouted = egressRoutingNow();
+      const egressEngines = egressRouted.engines;
       pushedEgress = JSON.stringify(egressEngines);
       return configPush({
         gateway: rawConfig().gateway,

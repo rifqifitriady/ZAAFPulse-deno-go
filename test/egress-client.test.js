@@ -371,3 +371,85 @@ test('connect: unconfigured, on direct, or to loopback it is net.connect', async
   s.destroy();
   await assert.rejects(egress.connect('brain', '127.0.0.1', 1), { code: 'ECONNREFUSED' });
 });
+
+test('loopback (review M2): one trailing dot and 127.0.0.1 IPv4-mapped are loopback; the rest of 127/8 is not', async (t) => {
+  for (const h of ['localhost', 'localhost.', 'LOCALHOST.', '127.0.0.1', '127.0.0.1.', '::1', '[::1]'])
+    assert.ok(egress.isLoopbackHost(h), h);
+  for (const h of ['::ffff:127.0.0.1', '[::ffff:127.0.0.1]', '::ffff:7f00:1', '[::FFFF:7F00:1]'])
+    assert.ok(egress.isLoopbackHost(h), h);
+  for (const h of ['127.0.0.2', '::ffff:7f00:2', '::ffff:127.0.0.2', 'localhost..', 'localhost.example.test', '', null])
+    assert.ok(!egress.isLoopbackHost(h), String(h));
+  const ep = await fakeEndpoint(t, (req, body, res) => res.end('proxied'));
+  useEndpoint(ep.port, { gateway: 'go' });
+  const calls = stubFetch(t);
+  for (const u of ['http://localhost.:1/x', 'http://[::ffff:127.0.0.1]:1/x', 'http://[::ffff:7f00:1]:1/x'])
+    await egress.fetchFor('gateway')(u);
+  assert.equal(calls.length, 3);
+  assert.equal(ep.seen.length, 0);
+  assert.equal(await (await egress.fetchFor('gateway')('http://127.0.0.2:1/x')).text(), 'proxied');
+  assert.equal(ep.seen[0].headers['x-zp-egress-url'], 'http://127.0.0.2:1/x');
+});
+
+test('go: a Request input keeps its own redirect (review M3); a clone keeps url and redirected (M4)', async (t) => {
+  const ep = await fakeEndpoint(t, (req, body, res) => {
+    res.writeHead(200, { 'x-zp-egress-url': 'https://api.example.test/final', 'x-zp-egress-redirected': '1' });
+    res.end('body');
+  });
+  useEndpoint(ep.port, { connectors: 'go' });
+  const f = egress.fetchFor('connectors');
+  await f(new Request('https://api.example.test/a', { redirect: 'manual' }));
+  assert.equal(ep.seen[0].headers['x-zp-egress-redirect'], 'manual');
+  await f(new Request('https://api.example.test/a', { redirect: 'manual' }), { redirect: 'error' });
+  assert.equal(ep.seen[1].headers['x-zp-egress-redirect'], 'error');
+  const r = await f('https://api.example.test/a');
+  assert.equal(ep.seen[2].headers['x-zp-egress-redirect'], 'follow');
+  const c = r.clone();
+  const cc = c.clone();
+  for (const x of [r, c, cc]) {
+    assert.equal(x.url, 'https://api.example.test/final');
+    assert.equal(x.redirected, true);
+  }
+  assert.equal(await c.text(), 'body');
+  assert.equal(await r.text(), 'body');
+});
+
+test('go: the endpoint is taken when the call is routed, not after it waits (review M1)', async (t) => {
+  const one = await fakeEndpoint(t, (req, body, res) => res.end('one'));
+  const two = await fakeEndpoint(t, (req, body, res) => res.end('two'));
+  useEndpoint(one.port, { brain: 'go' });
+  const p = egress.fetchFor('brain')('https://db.example.test/x', { method: 'POST', body: new Blob(['abc']) });
+  useEndpoint(two.port, { brain: 'go' }); // while the body is read
+  assert.equal(await (await p).text(), 'one');
+  assert.equal(one.seen[0].body.toString(), 'abc');
+  assert.equal(two.seen.length, 0);
+});
+
+test('connect (review M6): an abort while the tunnel is pending destroys the socket and rejects with the reason', async (t) => {
+  // A raw endpoint that reads the CONNECT and never answers.
+  let closed;
+  const gone = new Promise((r) => (closed = r));
+  const silent = net.createServer((c) => c.on('close', closed).resume());
+  await new Promise((r) => silent.listen(0, '127.0.0.1', r));
+  t.after(async () => {
+    egress.configure(null);
+    await new Promise((r) => silent.close(r));
+  });
+  useEndpoint(silent.address().port, { brain: 'go' });
+  const ac = new AbortController();
+  const p = egress.connect('brain', 'db.example.test', 5432, 'postgres', { signal: ac.signal });
+  await new Promise((r) => setTimeout(r, 50));
+  ac.abort(Object.assign(new Error('the connect timed out'), { code: 'ETIMEDOUT' }));
+  await assert.rejects(p, { code: 'ETIMEDOUT' });
+  await gone; // the pending socket was destroyed
+  // Aborted before: no connection at all, tunnel or direct.
+  await assert.rejects(egress.connect('brain', 'db.example.test', 5432, '', { signal: ac.signal }), {
+    code: 'ETIMEDOUT',
+  });
+  egress.configure(null);
+  await assert.rejects(egress.connect('brain', '127.0.0.1', 1, '', { signal: ac.signal }), { code: 'ETIMEDOUT' });
+  // A signal that never aborts changes nothing.
+  const s = await egress.connect('brain', '127.0.0.1', silent.address().port, '', {
+    signal: new AbortController().signal,
+  });
+  s.destroy();
+});

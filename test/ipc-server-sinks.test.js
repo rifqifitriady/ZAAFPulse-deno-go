@@ -187,4 +187,22 @@ test('egress.event: stored strictly in the egress log with its mark; no egress l
   fs.mkdirSync(path.join(dir, 'egress.jsonl')); // a folder: the append fails
   assert.throws(() => ingest.handle({ ...msg, seq: 2 }, STREAM));
   assert.equal(ingest.mark(STREAM), 1);
+  // afterEgress (the sticky gate) gets each stored record, only once stored; its throw undoes nothing.
+  fs.rmdirSync(path.join(dir, 'egress.jsonl'));
+  const seen = [];
+  const hooked = createIngest({
+    ...serverSinks({ ...base, egressLog, afterEgress: (e) => (seen.push(e), assert.fail('the gate broke')) }),
+    log: () => {},
+  });
+  assert.equal(hooked.handle({ ...msg, seq: 3 }, STREAM), true);
+  assert.equal(hooked.mark(STREAM), 3);
+  assert.deepEqual(seen, [{ ...msg.body, ipc: { stream: STREAM, seq: 3 } }]);
+  const failing = createIngest({
+    ...serverSinks({ ...base, egressLog, afterEgress: (e) => seen.push(e) }),
+    log: () => {},
+  });
+  fs.rmSync(path.join(dir, 'egress.jsonl'));
+  fs.mkdirSync(path.join(dir, 'egress.jsonl'));
+  assert.throws(() => failing.handle({ ...msg, seq: 4 }, STREAM));
+  assert.equal(seen.length, 1);
 });
