@@ -438,15 +438,32 @@ test('routeStatePush: a valid route.state body, bad entries left out (P4h Decisi
   assert.deepEqual(check({ v: 1, type: 'route.state', seq: 2, ts: 0, body }), { errors: [], unknownType: false });
 });
 
-test('configPush: the egress section (P5): an empty allow-list in report mode and each class’s switch', () => {
+test('configPush: the egress section (P5): the allow-list, its mode and each class’s switch', () => {
   const body = configPush({
     gateway: {},
     keys: [],
     pricing: {},
     egress: { classes: { gateway: 'go', mcp: 'check', notify: 'proxy' }, allowList: 'enforce' },
+    egressAllow: [
+      { host: 'api.openai.com', port: 443 },
+      { host: '*.pinecone.io', port: 443 },
+      { host: 'any-port.example.com' },
+      { host: 'bad-port.example.com', port: 0 },
+      { host: '' },
+      null,
+    ],
   });
-  assert.deepEqual(body.egress.allow, []);
-  assert.equal(body.egress.allowList, 'report', 'enforce comes with the allow-list (P5c)');
+  assert.deepEqual(body.egress.allow, [
+    { host: 'api.openai.com', port: 443 },
+    { host: '*.pinecone.io', port: 443 },
+    { host: 'any-port.example.com' },
+    { host: 'bad-port.example.com' },
+  ]);
+  assert.equal(body.egress.allowList, 'enforce');
+  for (const mode of [undefined, 'report', 'ENFORCE', true]) {
+    const b = configPush({ gateway: {}, keys: [], pricing: {}, egress: { allowList: mode } });
+    assert.deepEqual([b.egress.allowList, b.egress.allow], ['report', []], String(mode));
+  }
   assert.equal(body.egress.classes.gateway, 'go');
   assert.equal(body.egress.classes.mcp, 'check');
   assert.equal(body.egress.classes.notify, 'direct', 'a value that is not a switch is direct');

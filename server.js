@@ -70,6 +70,7 @@ const { createEgressLog } = require('./lib/egress-log');
 const egressClient = require('./lib/egress');
 const { egressRouting, createEgressGate } = require('./lib/egress-switch');
 const { writeDiscovery, removeDiscovery } = require('./lib/egress-discovery');
+const { allowList } = require('./lib/egress-allow');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
@@ -309,6 +310,35 @@ function applyEgress() {
   }
   return engines;
 }
+// P5 Decision 13: the allow-list pushed to the gateway (lib/egress-allow.js), from config.json, agents.json and the
+// environment. Two sources are secret references (the monitor webhook URL, a pgvector connection URL): each resolved
+// value is kept for 5 minutes, so the minute loop below does not ask the OS secret store each time.
+const ALLOW_SECRET_TTL_MS = 5 * 60 * 1000;
+const allowSecrets = new Map();
+function allowSecret(ref, field) {
+  const k = JSON.stringify(ref);
+  const hit = allowSecrets.get(k);
+  if (hit && Date.now() - hit.at < ALLOW_SECRET_TTL_MS) return hit.value;
+  let value = null;
+  try {
+    value = gwSecrets.resolve(ref, field);
+  } catch {
+    value = null; // not resolvable now: nothing on the list; the caller fails on its own
+  }
+  allowSecrets.set(k, { at: Date.now(), value });
+  return value;
+}
+function egressAllowNow(cfg = rawConfig()) {
+  let agents = [];
+  try {
+    agents = gateway.agents.list();
+  } catch {
+    agents = [];
+  }
+  return allowList(cfg, { env: process.env, agents, resolveSecret: allowSecret });
+}
+// The allow-list last pushed (JSON), to push again when a save or the minute loop finds it changed.
+let pushedAllow = null;
 
 let integ = { mtimeMs: -1, registry: null };
 function getIntegrations() {
@@ -408,7 +438,9 @@ function configChanged(before, after) {
   } else if (front && JSON.stringify((before || {}).tracing) !== JSON.stringify((after || {}).tracing)) {
     front.push(); // the local trace store on or off: the gateway's trace switch (P4f D8)
   } else if (front && JSON.stringify((before || {}).egress) !== JSON.stringify((after || {}).egress)) {
-    front.push(); // P5: the egress classes the gateway shows (and the allow-list from P5c)
+    front.push(); // P5: the egress classes the gateway shows, the allow-list's mode
+  } else if (front && pushedAllow !== null && JSON.stringify(egressAllowNow(after || {})) !== pushedAllow) {
+    front.push(); // P5 Decision 13: a source of the allow-list changed (an integration, a brain source, OTLP …)
   }
   // P5: the egress client takes a changed switch or gate rule at once.
   if (JSON.stringify((before || {}).egress) !== JSON.stringify((after || {}).egress)) applyEgress();
@@ -2367,7 +2399,12 @@ const frontRouting = () =>
 setInterval(() => {
   const egressNow = JSON.stringify(applyEgress());
   if (!front || front.pushIfChanged(frontRouting().engines)) return;
-  if ((pushedTrace !== null && traceLive() !== pushedTrace) || (pushedEgress !== null && egressNow !== pushedEgress))
+  if (
+    (pushedTrace !== null && traceLive() !== pushedTrace) ||
+    (pushedEgress !== null && egressNow !== pushedEgress) ||
+    // P5 Decision 13: an allow-list source that changes without a config save (agents.json, a secret, the environment)
+    (pushedAllow !== null && JSON.stringify(egressAllowNow()) !== pushedAllow)
+  )
     front.push();
 }, 60000).unref();
 // gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
@@ -2406,13 +2443,16 @@ front = createFront({
       egressRouted = egressRoutingNow();
       const egressEngines = egressRouted.engines;
       pushedEgress = JSON.stringify(egressEngines);
+      const egressAllow = egressAllowNow();
+      pushedAllow = JSON.stringify(egressAllow);
       return configPush({
         gateway: rawConfig().gateway,
         keys: gateway.rawKeys(),
         pricing: config.pricing,
         trace: { spans: pushedTrace },
-        // P5: the egress section: each class's engine after its gate (shown by the gateway); the allow-list from P5c.
+        // P5: the egress section: each class's engine after its gate (shown by the gateway), the allow-list and its mode.
         egress: { ...(ec && typeof ec === 'object' ? ec : {}), classes: egressEngines },
+        egressAllow,
       });
     },
     secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
