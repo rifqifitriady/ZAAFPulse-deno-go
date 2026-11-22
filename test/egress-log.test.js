@@ -5,7 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { createEgressLog } = require('../lib/egress-log');
+const { createEgressLog, READ_LIMIT } = require('../lib/egress-log');
 const { tmpDir } = require('./ipc-stub');
 
 const rec = (ts, purpose, outcome) => ({
@@ -73,4 +73,47 @@ test('rotation: past 5 MB the file moves to egress.jsonl.1 and a new one starts'
   log.append(rec(1, 'pricing', 'ok'));
   assert.ok(fs.statSync(`${log.file}.1`).size > 5 * 1024 * 1024);
   assert.deepEqual(log.tail(), [rec(1, 'pricing', 'ok')]);
+});
+
+test('tail: fills from the rotated file when the current one holds fewer than n; a line being written is left out', (t) => {
+  const dir = tmpDir(t, 'egress-log-tail-rotated');
+  const log = createEgressLog({ dir });
+  fs.writeFileSync(`${log.file}.1`, [1, 2, 3].map((i) => JSON.stringify(rec(i, 'mcp', 'ok'))).join('\n') + '\n');
+  log.append(rec(4, 'mcp', 'ok'));
+  log.append(rec(5, 'mcp', 'ok'));
+  fs.appendFileSync(log.file, '{"ts":6,"purpose":"mc');
+  assert.deepEqual(
+    log.tail(4).map((r) => r.ts),
+    [5, 4, 3, 2],
+  );
+  assert.deepEqual(
+    log.tail().map((r) => r.ts),
+    [5, 4, 3, 2, 1],
+  );
+  // Lines longer than one read chunk, and non-ASCII text, come back whole.
+  const long = { ...rec(7, 'notify', 'ok'), host: 'é'.repeat(70000) };
+  fs.appendFileSync(log.file, '\n' + JSON.stringify(long) + '\n');
+  assert.deepEqual(log.tail(1), [long]);
+});
+
+test('counts and tail read at most the newest READ_LIMIT bytes, not both whole files', (t) => {
+  const dir = tmpDir(t, 'egress-log-bounded');
+  const log = createEgressLog({ dir });
+  const line = JSON.stringify(rec(1, 'old', 'ok')) + '\n';
+  // A rotated file of old records and a current file larger than the limit: only the current file's tail is read.
+  fs.writeFileSync(`${log.file}.1`, line.repeat(1000));
+  const n = Math.ceil((READ_LIMIT + 4096) / line.length);
+  fs.writeFileSync(
+    log.file,
+    JSON.stringify(rec(2, 'new', 'ok'))
+      .concat('\n')
+      .repeat(n),
+  );
+  const reads = [];
+  const real = fs.readSync;
+  t.mock.method(fs, 'readSync', (...a) => (reads.push(a[2]), real(...a)));
+  const c = log.counts();
+  assert.equal(c.old, undefined, 'the rotated file is past the limit');
+  assert.ok(c.new.total < n && c.new.total > n - 200, `${c.new.total} of ${n}`);
+  assert.ok(reads.reduce((x, y) => x + y, 0) <= READ_LIMIT, 'bytes read');
 });

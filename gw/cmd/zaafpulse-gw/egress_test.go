@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/egress"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
 // egressGateway runs the gateway through the handshake with the given config.push extra (`,"egress":{...}` or "")
@@ -182,5 +185,72 @@ func TestEgressEndpointClosesOnABadToken(t *testing.T) {
 	b, err := io.ReadAll(c)
 	if len(b) != 0 || err != nil {
 		t.Fatalf("got %q, %v", b, err)
+	}
+}
+
+// TestEgressPolicyGetter: the engine's own calls are checked against the endpoint's allow-list, none without one.
+func TestEgressPolicyGetter(t *testing.T) {
+	g := &gateway{}
+	if g.egressPolicy() != nil {
+		t.Fatal("a policy without an endpoint")
+	}
+	srv := egress.New(nil, nil)
+	srv.SetPolicy(egress.Policy{Mode: egress.ModeEnforce, Allow: []egress.Rule{{Host: "api.example.com"}}})
+	g.egressNow.Store(srv)
+	if p := g.egressPolicy(); p == nil || p.Mode != egress.ModeEnforce || !p.Allows("api.example.com", 443) {
+		t.Fatalf("policy %+v", p)
+	}
+	srv.SetPolicy(egress.Policy{Mode: egress.ModeReport})
+	if p := g.egressPolicy(); p.Mode != egress.ModeReport {
+		t.Fatalf("a pushed policy is not seen: %+v", p)
+	}
+}
+
+// TestRecordEgressDropsAnInvalidRecord: a record that breaks egress.event's schema is never stored (the control plane
+// would refuse it on every replay and close the channel); each cause is logged once.
+func TestRecordEgressDropsAnInvalidRecord(t *testing.T) {
+	valid := egress.Record{TS: 1, Purpose: "gateway", Method: "GET", Scheme: "https", Host: "api.example.com",
+		Port: 443, Status: 200, Outcome: "ok", MS: 1, Via: "engine"}
+	for name, mut := range map[string]func(*egress.Record){
+		"port 0":      func(r *egress.Record) { r.Port = 0 },
+		"port 99999":  func(r *egress.Record) { r.Port = 99999 },
+		"no host":     func(r *egress.Record) { r.Host = "" },
+		"no purpose":  func(r *egress.Record) { r.Purpose = "" },
+		"no method":   func(r *egress.Record) { r.Method = "" },
+		"scheme":      func(r *egress.Record) { r.Scheme = "ftp" },
+		"status 99":   func(r *egress.Record) { r.Status = 99 },
+		"status 1000": func(r *egress.Record) { r.Status = 1000 },
+		"outcome":     func(r *egress.Record) { r.Outcome = "maybe" },
+		"via":         func(r *egress.Record) { r.Via = "carrier pigeon" },
+		"bytes":       func(r *egress.Record) { r.BytesIn = -1 },
+		"ms":          func(r *egress.Record) { r.MS = -1 },
+	} {
+		r := valid
+		mut(&r)
+		ev := ipc.EgressEvent{TS: r.TS, Purpose: r.Purpose, Method: r.Method, Scheme: r.Scheme, Host: r.Host,
+			Port: r.Port, Status: r.Status, Outcome: r.Outcome, BytesOut: r.BytesOut, BytesIn: r.BytesIn, MS: r.MS,
+			Via: r.Via}
+		if invalidEgress(&ev) == "" {
+			t.Errorf("%s: passed", name)
+		}
+	}
+	ev := ipc.EgressEvent{TS: 1, Purpose: "gateway", Method: "GET", Scheme: "https", Host: "h", Port: 443, Outcome: "ok",
+		Via: "engine"}
+	if why := invalidEgress(&ev); why != "" {
+		t.Fatalf("a valid record (no status) refused: %s", why)
+	}
+	// Dropped before the outbox (the gateway here has none: storing would panic), logged once per cause.
+	var buf bytes.Buffer
+	g := &gateway{log: log.New(&buf, "", 0)}
+	bad := valid
+	bad.Port = 0
+	g.recordEgress(bad)
+	g.recordEgress(bad)
+	bad.Host = ""
+	g.recordEgress(bad) // the port is checked first: the same cause
+	bad.Port = 443
+	g.recordEgress(bad)
+	if n := strings.Count(buf.String(), "dropped"); n != 2 {
+		t.Fatalf("logged %d times:\n%s", n, buf.String())
 	}
 }

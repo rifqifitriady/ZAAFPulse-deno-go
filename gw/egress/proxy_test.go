@@ -11,8 +11,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -45,8 +47,8 @@ func rawExchange(t *testing.T, base, req string) []byte {
 }
 
 func TestBadTokenGetsNoBytes(t *testing.T) {
-	hits := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	var hits atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
 	defer ts.Close()
 	s, base, rec := startEgress(t, allowAll)
 	url := "X-ZP-Egress-URL: " + ts.URL + "/\r\n"
@@ -67,8 +69,8 @@ func TestBadTokenGetsNoBytes(t *testing.T) {
 	if got := rawExchange(t, base, "GET / HTTP/1.1\r\nHost: x\r\nX-ZP-Egress-Token: "+testToken+"\r\n"+url+"\r\n"); len(got) != 0 {
 		t.Errorf("unset token: answered %q", got)
 	}
-	if hits != 0 {
-		t.Fatalf("the target was reached %d times", hits)
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("the target was reached %d times", n)
 	}
 	rec.none(t, 100*time.Millisecond)
 }
@@ -285,7 +287,9 @@ func TestRedirectMatrix(t *testing.T) {
 			if body != nil {
 				wantBody = "payload"
 			}
-			if (status == 303 && method != "HEAD") || ((status == 301 || status == 302) && method == "POST") {
+			// WHATWG fetch: a 303 turns every method but GET and HEAD into a GET (a GET keeps its headers).
+			if (status == 303 && method != "GET" && method != "HEAD") ||
+				((status == 301 || status == 302) && method == "POST") {
 				wantMethod, wantBody, wantCT = "GET", "", ""
 			}
 			if resp.StatusCode != 200 || resp.Header.Get("X-Method") != wantMethod ||
@@ -661,4 +665,124 @@ func TestPolicyChangesUnderLoad(t *testing.T) {
 	}
 	<-done
 	rec.wait(t, 20)
+}
+
+// TestRedirectTargetCheckedAsTheFirstURL: a Location is held to the caller's URL's rules (C1): a port outside 1..65535
+// or no host fails with EGRESS_REDIRECT, with no record for a hop that never was (a record with port 0 or an empty host
+// would break the egress.event schema); the host is lower-cased in the final URL and the record.
+func TestRedirectTargetCheckedAsTheFirstURL(t *testing.T) {
+	var loc atomic.Value
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/final" {
+			_, _ = io.WriteString(w, "final")
+			return
+		}
+		w.Header().Set("Location", loc.Load().(string))
+		w.WriteHeader(302)
+	}))
+	defer ts.Close()
+	_, base, rec := startEgress(t, allowAll)
+	port := portOf(t, ts.URL)
+	for _, bad := range []string{"http://127.0.0.1:0/final", "http://127.0.0.1:99999/final", "http://:" + port + "/final",
+		"http:///final", "ftp://127.0.0.1/final", "http://u:p@127.0.0.1:" + port + "/final"} {
+		loc.Store(bad)
+		expectError(t, send(t, base, "GET", ts.URL+"/start", nil, nil), 502, "EGRESS_REDIRECT")
+		if r := rec.wait(t, 1)[0]; r.Status != 302 || r.Port < 1 || r.Host == "" {
+			t.Fatalf("%s: hop record %+v", bad, r)
+		}
+		rec.none(t, 50*time.Millisecond)
+	}
+	loc.Store("http://OK.Test:" + port + "/final")
+	resp := send(t, base, "GET", ts.URL+"/start", nil, nil)
+	if body := readAll(t, resp); body != "final" || resp.Header.Get("X-ZP-Egress-URL") != "http://ok.test:"+port+"/final" {
+		t.Fatalf("%d %q url %q", resp.StatusCode, body, resp.Header.Get("X-ZP-Egress-URL"))
+	}
+	if rs := rec.wait(t, 2); rs[1].Host != "ok.test" || rs[1].Status != 200 {
+		t.Fatalf("records %+v", rs)
+	}
+}
+
+// TestTargetCannotSetEgressHeaders: the X-ZP-Egress-* answer headers are the endpoint's own (I1).
+func TestTargetCannotSetEgressHeaders(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-ZP-Egress-Error", "EGRESS_REFUSED")
+		w.Header().Set("X-ZP-Egress-Redirected", "1")
+		w.Header()["x-zp-egress-url"] = []string{"http://elsewhere.test/"}
+		w.Header().Set("X-Kept", "yes")
+		_, _ = io.WriteString(w, "body")
+	}))
+	defer ts.Close()
+	_, base, rec := startEgress(t, allowAll)
+	resp := send(t, base, "GET", ts.URL+"/x", nil, nil)
+	body := readAll(t, resp)
+	if resp.StatusCode != 200 || body != "body" || resp.Header.Get("X-Kept") != "yes" ||
+		resp.Header.Get("X-ZP-Egress-Error") != "" || resp.Header.Get("X-ZP-Egress-Redirected") != "" ||
+		len(resp.Header.Values("X-ZP-Egress-URL")) != 1 || resp.Header.Get("X-ZP-Egress-URL") != ts.URL+"/x" {
+		t.Fatalf("%d %q %v", resp.StatusCode, body, resp.Header)
+	}
+	rec.wait(t, 1)
+}
+
+// TestStatusBelow100: an answer whose status is not an HTTP status (net/http reads "099") fails EPROTO, with no
+// status recorded (M1).
+func TestStatusBelow100(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				br := bufio.NewReader(c)
+				for {
+					line, err := br.ReadString('\n')
+					if err != nil || line == "\r\n" {
+						break
+					}
+				}
+				_, _ = io.WriteString(c, "HTTP/1.1 099 Odd\r\nContent-Length: 4\r\n\r\nodd!")
+			}()
+		}
+	}()
+	_, base, rec := startEgress(t, allowAll)
+	expectError(t, send(t, base, "GET", "http://"+ln.Addr().String()+"/", nil, nil), 502, "EPROTO")
+	if r := rec.wait(t, 1)[0]; r.Outcome != "error" || r.Error != "EPROTO" || r.Status != 0 {
+		t.Fatalf("record %+v", r)
+	}
+}
+
+// TestReplayKeptOnlyWhenFollowing: the caller's body is kept for a replay only when redirects are followed (M3).
+func TestReplayKeptOnlyWhenFollowing(t *testing.T) {
+	s := New(nil, nil)
+	for mode, want := range map[string]int{"follow": maxReplay, "manual": 0, "error": 0} {
+		if got := s.replayLimit(&call{redirect: mode}); got != want {
+			t.Errorf("%s: %d, want %d", mode, got, want)
+		}
+	}
+}
+
+// failingWriter is a caller connection whose writes fail (the caller went away) while the request's context lives on.
+type failingWriter struct{ h http.Header }
+
+func (f *failingWriter) Header() http.Header       { return f.h }
+func (f *failingWriter) WriteHeader(int)           {}
+func (f *failingWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+// TestWriteErrorIsAborted: an answer that cannot be written to the caller is recorded error/ABORTED (M9).
+func TestWriteErrorIsAborted(t *testing.T) {
+	rec := newRecorder()
+	s := New(nil, rec.add)
+	u, _ := url.Parse("http://api.test/x")
+	resp := &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("data"))}
+	r := httptest.NewRequest("GET", "/", nil)
+	s.answer(&failingWriter{h: http.Header{}}, r, resp, Record{Host: "api.test", Port: 80}, time.Now(), nil, u, false)
+	if got := rec.wait(t, 1)[0]; got.Outcome != "error" || got.Error != "ABORTED" {
+		t.Fatalf("record %+v", got)
+	}
 }

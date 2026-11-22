@@ -653,6 +653,9 @@ test('egress.event refused: a governance entry, then the egress line', () => {
   ]);
   assert.deepEqual(order.slice(-2), ['governance', 'egress']);
   assert.equal(ingest.mark(S), 5);
+  // An IPv6 host is bracketed, as a URL authority writes it.
+  ingest.handle(egressMsg(6, { outcome: 'refused', error: 'EGRESS_REFUSED', host: '2001:db8::1', port: 443 }), S);
+  assert.equal(calls.governance[1].target.name, '[2001:db8::1]:443');
 });
 
 test('egress.event refused: a governance entry that cannot be written is a store failure (no egress line)', () => {

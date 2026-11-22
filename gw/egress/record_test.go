@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func TestRecordingTransport(t *testing.T) {
 	}))
 	defer ts.Close()
 	rec := newRecorder()
-	client := &http.Client{Transport: RecordingTransport(&http.Transport{}, "gateway", rec.add)}
+	client := &http.Client{Transport: RecordingTransport(&http.Transport{}, "gateway", nil, rec.add)}
 	resp, err := client.Post(ts.URL+"/v1/chat?key=secret", "application/json", strings.NewReader(`{"a":1}`))
 	if err != nil {
 		t.Fatal(err)
@@ -98,3 +99,90 @@ type timeoutErr struct{}
 func (timeoutErr) Error() string   { return "i/o timeout" }
 func (timeoutErr) Timeout() bool   { return true }
 func (timeoutErr) Temporary() bool { return true }
+
+// TestRecordingTransportPolicy: the engine's own calls are checked against the allow-list (spec Decision 13): enforce
+// refuses before anything is sent (record "refused", a *RefusedError naming EGRESS_REFUSED), report records
+// "would-refuse" and the call goes on; a listed host and a nil policy pass with one record.
+func TestRecordingTransportPolicy(t *testing.T) {
+	var hits atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer ts.Close()
+	rec := newRecorder()
+	var pol *Policy
+	client := &http.Client{Transport: RecordingTransport(&http.Transport{}, "gateway",
+		func() *Policy { return pol }, rec.add)}
+	port, _ := strconv.Atoi(portOf(t, ts.URL))
+
+	pol = &Policy{Mode: ModeEnforce, Allow: []Rule{{Host: "api.example.com"}}}
+	_, err := client.Post(ts.URL+"/v1", "application/json", strings.NewReader(`{}`))
+	var re *RefusedError
+	if err == nil || !errors.As(err, &re) || !strings.Contains(err.Error(), "EGRESS_REFUSED") ||
+		re.EgressCode() != CodeRefused || re.Port != port {
+		t.Fatalf("enforce: err %v", err)
+	}
+	if r := rec.wait(t, 1)[0]; r.Outcome != OutcomeRefused || r.Error != CodeRefused || r.Host != "127.0.0.1" ||
+		r.Port != port || r.Via != ViaEngine || r.Status != 0 {
+		t.Fatalf("enforce record %+v", r)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("a refused call reached the target %d times", n)
+	}
+
+	pol = &Policy{Mode: ModeReport, Allow: []Rule{{Host: "api.example.com"}}}
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readAll(t, resp)
+	if rs := rec.wait(t, 2); rs[0].Outcome != OutcomeWouldRefuse || rs[0].Error != CodeRefused ||
+		rs[1].Outcome != OutcomeOK || rs[1].Status != 200 {
+		t.Fatalf("report records %+v", rs)
+	}
+
+	for name, p := range map[string]*Policy{"listed": {Mode: ModeEnforce, Allow: []Rule{{Host: "127.0.0.1"}}},
+		"nil": nil} {
+		pol = p
+		resp, err := client.Get(ts.URL)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		readAll(t, resp)
+		if r := rec.wait(t, 1)[0]; r.Outcome != OutcomeOK {
+			t.Fatalf("%s: record %+v", name, r)
+		}
+		rec.none(t, 30*time.Millisecond)
+	}
+	if n := hits.Load(); n != 3 {
+		t.Fatalf("hits %d", n)
+	}
+}
+
+// getBodyOnly is a transport that sends the body it asks again through GetBody (as net/http does for a retry).
+type getBodyOnly struct{}
+
+func (getBodyOnly) RoundTrip(req *http.Request) (*http.Response, error) {
+	_ = req.Body.Close()
+	b, err := req.GetBody()
+	if err != nil {
+		return nil, err
+	}
+	_, _ = io.Copy(io.Discard, b)
+	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Request: req,
+		Header: http.Header{}}, nil
+}
+
+func TestRecordingTransportCountsARetriedBody(t *testing.T) {
+	rec := newRecorder()
+	client := &http.Client{Transport: RecordingTransport(getBodyOnly{}, "gateway", nil, rec.add)}
+	resp, err := client.Post("http://api.example.com/v1", "application/json", strings.NewReader(`{"a":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readAll(t, resp)
+	if r := rec.wait(t, 1)[0]; r.BytesOut != 7 {
+		t.Fatalf("bytesOut %d, want 7 (the body sent again through GetBody)", r.BytesOut)
+	}
+}

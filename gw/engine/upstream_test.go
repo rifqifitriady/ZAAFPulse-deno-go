@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/egress"
 )
 
 func planTo(url string) *Plan {
@@ -214,5 +216,28 @@ func TestUpstreamWrapTransport(t *testing.T) {
 	}
 	if (&Upstream{}).Transport() != nil {
 		t.Fatal("an upstream not built by NewUpstream has no transport")
+	}
+}
+
+// A provider call the gateway's egress allow-list refuses (gw/egress RecordingTransport in enforce mode, P5 Decision
+// 13) is an ordinary failed call named EGRESS_REFUSED: nothing reaches the provider.
+func TestUpstreamEgressRefused(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a refused call reached the provider")
+	}))
+	defer srv.Close()
+	var recs []egress.Record
+	up := NewUpstream(func(string) string { return "" })
+	pol := &egress.Policy{Mode: egress.ModeEnforce, Allow: []egress.Rule{{Host: "api.example.com"}}}
+	up.WrapTransport(func(rt http.RoundTripper) http.RoundTripper {
+		return egress.RecordingTransport(rt, "gateway", func() *egress.Policy { return pol },
+			func(r egress.Record) { recs = append(recs, r) })
+	})
+	res := up.Call(context.Background(), planTo(srv.URL+"/v1/chat/completions"))
+	if res.Why != "EGRESS_REFUSED" || res.Status != 0 {
+		t.Fatalf("%+v", res)
+	}
+	if len(recs) != 1 || recs[0].Outcome != egress.OutcomeRefused || recs[0].Via != egress.ViaEngine {
+		t.Fatalf("records %+v", recs)
 	}
 }

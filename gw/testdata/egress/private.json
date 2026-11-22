@@ -68,6 +68,15 @@
     "64:ff9b::7f00:1",
     "64:ff9a::1",
     "64:ff9c::1",
+    "64:ff9b:1::",
+    "64:ff9b:1:ffff:ffff:ffff:ffff:ffff",
+    "64:ff9b:2::1",
+    "::102:304",
+    "::808:808",
+    "::7f00:1",
+    "::ffff",
+    "::1:0:0:0",
+    "0:0:0:1::",
     "fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
     "fc00::",
     "fc00::1",
@@ -78,10 +87,25 @@
     "fe80::1",
     "febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
     "fec0::",
+    "fec0::1",
+    "fedc:ba98::1",
+    "feff::",
     "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
     "ff00::",
     "ff02::1",
     "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "2001::",
+    "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+    "2001:0:ffff:ffff:ffff:ffff:ffff:ffff",
+    "2001:1::1",
+    "2002::",
+    "2002:a00:1::",
+    "2002:7f00:1::1",
+    "2002:a9fe:a9fe::",
+    "2002:c0a8:101::",
+    "2002:808:808::",
+    "2002:5db8:d822::1",
+    "2003::1",
     "2001:4860:4860::8888",
     "2606:4700::1111",
     "2001:db8::1",
@@ -310,7 +334,7 @@
     },
     {
       "ip": "::2",
-      "private": false
+      "private": true
     },
     {
       "ip": "::ffff:127.0.0.1",
@@ -361,6 +385,42 @@
       "private": false
     },
     {
+      "ip": "64:ff9b:1::",
+      "private": true
+    },
+    {
+      "ip": "64:ff9b:1:ffff:ffff:ffff:ffff:ffff",
+      "private": true
+    },
+    {
+      "ip": "64:ff9b:2::1",
+      "private": true
+    },
+    {
+      "ip": "::102:304",
+      "private": true
+    },
+    {
+      "ip": "::808:808",
+      "private": true
+    },
+    {
+      "ip": "::7f00:1",
+      "private": true
+    },
+    {
+      "ip": "::ffff",
+      "private": true
+    },
+    {
+      "ip": "::1:0:0:0",
+      "private": false
+    },
+    {
+      "ip": "0:0:0:1::",
+      "private": false
+    },
+    {
       "ip": "fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
       "private": false
     },
@@ -398,11 +458,23 @@
     },
     {
       "ip": "fec0::",
-      "private": false
+      "private": true
+    },
+    {
+      "ip": "fec0::1",
+      "private": true
+    },
+    {
+      "ip": "fedc:ba98::1",
+      "private": true
+    },
+    {
+      "ip": "feff::",
+      "private": true
     },
     {
       "ip": "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
-      "private": false
+      "private": true
     },
     {
       "ip": "ff00::",
@@ -415,6 +487,54 @@
     {
       "ip": "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
       "private": true
+    },
+    {
+      "ip": "2001::",
+      "private": true
+    },
+    {
+      "ip": "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+      "private": true
+    },
+    {
+      "ip": "2001:0:ffff:ffff:ffff:ffff:ffff:ffff",
+      "private": true
+    },
+    {
+      "ip": "2001:1::1",
+      "private": false
+    },
+    {
+      "ip": "2002::",
+      "private": true
+    },
+    {
+      "ip": "2002:a00:1::",
+      "private": true
+    },
+    {
+      "ip": "2002:7f00:1::1",
+      "private": true
+    },
+    {
+      "ip": "2002:a9fe:a9fe::",
+      "private": true
+    },
+    {
+      "ip": "2002:c0a8:101::",
+      "private": true
+    },
+    {
+      "ip": "2002:808:808::",
+      "private": false
+    },
+    {
+      "ip": "2002:5db8:d822::1",
+      "private": false
+    },
+    {
+      "ip": "2003::1",
+      "private": false
     },
     {
       "ip": "2001:4860:4860::8888",

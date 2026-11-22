@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -158,11 +159,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// The sender stops before the outbox closes (defers run last first): what it still holds goes out on the next start.
 	g.out = newSender(box, g.ch.SendLine, logger.Printf)
 	defer g.out.stop(time.Second)
-	// The engine's own provider calls and token fetches are recorded as egress events (P5 Decision 9, via "engine"); the
-	// wrapper goes on before engine.New, whose token sources copy the client.
+	// The engine's own provider calls and token fetches are recorded as egress events (P5 Decision 9, via "engine") and
+	// checked against the egress endpoint's allow-list (Decision 13; none without an egress section); the wrapper goes
+	// on before engine.New, whose token sources copy the client.
 	g.upstream = engine.NewUpstream(os.Getenv)
 	g.upstream.WrapTransport(func(rt http.RoundTripper) http.RoundTripper {
-		return egress.RecordingTransport(rt, "gateway", g.recordEgress)
+		return egress.RecordingTransport(rt, "gateway", g.egressPolicy, g.recordEgress)
 	})
 	g.engine = engine.New(g.upstream, g.emitUsage, g.log.Printf)
 	g.calls = calls
@@ -247,16 +249,18 @@ type gateway struct {
 	ready   bool
 	quiet   bool // --hang-after-ready
 
-	out        *sender          // sends the outbox's events to the control plane (P4e)
-	calls      *ipc.CallJournal // the go engine's calls in flight (P4f D14)
-	engine     *engine.Engine   // the go engine (P4b): its state is the newest generation with the newest snapshot
-	cfgBody    *ipc.ConfigPush  // under mu: the newest config.push, until its secrets arrive
-	frontCfg   *ipc.FrontConfig // under mu: the first config.push's front section, opened on ready
-	frontToken string           // under mu: from secrets.handoff, never logged
-	front      *front.Server    // under mu: the main port, once open
-	upstream   *engine.Upstream // the engine's provider client (the egress endpoint copies its settings, P5)
-	egress     *egress.Server   // under mu: the egress endpoint (P5), from the first config.push with an egress section
-	stopTokens func()           // stops the engine's background token refresh (P4g), once
+	out        *sender                       // sends the outbox's events to the control plane (P4e)
+	calls      *ipc.CallJournal              // the go engine's calls in flight (P4f D14)
+	engine     *engine.Engine                // the go engine (P4b): its state is the newest generation with the newest snapshot
+	cfgBody    *ipc.ConfigPush               // under mu: the newest config.push, until its secrets arrive
+	frontCfg   *ipc.FrontConfig              // under mu: the first config.push's front section, opened on ready
+	frontToken string                        // under mu: from secrets.handoff, never logged
+	front      *front.Server                 // under mu: the main port, once open
+	upstream   *engine.Upstream              // the engine's provider client (the egress endpoint copies its settings, P5)
+	egress     *egress.Server                // under mu: the egress endpoint (P5), from the first config.push with an egress section
+	egressNow  atomic.Pointer[egress.Server] // g.egress, read without mu by the engine's calls (egressPolicy)
+	dropped    sync.Map                      // egress record causes already logged once (recordEgress)
+	stopTokens func()                        // stops the engine's background token refresh (P4g), once
 }
 
 func (g *gateway) serve(protocols []int) int {

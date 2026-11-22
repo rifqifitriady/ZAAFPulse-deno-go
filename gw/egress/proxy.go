@@ -32,19 +32,11 @@ func parseCall(r *http.Request) (*call, string) {
 		return nil, "X-ZP-Egress-URL is missing"
 	}
 	u, err := url.Parse(raw)
-	if err != nil || !u.IsAbs() || u.Host == "" || u.Opaque != "" {
+	if err != nil {
 		return nil, "X-ZP-Egress-URL is not an absolute URL"
 	}
-	u.Scheme = strings.ToLower(u.Scheme)
-	u.Host = strings.ToLower(u.Host) // as a WHATWG URL holds it: Host and the final URL in lower case
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, "only http:// and https:// URLs can be fetched"
-	}
-	if u.User != nil {
-		return nil, "URLs with a user name or password are not fetched"
-	}
-	if _, port := target(u); port < 1 || port > 65535 || u.Hostname() == "" {
-		return nil, "X-ZP-Egress-URL has no valid host and port"
+	if msg := checkTarget(u, "X-ZP-Egress-URL"); msg != "" {
+		return nil, msg
 	}
 	c := &call{url: u, purpose: r.Header.Get("X-Zp-Egress-Purpose"), redirect: "follow",
 		public: r.Header.Get("X-Zp-Egress-Public") == "1"}
@@ -59,6 +51,27 @@ func parseCall(r *http.Request) (*call, string) {
 		return nil, "X-ZP-Egress-Redirect must be follow, manual or error"
 	}
 	return c, ""
+}
+
+// checkTarget is the one check every URL the endpoint fetches passes, the caller's and every redirect target: absolute,
+// http or https, no user name or password, a host and a port 1..65535. It lower-cases the scheme and the host in place,
+// as a WHATWG URL holds them (the record's host, the final URL). A non-empty message names what is wrong with it.
+func checkTarget(u *url.URL, what string) string {
+	if !u.IsAbs() || u.Host == "" || u.Opaque != "" {
+		return what + " is not an absolute URL"
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "only http:// and https:// URLs can be fetched"
+	}
+	if u.User != nil {
+		return "URLs with a user name or password are not fetched"
+	}
+	if host, port := target(u); host == "" || port < 1 || port > 65535 {
+		return what + " has no valid host and port"
+	}
+	return ""
 }
 
 // writeError answers a failure: status, X-ZP-Egress-Error and a JSON {code, message}.
@@ -191,7 +204,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	}
 	header := outboundHeader(r.Header)
 	method := r.Method
-	src := newReplay(r.Body, r.ContentLength, s.maxReplay)
+	src := newReplay(r.Body, r.ContentLength, s.replayLimit(c))
 	body := src.first()
 	cur := c.url
 	redirects := 0
@@ -231,6 +244,14 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 			fail(rec, http.StatusBadGateway, code, message)
 			return
 		}
+		if resp.StatusCode < 100 || resp.StatusCode > 999 {
+			// No HTTP status (net/http reads any three digits): no answer to pass on, and none to record.
+			_ = resp.Body.Close()
+			rec.MS = ms(start)
+			fail(rec, http.StatusBadGateway, "EPROTO", "the target answered status "+strconv.Itoa(resp.StatusCode)+
+				", which is not an HTTP status")
+			return
+		}
 		rec.Status = resp.StatusCode
 		if isRedirect(resp.StatusCode) && c.redirect != "manual" {
 			loc := resp.Header.Get("Location")
@@ -248,12 +269,12 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 				}
 				s.emit(rec)
 				next, err := cur.Parse(loc)
-				if err != nil || (next.Scheme != "http" && next.Scheme != "https") || next.Host == "" {
+				if err != nil {
 					writeError(w, http.StatusBadGateway, CodeRedirect, "the target redirected to an URL that cannot be fetched")
 					return
 				}
-				if next.User != nil {
-					writeError(w, http.StatusBadGateway, CodeRedirect, "the target redirected to an URL with a user name or password")
+				if msg := checkTarget(next, "the redirect target"); msg != "" {
+					writeError(w, http.StatusBadGateway, CodeRedirect, "the target redirected to an URL that cannot be fetched: "+msg)
 					return
 				}
 				if redirects >= maxRedirects {
@@ -262,7 +283,9 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 				}
 				redirects++
 				st := resp.StatusCode
-				if (st == 303 && method != http.MethodHead) || ((st == 301 || st == 302) && method == http.MethodPost) {
+				// WHATWG fetch: 301/302 with POST, and 303 with any method but GET and HEAD, become a GET without a body.
+				if (st == 303 && method != http.MethodGet && method != http.MethodHead) ||
+					((st == 301 || st == 302) && method == http.MethodPost) {
 					method = http.MethodGet
 					body = nil
 					src.drop()
@@ -288,6 +311,15 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// replayLimit is how much of the caller's body is kept for a 307/308 replay: only a followed redirect sends it again
+// (manual and error never do), so nothing is kept otherwise.
+func (s *Server) replayLimit(c *call) int {
+	if c.redirect != "follow" {
+		return 0
+	}
+	return s.maxReplay
+}
+
 // answer streams the target's answer back: its status and headers (hop-by-hop removed) plus X-ZP-Egress-URL and
 // X-ZP-Egress-Redirected, the body flushed after every read. A body that fails halfway aborts the caller's
 // connection, so the caller sees the failure rather than a short body.
@@ -299,6 +331,13 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, resp *http.Respo
 		h[k] = v
 	}
 	stripHop(h)
+	// The X-ZP-Egress-* answer headers are the endpoint's own: a target's are dropped, so it cannot fake a failure,
+	// the final URL or a redirect.
+	for k := range h {
+		if strings.HasPrefix(strings.ToLower(k), "x-zp-egress-") {
+			delete(h, k)
+		}
+	}
 	h.Set("X-Zp-Egress-Url", finalURL(u))
 	if redirected {
 		h.Set("X-Zp-Egress-Redirected", "1")
@@ -309,11 +348,13 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, resp *http.Respo
 	rec.Outcome = OutcomeOK
 	buf := make([]byte, 32<<10)
 	var readErr error
+	written := true
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			rec.BytesIn += int64(n)
 			if _, werr := w.Write(buf[:n]); werr != nil {
+				written = false
 				break // the caller left; r.Context() cancels the target request
 			}
 			_ = rc.Flush()
@@ -333,7 +374,7 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, resp *http.Respo
 		rec.Outcome = OutcomeError
 		rec.Error, _ = errorCode(readErr)
 	}
-	if r.Context().Err() != nil {
+	if !written || r.Context().Err() != nil {
 		rec.Outcome, rec.Error = OutcomeError, CodeAborted
 	}
 	rec.MS = ms(start)
