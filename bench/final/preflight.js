@@ -324,6 +324,12 @@ function listeners(platform, port) {
   return [...String(s.stdout || '').matchAll(/pid=(\d+)/g)].map((m) => Number(m[1]));
 }
 
+/** The drive letter of a Windows path (C:\\…), upper case, or null: the only thing passed to Get-PSDrive. @param {string} dir */
+function psDriveName(dir) {
+  const m = /^([A-Za-z]):[\\/]/.exec(String(dir || ''));
+  return m ? m[1].toUpperCase() : null;
+}
+
 function freeBytes(platform, dir) {
   try {
     if (typeof fs.statfsSync === 'function') {
@@ -334,7 +340,9 @@ function freeBytes(platform, dir) {
     /* fall through */
   }
   if (platform === 'win32') {
-    const drive = path.parse(path.resolve(dir)).root.replace(/[:\\/]+$/, '');
+    // Only a drive letter is ever placed in the PowerShell command; a UNC or odd path gets no reading.
+    const drive = psDriveName(dir);
+    if (!drive) return null;
     const r = run('powershell', ['-NoProfile', '-NonInteractive', '-Command', `(Get-PSDrive ${drive}).Free`]);
     const n = Number(firstLine(r));
     return Number.isFinite(n) ? n : null;
@@ -453,6 +461,7 @@ module.exports = {
   checkDisk,
   checkFiles,
   openFilesReach,
+  psDriveName,
   run,
   checkTools,
   checkGateway,
