@@ -12,7 +12,8 @@
 # The input skip-build (workflow_call only, default false) skips it: release.yml calls build.yml itself.
 # The Node and Deno jobs also run the contract suite with the Go gateway in front (ZP_ENGINE=front, P4a T6).
 # The contract-go-engine job runs the contract suite with chat shadowed by, and served by, the go engine (P4b).
-# The m4-bench job (P4c) runs the gateway benchmark in its three modes on Ubuntu, on manual runs only.
+# The m4-bench job (P4c) runs the gateway benchmark in its three modes on Ubuntu, on manual runs of this workflow only
+# (not when a manually started release.yml calls it with skip-build).
 # The fixtures job regenerates the Go ports' fixtures from the JS on Node and Deno and fails on a diff (P4 stage 1).
 # The guard-bench job times the Go guard against its P4e targets and against the JS guard on the same runner.
 # The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
@@ -262,9 +263,11 @@ jobs:
   # private tier (the go engine serves only calls no guardrail check applies to until P4e). Manual runs only: it takes
   # about 10 minutes and measures, it does not gate. A go run that hands calls to the server, or that opens a connection
   # per stream to the provider, fails. The result files are an artifact; the summary prints each run's line.
+  # A called workflow sees its caller's event, so a release.yml started by hand (tests=true) would start it too:
+  # skip-build, which only release.yml sets, rules that out.
   m4-bench:
     name: M4 bench (ubuntu)
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && !inputs.skip-build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
