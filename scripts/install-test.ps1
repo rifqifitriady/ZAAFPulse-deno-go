@@ -22,6 +22,12 @@
 #      sees the marker. -NoUpgrade skips it.
 #   3. M12: scripts/upgrade-check.js --v2 on the unpacked package (needs Node). By default on win-x64 only.
 # Prints one summary line per part (also to $env:GITHUB_STEP_SUMMARY when set) and exits non-zero when a part fails.
+# Every wait is bounded: each program (an installer, zaafpulse version|doctor|service status, node) runs through
+# Invoke-Bounded, with its output going to files (never a pipe, which a background process it starts could inherit
+# and hold open) and shown as it comes, a progress line every 30 s, and a timeout; every HTTP call has -TimeoutSec, and
+# every poll (Wait-Until) has its own limit. A timeout kills that program's process tree, prints the logs (the
+# server's too) and fails the part; the parts after it are skipped, so the step fails fast and named instead of
+# running into the job timeout. At the end anything still running from the temp install is ended.
 # PowerShell 5.1 or 7. Set KEEP_TEMP=1 to keep the temp folder.
 param(
   [Parameter(Mandatory = $true)][string]$Archive,
@@ -93,8 +99,74 @@ $Marker = "install-test-$PID-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
 $script:ServerProc = $null
 $script:ServiceInstalled = $false
 $script:PartLine = $null
+$script:TimedOut = $false
+$script:Step = 0
 
 # ---- helpers ----
+# One Windows command line from an argument list (the CommandLineToArgvW rules): Start-Process -ArgumentList joins
+# its items with spaces and quotes none of them.
+function Join-CommandLine([string[]]$argv) {
+  $quoted = foreach ($a in $argv) {
+    if ($a -and $a -notmatch '[\s"]') { $a }
+    else { '"' + (($a -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }
+  }
+  return ($quoted -join ' ')
+}
+# The text a file gained since $pos bytes; the writer may still hold it open (Start-Process opens it shared).
+function Read-Since([string]$file, [ref]$pos) {
+  try {
+    $fs = [IO.File]::Open($file, 'Open', 'Read', 'ReadWrite, Delete')
+    try {
+      if ($fs.Length -le $pos.Value) { return '' }
+      $null = $fs.Seek($pos.Value, 'Begin')
+      $buf = New-Object byte[] ($fs.Length - $pos.Value)
+      $n = $fs.Read($buf, 0, $buf.Length)
+      $pos.Value += $n
+      return [Text.Encoding]::UTF8.GetString($buf, 0, $n)
+    } finally { $fs.Dispose() }
+  } catch { return '' }
+}
+# Runs a program to its end within $seconds and returns @{ Code; Out } (Out: its stdout lines). Its stdout and stderr
+# go to files under $T\logs, never a pipe: a pipe stays open while any process that inherited it runs (a server it
+# started in the background), and reading it to its end would wait for that server. What it prints is shown as it
+# comes, with a progress line every 30 s. This waits for the program's own process only, never for its descendants
+# (no Start-Process -Wait). On a timeout its process tree is killed and the call throws, naming the step.
+function Invoke-Bounded([string]$label, [int]$seconds, [string]$file, [string[]]$argv = @()) {
+  $script:Step++
+  $out = Join-Path $T "logs\step$($script:Step).out.log"
+  $err = Join-Path $T "logs\step$($script:Step).err.log"
+  $sp = @{ FilePath = $file; NoNewWindow = $true; PassThru = $true; RedirectStandardOutput = $out; RedirectStandardError = $err }
+  if ($argv.Count -gt 0) { $sp.ArgumentList = Join-CommandLine $argv }
+  Say "$label (at most $seconds s)"
+  $start = Get-Date
+  $p = Start-Process @sp
+  $null = $p.Handle   # Windows PowerShell 5.1: without the handle cached, ExitCode stays empty
+  $posOut = 0; $posErr = 0
+  $nextNote = $start.AddSeconds(30)
+  $done = $false
+  while (-not $done) {
+    $done = $p.WaitForExit(1000)
+    $text = (Read-Since $out ([ref]$posOut)) + (Read-Since $err ([ref]$posErr))
+    if ($text) { Write-Host -NoNewline $text }
+    if ($done) { break }
+    $now = Get-Date
+    if ($now -ge $start.AddSeconds($seconds)) {
+      Write-Host ''
+      Write-Host "x $label timed out after $seconds s; killing process $($p.Id) and what it started" -ForegroundColor Red
+      & taskkill.exe /PID $p.Id /T /F 2>&1 | Out-Host
+      $script:TimedOut = $true
+      throw "$label timed out after $seconds s"
+    }
+    if ($now -ge $nextNote) {
+      Say "... still waiting for $label ($([int]($now - $start).TotalSeconds) s of $seconds s)"
+      $nextNote = $now.AddSeconds(30)
+    }
+  }
+  $code = $p.ExitCode
+  Say "$label exited $code after $([int]((Get-Date) - $start).TotalSeconds) s"
+  $lines = @(Get-Content -LiteralPath $out -ErrorAction SilentlyContinue)
+  return [pscustomobject]@{ Code = $code; Out = $lines }
+}
 function Wait-Until([int]$seconds, [scriptblock]$cond) {
   $end = (Get-Date).AddSeconds($seconds)
   while ($true) {
@@ -121,14 +193,18 @@ function Set-Front([string]$dir) {
   [IO.File]::WriteAllText($js, 'const fs = require("fs"); const f = process.argv[2];' +
     ' const c = JSON.parse(fs.readFileSync(f, "utf8")); c.gateway = { ...(c.gateway || {}), engine: "front" };' +
     ' fs.writeFileSync(f, JSON.stringify(c, null, 2) + "\n");')
-  & node $js (Join-Path $dir 'config.json')
-  if ($LASTEXITCODE -ne 0) { throw "Could not set gateway.engine in $dir\config.json" }
+  $node = (Get-Command node).Source
+  $r = Invoke-Bounded 'node set-front.js' 60 $node @($js, (Join-Path $dir 'config.json'))
+  if ($r.Code -ne 0) { throw "Could not set gateway.engine in $dir\config.json" }
 }
-function Invoke-Installer([string]$file, [string[]]$installerArgs) {
+# An installer in its own -InstallerHost process. Not `& $InstallerHost ... | Out-Host`: that reads the installer's
+# output to its end, and the end never comes while a process the installer started in the background (the service's
+# launcher and server) holds the pipe (the v2.0.0 dry run hung there for 29 minutes). Invoke-Bounded waits for the
+# installer's process alone, at most $seconds.
+function Invoke-Installer([string]$file, [string[]]$installerArgs, [int]$seconds = 300) {
   $what = "$(Split-Path -Leaf $file) $($installerArgs -join ' ')"
-  Say $what
-  & $InstallerHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file @installerArgs | Out-Host
-  if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
+  $r = Invoke-Bounded $what $seconds $InstallerHost (@('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $file) + $installerArgs)
+  if ($r.Code -ne 0) { throw "$what failed (exit $($r.Code))" }
 }
 function Install-V2([string[]]$more) {
   Invoke-Installer (Join-Path $RepoRoot 'install.ps1') (@('-Archive', $Archive, '-Sums', $Sums, '-Port', "$Port") + $more)
@@ -140,23 +216,45 @@ function Get-Launcher {
   throw "No zaafpulse command in $BinDir"
 }
 function Assert-Version([string]$want, [string]$what) {
-  $out = & (Get-Launcher) version
-  if ($LASTEXITCODE -ne 0) { throw "${what}: zaafpulse version failed (exit $LASTEXITCODE)" }
-  $v = "$(@($out) | Select-Object -First 1)".Trim()
+  $r = Invoke-Bounded "$what`: zaafpulse version" 60 (Get-Launcher) @('version')
+  if ($r.Code -ne 0) { throw "${what}: zaafpulse version failed (exit $($r.Code))" }
+  $v = "$(@($r.Out) | Select-Object -First 1)".Trim()
   if ($v -ne $want) { throw "${what}: zaafpulse version says '$v', expected $want" }
 }
+# A server this script owns, in the background: its output goes to files, it is waited for through HTTP polls with a
+# limit (Wait-Until), and Stop-OwnServer kills its process tree.
 function Start-Server([string]$label) {
   $launcher = Get-Launcher
+  Say "${label}: starting the server ($launcher start), waiting at most 60 s for /login.html"
   $script:ServerProc = Start-Process -FilePath $launcher -ArgumentList 'start' -NoNewWindow -PassThru `
     -RedirectStandardOutput (Join-Path $T "logs\$label.out.log") -RedirectStandardError (Join-Path $T "logs\$label.err.log")
   if (-not (Wait-Until 60 { Test-Login })) { throw "${label}: no 200 on /login.html within 60 s" }
+  Say "${label}: the server answers"
 }
 # Ends the server this script started and what it started (the gateway; for v1 the cmd.exe and its node).
 function Stop-OwnServer {
   $p = $script:ServerProc
   $script:ServerProc = $null
   if ($p -and -not $p.HasExited) {
-    & taskkill.exe /PID $p.Id /T /F | Out-Host
+    $null = Invoke-Bounded "taskkill the server ($($p.Id))" 60 'taskkill.exe' @('/PID', "$($p.Id)", '/T', '/F')
+  }
+}
+# Ends whatever still runs from the temp install, so nothing outlives this script: a program under $Root (the
+# server, the gateway, v1's node) or one whose command line names the temp folder (the Startup launcher's wscript.exe
+# and its cmd.exe). At most 20 s.
+function Stop-TempLeftovers {
+  $under = $Root.TrimEnd('\') + '\'
+  $procs = @(Get-CimInstance Win32_Process -OperationTimeoutSec 30 | Where-Object {
+      $_.ProcessId -ne $PID -and (
+        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($under, [StringComparison]::OrdinalIgnoreCase)) -or
+        ($_.CommandLine -and $_.CommandLine.IndexOf($T, [StringComparison]::OrdinalIgnoreCase) -ge 0))
+    })
+  if ($procs.Count -eq 0) { return }
+  Write-Host "Ending what still runs from the temp install: $(($procs | ForEach-Object { "$($_.Name) ($($_.ProcessId))" }) -join ', ')"
+  foreach ($p in $procs) { try { Invoke-CimMethod -InputObject $p -MethodName Terminate -OperationTimeoutSec 10 | Out-Null } catch { } }
+  $ids = @($procs | ForEach-Object { $_.ProcessId })
+  if (-not (Wait-Until 20 { -not (Get-Process -Id $ids -ErrorAction SilentlyContinue) })) {
+    Write-Warning "Still running 20 s after the stop: $($ids -join ', ')"
   }
 }
 function Wait-PortFree {
@@ -214,14 +312,15 @@ function Test-CleanInstall {
     $how = 'background start'
   }
   Assert-Version $Version 'clean install'
-  $doctor = & $Exe doctor
-  if ($LASTEXITCODE -ne 0) { $doctor | Out-Host; throw "clean install: zaafpulse doctor failed (exit $LASTEXITCODE)" }
+  $r = Invoke-Bounded 'zaafpulse doctor' 120 $Exe @('doctor')
+  if ($r.Code -ne 0) { throw "clean install: zaafpulse doctor failed (exit $($r.Code))" }
   if ($ServiceTest) {
+    Say 'clean install: waiting at most 90 s for the service to answer /login.html'
     if (-not (Wait-Until 90 { Test-Login })) {
-      & $Exe service status | Out-Host
+      $null = Invoke-Bounded 'zaafpulse service status' 60 $Exe @('service', 'status')
       throw 'clean install: the service does not answer /login.html within 90 s'
     }
-    & $Exe service status | Out-Host
+    $null = Invoke-Bounded 'zaafpulse service status' 60 $Exe @('service', 'status')
   } else {
     Start-Server 'clean'
   }
@@ -229,6 +328,7 @@ function Test-CleanInstall {
   if ($ServiceTest) {
     $script:ServiceInstalled = $false
     Invoke-Installer (Join-Path $RepoRoot 'install.ps1') @('-Uninstall')
+    Say "clean install: waiting at most 20 s for port $Port to be free"
     if (-not (Wait-Until 20 { -not (Test-Listening) })) { throw "clean install: port $Port still in use 20 s after -Uninstall" }
   } else {
     Stop-Server
@@ -243,8 +343,10 @@ function Test-Upgrade {
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'upgrade: the v1.1.0 installer needs Node 18+ on PATH' }
   $d = Join-Path $T 'data-upgrade'; Write-Config $d $false; $env:ZAAFPULSE_DATA = $d
   $v1 = Join-Path $T 'install-v1.ps1'
-  Invoke-WebRequest -UseBasicParsing -Uri $V1Installer -OutFile $v1
-  Invoke-Installer $v1 @('-NoService', '-Version', $V1Tag)
+  Say "upgrade: downloading $V1Installer (at most 120 s)"
+  Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $V1Installer -OutFile $v1
+  # v1's installer downloads its app package: more time than v2's local archive.
+  Invoke-Installer $v1 @('-NoService', '-Version', $V1Tag) 600
   if ((Get-Launcher) -ne $V1Cmd) { throw 'upgrade: the zaafpulse command is not v1''s zaafpulse.cmd' }
   Start-Server 'v1-before'
   Write-Marker 'v1'
@@ -278,10 +380,10 @@ function Test-M12 {
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'M12: needs Node on PATH' }
   $x = Join-Path $T 'm12'
   Expand-Archive -LiteralPath $Archive -DestinationPath $x
-  $out = & node (Join-Path $RepoRoot 'scripts\upgrade-check.js') --v2 (Join-Path $x "$Top\zaafpulse.exe")
-  $code = $LASTEXITCODE
-  $line = "$(@($out) | Select-Object -Last 1)"
-  Write-Host $line
+  $node = (Get-Command node).Source
+  $r = Invoke-Bounded 'node scripts\upgrade-check.js --v2' 600 $node @((Join-Path $RepoRoot 'scripts\upgrade-check.js'), '--v2', (Join-Path $x "$Top\zaafpulse.exe"))
+  $code = $r.Code
+  $line = "$(@($r.Out) | Select-Object -Last 1)"
   if ($code -ne 0) { throw "M12: upgrade-check.js failed (exit $code)" }
   $short = if ($line.Length -gt 300) { $line.Substring(0, 300) } else { $line }
   $script:PartLine = "M12: PASS ($short)"
@@ -290,6 +392,12 @@ function Test-M12 {
 $summary = New-Object System.Collections.Generic.List[string]
 $failed = $false
 function Invoke-Part([string]$label, [scriptblock]$body) {
+  # After a timeout the job's time is better spent failing now than waiting out the next part's limits.
+  if ($script:TimedOut) {
+    $script:failed = $true
+    $summary.Add("$label`: SKIPPED (an earlier step timed out)")
+    return
+  }
   Say "${Name}: $label"
   $script:PartLine = $null
   try {
@@ -314,6 +422,7 @@ try {
   if ($M12 -eq 'on') { Invoke-Part 'M12' { Test-M12 } } else { $summary.Add('M12: skipped (runs on linux-x64 and win-x64)') }
 } finally {
   Complete-Part
+  try { Stop-TempLeftovers } catch { Write-Warning $_.Exception.Message }
   if ($env:KEEP_TEMP -eq '1') { Write-Host "temp folder kept: $T" }
   else { Remove-Item -LiteralPath $T -Recurse -Force -ErrorAction SilentlyContinue }
 }
