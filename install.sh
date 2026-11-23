@@ -1,6 +1,7 @@
 #!/bin/sh
-# ZAAFPulse installer for macOS on Apple Silicon and Linux (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora,
-# Amazon Linux, SUSE …) on x64 and arm64. One command:
+# ZAAFPulse installer for Linux (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux, SUSE …) on x64 and
+# arm64. v2.0.0 has no macOS package: on a Mac it prints the v1.x installer (--rollback and --uninstall still work).
+# One command:
 #
 #   curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh | sh
 #
@@ -14,7 +15,7 @@
 # What it does: downloads the release package for this system (checksum verified), puts zaafpulse and
 # zaafpulse-gw in the install folder, adds the `zaafpulse` command and starts it as a background service
 # (launchd, or systemd). An earlier install (v1.x or v2) is kept for --rollback. Nothing else on the system
-# is changed. Intel Macs, Alpine/musl, armv7l, ppc64le and s390x: use the v1.x installer it names.
+# is changed. macOS, Alpine/musl, armv7l, ppc64le and s390x: use the v1.x installer it names.
 set -eu
 
 REPO="rifqifitriady/ZAAFPulse-deno-go"
@@ -193,18 +194,17 @@ if [ "$ROLLBACK" = 1 ]; then
 fi
 
 # ---- platform: the v2 builds ----
+# No macOS package in v2.0.0 (owner 2026-11-23, plan §11 decisions 10 and 11), on Apple silicon or Intel alike. The
+# darwin paths below (launchd, the quarantine flag) stay for when a macOS package returns.
+if [ "$PLAT" = darwin ]; then
+  die "no v2 package for macOS yet (v2.0.0 ships Linux and Windows packages only); the v1.x installer still supports macOS: $V1_INSTALL"
+fi
 case "$ARCH" in
   x86_64|amd64) NARCH=x64 ;;
   aarch64|arm64) NARCH=arm64 ;;
   armv7l|ppc64le|s390x) die "no v2 build for $PLAT-$ARCH; the v1.x installer still supports it: $V1_INSTALL" ;;
   *) die "unsupported CPU $ARCH" ;;
 esac
-# v2 has no Intel Mac build (five targets, owner 2026-11-23). A shell under Rosetta on Apple Silicon also reports
-# x86_64: sysctl tells the two apart, and there the arm64 build runs natively.
-if [ "$PLAT" = darwin ] && [ "$NARCH" = x64 ]; then
-  if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then NARCH=arm64
-  else die "no v2 build for Intel Macs (darwin-x64); the v1.x installer still supports them: $V1_INSTALL"; fi
-fi
 if [ "$PLAT" = linux ] && { [ -f /etc/alpine-release ] || (ldd --version 2>&1 | grep -qi musl); }; then
   die "no v2 build for $PLAT-musl-$NARCH; the v1.x installer still supports it: $V1_INSTALL"
 fi

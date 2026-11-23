@@ -19,7 +19,12 @@ const SKIP =
       : process.getuid && process.getuid() === 0
         ? 'as root install.sh ignores ZAAFPULSE_PREFIX'
         : false;
-const PLAT = process.platform === 'darwin' ? 'darwin' : 'linux';
+// install.sh stops on every Mac (no macOS package since 2026-11-23), so the install tests run as Linux on any host: a
+// fake uname answers Linux for -s and the real answer for anything else.
+const PLAT = 'linux';
+const REAL_UNAME = spawnSync('sh', ['-c', 'command -v uname'], { encoding: 'utf8' }).stdout.trim() || '/usr/bin/uname';
+const unameStub = (s, m) =>
+  `#!/bin/sh\ncase "$1" in -s) echo ${s} ;; -m) echo ${m || '"$(' + REAL_UNAME + ' -m)"'} ;; *) exec ${REAL_UNAME} "$@" ;; esac\n`;
 const NARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
 
 // The fake zaafpulse: `version` prints its version (2.0.0-test), `path` prints $PATH, anything else its args; every
@@ -83,7 +88,17 @@ function withVersion(ctx, version) {
 }
 
 function run(ctx, args, { stdin } = {}) {
-  const env = { PATH: process.env.PATH, HOME: ctx.home, ZAAFPULSE_PREFIX: ctx.prefix, ZP_FAKE_LOG: ctx.log };
+  const stub = path.join(ctx.root, 'stub-linux');
+  if (!fs.existsSync(stub)) {
+    fs.mkdirSync(stub);
+    fs.writeFileSync(path.join(stub, 'uname'), unameStub('Linux'), { mode: 0o755 });
+  }
+  const env = {
+    PATH: `${stub}:${process.env.PATH}`,
+    HOME: ctx.home,
+    ZAAFPULSE_PREFIX: ctx.prefix,
+    ZP_FAKE_LOG: ctx.log,
+  };
   const argv = stdin ? ['-s', '--', ...args] : [SCRIPT, ...args];
   return spawnSync(SH, argv, { env, encoding: 'utf8', input: stdin });
 }
@@ -470,41 +485,32 @@ case "$1" in version) echo 2.0.0-test ;; register-mcp) exit 3 ;; *) echo "args: 
   assert.ok(fs.existsSync(path.join(ctx.prefix, 'bin', 'zaafpulse')));
 });
 
-// The platform check, with uname (and sysctl, which reports Apple Silicon under Rosetta) faked on PATH. The release
-// has five targets (owner, 2026-11-23): no darwin-x64, so an Intel Mac is sent to the v1.x installer.
-function onPlatform(ctx, { s, m, arm64 = null }) {
-  const stub = path.join(ctx.root, 'stub');
+// The platform check, with uname faked on PATH. The release has four targets (owner, 2026-11-23, plan §11 decisions 10
+// and 11): no macOS package, so every Mac is sent to the v1.x installer. --rollback and --uninstall still work there.
+function onPlatform(ctx, { s, m }, args) {
+  const stub = path.join(ctx.root, `stub-${s}-${m}`);
   fs.mkdirSync(stub, { recursive: true });
-  fs.writeFileSync(
-    path.join(stub, 'uname'),
-    `#!/bin/sh\ncase "$1" in -s) echo ${s} ;; -m) echo ${m} ;; *) echo ${s} ;; esac\n`,
-    { mode: 0o755 },
-  );
-  // No sysctl answer means the key is unknown (an Intel Mac): sysctl exits non-zero, as macOS does.
-  fs.writeFileSync(
-    path.join(stub, 'sysctl'),
-    arm64 === null
-      ? '#!/bin/sh\necho "sysctl: unknown oid" >&2\nexit 1\n'
-      : `#!/bin/sh\n[ "$1 $2" = "-n hw.optional.arm64" ] && { echo ${arm64}; exit 0; }\nexit 1\n`,
-    { mode: 0o755 },
-  );
+  fs.writeFileSync(path.join(stub, 'uname'), unameStub(s, m), { mode: 0o755 });
+  // A Mac under Rosetta: sysctl says arm64 hardware. It no longer changes the answer.
+  fs.writeFileSync(path.join(stub, 'sysctl'), '#!/bin/sh\necho 1\n', { mode: 0o755 });
   const env = {
     PATH: `${stub}:${process.env.PATH}`,
     HOME: ctx.home,
     ZAAFPULSE_PREFIX: ctx.prefix,
     ZP_FAKE_LOG: ctx.log,
   };
-  // A missing archive: a run that passes the platform check stops at "no such archive", having changed nothing.
-  const args = ['--archive', path.join(ctx.root, 'missing.tar.gz'), '--no-service', '--no-modify-path'];
-  return spawnSync(SH, [SCRIPT, ...args], { env, encoding: 'utf8' });
+  // By default a missing archive: a run that passes the platform check stops at "no such archive", having changed
+  // nothing.
+  const argv = args || ['--archive', path.join(ctx.root, 'missing.tar.gz'), '--no-service', '--no-modify-path'];
+  return spawnSync(SH, [SCRIPT, ...argv], { env, encoding: 'utf8' });
 }
 
-test('an Intel Mac stops before anything is changed and is pointed at the v1.x installer', { skip: SKIP }, () => {
-  for (const arm64 of [null, '0']) {
+test('any Mac stops before anything is changed and is pointed at the v1.x installer', { skip: SKIP }, () => {
+  for (const m of ['arm64', 'x86_64']) {
     const ctx = setup();
-    const r = onPlatform(ctx, { s: 'Darwin', m: 'x86_64', arm64 });
-    assert.equal(r.status, 1, `${r.stdout}\n${r.stderr}`);
-    assert.match(r.stderr, /no v2 build for Intel Macs \(darwin-x64\)/);
+    const r = onPlatform(ctx, { s: 'Darwin', m });
+    assert.equal(r.status, 1, `${m}: ${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /no v2 package for macOS yet/);
     assert.match(r.stderr, /raw\.githubusercontent\.com\/rifqifitriady\/ZAAFPulse\/main\/install\.sh/);
     assert.ok(!r.stderr.includes('no such archive'), r.stderr);
     assert.ok(!fs.existsSync(ctx.prefix), 'no install folder');
@@ -513,21 +519,24 @@ test('an Intel Mac stops before anything is changed and is pointed at the v1.x i
   }
 });
 
-test('a Mac with Apple Silicon in a Rosetta shell (uname -m x86_64) takes the arm64 build', { skip: SKIP }, () => {
+test('on a Mac, --rollback and --uninstall still work', { skip: SKIP }, () => {
   const ctx = setup();
-  const r = onPlatform(ctx, { s: 'Darwin', m: 'x86_64', arm64: '1' });
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /no such archive/, 'it got past the platform check');
-  assert.ok(!r.stderr.includes('Intel'), r.stderr);
+  ok(install(withVersion(ctx, '2.0.0')));
+  ok(install(ctx));
+  const rb = onPlatform(ctx, { s: 'Darwin', m: 'arm64' }, ['--rollback', '--no-service']);
+  ok(rb);
+  assert.match(rb.stdout, /Rolled back/);
+  const un = onPlatform(ctx, { s: 'Darwin', m: 'arm64' }, ['--uninstall', '--no-service']);
+  ok(un);
+  assert.ok(!fs.existsSync(path.join(ctx.prefix, 'bin')));
+  assert.ok(!fs.existsSync(ctx.launcher));
+  noService(ctx);
 });
 
-test('Linux x86_64 and arm64 Macs pass the platform check; armv7l, ppc64le and s390x stop', { skip: SKIP }, () => {
-  for (const [s, m] of [
-    ['Linux', 'x86_64'],
-    ['Darwin', 'arm64'],
-  ]) {
-    const r = onPlatform(setup(), { s, m });
-    assert.match(r.stderr, /no such archive/, `${s} ${m}: ${r.stderr}`);
+test('Linux x86_64 and aarch64 pass the platform check; armv7l, ppc64le and s390x stop', { skip: SKIP }, () => {
+  for (const m of ['x86_64', 'aarch64']) {
+    const r = onPlatform(setup(), { s: 'Linux', m });
+    assert.match(r.stderr, /no such archive/, `${m}: ${r.stderr}`);
   }
   for (const m of ['armv7l', 'ppc64le', 's390x']) {
     const r = onPlatform(setup(), { s: 'Linux', m });
