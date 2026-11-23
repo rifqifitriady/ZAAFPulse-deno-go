@@ -100,6 +100,6 @@ Each check prints pass, warn or fail; a fail stops the run unless `--skip-prefli
 
 ## Pending owner
 
-- Repeats 3 (about 2 h 20 min) against 1 (about 50 min); the runner prints its estimate before the confirmation.
+- Repeats 3 (about 2 h 15 min) against 1 (about 50 min); the runner prints its estimate before the confirmation.
 - The server runtime for the headline scenarios: Deno (D4).
 - The noise threshold (D2).

@@ -91,7 +91,7 @@ async function main(argv) {
   }
   if (opts.skipPreflight) say('\n--skip-preflight: every result will be stamped "not quiet-confirmed".');
 
-  const perRound = defs.reduce((a, d) => a + sc.estimateSeconds(d, { smoke: opts.smoke }), 0);
+  const perRound = defs.reduce((a, d) => a + sc.estimateSeconds(d, { smoke: opts.smoke }) + (opts.smoke ? 0 : 5), 0);
   const prepS = (defs.some((d) => d.commit) ? 60 : 0) + (defs.some((d) => d.kind === 'binary') && !opts.binary && opts.build ? 180 : 0);
   say(`\nEstimated: about ${mins(perRound * opts.repeats + prepS + opts.countdown)} (${mins(perRound)} a round${prepS ? `, ${mins(prepS)} to prepare` : ''}).`);
 
