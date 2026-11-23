@@ -318,9 +318,25 @@ const EGRESS_GRANT = (() => {
     outsideNet,
   };
 })();
+// agents.json's list for the lock-down's gate condition (a remote agent is the agents class's destination), or undefined
+// while it cannot be read (before the gateway exists, or a read that failed): then a configured agent is assumed.
+function lockdownAgents() {
+  try {
+    return gateway.agents.list();
+  } catch {
+    return undefined;
+  }
+}
 function egressLockNow() {
-  return clientLock(EGRESS_GRANT, () =>
-    require('./lib/permissions').lockdownState({ config: rawConfig(), env: process.env, gate: readEgressGate() }).inForce,
+  return clientLock(
+    EGRESS_GRANT,
+    () =>
+      require('./lib/permissions').lockdownState({
+        config: rawConfig(),
+        env: process.env,
+        gate: readEgressGate(),
+        agents: lockdownAgents(),
+      }).inForce,
   );
 }
 function applyEgress() {
@@ -391,7 +407,7 @@ const egressStatus = createEgressStatus({
       notes: eg.notes,
       allow: egressAllowNow(cfg),
       allowList: ec.allowList,
-      lockdown: lockdownNow(perms.lockdownState({ config: cfg, env: process.env, gate }), {
+      lockdown: lockdownNow(perms.lockdownState({ config: cfg, env: process.env, gate, agents: lockdownAgents() }), {
         ...perms.describe(),
         outsideNet: EGRESS_GRANT.outsideNet,
       }),

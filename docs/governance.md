@@ -268,7 +268,14 @@ does not:
 
 - `egress.lockdown` is `true` and `ZAAFPULSE_EGRESS_LOCKDOWN` is not `0`;
 - `gateway.engine` is `"front"`;
-- every one of the twelve classes is asked for `go` and has met its gate (with both gate parts at 0 no pass is needed);
+- every one of the twelve classes is asked for `go` and has met its gate (with both gate parts at 0 no pass is needed).
+  A class this install has nothing configured to call counts as met: no destination of it outside `localhost`,
+  `127.0.0.1` and `[::1]` (no remote agent, no OTLP endpoint, no webhook, no vector store, …), so it has nothing to
+  send. It is computed each time and never written to `.data/egress-gate.json`, so it ends when the class gets a
+  destination; a secret reference or an `agents.json` that cannot be read counts as configured. `routers` (the
+  OpenRouter page), `public` (URL ingest) and, while price sync is on, `pricing` always need their own pass. The
+  evidence names the classes counted clear this way. The rule and the options weighed:
+  [P7 defaults design](superpowers/specs/2026-11-23-p7-defaults-design.md);
 - the listen host (`ZAAFPULSE_HOST` or `HOST`, default `127.0.0.1`) is an address, not a name.
 
 A `deno run` launch of the server then gets `--allow-net=127.0.0.1,localhost,[::1]` (plus the listen address when it

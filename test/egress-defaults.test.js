@@ -98,7 +98,7 @@ test('a v1.1-style config keeps working: js mode, nothing narrowed, every class 
 test('the rollback (report, lockdown false) restores the P5 behaviour', () => {
   const ready = { gateway: { engine: 'front' }, egress: { classes: allGo(), allowList: 'report', lockdown: false } };
   const st = permissions.lockdownState({ config: ready, env, gate: passedGate() });
-  assert.deepEqual(st, { asked: false, inForce: false, why: 'egress.lockdown is false' });
+  assert.deepEqual(st, { asked: false, inForce: false, why: 'egress.lockdown is false', quiet: [] });
   assert.equal(netArg(ready), undefined);
   assert.equal(configPush({ gateway: {}, keys: [], pricing: {}, egress: ready.egress }).egress.allowList, 'report');
 });
