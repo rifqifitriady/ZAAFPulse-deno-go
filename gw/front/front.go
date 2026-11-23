@@ -319,6 +319,22 @@ func Listen(cfg Config, logger *log.Logger) (*Server, error) {
 	return s, nil
 }
 
+// limitBody stops r's body at its Content-Length, so nothing reads the server's own body past its end. The proxy
+// transport, after sending a body's last byte, reads it once more to find its end; net/http closes that body as the
+// answer to the client starts. When the transport's read came after the close (its goroutine scheduled late) it failed
+// ("http: invalid Read on closed Body"), the transport closed the control plane's connection under the answer it was
+// still reading, and the client's stream was cut after its first event. With the limit, that read is answered EOF
+// without touching the server's body. A chunked body (no length) is read to its end before its last chunk goes out,
+// so the control plane cannot answer first. The close stays the server's own.
+func limitBody(r *http.Request) {
+	if r.ContentLength > 0 && r.Body != nil {
+		r.Body = struct {
+			io.Reader
+			io.Closer
+		}{io.LimitReader(r.Body, r.ContentLength), r.Body}
+	}
+}
+
 // Serve answers on the main port until Shutdown or Close (then it returns nil).
 func (s *Server) Serve() error {
 	if err := s.srv.Serve(s.ln); !errors.Is(err, http.ErrServerClosed) {
@@ -389,6 +405,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Header.Del(ShadowHeader)
 	r.Header.Del(OwnHeader)
+	limitBody(r)
 	raw := RawPath(r.RequestURI)
 	class := Classify(raw)
 	if Subs[class] != nil && s.goEngine != nil {
