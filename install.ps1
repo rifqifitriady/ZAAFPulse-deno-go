@@ -54,6 +54,18 @@ function Get-Launcher {
   if (Test-Path -LiteralPath $OldCmd) { return $OldCmd }
   return $null
 }
+# Runs `<launcher> service ...` and returns its exit code. It waits for that one process to exit (at most 180 s), not
+# for the end of its output: `service install` leaves the server running in the background, and a launcher whose
+# background processes inherit its handles (v1's zaafpulse.cmd, which -Rollback restores; v2 before the fix in
+# lib/service.js winLaunchCommand) would hold an output pipe open for as long as the server runs, so `& $launcher ... |
+# Out-Host` would never return. Without -RedirectStandard* the launcher writes straight to this console (or whatever
+# runs this installer), and without -Wait (which waits for every descendant) nothing waits on the server.
+function Invoke-Service([string]$launcher, [string[]]$svcArgs) {
+  $p = Start-Process -FilePath $launcher -ArgumentList ($svcArgs -join ' ') -NoNewWindow -PassThru
+  $null = $p.Handle   # Windows PowerShell 5.1: without the handle cached, ExitCode stays empty
+  if (-not $p.WaitForExit(180000)) { throw "$launcher $($svcArgs -join ' ') did not finish within 180 s" }
+  return $p.ExitCode
+}
 # Stops the service through a launcher, then ends what still runs from this install (Stop-Leftovers). An old
 # launcher that no longer runs is only a warning.
 function Stop-ZaafService([string]$launcher) {
@@ -61,8 +73,8 @@ function Stop-ZaafService([string]$launcher) {
   if ($launcher) {
     $svcArgs = @('service', 'uninstall'); if ($System) { $svcArgs += '--system' }
     try {
-      & $launcher @svcArgs | Out-Host
-      if ($LASTEXITCODE -ne 0) { Warn "Could not stop the running service through $launcher (exit $LASTEXITCODE)" }
+      $code = Invoke-Service $launcher $svcArgs
+      if ($code -ne 0) { Warn "Could not stop the running service through $launcher (exit $code)" }
     } catch { Warn "Could not stop the running service through $launcher`: $($_.Exception.Message)" }
   }
   Stop-Leftovers
@@ -92,8 +104,8 @@ function Start-ZaafService([string]$launcher) {
   if ($NoService -or -not $launcher) { return }
   $svcArgs = @('service', 'install'); if ($System) { $svcArgs += '--system' }
   try {
-    & $launcher @svcArgs | Out-Host
-    if ($LASTEXITCODE -ne 0) { Warn 'Not started in the background; start it yourself with: zaafpulse start' }
+    $code = Invoke-Service $launcher $svcArgs
+    if ($code -ne 0) { Warn 'Not started in the background; start it yourself with: zaafpulse start' }
   } catch { Warn "Not started in the background ($($_.Exception.Message)); start it yourself with: zaafpulse start" }
 }
 # The AI clients' MCP entries, through v2's zaafpulse.exe (install.sh reregister): an entry an earlier install
