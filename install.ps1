@@ -99,9 +99,14 @@ function Start-ZaafService([string]$launcher) {
 # The AI clients' MCP entries, through v2's zaafpulse.exe (install.sh reregister): an entry an earlier install
 # registered starts that install's own files (v1's node.exe and app\mcp.js, or v2's bin\zaafpulse.exe), which an
 # upgrade or a rollback moves away. `register-mcp registered` writes again every client that holds an entry, and no
-# other. A failure only warns.
+# other. A failure only warns. With -System (install.sh as root) the entries belong to the users who registered them,
+# so each of them is told what to run instead.
 function Register-Again([string]$launcher) {
   if (-not $launcher) { return }
+  if ($System) {
+    Warn 'AI clients registered for the earlier install start files it moved: each user who registered one runs: zaafpulse register-mcp registered'
+    return
+  }
   Say 'Registering the AI clients that had ZAAFPulse again'
   try {
     & $launcher register-mcp registered | Out-Host

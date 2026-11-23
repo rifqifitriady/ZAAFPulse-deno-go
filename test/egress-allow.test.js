@@ -85,6 +85,9 @@ test('every source in one config gives the expected list, sorted and unique, por
       'api.pinecone.io:443',
       'api.roamresearch.com:443',
       'db.example.com:5432',
+      // A disabled provider and a disabled agent are listed too (P7 review): the Providers page tests a provider
+      // before it is on, and a collaboration run may name a disabled agent.
+      'disabled.example.com:443',
       'gpu.lan:11434',
       'heybrain.io:443',
       'hooks.example.com:443',
@@ -94,6 +97,7 @@ test('every source in one config gives the expected list, sorted and unique, por
       'my.openai.azure.com:443',
       'n8n.example.com:5678',
       'oauth2.googleapis.com:443',
+      'off-agent.example.com:443',
       'openrouter.ai:443',
       'otlp.example.com:4318',
       'q.example.com:6333',
@@ -170,4 +174,19 @@ test('a Google service account whose JSON names another token_uri puts that host
   assert.deepEqual(hosts(JSON.stringify({ token_uri: 'https://oauth2.googleapis.com/token' })), base);
   for (const s of ['not json', JSON.stringify({}), JSON.stringify({ token_uri: 5 }), null])
     assert.deepEqual(hosts(s), base);
+  // A resolver that keeps values (server.js allowSecret) applies the given pick: it sees and keeps the URL only.
+  const kept = [];
+  const json = JSON.stringify({ token_uri: 'https://sts.example-sa.com/token', private_key: 'PRIVATE' });
+  const picked = allowList(
+    { gateway: { providers: [vx] } },
+    {
+      resolveSecret: (ref, field, pick) => {
+        const v = pick ? pick(json) : json;
+        kept.push(v);
+        return v;
+      },
+    },
+  );
+  assert.ok(picked.some((r) => r.host === 'sts.example-sa.com'));
+  assert.deepEqual(kept, ['https://sts.example-sa.com/token']);
 });

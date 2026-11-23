@@ -7,8 +7,9 @@ the end.
 
 Nothing here moves on its own. Every engine switch defaults to `js` and every egress class to `direct`; a v2 install
 behaves as v1.1 until the steps below are taken. The egress allow-list enforces and the lock-down is asked for by
-default (since v2.0.0), but neither acts while every class is `direct`: no call passes the allow-list, and the
-lock-down's conditions (section 6) do not hold.
+default (since v2.0.0). While every egress class is `direct` the lock-down's conditions (section 6) do not hold and no
+outbound call of the server passes the allow-list; from step 2 on, the Go engine's own provider calls do, and every
+provider's host is on the list (a provider on this machine is never checked).
 
 ## 1. The switches
 

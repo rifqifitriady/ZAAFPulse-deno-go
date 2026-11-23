@@ -75,7 +75,6 @@ test('loopback, disabled and unparsable destinations leave a class quiet; unsure
     gateway: {
       providers: [
         { id: 'local', preset: 'ollama', baseUrl: 'http://127.0.0.1:11434/v1' },
-        { id: 'off', preset: 'custom', baseUrl: 'https://off.example.com', enabled: false },
         { id: 'bad', preset: 'custom', baseUrl: 'not a url' },
       ],
     },
@@ -97,11 +96,21 @@ test('loopback, disabled and unparsable destinations leave a class quiet; unsure
     env: { ZAAFPULSE_OLLAMA_URL: 'http://localhost:11434' },
     agents: [
       { id: 'near', remoteUrl: 'http://127.0.0.1:9000' },
-      { id: 'off', remoteUrl: 'https://x.example.com', enabled: false },
+      { id: 'off', remoteUrl: 'http://localhost:9001', enabled: false },
     ],
   });
   for (const c of ['gateway', 'connectors', 'mcp', 'evals', 'agents', 'notify', 'brain', 'otel', 'runtimes'])
     assert.ok(quiet.includes(c), c);
+  // A disabled provider or agent with a remote URL is on the allow-list, so it counts as configured.
+  const off = {
+    gateway: { providers: [{ id: 'o', preset: 'custom', baseUrl: 'https://x.example.com', enabled: false }] },
+  };
+  assert.ok(!quietClasses(off, { env: {}, agents: [] }).includes('gateway'));
+  assert.ok(
+    !quietClasses({}, { env: {}, agents: [{ id: 'a', enabled: false, remoteUrl: 'https://a.example.com' }] }).includes(
+      'agents',
+    ),
+  );
   // agents.json not readable (undefined): agents counts as configured.
   assert.ok(!quietClasses({}, { env: {} }).includes('agents'));
   assert.ok(!quietClasses({}, { env: {}, agents: undefined }).includes('agents'));

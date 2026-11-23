@@ -337,10 +337,18 @@ const commands = {
     // rollback/, or a v2 entry after a rollback): that client can no longer start ZAAFPulse's MCP server.
     try {
       const broken = require('../lib/mcp-registrations').brokenRegistrations();
+      const said = (b) =>
+        `${b.client}${b.scope === 'project' ? ' (a project entry)' : ''} starts ${b.paths.join(' and ')}, which no longer exists`;
+      const fix = [
+        ...(broken.some((b) => b.scope !== 'project') ? ['run `zaafpulse register-mcp registered`'] : []),
+        ...(broken.some((b) => b.scope === 'project')
+          ? ['remove a project entry in that project (`claude mcp remove zaafpulse`) or add it again there']
+          : []),
+      ];
       add(
         'MCP entries',
         broken.length
-          ? `${broken.map((b) => `${b.client} starts ${b.paths.join(' and ')}, which no longer exists`).join('; ')}; run \`zaafpulse register-mcp registered\``
+          ? `${broken.map(said).join('; ')}; ${fix.join('; ')}`
           : 'every entry starts a program that exists',
         broken.length === 0,
       );

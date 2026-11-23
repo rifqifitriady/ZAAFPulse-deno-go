@@ -635,8 +635,8 @@ class's checks have been clean for 1 day and 20 calls (`"gateDays"`, `"gateMinCh
 every provider call the Go process makes itself, is recorded in `.data/egress.jsonl` (host, port, purpose, status,
 bytes, time; never a path or a header). The allow-list is built from `config.json` (providers, integrations, brain
 sources, webhooks, the OTLP endpoint, …): `"allowList": "enforce"` (the default since v2.0.0) refuses a host off the
-list, `"report"` records it and lets it pass. It only acts on calls that go through Go, so with every class `"direct"`
-it refuses nothing. The cloud metadata addresses are refused on every path, whatever the list says. Calls to
+list, `"report"` records it and lets it pass. It only acts on calls that go through Go: those of a class on `"go"`, and
+the Go engine's own provider calls, whose hosts are on the list (a provider on this machine is never checked). The cloud metadata addresses are refused on every path, whatever the list says. Calls to
 `localhost`, `127.0.0.1` and `[::1]` always go direct.
 
 `"egress": { "lockdown": true }` (the default since v2.0.0) makes every outbound call leave through Go: only when

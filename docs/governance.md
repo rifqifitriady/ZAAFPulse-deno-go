@@ -210,7 +210,11 @@ All in `config.json` under `egress`; there is no settings page for them. With no
 2026-11-23). Neither changes anything on its own: with every class `direct` no call goes through the gateway, so the
 allow-list has nothing to refuse, and the lock-down is not in force until its conditions below hold. Only the value
 `"report"` makes the allow-list report and only the JSON value `false` turns the lock-down off; any other value is the
-default. The rollback to the behaviour before v2.0.0 is `"allowList": "report"` and `"lockdown": false`.
+default. The rollback to the behaviour before v2.0.0 is `"allowList": "report"` and `"lockdown": false`. One exception
+to "nothing changes": the Go engine's own provider calls and token fetches (gateway route classes on `go`) are
+checked against the list whatever the class switches say, so with `enforce` a provider host that is not on the list is
+refused there. Every provider's base and token URL is on the list by construction, and a provider on this machine
+(`localhost`, `127.0.0.1`, `[::1]`: Ollama, LM Studio, a local proxy) is never checked.
 
 | Setting | Values | Default |
 |---|---|---|
@@ -260,8 +264,10 @@ puts that host on the list too. What an enforcing list can still refuse, because
 Each such refusal is recorded `refused` with an `egress.refused` entry in the audit chain and shows on
 `GET /api/egress`; under `check` the same host shows as `would-refuse` before a class moves. None of this applies to a
 class on `direct` or `check`: those calls never pass the allow-list. The Go engine's own provider calls and token
-fetches (gateway route classes on `go`) are checked too; their hosts come from the same provider settings, and the
-engine follows no redirect.
+fetches (gateway route classes on `go`) are checked too, whatever the class switches say; their hosts come from the
+same provider settings (disabled providers included), a loopback host is never checked, and the engine follows no
+redirect. When a gateway generation cannot be built (a broken `config.json`), the gateway gets an empty list in the
+default mode, so calls of a class on `go` are refused until the configuration builds again.
 
 **The lock-down** applies only when all of these hold, else `GET /api/egress` and the control's evidence say which one
 does not:

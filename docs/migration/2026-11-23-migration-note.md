@@ -12,8 +12,9 @@ in [docs/install.md](../install.md); this note says what changes for you and wha
   read the folder after v2 has used it.
 - Out of the box v2 behaves as v1.1: the Go gateway is not in front (`gateway.engine` is `"js"`), and every outbound
   call leaves directly. The Go parts are opt-in, class by class. The egress allow-list enforces and the network
-  lock-down is asked for by default, but both act only on calls that go through Go, so nothing changes until you move
-  a class ([docs/governance.md](../governance.md#network-egress-settings)).
+  lock-down is asked for by default, but both act only on calls that go through Go (and every provider's host is on
+  the list), so nothing changes until you move a class
+  ([docs/governance.md](../governance.md#network-egress-settings)).
 - After the upgrade, run `zaafpulse doctor`. The installer registers your AI clients' MCP entries again; doctor's
   **MCP entries** row says when one still starts a program that is gone.
 

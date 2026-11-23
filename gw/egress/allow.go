@@ -60,6 +60,18 @@ func (p *Policy) Allows(host string, port int) bool {
 	return false
 }
 
+// IsLoopbackHost reports whether host is one the control plane always calls direct and the allow-list leaves out
+// (lib/egress.js isLoopbackHost, the hosts the lock-down grants): localhost, 127.0.0.1, ::1 and 127.0.0.1 written as
+// an IPv4-mapped IPv6 address; brackets, letter case and one trailing dot ignored. The rest of 127/8 is not.
+func IsLoopbackHost(host string) bool {
+	h := normHost(host)
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && (ip.Equal(net.IPv4(127, 0, 0, 1)) || ip.Equal(net.IPv6loopback))
+}
+
 // normHost lowercases a host and removes IPv6 brackets and one trailing dot.
 func normHost(h string) string {
 	h = strings.ToLower(strings.TrimSpace(h))
