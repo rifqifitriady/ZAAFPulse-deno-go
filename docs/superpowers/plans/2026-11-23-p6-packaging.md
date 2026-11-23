@@ -482,3 +482,11 @@ profile edit, server mode and the closing summary.
   <path>` instead of the spawn error. `servicePath` adds the binary's folder only when it writes a PATH at all: on
   Windows with no PATH at install, a PATH of that folder alone would hide the system's programs (the install folder is
   on the user PATH there anyway).
+- **Task 4, `gwVersion` early:** `/api/gateway/status` had no `gwVersion` before Task 5, so the `--front` check could not
+  pass. Task 4 takes Task 5's first bullet: `lib/ipc/supervisor.js` keeps the version of the last accepted hello in
+  `status().gwVersion` (`null` before the first), with its check in `test/ipc-supervisor.test.js`. Task 5 keeps the rest.
+- **Task 4, the `--front` pass starts without `--demo`:** demo mode always serves on Deno (`server.js` `ENGINE`), so a
+  demo start would never put the gateway in front. The pass uses its own throwaway data folder and port, with
+  `ZAAFPULSE_AUTH=none` and a HOME that holds no logs.
+- **Task 4, the schema count:** the smoke's doctor check expected `v1, 20 schemas`; the tree has 21 since P5
+  (`egress.event`), so the first pass already failed. It now counts `ipc/v1/*.schema.json` in the source folder.
