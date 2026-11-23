@@ -1,5 +1,6 @@
-# (Since 2026-11-23 darwin-x64 is out of both the regular CI and the release: ci.yml and release.yml pass
-# skip-darwin-x64, and a release has five targets. darwin-x64 stays here, built only when a caller leaves the input off.)
+# (Since 2026-11-23: the regular CI leaves darwin-x64 out (ci.yml passes skip-darwin-x64) and still builds darwin-arm64;
+# a release has four targets and no macOS package (release.yml passes skip-darwin-x64 and skip-darwin-arm64). Both
+# darwin entries stay here, built whenever a caller leaves its input off.)
 # Builds and smoke-tests the release package of each target on a native runner of its own OS and CPU (P6
 # Decision 13). Called by ci.yml (job build-deno, full scope only) and by release.yml (job build); it has no trigger of
 # its own (workflow_call only), and a calling job takes no runs-on: the runners are set here.
@@ -23,14 +24,19 @@ on:
   workflow_call:
     inputs:
       skip-darwin-x64:
-        description: Leave the darwin-x64 package out (ci.yml and release.yml set it; a release has five targets)
+        description: Leave the darwin-x64 package out (ci.yml and release.yml set it)
+        type: boolean
+        default: false
+      skip-darwin-arm64:
+        description: Leave the darwin-arm64 package out (release.yml sets it; a release has four targets, no macOS)
         type: boolean
         default: false
 permissions:
   contents: read
 jobs:
-  # The targets to build. All six unless skip-darwin-x64 is set. The owner decided on 2026-11-23 for no darwin-x64 build
-  # or test in the regular CI, and five release targets without darwin-x64 (release.yml expects five archives).
+  # The targets to build: all six, less darwin-x64 with skip-darwin-x64 and less darwin-arm64 with skip-darwin-arm64.
+  # The owner decided on 2026-11-23 for no darwin-x64 build or test in the regular CI, and four release targets without
+  # either macOS package (plan §11, decisions 10 and 11; release.yml expects four archives).
   plan:
     name: plan
     runs-on: ubuntu-latest
@@ -41,6 +47,7 @@ jobs:
       - id: m
         env:
           SKIP_DARWIN_X64: ${{ inputs.skip-darwin-x64 }}
+          SKIP_DARWIN_ARM64: ${{ inputs.skip-darwin-arm64 }}
         run: |
           all='[
             {"name":"linux-x64","runner":"ubuntu-latest","target":"x86_64-unknown-linux-gnu","v1":128322752},
@@ -50,7 +57,9 @@ jobs:
             {"name":"win-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc","v1":95406080},
             {"name":"win-arm64","runner":"windows-11-arm","target":"aarch64-pc-windows-msvc","v1":83707392}
           ]'
-          if [ "$SKIP_DARWIN_X64" = true ]; then all="$(printf '%s' "$all" | jq -c 'map(select(.name != "darwin-x64"))')"; else all="$(printf '%s' "$all" | jq -c .)"; fi
+          all="$(printf '%s' "$all" | jq -c .)"
+          if [ "$SKIP_DARWIN_X64" = true ]; then all="$(printf '%s' "$all" | jq -c 'map(select(.name != "darwin-x64"))')"; fi
+          if [ "$SKIP_DARWIN_ARM64" = true ]; then all="$(printf '%s' "$all" | jq -c 'map(select(.name != "darwin-arm64"))')"; fi
           echo "matrix={\"include\":$all}" >> "$GITHUB_OUTPUT"
           echo "$all" | jq -r '.[].name' | sed 's/^/target: /'
   build:

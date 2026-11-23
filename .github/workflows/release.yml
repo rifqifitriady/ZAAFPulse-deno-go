@@ -1,20 +1,20 @@
 # Release (P6 Decision 13). Two ways in, and only one of them publishes:
 # - A version tag (v1.2.3, pushed): `version` checks the tag is v + package.json's version; `test` runs ci.yml with
-#   skip-build (the suites only); `build` runs build.yml with skip-darwin-x64 (the five release packages, built,
-#   signature-checked and smoke-tested on native runners); `install-test` installs each package on its own runner
+#   skip-build (the suites only); `build` runs build.yml with skip-darwin-x64 and skip-darwin-arm64 (the four release
+#   packages, built and smoke-tested on native runners); `install-test` installs each package on its own runner
 #   (scripts/install-test.sh / .ps1: a clean install, the upgrade from v1.1.0 and the rollback, and M12 on linux-x64 and
-#   win-x64, Decision 14); then `publish` assembles dist/ (the five archives, install.sh, install.ps1 and SHA256SUMS.txt
+#   win-x64, Decision 14); then `publish` assembles dist/ (the four archives, install.sh, install.ps1 and SHA256SUMS.txt
 #   over all of them), attests every one of those files and every binary inside the archives (Decision 8,
 #   actions/attest-build-provenance, the v1 pin), and runs `gh release create --verify-tag`, which never creates a tag:
 #   the tag must already exist. The release notes are docs/release-notes/<tag>.md; publish fails before anything is
 #   uploaded when that file is missing.
-# Five targets (owner, 2026-11-23): linux-x64, linux-arm64, darwin-arm64, win-x64, win-arm64. No darwin-x64: install.sh
-# sends an Intel Mac to the v1.x installer. scripts/build-deno.js RELEASE_TARGETS names the five (test/build-deno.test.js
-# checks this file against it).
 # - A manual run (workflow_dispatch, any branch or tag) is always a dry run: build, install-test and `assemble`, which
 #   makes the same dist/ and SHA256SUMS.txt and uploads them as the artifact release-dry-run. The suites run only when
 #   the input `tests` is true (default false: the owner's CI policy). A dispatch never publishes, never attests (an
 #   attestation is a public record) and never tags: `publish` runs only on a push of a v* tag.
+# Four targets (owner, 2026-11-23, plan §11 decisions 10 and 11): linux-x64, linux-arm64, win-x64, win-arm64. No macOS
+# package: install.sh sends every Mac to the v1.x installer, and the macOS launchd install path has no release install
+# test. scripts/build-deno.js RELEASE_TARGETS names the four (test/build-deno.test.js checks this file against it).
 # Hardening: a read-only token everywhere except `publish`, the only job with contents: write, id-token: write and
 # attestations: write; actions pinned by commit SHA (the comment names the release); Node, Deno and Go pinned to exact
 # versions (ci.yml, build.yml, and Node here for the v1.1.0 installer); no stored git credentials.
@@ -65,7 +65,9 @@ jobs:
     name: build
     uses: ./.github/workflows/build.yml
     with:
-      skip-darwin-x64: true # five release targets, no darwin-x64 (owner, 2026-11-23)
+      # Four release targets, no macOS package (owner, 2026-11-23, plan §11 decisions 10 and 11).
+      skip-darwin-x64: true
+      skip-darwin-arm64: true
 
   install-test:
     name: install-test (${{ matrix.name }})
@@ -78,7 +80,6 @@ jobs:
         include:
           - { name: linux-x64, runner: ubuntu-latest }
           - { name: linux-arm64, runner: ubuntu-24.04-arm }
-          - { name: darwin-arm64, runner: macos-latest }
           - { name: win-x64, runner: windows-latest }
           - { name: win-arm64, runner: windows-11-arm }
     steps:
@@ -99,8 +100,9 @@ jobs:
         with:
           name: sum-${{ matrix.name }}
           path: ${{ runner.temp }}/pkg
-      # macOS: with the launchd service; Linux: --no-service and a background start (no user systemd session).
-      - name: Install test (macOS, Linux)
+      # Linux: --no-service and a background start (no user systemd session). No macOS leg since 2026-11-23 (no macOS
+      # package); scripts/install-test.sh still has its launchd path, which no release run exercises.
+      - name: Install test (Linux)
         if: runner.os != 'Windows'
         shell: bash
         env:
@@ -140,12 +142,12 @@ jobs:
           pattern: sum-*
           path: sums
           merge-multiple: true
-      # Same as in publish: five archives (the release targets), each matching the sum its build wrote; then the
+      # Same as in publish: four archives (the release targets), each matching the sum its build wrote; then the
       # installers; then one SHA256SUMS.txt (`<hex>  <name>`) over everything.
       - name: Assemble dist/
         run: |
           n="$(find dist -maxdepth 1 -name 'zaafpulse-*' -type f | wc -l)"
-          [ "$n" -eq 5 ] || { echo "::error::expected 5 archives in dist/, found $n"; ls -la dist; exit 1; }
+          [ "$n" -eq 4 ] || { echo "::error::expected 4 archives in dist/, found $n"; ls -la dist; exit 1; }
           cat sums/SHA256SUMS-*.txt > "$RUNNER_TEMP/build-sums.txt"
           (cd dist && sha256sum -c "$RUNNER_TEMP/build-sums.txt")
           cp install.sh install.ps1 dist/
@@ -194,7 +196,7 @@ jobs:
       - name: Assemble dist/
         run: |
           n="$(find dist -maxdepth 1 -name 'zaafpulse-*' -type f | wc -l)"
-          [ "$n" -eq 5 ] || { echo "::error::expected 5 archives in dist/, found $n"; ls -la dist; exit 1; }
+          [ "$n" -eq 4 ] || { echo "::error::expected 4 archives in dist/, found $n"; ls -la dist; exit 1; }
           cat sums/SHA256SUMS-*.txt > "$RUNNER_TEMP/build-sums.txt"
           (cd dist && sha256sum -c "$RUNNER_TEMP/build-sums.txt")
           cp install.sh install.ps1 dist/
