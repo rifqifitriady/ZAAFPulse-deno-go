@@ -48,6 +48,45 @@ $BinFiles = @('zaafpulse.exe', 'zaafpulse-gw.exe', 'zaafpulse.cmd', 'zaafpulse-o
 function Say($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn($m) { Write-Host "!  $m" -ForegroundColor Yellow }
 
+# Windows PowerShell 5.1's module path: PSModulePath without PowerShell 7's folders (a pwsh install's Modules, with
+# pwsh.dll beside it, and the ...\PowerShell\Modules user and shared folders; ...\WindowsPowerShell\Modules stays), and
+# with 5.1's own system folder. A Windows PowerShell started from pwsh by anything but pwsh's own `&` (Start-Process,
+# a program pwsh started) inherits pwsh's folders first, and then cannot load its own script modules from them:
+# Get-FileHash "not recognized" (the second v2.0.0 dry run), and the same for Expand-Archive and the CIM cmdlets.
+# pwsh strips them only when it runs powershell.exe itself (ModuleIntrinsics.GetWindowsPowerShellModulePath);
+# lib/platform.js does the same for the powershell.exe that zaafpulse runs.
+function Get-WinPSModulePath([string]$value) {
+  $keep = New-Object System.Collections.Generic.List[string]
+  foreach ($d in @("$value" -split ';')) {
+    $p = $d.Trim().TrimEnd('\', '/')
+    if (-not $p -or $p -match '(^|[\\/])PowerShell[\\/]Modules$') { continue }
+    $parent = [IO.Path]::GetDirectoryName($p)
+    if ($parent -and [IO.File]::Exists([IO.Path]::Combine($parent, 'pwsh.dll'))) { continue }
+    if (-not ($keep -contains $p)) { $keep.Add($p) }
+  }
+  if ($env:SystemRoot) {
+    $sys = [IO.Path]::Combine($env:SystemRoot, 'System32\WindowsPowerShell\v1.0\Modules')
+    if (-not ($keep -contains $sys)) { $keep.Add($sys) }
+  }
+  return ($keep -join ';')
+}
+# This installer in Windows PowerShell (not pwsh): its own module path, so the modules it autoloads are 5.1's.
+if ($PSVersionTable.PSEdition -ne 'Core' -and $env:PSModulePath) { $env:PSModulePath = Get-WinPSModulePath $env:PSModulePath }
+# The SHA-256 of a file, lower-case hex, with .NET alone (no Get-FileHash, which lives in a script module).
+function Get-Sha256([string]$file) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  $fs = [IO.File]::OpenRead($file)
+  try { return ([BitConverter]::ToString($sha.ComputeHash($fs)) -replace '-', '').ToLowerInvariant() }
+  finally { $fs.Dispose(); $sha.Dispose() }
+}
+# The Start menu's Programs folder. GetFolderPath gives '' when the folder does not exist (a new or redirected profile;
+# the install test's temp APPDATA); then its usual place under APPDATA, or '' when there is no APPDATA either.
+function Get-ProgramsDir {
+  $d = [Environment]::GetFolderPath('Programs')
+  if (-not $d -and $env:APPDATA) { $d = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs' }
+  return "$d"
+}
+
 # The command that runs the current install: v2's zaafpulse.exe, else v1's zaafpulse.cmd, else none.
 function Get-Launcher {
   if (Test-Path -LiteralPath $Exe) { return $Exe }
@@ -60,8 +99,12 @@ function Get-Launcher {
 # lib/service.js winLaunchCommand) would hold an output pipe open for as long as the server runs, so `& $launcher ... |
 # Out-Host` would never return. Without -RedirectStandard* the launcher writes straight to this console (or whatever
 # runs this installer), and without -Wait (which waits for every descendant) nothing waits on the server.
+# In pwsh, the launcher gets Windows PowerShell's module path (Get-WinPSModulePath) for the powershell.exe it runs.
 function Invoke-Service([string]$launcher, [string[]]$svcArgs) {
-  $p = Start-Process -FilePath $launcher -ArgumentList ($svcArgs -join ' ') -NoNewWindow -PassThru
+  $saved = $env:PSModulePath
+  if ($PSVersionTable.PSEdition -eq 'Core' -and $saved) { $env:PSModulePath = Get-WinPSModulePath $saved }
+  try { $p = Start-Process -FilePath $launcher -ArgumentList ($svcArgs -join ' ') -NoNewWindow -PassThru }
+  finally { $env:PSModulePath = $saved }
   $null = $p.Handle   # Windows PowerShell 5.1: without the handle cached, ExitCode stays empty
   if (-not $p.WaitForExit(180000)) { throw "$launcher $($svcArgs -join ' ') did not finish within 180 s" }
   return $p.ExitCode
@@ -194,9 +237,12 @@ if ($Uninstall) {
   }
   if ((Test-Path -LiteralPath $BinDir) -and -not (Get-ChildItem -LiteralPath $BinDir -Force)) { Remove-Item -LiteralPath $BinDir -Force }
   Remove-UserPath
-  foreach ($f in 'ZAAFPulse.lnk', 'ZAAFPulse.url') {
-    $p = Join-Path ([Environment]::GetFolderPath('Programs')) $f
-    if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
+  $programs = Get-ProgramsDir
+  if ($programs) {
+    foreach ($f in 'ZAAFPulse.lnk', 'ZAAFPulse.url') {
+      $p = Join-Path $programs $f
+      if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
+    }
   }
   Say 'ZAAFPulse removed.'
   # Without -System only the Startup entry is removed; the boot task of a -System install stays behind.
@@ -248,7 +294,7 @@ try {
   if ($Archive) {
     if (-not (Test-Path -LiteralPath $Archive -PathType Leaf)) { throw "No such archive: $Archive" }
     $name = Split-Path -Leaf (Resolve-Path -LiteralPath $Archive).Path
-    # A copy: the checksum and the unpack read the same bytes, and Expand-Archive (5.1) needs a .zip name.
+    # A copy: the checksum and the unpack read the same bytes.
     $pkg = Join-Path $tmp 'pkg.zip'
     Copy-Item -LiteralPath $Archive -Destination $pkg
     if ($Sums) { Copy-Item -LiteralPath $Sums -Destination $sumsFile }
@@ -273,7 +319,7 @@ try {
     $line = Get-Content -LiteralPath $sumsFile | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ -match $pattern } | Select-Object -First 1
     if (-not $line) { throw "No checksum for $name in SHA256SUMS.txt; nothing was installed" }
     $want = ($line -split '\s+')[0].ToLower()
-    if ((Get-FileHash -LiteralPath $pkg -Algorithm SHA256).Hash.ToLower() -ne $want) {
+    if ((Get-Sha256 $pkg) -ne $want) {
       throw "Checksum mismatch for $name`: the download was changed or damaged; nothing was installed"
     }
     Say "Checksum verified ($name)"
@@ -287,7 +333,9 @@ try {
   }
 
   $x = Join-Path $tmp 'x'
-  Expand-Archive -LiteralPath $pkg -DestinationPath $x
+  # .NET's zip reader, not Expand-Archive (a script module, as Get-FileHash; and slow in 5.1).
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::ExtractToDirectory($pkg, $x)
   $src = Get-ChildItem -LiteralPath $x -Directory | Select-Object -First 1
   if (-not $src) { throw "$name holds no package folder; nothing was installed" }
   foreach ($f in 'zaafpulse.exe', 'zaafpulse-gw.exe') {
@@ -421,16 +469,19 @@ $p = if ($Port) { $Port } else { 4777 }
 # after the 30-day local sign-in cookie expires (a link to the URL would land on the sign-in page). It points at
 # wscript.exe and a hidden launcher in $BinDir, so no console window flashes. The launcher is UTF-16 (Unicode),
 # which Windows Script Host reads, so a user folder with non-ASCII letters still works.
-$programs = [Environment]::GetFolderPath('Programs')
-$oldUrl = Join-Path $programs 'ZAAFPulse.url'   # earlier installs linked the URL
-if (Test-Path -LiteralPath $oldUrl) { Remove-Item -LiteralPath $oldUrl -Force }
 $run = "`"$Exe`" open --port $p" -replace '"', '""'
 Set-Content -LiteralPath $Opener -Encoding Unicode -Value "' ZAAFPulse: opens the dashboard signed in (zaafpulse open), without a console window.`r`nCreateObject(`"WScript.Shell`").Run `"$run`", 0, False"
-$lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $programs 'ZAAFPulse.lnk'))
-$lnk.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
-$lnk.Arguments = "//B //NoLogo `"$Opener`""
-$lnk.Description = 'Open the ZAAFPulse dashboard'
-$lnk.Save()
+$programs = Get-ProgramsDir
+if ($programs) {
+  New-Item -ItemType Directory -Force -Path $programs | Out-Null
+  $oldUrl = Join-Path $programs 'ZAAFPulse.url'   # earlier installs linked the URL
+  if (Test-Path -LiteralPath $oldUrl) { Remove-Item -LiteralPath $oldUrl -Force }
+  $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $programs 'ZAAFPulse.lnk'))
+  $lnk.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+  $lnk.Arguments = "//B //NoLogo `"$Opener`""
+  $lnk.Description = 'Open the ZAAFPulse dashboard'
+  $lnk.Save()
+} else { Warn 'No Start menu folder was found (no APPDATA): the Start menu shortcut was skipped; open the dashboard with: zaafpulse open' }
 
 $newVersion = & $Exe version
 if ($LASTEXITCODE -ne 0) { throw "$Exe does not run (exit $LASTEXITCODE)" }

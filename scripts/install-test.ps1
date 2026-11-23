@@ -11,7 +11,8 @@
 # command, with the install's bin folder first on PATH, spelled as install.ps1 spells it (P6 Decision 4: Deno matches
 # it against the binary's own path, case-sensitively), and is always stopped, on failure too.
 # The installers run in their own process of -InstallerHost: Windows PowerShell 5.1 (powershell.exe) by default, the
-# host of an `irm | iex` install, so the 5.1 path of install.ps1 is the one exercised.
+# host of an `irm | iex` install, so the 5.1 path of install.ps1 is the one exercised; started from this pwsh with
+# 5.1's own module path. Only v1.1.0's installer runs in PowerShell 7 (see Test-Upgrade).
 #   1. Clean install: install.ps1 -Archive -Sums with its background service (the Startup launcher; -NoServiceTest:
 #      -NoService and a background start); `zaafpulse version` is the package version and `zaafpulse doctor` passes;
 #      /login.html answers and /api/gateway/status is front and ready with the package version (gateway.engine "front"
@@ -68,6 +69,8 @@ if (-not $InstallerHost) {
   $wp = Get-Command powershell.exe -ErrorAction SilentlyContinue
   $InstallerHost = if ($wp) { $wp.Source } else { (Get-Process -Id $PID).Path }
 }
+# v1.1.0's installer runs in PowerShell 7 (Test-Upgrade says why): this pwsh, else the pwsh on PATH.
+$V1Host = if ($PSVersionTable.PSEdition -eq 'Core') { (Get-Process -Id $PID).Path } else { "$((Get-Command pwsh -ErrorAction SilentlyContinue).Source)" }
 $Url = "http://127.0.0.1:$Port"
 
 # The port must be free: never fight another server.
@@ -82,7 +85,9 @@ $env:USERPROFILE = Join-Path $T 'home'
 $env:HOME = $env:USERPROFILE
 $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\Local'
 $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'
-New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:APPDATA | Out-Null
+# A real profile has the Start menu folders; [Environment]::GetFolderPath('Programs') is '' while they are missing.
+New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:APPDATA,
+  (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup') | Out-Null
 $env:ZAAFPULSE_PORT = "$Port"
 $env:ZAAFPULSE_AUTH = 'none'
 foreach ($v in 'ZAAFPULSE_HOST', 'ZAAFPULSE_DATA', 'ZAAFPULSE_PUBLIC_URL', 'ZAAFPULSE_SECRET_STORE', 'CLAUDE_CONFIG_DIR',
@@ -103,6 +108,25 @@ $script:TimedOut = $false
 $script:Step = 0
 
 # ---- helpers ----
+# Windows PowerShell 5.1's module path, as install.ps1 Get-WinPSModulePath (and pwsh's own `&` for powershell.exe)
+# computes it: without PowerShell 7's module folders, which a powershell.exe started from this pwsh through
+# Start-Process would otherwise search first and fail to load its own modules from (Get-FileHash "not recognized",
+# the second v2.0.0 dry run).
+function Get-WinPSModulePath([string]$value) {
+  $keep = New-Object System.Collections.Generic.List[string]
+  foreach ($d in @("$value" -split ';')) {
+    $p = $d.Trim().TrimEnd('\', '/')
+    if (-not $p -or $p -match '(^|[\\/])PowerShell[\\/]Modules$') { continue }
+    $parent = [IO.Path]::GetDirectoryName($p)
+    if ($parent -and [IO.File]::Exists([IO.Path]::Combine($parent, 'pwsh.dll'))) { continue }
+    if (-not ($keep -contains $p)) { $keep.Add($p) }
+  }
+  if ($env:SystemRoot) {
+    $sys = [IO.Path]::Combine($env:SystemRoot, 'System32\WindowsPowerShell\v1.0\Modules')
+    if (-not ($keep -contains $sys)) { $keep.Add($sys) }
+  }
+  return ($keep -join ';')
+}
 # One Windows command line from an argument list (the CommandLineToArgvW rules): Start-Process -ArgumentList joins
 # its items with spaces and quotes none of them.
 function Join-CommandLine([string[]]$argv) {
@@ -131,7 +155,8 @@ function Read-Since([string]$file, [ref]$pos) {
 # started in the background), and reading it to its end would wait for that server. What it prints is shown as it
 # comes, with a progress line every 30 s. This waits for the program's own process only, never for its descendants
 # (no Start-Process -Wait). On a timeout its process tree is killed and the call throws, naming the step.
-function Invoke-Bounded([string]$label, [int]$seconds, [string]$file, [string[]]$argv = @()) {
+# $SetEnv: environment variables the program gets (set around Start-Process, then put back).
+function Invoke-Bounded([string]$label, [int]$seconds, [string]$file, [string[]]$argv = @(), [hashtable]$SetEnv = @{}) {
   $script:Step++
   $out = Join-Path $T "logs\step$($script:Step).out.log"
   $err = Join-Path $T "logs\step$($script:Step).err.log"
@@ -139,7 +164,10 @@ function Invoke-Bounded([string]$label, [int]$seconds, [string]$file, [string[]]
   if ($argv.Count -gt 0) { $sp.ArgumentList = Join-CommandLine $argv }
   Say "$label (at most $seconds s)"
   $start = Get-Date
-  $p = Start-Process @sp
+  $saved = @{}
+  foreach ($k in $SetEnv.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $SetEnv[$k]) }
+  try { $p = Start-Process @sp }
+  finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
   $null = $p.Handle   # Windows PowerShell 5.1: without the handle cached, ExitCode stays empty
   $posOut = 0; $posErr = 0
   $nextNote = $start.AddSeconds(30)
@@ -200,10 +228,13 @@ function Set-Front([string]$dir) {
 # An installer in its own -InstallerHost process. Not `& $InstallerHost ... | Out-Host`: that reads the installer's
 # output to its end, and the end never comes while a process the installer started in the background (the service's
 # launcher and server) holds the pipe (the v2.0.0 dry run hung there for 29 minutes). Invoke-Bounded waits for the
-# installer's process alone, at most $seconds.
-function Invoke-Installer([string]$file, [string[]]$installerArgs, [int]$seconds = 300) {
+# installer's process alone, at most $seconds. A Windows PowerShell host gets 5.1's module path (Get-WinPSModulePath),
+# as pwsh's own `&` would give it.
+function Invoke-Installer([string]$file, [string[]]$installerArgs, [int]$seconds = 300, [string]$hostExe = $InstallerHost) {
   $what = "$(Split-Path -Leaf $file) $($installerArgs -join ' ')"
-  $r = Invoke-Bounded $what $seconds $InstallerHost (@('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $file) + $installerArgs)
+  $set = @{}
+  if ((Split-Path -Leaf $hostExe) -ieq 'powershell.exe') { $set.PSModulePath = Get-WinPSModulePath $env:PSModulePath }
+  $r = Invoke-Bounded $what $seconds $hostExe (@('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $file) + $installerArgs) $set
   if ($r.Code -ne 0) { throw "$what failed (exit $($r.Code))" }
 }
 function Install-V2([string[]]$more) {
@@ -341,12 +372,18 @@ function Test-CleanInstall {
 # ---- 2. upgrade from v1.1.0 and roll back ----
 function Test-Upgrade {
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'upgrade: the v1.1.0 installer needs Node 18+ on PATH' }
+  if (-not $V1Host) { throw 'upgrade: the v1.1.0 installer needs PowerShell 7 (pwsh)' }
   $d = Join-Path $T 'data-upgrade'; Write-Config $d $false; $env:ZAAFPULSE_DATA = $d
   $v1 = Join-Path $T 'install-v1.ps1'
   Say "upgrade: downloading $V1Installer (at most 120 s)"
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $V1Installer -OutFile $v1
+  # v1.1.0's installer runs in PowerShell 7, as a pwsh user with Node on PATH runs it: in Windows PowerShell 5.1 it
+  # fails whenever Node 18+ is on PATH. Its line 54, `& node -p 'process.versions.node.split(".")[0]' 2>$null`, puts
+  # double quotes inside a native argument, which 5.1 (legacy argument passing, its only mode) passes unescaped, so
+  # node gets `process.versions.node.split(.)[0]` and fails; under $ErrorActionPreference = 'Stop' the redirected
+  # stderr ends the installer (the second v2.0.0 dry run: "node.exe : [eval]:1"). pwsh 7.3+ passes it intact.
   # v1's installer downloads its app package: more time than v2's local archive.
-  Invoke-Installer $v1 @('-NoService', '-Version', $V1Tag) 600
+  Invoke-Installer $v1 @('-NoService', '-Version', $V1Tag) 600 $V1Host
   if ((Get-Launcher) -ne $V1Cmd) { throw 'upgrade: the zaafpulse command is not v1''s zaafpulse.cmd' }
   Start-Server 'v1-before'
   Write-Marker 'v1'
@@ -416,7 +453,7 @@ function Invoke-Part([string]$label, [scriptblock]$body) {
 }
 
 try {
-  Say "install test of $Base (version $Version) on Windows, port $Port, temp $T, installers in $InstallerHost"
+  Say "install test of $Base (version $Version) on Windows, port $Port, temp $T, installers in $InstallerHost (v1.1.0's in $V1Host)"
   Invoke-Part 'clean install' { Test-CleanInstall }
   if (-not $NoUpgrade) { Invoke-Part 'upgrade' { Test-Upgrade } } else { $summary.Add('upgrade: skipped (-NoUpgrade)') }
   if ($M12 -eq 'on') { Invoke-Part 'M12' { Test-M12 } } else { $summary.Add('M12: skipped (runs on linux-x64 and win-x64)') }
