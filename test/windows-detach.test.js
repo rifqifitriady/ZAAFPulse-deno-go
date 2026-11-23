@@ -97,7 +97,7 @@ test('install-test.ps1: every program runs through Invoke-Bounded with a timeout
   assert.doesNotMatch(src, /&\s*\$InstallerHost/);
   assert.doesNotMatch(src, /&\s*\$hostExe/);
   assert.match(src, /Invoke-Bounded \$what \$seconds \$hostExe /);
-  assert.match(src, /\[string\]\$hostExe = \$InstallerHost\)/);
+  assert.match(src, /\[string\]\$hostExe = \$InstallerHost,/);
   // The only native call made with & is taskkill on a timeout; the rest of & runs script blocks.
   for (const m of src.matchAll(/&\s+([\w.$]+)/g)) assert.ok(['taskkill.exe', '$cond', '$body'].includes(m[1]), m[0]);
   // Invoke-Bounded: output to files, a progress line, the timeout kills the tree and throws.
@@ -263,7 +263,7 @@ test('install.ps1: no script-module cmdlet on the critical path, 5.1 module path
   assert.match(src, /\} else \{ Warn 'No Start menu folder[^\n]*shortcut was skipped/);
 });
 
-test('install-test.ps1: 5.1 installers get 5.1 module path, v1.1.0 runs in pwsh, the temp profile has a Start menu', () => {
+test('install-test.ps1: 5.1 installers get 5.1 module path, v1.1.0 runs without node, the temp profile has a Start menu', () => {
   const src = code(read('scripts/install-test.ps1'));
   assert.match(src, /Join-Path \$env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\Startup'/);
   const inst = src.match(/function Invoke-Installer\b[\s\S]*?\n\}/)[0];
@@ -271,12 +271,73 @@ test('install-test.ps1: 5.1 installers get 5.1 module path, v1.1.0 runs in pwsh,
   assert.match(inst, /Invoke-Bounded \$what \$seconds \$hostExe \([^\n]*\) \$set/);
   const bounded = src.match(/function Invoke-Bounded\b[\s\S]*?\n\}/)[0];
   assert.match(bounded, /try \{ \$p = Start-Process @sp \}\s+finally \{ foreach \(\$k in \$saved\.Keys\)/);
-  assert.match(src, /\$V1Host = if \(\$PSVersionTable\.PSEdition -eq 'Core'\) \{ \(Get-Process -Id \$PID\)\.Path \}/);
-  assert.match(src, /Invoke-Installer \$v1 @\('-NoService', '-Version', \$V1Tag\) 600 \$V1Host/);
-  // v2's installers still run in -InstallerHost (Windows PowerShell 5.1 by default).
-  for (const m of src.matchAll(/Invoke-Installer \(Join-Path \$RepoRoot 'install\.ps1'\)[^\n]*/g))
-    assert.doesNotMatch(m[0], /V1Host/, m[0]);
+  assert.match(inst, /\$set = @\{\} \+ \$setEnv/);
+  // v1.1.0's installer works only in Windows PowerShell 5.1 without node on PATH (pwsh 7: SHA256SUMS.txt comes back as
+  // bytes; 5.1 with node: its node check loses its quotes): -InstallerHost, with node's folders off its PATH.
+  assert.doesNotMatch(src, /V1Host|pwsh\.exe/);
+  assert.match(src, /'node\.exe', 'node\.cmd', 'node\.bat', 'node\.ps1'/);
+  assert.match(
+    src,
+    /Invoke-Installer \$v1 @\('-NoService', '-Version', \$V1Tag\) 900 \$InstallerHost @\{ Path = \$noNode \}/,
+  );
 });
+
+test('install.ps1: every native call goes through Invoke-Native; no redirected stderr can end it under Stop', () => {
+  const src = code(read('install.ps1'));
+  const fn = src.match(/function Invoke-Native\b[\s\S]*?\n\}/);
+  assert.ok(fn, 'Invoke-Native');
+  assert.match(fn[0], /\n {2}\$ErrorActionPreference = 'Continue'\n/);
+  assert.match(fn[0], /& \$file @argv 2>&1/);
+  assert.match(fn[0], /-is \[System\.Management\.Automation\.ErrorRecord\]/);
+  assert.match(fn[0], /catch \{ throw \}/);
+  // Outside it: no stderr redirection and no & of a program (outside strings: Write-Host prints `& ([scriptblock]...)`).
+  const rest = src.replace(fn[0], '');
+  for (const line of rest.split('\n')) {
+    const bare = line.replace(/"(?:[^"`]|`.)*"/g, '""').replace(/'[^']*'/g, "''"); // strings hold no call
+    assert.doesNotMatch(bare, /\d?>\s*(\$null|&1|nul)|2>/, line);
+    assert.doesNotMatch(bare, /(^|[\s(;{|])&\s*[$('"\w]/, line);
+  }
+  // The uninstall asks for the scheduled task through it, quietly, and reads the exit code.
+  assert.match(
+    src,
+    /\$null = Invoke-Native 'schtasks\.exe' @\('\/Query', '\/TN', 'ZAAFPulse'\) -Quiet\s+if \(\$LASTEXITCODE -eq 0\)/,
+  );
+  for (const call of [
+    "@('version')",
+    "@('register-mcp', 'registered')",
+    "@('set-password')",
+    "@('attestation', 'verify'",
+  ])
+    assert.ok(src.includes(`Invoke-Native `) && src.includes(call), call);
+});
+
+test('install-test.ps1: a redirected stderr only under a local Continue', () => {
+  const src = code(read('scripts/install-test.ps1'));
+  for (const line of src.split('\n').filter((l) => /2>/.test(l)))
+    assert.match(line, /& \{ \$ErrorActionPreference = 'Continue'; /, line);
+});
+
+test(
+  'Invoke-Native: stdout returned, stderr shown or dropped, exit code kept, never thrown',
+  { skip: !pwsh && 'pwsh is not installed' },
+  () => {
+    if (process.platform === 'win32') return; // the probe below is a POSIX shell
+    const r = runPs(
+      'install.ps1',
+      ['Invoke-Native'],
+      [
+        "$ErrorActionPreference = 'Stop'",
+        "$o = Invoke-Native '/bin/sh' @('-c', 'echo out1; echo ERROR: no task >&2; echo out2; exit 1') -Quiet",
+        '"q=$($o -join "|") c=$LASTEXITCODE"',
+        "$o = Invoke-Native '/bin/cat' @() -InputText 'pw'",
+        '"i=$o c=$LASTEXITCODE"',
+        "try { Invoke-Native '/nonexistent/prog'; 'no throw' } catch { 'threw' }",
+      ].join('; '),
+    );
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(r.stdout.trim().split(/\r?\n/), ['q=out1|out2 c=1', 'i=pw c=0', 'threw']);
+  },
+);
 
 // Runs functions taken from a script (by its AST) and then `body`, in pwsh.
 function runPs(file, names, body, env = {}) {
