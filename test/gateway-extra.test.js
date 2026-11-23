@@ -85,6 +85,11 @@ async function setup({ privateHandler, externalHandler, approved = true }) {
 test('RAG: chunking, ingestion, hybrid search over embeddings, and the knowledge API', async () => {
   assert.ok(chunkText('word. '.repeat(600)).length > 2);
   assert.equal(toText('<html><style>x{}</style><p>Hello &amp; bye</p></html>'), 'Hello & bye');
+  // Each entity is decoded once: an escaped entity stays an entity in the text, it does not become markup.
+  assert.equal(
+    toText('<p>&lt;b&gt; &amp;lt;script&amp;gt; &amp;amp; &amp;quot;x&amp;#39; &amp;nbsp;</p>'),
+    '<b> &lt;script&gt; &amp; &quot;x&#39; &nbsp;',
+  );
   const t = await setup({});
   try {
     const kb = t.gateway.knowledge.create({ id: 'policies', name: 'Policies', embedModel: 'local/qwen' });

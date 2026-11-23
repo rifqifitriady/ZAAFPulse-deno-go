@@ -324,6 +324,27 @@ test('quoteArg: POSIX and Windows quoting for paths with spaces', () => {
   assert.equal(quoteArg('C:\\Program Files\\nodejs\\node.exe', 'win32'), '"C:\\Program Files\\nodejs\\node.exe"');
 });
 
+test('quoteArg on Windows: backslashes before a quote or at the end are doubled, so the argument reads back whole', () => {
+  // One argument as a Windows program reads its command line (CommandLineToArgvW / the C runtime): 2n backslashes
+  // before a quote are n backslashes and the quote opens or closes, 2n+1 are n backslashes and a literal quote.
+  const readBack = (q) => {
+    let out = '';
+    for (let i = 0; i < q.length; i++) {
+      let n = 0;
+      while (q[i] === '\\') (n++, i++);
+      if (q[i] === '"') out += '\\'.repeat(n >> 1) + (n % 2 ? '"' : '');
+      else out += '\\'.repeat(n) + (q[i] ?? '');
+    }
+    return out;
+  };
+  assert.equal(quoteArg('C:\\my dir\\', 'win32'), '"C:\\my dir\\\\"', 'a trailing backslash does not escape the quote');
+  assert.equal(quoteArg('a "b"', 'win32'), '"a \\"b\\""', 'quotes without backslashes as before');
+  // `code --add-mcp` shows a JSON argument; a Windows path in it ends in an escaped backslash before a quote.
+  const json = JSON.stringify({ command: 'C:\\tools\\', args: ['say "hi"\\'] });
+  for (const s of [json, 'C:\\my dir\\', 'a\\"b', 'a\\\\"b c', '\\', '"', '', 'x y\\\\', 'C:\\Program Files\\node.exe'])
+    assert.equal(readBack(quoteArg(s, 'win32')), s, `round trip of ${s}`);
+});
+
 test('findOnPath finds executables without a shell', { skip: process.platform === 'win32' }, () => {
   const dir = tmpHome();
   const f = path.join(dir, 'claude');

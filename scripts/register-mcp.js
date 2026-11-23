@@ -53,7 +53,21 @@ function findOnPath(cmd, env = process.env, platform = process.platform) {
 function quoteArg(a, platform = process.platform) {
   const s = String(a);
   if (/^[A-Za-z0-9_\-.,:/@%+=]+$/.test(s)) return s;
-  return platform === 'win32' ? `"${s.replace(/"/g, '\\"')}"` : `'${s.replace(/'/g, "'\\''")}'`;
+  return platform === 'win32' ? winQuote(s) : `'${s.replace(/'/g, "'\\''")}'`;
+}
+// Double quotes as a Windows program reads them back (CommandLineToArgvW, the C runtime): a quote becomes \", and
+// the backslashes right before a quote or before the closing quote are doubled, else they would escape it.
+function winQuote(s) {
+  let out = '"';
+  let n = 0; // backslashes not yet written
+  for (const c of s) {
+    if (c === '\\') n++;
+    else {
+      out += c === '"' ? `${'\\'.repeat(2 * n + 1)}"` : '\\'.repeat(n) + c;
+      n = 0;
+    }
+  }
+  return `${out}${'\\'.repeat(2 * n)}"`;
 }
 const showCmd = (cmd, args, platform) => [cmd, ...args].map((a) => quoteArg(a, platform)).join(' ');
 
