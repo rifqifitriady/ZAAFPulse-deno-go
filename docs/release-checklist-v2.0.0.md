@@ -21,7 +21,7 @@ git fetch origin
 C="$(git rev-parse origin/main)"; echo "$C"
 git show origin/main:package.json | jq -r .version                    # 2.0.0
 git cat-file -e origin/main:docs/release-notes/v2.0.0.md && echo notes # notes
-git show origin/main:.github/workflows/release.yml | grep -c 'skip-darwin-x64: true'   # 1
+git show origin/main:.github/workflows/release.yml | grep -cE 'skip-darwin-(x64|arm64): true'   # 2
 gh run list -R "$R" --branch main --workflow ci.yml -L 1 --json headSha,conclusion,url
 ```
 
@@ -76,7 +76,8 @@ Background and the undo commands: [docs/release-hardening.md](release-hardening.
 
 ## 4. Recommended: one dry run on `main` (needs the owner's OK under the CI policy)
 
-The install tests of `install.ps1`, the Windows install paths and the macOS launchd path have never run in CI. A dry
+The install tests of `install.ps1` and the Windows install paths have never run in CI. (The macOS launchd path has no
+release install test at all: no macOS package ships, so it stays unverified.) A dry
 run builds and install-tests exactly what the tag would, publishes nothing, attests nothing and creates no tag; a
 failure there costs nothing, while a failure after the tag leaves `v2.0.0` pinned to that commit (step 7).
 
@@ -86,8 +87,8 @@ gh run list -R "$R" --workflow release.yml -L 1 --json databaseId,headSha,status
 gh run watch <run-id> -R "$R" --exit-status
 ```
 
-It must end green with the artifact `release-dry-run` (five archives, `install.sh`, `install.ps1`, `SHA256SUMS.txt`;
-no `darwin-x64`):
+It must end green with the artifact `release-dry-run` (four archives, `install.sh`, `install.ps1`, `SHA256SUMS.txt`;
+no `darwin-*`):
 
 ```bash
 gh run download <run-id> -R "$R" -n release-dry-run -D "$(mktemp -d)/dry"
@@ -109,8 +110,9 @@ gh run list -R "$R" --workflow release.yml -L 1 --json databaseId,headSha,event,
 gh run watch <run-id> -R "$R" --exit-status
 ```
 
-The jobs, in order: `tag matches package.json, notes exist` (`version`), `test` (ci.yml's suites), `build` (five
-packages), `install-test` (five legs), `publish`. `publish` runs only when all of them passed.
+The jobs, in order: `tag matches package.json, notes exist` (`version`), `test` (ci.yml's suites), `build` (four
+packages: linux-x64, linux-arm64, win-x64, win-arm64), `install-test` (four legs, Linux and Windows only; no macOS
+leg), `publish`. `publish` runs only when all of them passed.
 
 ## 7. A failure before `publish`
 
@@ -135,7 +137,7 @@ Nothing is published and nothing is attested, but the tag stays: the ruleset for
 ```bash
 gh release view v2.0.0 -R "$R"
 gh api repos/$R/releases/tags/v2.0.0 --jq '{tag_name, immutable, draft, prerelease, assets: [.assets[].name]}'
-# immutable true, draft false; 8 assets: the five archives, install.sh, install.ps1, SHA256SUMS.txt; no darwin-x64
+# immutable true, draft false; 7 assets: the four archives, install.sh, install.ps1, SHA256SUMS.txt; no darwin-*
 gh release verify v2.0.0 -R "$R"
 
 D="$(mktemp -d)" && cd "$D"
@@ -161,7 +163,7 @@ done
 
 ## 9. Install on a test prefix, no service
 
-From the published installer, into throwaway folders: `HOME` is set too, because the installer writes its
+On a Linux machine or VM (v2.0.0 installs nothing on a Mac), from the published installer, into throwaway folders: `HOME` is set too, because the installer writes its
 `zaafpulse` command to `$HOME/.local/bin`, and nothing may touch a real install, port 4777 or a running service.
 
 ```bash
@@ -175,16 +177,28 @@ HOME="$T/home" "$T/home/.local/bin/zaafpulse" doctor               # Gateway (za
 rm -rf "$T"
 ```
 
-`doctor` reports the server as not answering and no service: that is expected with `--no-service`. On an Intel Mac,
-the same `sh "$T/install.sh"` must stop with "no v2 build for Intel Macs (darwin-x64)" and the v1.x command.
+`doctor` reports the server as not answering and no service: that is expected with `--no-service`.
+
+On a Mac (Apple silicon or Intel), the same installer must stop before it changes anything:
+
+```bash
+T="$(mktemp -d)"; mkdir "$T/home"
+curl -fsSL https://github.com/$R/releases/download/v2.0.0/install.sh -o "$T/install.sh"
+HOME="$T/home" ZAAFPULSE_PREFIX="$T/prefix" sh "$T/install.sh" --version v2.0.0 --no-service --no-modify-path
+echo "exit $?"                                       # exit 1
+# x no v2 package for macOS yet (v2.0.0 ships Linux and Windows packages only); the v1.x installer still supports
+#   macOS: curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.sh | sh
+ls "$T/prefix" "$T/home/.local/bin" 2>&1 | head -2   # both: No such file or directory
+rm -rf "$T"
+```
 
 ## 10. The live upgrade and the rollback
 
-Use a test user account or a VM first, not the owner's live install: the launchd label and the port are shared. The
+Use a test user account or a VM first, not the owner's live install: the service name and the port are shared. The
 owner's own dashboard (a source checkout run by launchd as `com.zaaf.aipulse.server` on port 4777) is not an
 installer-made install; moving it is the owner's separate decision, and nothing in this checklist touches it.
 
-**macOS (Apple silicon) and Linux:**
+**Linux** (no macOS leg: v2.0.0 has no macOS package, and the macOS launchd install path stays unverified):
 
 ```bash
 # 1. A v1.1.0 install to upgrade from (on a machine with nothing installed)
