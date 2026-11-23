@@ -18,13 +18,28 @@ const echoArgs = (args) => (process.versions.deno ? ['eval', ECHO, ...args] : ['
 
 test('checkedCommand: allow-listed names and this runtime only; never a shell', () => {
   assert.equal(spawnsafe.checkedCommand(process.execPath), process.execPath);
-  for (const name of ['ps', 'go', 'git', 'tar', 'caffeinate', 'powershell']) assert.equal(spawnsafe.checkedCommand(name), name);
-  for (const bad of ['sh', 'bash', '/bin/sh', 'cmd', 'cmd.exe', 'node; rm -rf /', '/tmp/x', '', null, path.join(os.tmpdir(), 'deno')])
+  for (const name of ['ps', 'go', 'git', 'tar', 'caffeinate', 'powershell'])
+    assert.equal(spawnsafe.checkedCommand(name), name);
+  for (const bad of [
+    'sh',
+    'bash',
+    '/bin/sh',
+    'cmd',
+    'cmd.exe',
+    'node; rm -rf /',
+    '/tmp/x',
+    '',
+    null,
+    path.join(os.tmpdir(), 'deno'),
+  ])
     assert.throws(() => spawnsafe.checkedCommand(bad), /not allowed/, String(bad));
 });
 
 test('runner.runChild: a nasty path is one argument and is not interpreted', async () => {
-  const r = await runner.runChild({ cmd: process.execPath, args: echoArgs([NASTY, 'second']) }, { env: process.env, timeoutMs: 30000 });
+  const r = await runner.runChild(
+    { cmd: process.execPath, args: echoArgs([NASTY, 'second']) },
+    { env: process.env, timeoutMs: 30000 },
+  );
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout).slice(-2), [NASTY, 'second']);
   assert.equal(fs.existsSync('/tmp/zp-pwned'), false);
@@ -92,4 +107,11 @@ test('report cells: a backslash before a pipe stays inside one cell', () => {
   assert.equal(report.cell(null), '—');
   const row = report.table(['A', 'B'], [['a\\|b', 'end\\']]).split('\n')[2];
   assert.deepEqual(cells(row).length, 2, row);
+});
+
+test('psDriveName: only a single drive letter reaches the PowerShell command line', () => {
+  assert.equal(pf.psDriveName('C:\\Users\\me\\out'), 'C');
+  assert.equal(pf.psDriveName('d:/bench'), 'D');
+  for (const bad of ['\\\\server\\share\\x', '/tmp/x', 'C:; Remove-Item x', '$(evil):\\x', ''])
+    assert.equal(pf.psDriveName(bad), null, bad);
 });
