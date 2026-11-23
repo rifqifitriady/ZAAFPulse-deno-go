@@ -576,3 +576,19 @@ profile edit, server mode and the closing summary.
   (`56c1dc0`, verified locally with `codesign --verify --strict` on a darwin-x64 package). The five other builds and
   their smoke tests passed; `install-test` and `assemble` were skipped because a build failed. A second dispatch, to
   get the install tests, needs the owner's OK (the policy allows one).
+
+### Final review fixes
+
+- I1: `install.sh` refuses an install folder whose `bin` is the command folder (`ZAAFPULSE_PREFIX=$HOME/.local`,
+  physical paths compared) or holds anything but `zaafpulse`, `zaafpulse-gw` and `LICENSE` (install, `--rollback` and
+  `--uninstall`, before anything changes). Both installers move or remove `app/` and `node/` only with v1's
+  `app/bin/zaafpulse.js` (or, finishing a cut-off upgrade, with it already in `rollback.new`), and warn and leave them
+  otherwise. `install.ps1 -Uninstall` removes `bin\`'s own files (`$BinFiles`) and then `bin\` only when empty.
+- I2: a re-run at the installed v2 version keeps `rollback/` untouched and replaces only `bin/` (service stopped and
+  started as usual); a clean install re-run therefore makes no rollback. The summary's "Roll back" line shows only when
+  a rollback is saved. The two v2 → v2 tests now upgrade between two fake versions (`withVersion`).
+- M1: `ci.yml` m4-bench also needs `!inputs.skip-build`. M2: `docs/install.md` says a root / `-System` install must be
+  upgraded and uninstalled the same way; `install.ps1 -Uninstall` without `-System` warns when the `ZAAFPulse` task
+  remains. install.sh has no `--system` option (root is the system install), so its note is about `sudo`. M3: the
+  integrity bullet describes the v2 binary. M4: `--no-service` / `-NoService` over an earlier install warns in the
+  summary that its service was left running. `install.ps1` is not parsed or run here (no PowerShell on this machine).
