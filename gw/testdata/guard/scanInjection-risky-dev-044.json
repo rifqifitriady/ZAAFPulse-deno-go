@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rg -n 'sudo ' scripts/"
+  ],
+  "out": null
+}

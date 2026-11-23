@@ -1,0 +1,18 @@
+{
+  "fn": "checkText",
+  "in": [
+    12345,
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "off",
+      "injection": "log"
+    }
+  ],
+  "out": {
+    "text": "12345",
+    "action": null,
+    "hits": [],
+    "error": false
+  }
+}

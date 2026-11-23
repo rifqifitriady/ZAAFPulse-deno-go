@@ -1,0 +1,164 @@
+{
+  "secrets": [
+    "enBfbWNwRml4dHVyZVNlY3JldDAxMjM0NTY3ODlhYmNkZWYy",
+    "enBfbWNwRml4dHVyZVNlY3JldDAxMjM0NTY3ODlhYmNkZWY="
+  ],
+  "fn": "mcp",
+  "in": [
+    {
+      "case": "call-rate-limited",
+      "configPush": {
+        "gateway": {
+          "providers": [],
+          "routes": [],
+          "guardrails": {
+            "scope": "external",
+            "secrets": "redact",
+            "pii": "off",
+            "injection": "log"
+          },
+          "defaults": {
+            "model": "",
+            "plannerModel": "",
+            "codeModel": ""
+          },
+          "tokenSaver": true,
+          "modelMap": []
+        },
+        "keys": [
+          {
+            "id": "k1",
+            "name": "k1",
+            "scopes": [
+              "llm",
+              "mcp"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_mcpFixt…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "12745fd61d3305947ad31b81b341b5d08d5a30cf70139792cbf37c7d39af251b"
+          },
+          {
+            "id": "k2",
+            "name": "k2",
+            "scopes": [
+              "llm",
+              "mcp"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 1,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_mcpFixt…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "32c8d3e9b9c0613970213b81cdf4324ad114d81bf884438f9095781835ee2d90"
+          },
+          {
+            "id": "k3",
+            "name": "k3",
+            "scopes": [
+              "llm",
+              "mcp"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {
+              "secrets": "block"
+            },
+            "prefix": "zp_mcpFixt…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "1bd8285b64db6142846788a7b43abfd0ea9d0cd6d42f55bf83b76c1990fa7d3c"
+          }
+        ],
+        "pricing": {
+          "m1": {
+            "input": 1000000000,
+            "output": 2000000000
+          }
+        },
+        "egress": {
+          "allow": [],
+          "allowList": "enforce",
+          "classes": {
+            "gateway": "direct",
+            "connectors": "direct",
+            "mcp": "direct",
+            "routers": "direct",
+            "pricing": "direct",
+            "evals": "direct",
+            "agents": "direct",
+            "notify": "direct",
+            "brain": "direct",
+            "public": "direct",
+            "otel": "direct",
+            "runtimes": "direct"
+          }
+        }
+      },
+      "secretsPush": {
+        "providers": [],
+        "mask": []
+      },
+      "request": {
+        "method": "POST",
+        "path": "/mcp",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json, text/event-stream",
+          "authorization": "Bearer <<ZPSECRET:0>>"
+        },
+        "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"dt_query\",\"arguments\":{\"q\":\"x\"}}}"
+      },
+      "tool": {
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "42 calls today"
+            }
+          ]
+        }
+      },
+      "rateLimited": true
+    }
+  ],
+  "out": {
+    "toolCalls": [],
+    "client": {
+      "status": 429,
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*",
+        "retry-after": "60"
+      },
+      "body": "{\"error\":{\"message\":\"rate limit of 1 requests per minute reached\",\"type\":\"rate_limit_error\"}}"
+    },
+    "usage": null
+  }
+}

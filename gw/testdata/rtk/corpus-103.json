@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "emoji 😀 0 ✖ fail\nemoji 😀 1 ✖ fail\nemoji 😀 2 ✖ fail\nemoji 😀 3 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 4 ✖ fail\nemoji 😀 21 ✖ fail\nemoji 😀 22 ✖ fail\nemoji 😀 23 ✖ fail\nemoji 😀 24 ✖ fail\nemoji 😀 25 ✖ fail\nemoji 😀 26 ✖ fail\nemoji 😀 27 ✖ fail\nemoji 😀 28 ✖ fail\nemoji 😀 29 ✖ fail\nemoji 😀 30 ✖ fail\nemoji 😀 31 ✖ fail\nemoji 😀 32 ✖ fail\nemoji 😀 33 ✖ fail\nemoji 😀 34 ✖ fail\nemoji 😀 35 ✖ fail\nemoji 😀 36 ✖ fail\nemoji 😀 37 ✖ fail\nemoji 😀 38 ✖ fail\nemoji 😀 39 ✖ fail\nemoji 😀 40 ✖ fail\nemoji 😀 41 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 50 ✖ fail\nemoji 😀 51 ✖ fail\nemoji 😀 52 ✖ fail\nemoji 😀 53 ✖ fail\nemoji 😀 54 ✖ fail\nemoji 😀 55 ✖ fail\nemoji 😀 56 ✖ fail\nemoji 😀 57 ✖ fail\nemoji 😀 58 ✖ fail\nemoji 😀 59 ✖ fail\nemoji 😀 60 ✖ fail\nemoji 😀 61 ✖ fail",
+    "Bash npm test"
+  ],
+  "out": {
+    "text": "emoji 😀 0 ✖ fail\n  (× 62 similar lines)\n…\nemoji 😀 37 ✖ fail\nemoji 😀 38 ✖ fail\nemoji 😀 39 ✖ fail\nemoji 😀 40 ✖ fail\nemoji 😀 41 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 42 ✖ fail\nemoji 😀 50 ✖ fail\nemoji 😀 51 ✖ fail\nemoji 😀 52 ✖ fail\nemoji 😀 53 ✖ fail\nemoji 😀 54 ✖ fail\nemoji 😀 55 ✖ fail\nemoji 😀 56 ✖ fail\nemoji 😀 57 ✖ fail\nemoji 😀 58 ✖ fail\nemoji 😀 59 ✖ fail\nemoji 😀 60 ✖ fail\nemoji 😀 61 ✖ fail",
+    "filter": "build",
+    "saved": 639
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "that fix introduced a new bug, now the cart total shows NaN"
+  ],
+  "out": {
+    "text": "that fix introduced a new bug, now the cart total shows NaN",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "echo 'DROP DATABASE app;' | mysql -u root"
+  ],
+  "out": {
+    "text": "echo 'DROP DATABASE app;' | mysql -u root",
+    "counts": {}
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"messages\":{\"0\":{\"role\":\"tool\",\"content\":\"x\"}}}",
+    "openai"
+  ],
+  "out": {
+    "body": {
+      "messages": {
+        "0": {
+          "role": "tool",
+          "content": "x"
+        }
+      }
+    },
+    "result": null
+  }
+}

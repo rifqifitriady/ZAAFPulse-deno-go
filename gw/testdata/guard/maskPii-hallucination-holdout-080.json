@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nHTTP/1.1 404 Not Found\ncurl: (22) The requested URL returned error: 404"
+  ],
+  "out": {
+    "text": "Exit code 1\nHTTP/1.1 404 Not Found\ncurl: (22) The requested URL returned error: 404",
+    "counts": {}
+  }
+}

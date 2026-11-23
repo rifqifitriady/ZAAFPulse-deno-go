@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "{\"command\":[\"bash\",\"-lc\",\"git push --force origin main\"],\"workdir\":\"/w/app\"}"
+  ],
+  "out": {
+    "text": "{\"command\":[\"bash\",\"-lc\",\"git push --force origin main\"],\"workdir\":\"/w/app\"}",
+    "counts": {}
+  }
+}

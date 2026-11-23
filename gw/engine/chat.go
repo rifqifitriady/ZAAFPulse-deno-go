@@ -1,0 +1,505 @@
+package engine
+
+// The chat route class on the go engine (P4b, slice S2): POST /v1/chat/completions, not streaming, to one OpenAI-format
+// provider with a plain API key (or none). PlanChat decides, without side effects, whether the engine serves a request
+// and builds the provider request; everything it does not serve is handed to the control plane, which answers exactly
+// as in js mode (P4b decision: hand-off). Respond and Failed turn the provider's answer (or the failed call) into the
+// client's answer and the usage line, as lib/gateway/index.js chatCompletion and proxyChat do.
+
+import (
+	"bytes"
+	"net"
+	"net/http"
+	"strings"
+	"time"
+	"unicode/utf16"
+	"unicode/utf8"
+
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/guard"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/provauth"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/translate"
+)
+
+// MaxBody is lib/gateway/index.js MAX_BODY: a bigger body is the control plane's 413.
+const MaxBody = 20 << 20
+
+// StaleMs: a budget snapshot older than this cannot tell the engine that no blocking budget applies.
+const StaleMs = ipc.StaleAfterMs
+
+// CORS are the headers of every gateway answer (lib/gateway/index.js CORS).
+var CORS = [][2]string{
+	{"Access-Control-Allow-Origin", "*"},
+	{"Access-Control-Allow-Headers", "authorization, content-type, x-api-key, x-goog-api-key, x-zp-session, x-zp-token-saver, anthropic-version, anthropic-beta, a2a-version, a2a-extensions, mcp-protocol-version, mcp-session-id, last-event-id"},
+	{"Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"},
+	{"Access-Control-Expose-Headers", "x-zp-session, x-zp-dropped, retry-after, mcp-session-id, www-authenticate"},
+}
+
+// State is one generation of what the control plane pushed: built when a config.push and its secrets.handoff are both
+// in, swapped whole, never changed after.
+type State struct {
+	Gen        int64
+	Gateway    ipc.GatewayConfig
+	Keys       *Keys
+	Secrets    map[string]string // provider id -> API key
+	Mask       []string
+	Pricer     *Pricer
+	Snapshot   *ipc.BudgetSnapshot
+	SnapshotAt int64                // epoch ms the snapshot says it was taken
+	spans      bool                 // config.push trace.spans (P4f D8): a span is recorded somewhere
+	logf       func(string, ...any) // the engine's log, set by SetState (recovered panics, P4d)
+	tokens     *Tokens              // the engine's token registry, set by SetState (P4g)
+}
+
+// Spans is whether this generation's calls get trace spans and a usage line naming their trace (P4f D8).
+func (s *State) Spans() bool { return s != nil && s.spans }
+
+// NewState builds a generation from config.push and secrets.handoff (same gen).
+func NewState(c *ipc.ConfigPush, s *ipc.SecretsHandoff) *State {
+	st := &State{Gen: c.Gen, Gateway: c.Gateway, Keys: NewKeys(c.Keys), Secrets: map[string]string{},
+		Mask: append([]string(nil), s.Mask...), Pricer: NewPricer(c.Pricing), spans: c.Trace != nil && c.Trace.Spans}
+	for _, p := range s.Providers {
+		if p.Value != nil && *p.Value != "" {
+			st.Secrets[p.ID] = *p.Value
+		}
+	}
+	return st
+}
+
+// WithSnapshot is the same generation with a newer budget snapshot.
+func (s *State) WithSnapshot(b *ipc.BudgetSnapshot) *State {
+	c := *s
+	c.Snapshot, c.SnapshotAt = b, b.At
+	return &c
+}
+
+// Request is what the engine reads of a client request.
+type Request struct {
+	Method  string
+	RawPath string
+	Query   string
+	Header  http.Header
+	Host    string // the Host header ("" when none)
+	Peer    string // the client's address, "ip:port"
+	Body    []byte
+	TooBig  bool // the body was over MaxBody
+}
+
+// Plan is the engine's decision for one request.
+type Plan struct {
+	Handoff string // why the control plane serves it ("" when the engine does)
+	Key     *ipc.GatewayKeyAuth
+	Target  *Target
+	Model   string // the model the client asked for
+	URL     string
+	Header  http.Header // the provider request's headers, with the credential
+	Body    []byte      // the provider request's body, as JSON.stringify writes it
+	Base    ipc.UsageRecord
+
+	Stream     bool // the client asked for a stream (body.stream truthy; P4c)
+	WantsUsage bool // the client's stream_options.include_usage is truthy
+
+	// P4e. Policy is set when a guardrail check applies: Body is then built by State.Guard from pending (proxyChat's
+	// upstream body before the checks).
+	Policy     *guard.Policy
+	pending    *Value
+	Unchecked  bool            // no fresh snapshot checked the call: its usage lines say budget "unchecked"
+	Failures   []guard.Failure // checks that failed in log mode (the call goes on, its line says error)
+	Overrun    string          // the check that ran past its limit, when Guard refused for that
+	refused    *Answer         // the shadow: the budget refusal the engine would have answered
+	GuardPanic string          // a panic out of the checks, refused as a 500 (for the log)
+
+	// P4d. Class is the sub-class; Format the client's wire format (openai, anthropic, responses, gemini) and Shape
+	// how its refusals are written; Upstream what the provider is asked (Up*). Env draws the translation's ids and
+	// times. ClientModel is the name the client used, which translated answers carry. Soft and Dropped are the
+	// translation's tags (Tagged says the body had them: Gemini's has none); Custom the Responses custom tool names.
+	// GuardFormat is the checks' format; build makes the provider body from the checked one. Self is an answer the
+	// engine gives without a provider (a count estimate); Timeout a limit of its own over the whole provider call, its
+	// body included, as an AbortSignal.timeout passed to fetch (count: 15 s; without one, the 120 s limit covers the
+	// headers only); Detached a call the client's leaving does not cancel (embeddings).
+	Class       string
+	Format      string
+	Shape       Shape
+	Upstream    string
+	Env         *translate.Env
+	ClientModel string
+	Soft        []string
+	Dropped     []string
+	Tagged      bool
+	Custom      []string
+	GuardFormat string
+	build       func(p *Plan, body *Value) []byte
+	Self        *Answer
+	Timeout     time.Duration
+	Detached    bool
+	buildErr    error // the provider body could not be built from the checked body (the Anthropic leg, review m3)
+
+	// P4g. An /mcp tools/call (Upstream UpTool): RPCID is the JSON-RPC id as parsed (null included; nil only on other
+	// plans), Tool params.name, ToolArgs params.arguments ({} when absent or null), ToolTier "private" for an acc_*
+	// tool, else "external". Policy is set when the tier is in the guardrails' scope.
+	RPCID    *Value
+	Tool     string
+	ToolArgs *Value
+	ToolTier string
+	// auth is the token source of an oauth2 or google-sa target (nil: a key or none); Upstream.Start gets the token.
+	auth *provauth.Cached
+
+	// The token saver (spec the rtk-go design D8, D12): the texts Save shortens in
+	// pending, whether it ran, how many it shortened, and whether every line keeps savedTokens (the Anthropic
+	// passthrough spreads base into its guard lines too; proxyChat's guard lines carry none).
+	saver     *saverJob
+	saverDone bool
+	saverWhy  string // Save's hand-off reason, returned again on a later call
+	// SaverPanic is a panic out of the token saver (a bug, never a JS answer), handed off and logged (final review I1).
+	SaverPanic string
+	saverHits  int
+	keepSaved  bool
+
+	// P4h. A route call (spec Decision 8): Route is the route asked for (nil: not a route call), Legs one complete
+	// single-target plan per raw target in the route's order (nil for a name that does not resolve or that a
+	// private-only key may not use), Takes how many times the JS path calls resolveAll for it (Decision 7). Serve takes,
+	// orders the legs and tries them (serve_route.go). relegs builds the legs again from a client body the token saver
+	// shortened (Decision 9: every leg sends the shortened text).
+	Route  *ipc.RouteConfig
+	Legs   []*Plan
+	Takes  int
+	relegs func(body *Value) ([]*Plan, string)
+	// dropAdded: this leg's build added "reasoning" to Dropped (adaptChat pushes it to the translated body's one list,
+	// which every leg shares in JS, so a later leg's answer names it too). converted: the leg's whole Anthropic answer
+	// is already the OpenAI one (the route loop converted it).
+	dropAdded bool
+	converted bool
+	// replay: the legs in the control plane's order, for the shadow's replay of a route call (shadow_route.go); serveRoute
+	// then takes nothing and orders nothing. nil: a served call.
+	replay []*Plan
+}
+
+func handoff(why string) Plan { return Plan{Handoff: why} }
+
+// proxyHeaders: any of these means a proxy may stand between the client and the gateway (lib/gateway/client.js
+// PROXY_HEADERS, server.js's no-sign-in refusal and lib/auth.js originAllowed): the control plane decides.
+var proxyHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip",
+	"X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port", "Via"}
+
+// PlanChat decides for a POST to the exact path /v1/chat/completions, at now (epoch ms). It reads and changes nothing:
+// the rate limit is the caller's (Take when serving, Wait when comparing).
+func (s *State) PlanChat(r *Request, now int64) Plan {
+	// The server's checks before the gateway (server.js handler): only a request every one of them passes in every
+	// auth mode is the engine's, a loopback Host from a loopback client with no browser or proxy header.
+	if !loopbackName(r.Host) || !loopbackPeer(r.Peer) {
+		return handoff("access: not a loopback host and client")
+	}
+	for _, h := range append([]string{"Origin", "Referer", "Sec-Fetch-Site"}, proxyHeaders...) {
+		if _, ok := r.Header[h]; ok {
+			return handoff("access: a browser or proxy header")
+		}
+	}
+	if r.Method != http.MethodPost {
+		return handoff("method")
+	}
+	secret, ok := RequestSecret(r.Header, r.RawPath, r.Query)
+	key, why := s.Keys.Authenticate(secret, ok, now)
+	if key == nil {
+		return handoff("key: " + why)
+	}
+	if r.TooBig || len(r.Body) == 0 {
+		return handoff("body: empty or over 20 MB")
+	}
+	body, err := Parse(r.Body)
+	if err != nil || body.Kind != Object {
+		return handoff("body: not a JSON object the engine serves")
+	}
+	m := body.Get("model")
+	if m == nil || m.Kind != String || m.S == "" {
+		return handoff("model: missing")
+	}
+	model := m.S
+	if strings.HasPrefix(model, "agent/") || strings.HasPrefix(model, "collab/") {
+		return handoff("model: an agent or a collaboration")
+	}
+	if Authorize(key, "llm", model, "") != "" {
+		return handoff("key: not allowed")
+	}
+	if rt := s.routeOf(model); rt != nil {
+		return s.planChatRoute(r, body, key, rt)
+	}
+	t := Resolve(s.Gateway.Providers, model)
+	if t == nil || (key.PrivateOnly && TierOf(t.Provider) != "private") {
+		return handoff("model: no usable target")
+	}
+	p, why := s.chatLeg(r, body, key, t, model, s.tokenSaverOn(r))
+	if why != "" {
+		return handoff(why)
+	}
+	return p
+}
+
+// chatLeg is proxyChat's work for one target t of model (the client's model: a plain model or a route): the upstream
+// body, the Anthropic leg, the guardrails' policy for the target's tier and the provider request. save scans the body
+// for the token saver (a single-target call; a route call runs the saver once on the client body, planChatRoute). why
+// is a hand-off reason.
+func (s *State) chatLeg(r *Request, body *Value, key *ipc.GatewayKeyAuth, t *Target, model string, save bool) (Plan, string) {
+	cred, auth, why := s.credential(t)
+	if why != "" {
+		return Plan{}, why
+	}
+	stream := body.Get("stream").Truthy()
+	out, why := upstreamBody(body, t, stream)
+	if why != "" {
+		return Plan{}, why
+	}
+	var job *saverJob
+	if save {
+		// saveTokens(body, 'openai') before the guardrails (rtk.js R2): the walk now, the filters in Save.
+		if job, why = scanSaver(out, "openai"); why != "" {
+			return Plan{}, why // saveTokens would throw, or reads what the engine cannot hold: JS answers (spec D7)
+		}
+	}
+	so := body.Get("stream_options")
+	p := Plan{Key: key, Target: t, Model: model, ClientModel: model, URL: t.Provider.BaseURL + "/chat/completions",
+		Header: providerHeader(t, cred), Base: s.base(key, t, model, r), Stream: stream,
+		WantsUsage: so.Truthy() && so.Get("include_usage").Truthy(), Format: "openai", Shape: ShapeOpenAI,
+		Upstream: UpChat, GuardFormat: "openai-chat", Env: translate.Default, build: chatBuild, saver: job, auth: auth}
+	if FormatOf(t.Provider) == "anthropic" {
+		if why := planAnthropicLeg(&p, cred, out); why != "" {
+			return Plan{}, why
+		}
+	}
+	if pol := PolicyFor(s.Gateway.Guardrails, key); checksApply(pol, ScopeTier(t.Provider, t.Model)) {
+		p.Policy, p.pending = &pol, out // State.Guard builds Body (P4e)
+	} else if job != nil {
+		p.pending = out // State.Save builds Body
+	} else {
+		p.Body = p.build(&p, out)
+	}
+	if stream {
+		v := true
+		p.Base.Stream = &v
+	}
+	p.Class = SubClass("chat", &p, nil)
+	return p, ""
+}
+
+// upstreamBody is proxyChat's upstreamBody: { ...body, stream_options: { ...(body.stream_options || {}), include_usage:
+// true } } for a stream to a provider that reports stream usage, else a copy of body. Spreading a non-empty string or
+// array gives indexed keys, which the engine does not build: the control plane answers.
+func upstreamBody(body *Value, t *Target, stream bool) (*Value, string) {
+	out := body.Clone()
+	if !stream || !StreamUsageOf(t.Provider) {
+		return out, ""
+	}
+	so := body.Get("stream_options")
+	merged := NewObject()
+	switch {
+	case so != nil && so.Kind == Object:
+		merged = so.Clone()
+	case so != nil && (so.Kind == String && so.S != "" || so.Kind == Array && len(so.A) > 0):
+		return nil, "stream: stream_options is not an object"
+	}
+	merged.Set("include_usage", &Value{Kind: Bool, B: true})
+	out.Set("stream_options", merged)
+	return out, ""
+}
+
+// StreamLine is chatCompletion's line after a stream: status 200, the tokens of the last usage chunk, the time to the
+// first token (null when none came), no error text, the cost of the routed model.
+func (s *State) StreamLine(p *Plan, cs *ChatStream, ms float64) ipc.UsageRecord {
+	rec := p.Base
+	rec.Status, rec.Ms = 200, ms
+	in, out, cached := cs.Input, cs.Output, cs.Cached
+	rec.Input, rec.Output, rec.Cached = &in, &out, &cached
+	rec.TTFT = ipc.Null[float64]()
+	if cs.TTFT != nil {
+		rec.TTFT = ipc.Some(*cs.TTFT)
+	}
+	model := rec.Model
+	if rec.RoutedTo != nil {
+		model = *rec.RoutedTo
+	}
+	rec.Cost = s.Pricer.Cost(model, float64(in), float64(out), float64(cached))
+	return rec
+}
+
+func (s *State) base(key *ipc.GatewayKeyAuth, t *Target, model string, r *Request) ipc.UsageRecord {
+	kind, format, stream := "chat", "openai", false
+	rec := ipc.UsageRecord{KeyID: key.ID, Provider: t.Provider.ID, Model: model, Kind: &kind, Format: &format,
+		Stream: &stream}
+	if t.Name != model {
+		rt := t.Name
+		rec.RoutedTo = &rt
+	}
+	// lib/gateway/client.js clientTag: the tool by its User-Agent; local when the client is loopback and no proxy
+	// header came (the engine serves no request with one).
+	if c := clientOf(r.Header.Get("User-Agent")); c != "" {
+		rec.Client = &c
+	}
+	local := true
+	rec.Local = &local
+	return rec
+}
+
+func clientOf(ua string) string {
+	l := strings.ToLower(ua)
+	switch {
+	case strings.HasPrefix(l, "claude-cli/"):
+		return "claude-code"
+	case strings.HasPrefix(l, "codex_cli_rs/"), strings.HasPrefix(l, "codex/"):
+		return "codex"
+	}
+	return ""
+}
+
+// loopbackName is lib/auth.js isLoopback of the Host without its port (server.js).
+func loopbackName(host string) bool {
+	h := strings.ToLower(host)
+	if i := strings.LastIndexByte(h, ':'); i >= 0 && i < len(h)-1 && allDigits(h[i+1:]) {
+		h = h[:i]
+	}
+	return h == "127.0.0.1" || h == "localhost" || h == "::1" || h == "[::1]"
+}
+
+func allDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// loopbackPeer is lib/gateway/client.js isLoopback of the client's address.
+func loopbackPeer(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback() && (ip.To4() != nil || host == "::1")
+}
+
+// Answer is the client's answer and the usage line of one served call.
+type Answer struct {
+	Status int
+	Header http.Header
+	Body   []byte
+	Usage  ipc.UsageRecord
+	NoLine bool // no usage line goes with this answer (a 402: allowedTargets throws before any record)
+}
+
+func answerHeader() http.Header {
+	h := http.Header{}
+	h.Set("Content-Type", "application/json")
+	h.Set("Cache-Control", "no-store")
+	for _, c := range CORS {
+		h.Set(c[0], c[1])
+	}
+	return h
+}
+
+// Respond is chatCompletion's non-streaming answer for the provider's status and body, at ms after the start.
+func (s *State) Respond(p *Plan, status int, raw []byte, ms float64) Answer {
+	text := decodeUTF8(raw)
+	j, err := Parse([]byte(text))
+	if err != nil {
+		j = nil
+	}
+	ok := status >= 200 && status <= 299
+	in, out, cached := tokens(j)
+	rec := p.Base
+	rec.Status, rec.Ms = int64(status), ms
+	rec.Input, rec.Output, rec.Cached = &in, &out, &cached
+	if !ok {
+		msg := text
+		if e := j.Get("error"); e.Truthy() {
+			if m := e.Get("message"); m.Truthy() && m.Kind == String {
+				msg = m.S
+			}
+		}
+		masked := s.mask(jsSlice(msg, 200))
+		rec.Error = &masked
+	}
+	model := rec.Model
+	if rec.RoutedTo != nil {
+		model = *rec.RoutedTo
+	}
+	rec.Cost = s.Pricer.Cost(model, float64(in), float64(out), float64(cached))
+	body := []byte(text)
+	if j.Truthy() {
+		if ok && j.Kind == Object {
+			j.Set("model", Str(p.Model))
+		}
+		body = j.Stringify()
+	}
+	return Answer{Status: status, Header: answerHeader(), Body: body, Usage: rec}
+}
+
+// Failed is proxyChat's answer when the call to the only target threw: 502 upstream_error with the provider's id and
+// what failed (masked), and a usage line with status 599.
+func (s *State) Failed(p *Plan, why string, ms float64) Answer {
+	msg := s.mask(p.Target.Provider.ID + ": " + why)
+	rec := p.Base
+	// proxyChat's 599 line: the attempt's own fields, without routedTo, requested, savedTokens or a guardrail outcome
+	// (a target that failed carries none, G8).
+	rec.RoutedTo, rec.Guard, rec.Requested, rec.SavedTokens = nil, nil, nil, nil
+	rec.Status, rec.Ms, rec.Error = 599, ms, &msg
+	a := shapeError(p.Shape, http.StatusBadGateway, msg, "upstream_error", "", "")
+	a.Usage, a.NoLine = rec, false
+	return a
+}
+
+// RateLimited is authed's 429 for a key past its requests per minute, in the client's shape.
+func RateLimited(key *ipc.GatewayKeyAuth, wait int64, sh Shape) Answer {
+	return shapeError(sh, http.StatusTooManyRequests,
+		"rate limit of "+NumberString(float64(key.RPM))+" requests per minute reached", "rate_limit_error", "",
+		NumberString(float64(wait)))
+}
+
+// tokens is usageOf: prompt, completion and cached tokens, 0 when missing; a count that is not a whole number of zero
+// or more is 0 here (the IPC record holds integers; the JS gateway would store it as it came).
+func tokens(j *Value) (int64, int64, int64) {
+	u := j.Get("usage")
+	n := func(v *Value) int64 {
+		if v == nil || v.Kind != Number || v.N < 0 || v.N != float64(int64(v.N)) {
+			return 0
+		}
+		return int64(v.N)
+	}
+	return n(u.Get("prompt_tokens")), n(u.Get("completion_tokens")), n(u.Get("prompt_tokens_details").Get("cached_tokens"))
+}
+
+// mask is lib/secrets.js mask: every known secret value becomes ***.
+func (s *State) mask(text string) string {
+	for _, v := range s.Mask {
+		if v != "" {
+			text = strings.ReplaceAll(text, v, "***")
+		}
+	}
+	return text
+}
+
+// jsSlice is String.prototype.slice(0, n): the first n UTF-16 code units (a pair cut in half loses its high half here;
+// JavaScript would keep it as a lone surrogate).
+func jsSlice(s string, n int) string {
+	units := 0
+	for i, r := range s {
+		w := utf16.RuneLen(r)
+		if units+w > n {
+			return s[:i]
+		}
+		units += w
+	}
+	return s
+}
+
+// decodeUTF8 is Response.text() but for invalid bytes: a leading byte order mark dropped, each run of invalid bytes one
+// U+FFFD (WHATWG writes one per maximal subpart; results doc, difference 9).
+func decodeUTF8(b []byte) string {
+	b = bytes.TrimPrefix(b, []byte{0xef, 0xbb, 0xbf})
+	if utf8.Valid(b) {
+		return string(b)
+	}
+	return strings.ToValidUTF8(string(b), "�")
+}
+
+// NowMs is the engine's clock in epoch ms.
+func NowMs() int64 { return time.Now().UnixMilli() }

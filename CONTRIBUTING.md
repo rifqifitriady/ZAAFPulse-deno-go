@@ -13,7 +13,7 @@ You do not need to get everything below right, and it is fine if this is your fi
 
 ## Getting set up
 
-You need Node.js 18 or newer and nothing else. ZAAFPulse has no runtime dependencies: the only npm package is postject, a pinned `devDependency` used only to build the single-file binaries (see [Releases](#releases)).
+You need Node.js 18 or newer, or Deno 2.9.8, and nothing else. ZAAFPulse has no runtime dependencies: the only npm package is `@types/node`, a pinned `devDependency` that holds types for `deno check`.
 
 Fork the repository, then:
 
@@ -34,7 +34,7 @@ npm start           # your own logs on http://localhost:4777
 | `npx prettier@3 --write .` | Format the code (settings in `.prettierrc.json`; Prettier is not a dependency) |
 | `npm run media` | Regenerate the README screenshots and GIFs from demo data (needs Chrome and ffmpeg) |
 | `node bin/zaafpulse.js doctor` | Check the OS, Node.js, data folder, secret store and service |
-| `npm ci && node scripts/build-single.js` | Build a single-file executable for this machine into `dist/` (see "Releases") |
+| `deno task build` | Build a single-file executable for this machine into `dist/` (see "Releases") |
 
 ## How the project is laid out
 
@@ -75,7 +75,7 @@ docs/                install guide, integrations, README media
 
 - Every change that adds behaviour adds or updates a test in `test/`.
 - Tests must not touch the real Keychain, `config.json`, `.data/` or the network. Use temporary folders, `test/helpers.js` and the fake servers in it.
-- CI runs the whole suite on macOS, Ubuntu and Windows. A change that depends on path separators or the shell will show up there.
+- CI runs the whole suite on macOS, Ubuntu, Windows and Windows on Arm, under Node and under Deno. A change that depends on path separators or the shell will show up there. A push to a work branch runs the Ubuntu jobs only, to save Actions minutes; the full matrix and the six binary builds run on the pull request (and on `main`, `migrate/deno-go`, tags and a manual run), so open the pull request before relying on the other systems.
 
 ```bash
 npm test
@@ -95,23 +95,24 @@ npm test
 
 ## Releases
 
-For maintainers. A release is the set of binaries, the source package, `SHA256SUMS.txt` and their attestations that `.github/workflows/release.yml` builds from a version tag.
+For maintainers. A release is the four archives (`zaafpulse-<v>-<target>.tar.gz`, `.zip` for `win-*`; each holds `zaafpulse`, `zaafpulse-gw` and `LICENSE`), `install.sh`, `install.ps1` and `SHA256SUMS.txt`, with a build-provenance attestation for each of those files and for every binary inside the archives. `.github/workflows/release.yml` builds and publishes them from a version tag. The targets are linux-x64, linux-arm64, win-x64 and win-arm64. There is no macOS package (owner decisions 10 and 11, 2026-11-23, in the program plan §11): `install.sh` sends every Mac to the v1.x installer, the regular CI still builds and smoke-tests darwin-arm64, and no release install test covers the macOS launchd path.
 
-**Never move a published tag; ship a new patch version.** Once `vX.Y.Z` is pushed, it names that commit for good, even when the release turns out broken. Fix it in `vX.Y.(Z+1)`, and say in the old release's notes which version replaces it. Do not delete or replace the old release's files. A moved tag means two people who installed "the same version" ran different code, and it invalidates the checksums and attestations they relied on. With the tag ruleset and immutable releases switched on ([docs/release-hardening.md](docs/release-hardening.md)), GitHub refuses the move anyway.
+**Never move a published tag; ship a new patch version.** Once `vX.Y.Z` is pushed, it names that commit for good, even when the release turns out broken. Fix it in `vX.Y.(Z+1)`, and say in the old release's notes which version replaces it. Do not delete or replace the old release's files. A moved tag means two people who installed "the same version" ran different code, and it invalidates the checksums and attestations they relied on. With the tag ruleset and immutable releases switched on ([docs/release-hardening.md](docs/release-hardening.md)), GitHub refuses the move anyway, and a published release's files can never be changed.
 
-1. Set the version in `package.json`, merge to `main` and wait for CI to pass on all three systems.
-2. Tag the merge commit and push only that tag: `git tag vX.Y.Z <commit>` and then `git push origin vX.Y.Z`. The workflow stops if the tag and `package.json` disagree.
-3. The workflow runs the full suite, builds the six binaries, attests every file and publishes the release. It never creates or moves a tag.
-4. Check one file: `gh attestation verify zaafpulse-X.Y.Z-linux-x64 --repo rifqifitriady/ZAAFPulse`.
+1. Set the version in `package.json` and `package-lock.json` (`test/build-deno.test.js` checks they agree), and write the release notes as `docs/release-notes/vX.Y.Z.md`: the workflow publishes that file as the notes and stops when it is missing.
+2. Merge to `main` and wait for CI to pass.
+3. Tag the merge commit and push only that tag: `git tag vX.Y.Z <commit>` and then `git push origin vX.Y.Z`.
+4. The workflow checks that the tag is `v` + `package.json`'s version and that the notes exist, runs the suites (`ci.yml`), builds the four packages on native runners (`build.yml`, with a smoke test of each unpacked package and the gateway in front), install-tests each one on its own runner (a clean install, the upgrade from v1.1.0 and `--rollback`, and the v1.1.0 data check on linux-x64 and win-x64), and only then publishes: it attests every file, then runs `gh release create --verify-tag`, which never creates a tag. A failure anywhere before `publish` publishes nothing.
+5. Check the release: `gh release verify vX.Y.Z --repo rifqifitriady/ZAAFPulse-deno-go`, and `gh attestation verify <file> --repo rifqifitriady/ZAAFPulse-deno-go` on the files. The steps for v2.0.0, in order: [docs/release-checklist-v2.0.0.md](docs/release-checklist-v2.0.0.md).
+
+A manual run of `release.yml` (workflow_dispatch) is always a dry run: it builds and install-tests and uploads the would-be release as the artifact `release-dry-run`, and never attests, publishes or tags.
 
 How the build is kept honest:
 
-- Only files tracked by git are packed. `build-single.js` stops when a file that would ship has uncommitted changes. `--allow-dirty` exists for local test builds only.
-- Each binary carries the SHA-256 of every packed file. On every start it checks the unpacked copy in the cache folder against those hashes, and restores any file that changed, is missing or was added before running anything. This costs about 6 ms per start.
-- postject, the only build tool from npm, is an exact `devDependency` in `package-lock.json`. Run `npm ci` before a local build. The app itself still has no runtime dependencies.
-- The workflows pin every action by commit SHA, with its release in a comment, and Node to an exact version, which is the version the binaries embed. To update:
-  - Node: change `node-version` in both `ci.yml` and `release.yml`.
+- The packages are built by `deno task build --package` (`scripts/build-deno.js`) from the committed tree: `zaafpulse` with `deno compile -P=cli` and `zaafpulse-gw` with `go build -trimpath` (version set with `-X main.version`). Only files tracked by git are packed, and the build stops when a file that would ship has uncommitted changes. `--allow-dirty` exists for local test builds only.
+- Nothing is unpacked at start. A binary serves its files from inside itself, so integrity rests on the published `SHA256SUMS.txt` and the attestations, not on a check at start.
+- The workflows pin every action by commit SHA, with its release in a comment, and Node, Deno and Go to exact versions. To update:
+  - Node, Deno and Go: change them in `ci.yml`, `build.yml` and `release.yml` together (`test/ci-go-pin.test.js` checks the Go pins).
   - An action: look up the release's commit with `gh api repos/actions/checkout/commits/v7.0.1 --jq .sha` (replace the action and version), then update the SHA and the comment together.
-  - postject: `npm install --save-dev --save-exact postject@<version>`.
 
 By contributing, you agree that your contribution is licensed under the [MIT License](LICENSE) and that you will follow the [Code of Conduct](CODE_OF_CONDUCT.md).

@@ -1,0 +1,22 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkText",
+  "in": [
+    "<<ZPSECRET:0>> ana@example.com",
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "redact",
+      "injection": "block"
+    },
+    "result"
+  ],
+  "out": {
+    "text": "<<ZPSECRET:0>> ana@example.com",
+    "action": null,
+    "hits": [],
+    "error": false
+  }
+}

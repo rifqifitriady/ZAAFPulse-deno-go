@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "\u001b[30mcolored 0\u001b[0m\n./a/b1/c1.txt\n\u001b[32mcolored 2\u001b[0m\n./a/b3/c3.txt\n+ added line 4 é\n\u001b[35mcolored 5\u001b[0m\n\u001b[35mcolored 5\u001b[0m\n\u001b[35mcolored 5\u001b[0m\n\u001b[35mcolored 5\u001b[0m\n+ added line 9 é\n+ added line 10 é\n./a/b3/c11.txt\n./a/b0/c12.txt\n\u001b[35mcolored 13\u001b[0m\n\u001b[36mcolored 14\u001b[0m\n./a/b3/c15.txt\n\u001b[30mcolored 16\u001b[0m\n\u001b[31mcolored 17\u001b[0m\n+ added line 18 é\n./a/b3/c19.txt\n+ added line 20 é\n+ added line 21 é\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n+ added line 39 é\n./a/b0/c40.txt\n\u001b[31mcolored 41\u001b[0m\n+ added line 42 é\n./a/b3/c43.txt\n+ added line 44 é\n./a/b1/c45.txt\n\u001b[36mcolored 46\u001b[0m\n+ added line 47 é\n\u001b[30mcolored 48\u001b[0m\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é",
+    "Bash npm test"
+  ],
+  "out": {
+    "text": "./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n./a/b2/c22.txt\n+ added line 39 é\n./a/b0/c40.txt\ncolored 41\n+ added line 42 é\n./a/b3/c43.txt\n+ added line 44 é\n./a/b1/c45.txt\ncolored 46\n+ added line 47 é\ncolored 48\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é\n+ added line 49 é",
+    "filter": "build",
+    "saved": 610
+  }
+}

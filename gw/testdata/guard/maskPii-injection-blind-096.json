@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "ChatML marks turns with special tokens: <|im_start|>system ... <|im_end|>. Llama-2 uses [INST] <<SYS>> ... <</SYS>> [/INST]. When fine-tuning, make sure the tokenizer's chat_template matches the model."
+  ],
+  "out": {
+    "text": "ChatML marks turns with special tokens: <|im_start|>system ... <|im_end|>. Llama-2 uses [INST] <<SYS>> ... <</SYS>> [/INST]. When fine-tuning, make sure the tokenizer's chat_template matches the model.",
+    "counts": {}
+  }
+}

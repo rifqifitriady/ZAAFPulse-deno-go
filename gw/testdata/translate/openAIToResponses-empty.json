@@ -1,0 +1,27 @@
+{
+  "fn": "openAIToResponses",
+  "in": [
+    {},
+    "r"
+  ],
+  "out": {
+    "id": "resp_010101010101010101010101",
+    "object": "response",
+    "created_at": 1767225600,
+    "status": "completed",
+    "model": "r",
+    "output": [],
+    "output_text": "",
+    "usage": {
+      "input_tokens": 0,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 0,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 0
+    }
+  }
+}

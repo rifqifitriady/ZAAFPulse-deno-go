@@ -1,0 +1,83 @@
+{
+  "fn": "checkBody",
+  "in": [
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "mail a@b.com from 10.1.2.3",
+              "signature": "sig"
+            },
+            {
+              "type": "redacted_thinking",
+              "data": "a@b.com"
+            },
+            {
+              "type": "text",
+              "text": "write a@b.com"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "ok"
+        }
+      ]
+    },
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "redact",
+      "injection": "log"
+    },
+    "anthropic"
+  ],
+  "out": {
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "mail a@b.com from 10.1.2.3",
+              "signature": "sig"
+            },
+            {
+              "type": "redacted_thinking",
+              "data": "a@b.com"
+            },
+            {
+              "type": "text",
+              "text": "write ‹email›"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "ok"
+        }
+      ]
+    },
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "pii",
+        "label": "email",
+        "count": 1
+      }
+    ],
+    "error": false
+  }
+}

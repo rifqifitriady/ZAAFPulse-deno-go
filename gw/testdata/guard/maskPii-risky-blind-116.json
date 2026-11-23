@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "mysql -u root -e 'DROP DATABASE shop_test;'"
+  ],
+  "out": {
+    "text": "mysql -u root -e 'DROP DATABASE shop_test;'",
+    "counts": {}
+  }
+}

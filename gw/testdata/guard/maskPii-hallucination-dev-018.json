@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "{\"output\":\"bash: line 1: yarnpkg: command not found\\n\",\"metadata\":{\"exit_code\":127}}"
+  ],
+  "out": {
+    "text": "{\"output\":\"bash: line 1: yarnpkg: command not found\\n\",\"metadata\":{\"exit_code\":127}}",
+    "counts": {}
+  }
+}

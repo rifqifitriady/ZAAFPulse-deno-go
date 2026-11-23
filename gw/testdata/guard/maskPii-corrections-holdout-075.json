@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "ok good, continue with the next file"
+  ],
+  "out": {
+    "text": "ok good, continue with the next file",
+    "counts": {}
+  }
+}

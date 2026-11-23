@@ -1,0 +1,17 @@
+{
+  "fn": "compressBig",
+  "in": [
+    [
+      [
+        "abcdefgh\n",
+        1165084
+      ],
+      [
+        "x",
+        5
+      ]
+    ],
+    ""
+  ],
+  "out": null
+}

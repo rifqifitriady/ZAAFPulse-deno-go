@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "coba lagi, tadi gagal"
+  ],
+  "out": {
+    "text": "coba lagi, tadi gagal",
+    "counts": {}
+  }
+}

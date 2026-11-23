@@ -1,0 +1,93 @@
+{
+  "fn": "accessToken",
+  "in": {
+    "id": "prov",
+    "auth": {
+      "type": "oauth2",
+      "tokenUrl": "https://login.example.test/tenant/oauth2/v2.0/token",
+      "clientId": "c",
+      "scope": "",
+      "grant": "refresh_token"
+    },
+    "secret": "{\"client_secret\":\"cs-123456\",\"refresh_token\":\"rt-0\"}",
+    "mask": [],
+    "responses": [
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"a1\",\"refresh_token\":\"rt-1\",\"expires_in\":60}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"a2\",\"expires_in\":3600}"
+      },
+      {
+        "status": 200,
+        "body": "{\"access_token\":\"a3\",\"refresh_token\":\"rt-3\",\"expires_in\":3600}"
+      }
+    ],
+    "steps": [
+      {
+        "now": 1767225600000
+      },
+      {
+        "now": 1767225601000
+      },
+      {
+        "now": 1767225602000,
+        "force": true
+      },
+      {
+        "now": 1767225603000
+      }
+    ]
+  },
+  "out": {
+    "requests": [
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=refresh_token&client_id=c&client_secret=cs-123456&refresh_token=rt-0"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=refresh_token&client_id=c&client_secret=cs-123456&refresh_token=rt-1"
+      },
+      {
+        "url": "https://login.example.test/tenant/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=refresh_token&client_id=c&client_secret=cs-123456&refresh_token=rt-1"
+      }
+    ],
+    "results": [
+      {
+        "token": "a1",
+        "exp": 1767225660000
+      },
+      {
+        "token": "a2",
+        "exp": 1767229201000
+      },
+      {
+        "token": "a3",
+        "exp": 1767229202000
+      },
+      {
+        "token": "a3",
+        "exp": 1767229202000
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "Compiling crate0 v0.0.0\nCompiling crate1 v0.1.0\nCompiling crate2 v0.2.0\nCompiling crate3 v0.3.0\nCompiling crate4 v0.4.0\nCompiling crate5 v0.5.0\nCompiling crate6 v0.6.0\nCompiling crate7 v0.7.0\nCompiling crate8 v0.8.0\nCompiling crate9 v0.9.0\nCompiling crate10 v0.10.0\nCompiling crate11 v0.11.0\nCompiling crate12 v0.12.0\nCompiling crate13 v0.13.0\nCompiling crate14 v0.14.0\nCompiling crate15 v0.15.0\nCompiling crate16 v0.16.0\nCompiling crate16 v0.16.0\nCompiling crate16 v0.16.0\nCompiling crate16 v0.16.0\nCompiling crate16 v0.16.0\nCompiling crate16 v0.16.0\nCompiling crate16 v0.16.0\nCompiling crate16 v0.16.0\nCompiling crate16 v0.16.0\nCompiling crate25 v0.25.0\nCompiling crate26 v0.26.0\nCompiling crate27 v0.27.0\nCompiling crate28 v0.28.0\nCompiling crate29 v0.29.0\nCompiling crate30 v0.30.0\nCompiling crate31 v0.31.0\nCompiling crate32 v0.32.0\nCompiling crate33 v0.33.0\nCompiling crate34 v0.34.0\nCompiling crate35 v0.35.0\nCompiling crate36 v0.36.0\nCompiling crate37 v0.37.0\nCompiling crate38 v0.38.0\nCompiling crate39 v0.39.0\nCompiling crate40 v0.40.0\nCompiling crate41 v0.41.0\nCompiling crate42 v0.42.0\nCompiling crate43 v0.43.0\nCompiling crate44 v0.44.0\nCompiling crate45 v0.45.0\nCompiling crate46 v0.46.0\nCompiling crate47 v0.47.0\nCompiling crate48 v0.48.0",
+    ""
+  ],
+  "out": {
+    "text": "(49 progress lines)\nCompiling crate16 v0.16.0\nCompiling crate25 v0.25.0\nCompiling crate26 v0.26.0\nCompiling crate27 v0.27.0\nCompiling crate28 v0.28.0\nCompiling crate29 v0.29.0\nCompiling crate30 v0.30.0\nCompiling crate31 v0.31.0\nCompiling crate32 v0.32.0\nCompiling crate33 v0.33.0\nCompiling crate34 v0.34.0\nCompiling crate35 v0.35.0\nCompiling crate36 v0.36.0\nCompiling crate37 v0.37.0\nCompiling crate38 v0.38.0\nCompiling crate39 v0.39.0\nCompiling crate40 v0.40.0\nCompiling crate41 v0.41.0\nCompiling crate42 v0.42.0\nCompiling crate43 v0.43.0\nCompiling crate44 v0.44.0\nCompiling crate45 v0.45.0\nCompiling crate46 v0.46.0\nCompiling crate47 v0.47.0\nCompiling crate48 v0.48.0",
+    "filter": "build",
+    "saved": 584
+  }
+}

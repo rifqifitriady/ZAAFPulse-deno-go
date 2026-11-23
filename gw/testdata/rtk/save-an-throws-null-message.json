@@ -1,0 +1,8 @@
+{
+  "fn": "saveTokens",
+  "in": [
+    "{\"messages\":[null]}",
+    "anthropic"
+  ],
+  "throws": "Cannot read properties of null (reading 'content')"
+}

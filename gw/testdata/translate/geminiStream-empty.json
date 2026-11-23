@@ -1,0 +1,14 @@
+{
+  "fn": "geminiStream",
+  "in": [
+    "m",
+    [
+      [
+        "finish"
+      ]
+    ]
+  ],
+  "out": [
+    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"m\"}\n\n"
+  ]
+}

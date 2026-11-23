@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "date": "2026-11-10",
+  "runtime": "deno",
+  "runtimeVersion": "deno 2.9.8 (stable, release, aarch64-apple-darwin)",
+  "git": {
+    "sha": "64369e61a02156904811c0288c7eb8b302ba5120",
+    "dirty": false
+  },
+  "host": {
+    "name": "MBA-ZAAF",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "cores": 10,
+    "memGB": 16,
+    "osRelease": "25.6.0"
+  },
+  "config": {
+    "runtime": "deno",
+    "requests": 2000,
+    "levels": [
+      50,
+      200,
+      500
+    ],
+    "seconds": 10,
+    "delayMs": 20,
+    "chunks": 20,
+    "intervalMs": 25,
+    "starts": 5
+  },
+  "startup": {
+    "ms": [
+      497.9,
+      270.9,
+      249.6,
+      254.4,
+      258
+    ],
+    "p50": 258
+  },
+  "idleRssMB": 88.6,
+  "nonStream": {
+    "gateway": {
+      "n": 2000,
+      "p50": 24.49,
+      "p95": 28.29,
+      "p99": 30.91
+    },
+    "direct": {
+      "n": 2000,
+      "p50": 21.87,
+      "p95": 23.24,
+      "p99": 24.14
+    },
+    "overhead": {
+      "n": 2000,
+      "p50": 2.5,
+      "p95": 5.67,
+      "p99": 7.9
+    }
+  },
+  "streams": [
+    {
+      "level": 50,
+      "seconds": 10,
+      "gateway": {
+        "completed": 958,
+        "errors": 0,
+        "ttfbP95": 78.09,
+        "durP50": 526.75,
+        "durP95": 578.33
+      },
+      "direct": {
+        "completed": 1000,
+        "errors": 0,
+        "ttfbP95": 27.3,
+        "durP50": 517.08,
+        "durP95": 524.95
+      },
+      "overheadP95": 53.38,
+      "ttfbOverheadP95": 50.79
+    },
+    {
+      "level": 200,
+      "seconds": 10,
+      "gateway": {
+        "completed": 4000,
+        "errors": 0,
+        "ttfbP95": 48.74,
+        "durP50": 518.66,
+        "durP95": 536.4
+      },
+      "direct": {
+        "completed": 4000,
+        "errors": 0,
+        "ttfbP95": 28.13,
+        "durP50": 513.86,
+        "durP95": 539
+      },
+      "overheadP95": -2.6,
+      "ttfbOverheadP95": 20.61
+    },
+    {
+      "level": 500,
+      "seconds": 10,
+      "gateway": {
+        "completed": 9731,
+        "errors": 0,
+        "ttfbP95": 106.24,
+        "durP50": 512.79,
+        "durP95": 606.01
+      },
+      "direct": {
+        "completed": 10000,
+        "errors": 0,
+        "ttfbP95": 34,
+        "durP50": 507.76,
+        "durP95": 539.19
+      },
+      "overheadP95": 66.82,
+      "ttfbOverheadP95": 72.24
+    }
+  ],
+  "peakRssMB": 343.6,
+  "durationS": 166
+}

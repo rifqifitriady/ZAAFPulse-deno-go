@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "grep -rn \"DROP TABLE\" migrations/"
+  ],
+  "out": {
+    "text": "grep -rn \"DROP TABLE\" migrations/",
+    "counts": {}
+  }
+}

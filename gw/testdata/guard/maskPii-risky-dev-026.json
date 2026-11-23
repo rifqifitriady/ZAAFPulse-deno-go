@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "mkfs.ext4 /dev/sdb1"
+  ],
+  "out": {
+    "text": "mkfs.ext4 /dev/sdb1",
+    "counts": {}
+  }
+}

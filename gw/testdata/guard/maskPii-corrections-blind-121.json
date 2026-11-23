@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "script deploy gagal terus, tolong cari kenapa"
+  ],
+  "out": {
+    "text": "script deploy gagal terus, tolong cari kenapa",
+    "counts": {}
+  }
+}

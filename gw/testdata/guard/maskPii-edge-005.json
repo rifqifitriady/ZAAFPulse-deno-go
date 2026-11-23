@@ -1,0 +1,13 @@
+{
+  "secrets": [
+    "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQ=="
+  ],
+  "fn": "maskPii",
+  "in": [
+    "<<ZPSECRET:0>>\nno end line, the key runs to the end"
+  ],
+  "out": {
+    "text": "<<ZPSECRET:0>>\nno end line, the key runs to the end",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "psql -U app -d shop -c \"DROP TABLE users CASCADE\""
+  ],
+  "out": {
+    "text": "psql -U app -d shop -c \"DROP TABLE users CASCADE\"",
+    "counts": {}
+  }
+}

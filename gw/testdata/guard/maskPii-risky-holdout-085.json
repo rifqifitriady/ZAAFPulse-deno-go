@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "ls dist && rm -r build"
+  ],
+  "out": {
+    "text": "ls dist && rm -r build",
+    "counts": {}
+  }
+}

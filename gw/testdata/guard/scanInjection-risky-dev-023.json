@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "echo 'DROP DATABASE app;' | mysql -u root"
+  ],
+  "out": null
+}

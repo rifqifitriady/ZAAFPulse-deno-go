@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "chmod 755 scripts/deploy.sh"
+  ],
+  "out": null
+}

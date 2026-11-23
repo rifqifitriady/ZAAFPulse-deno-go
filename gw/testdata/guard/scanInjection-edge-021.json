@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "For example, an attacker may write \"ignore previous instructions\" in a page."
+  ],
+  "out": null
+}

@@ -1,0 +1,19 @@
+{
+  "fn": "readSse",
+  "in": [
+    [
+      "event: a\ndata: {\"x\":1}\n\n",
+      "data: plain\n\n"
+    ]
+  ],
+  "out": [
+    [
+      "a",
+      "{\"x\":1}"
+    ],
+    [
+      "message",
+      "plain"
+    ]
+  ]
+}

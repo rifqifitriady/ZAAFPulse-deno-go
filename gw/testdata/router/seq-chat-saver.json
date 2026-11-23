@@ -1,0 +1,657 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q=",
+    "enBfcm91dGVyRml4dHVyZVNlY3JldDAxMjM0NTY3ODlhYmNk",
+    "c2stYW4tcm91dGVyLWZpeHR1cmUtNjU0MzIx",
+    "c2stb2Etcm91dGVyLWZpeHR1cmUtMTIzNDU2",
+    "c2stb2Itcm91dGVyLWZpeHR1cmUtNzc4ODk5"
+  ],
+  "fn": "sequence",
+  "in": {
+    "note": "the token saver on chat route calls: run once on the client body; every leg sends the shortened text; savedTokens only on the answer line, never on the 599, fallback or guard lines",
+    "configPush": {
+      "gateway": {
+        "providers": [
+          {
+            "id": "oa",
+            "preset": "custom",
+            "baseUrl": "http://127.0.0.1:9/v1",
+            "approved": true,
+            "tier": "external",
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "oa",
+              "address": "127.0.0.1",
+              "port": 9
+            }
+          },
+          {
+            "id": "ob",
+            "preset": "custom",
+            "baseUrl": "http://127.0.0.1:13/v1",
+            "approved": true,
+            "tier": "external",
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "ob",
+              "address": "127.0.0.1",
+              "port": 13
+            }
+          },
+          {
+            "id": "op",
+            "preset": "openai",
+            "baseUrl": "http://127.0.0.1:8/v1",
+            "approved": true,
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "openai",
+              "address": "127.0.0.1",
+              "port": 8
+            }
+          },
+          {
+            "id": "op2",
+            "preset": "openai",
+            "baseUrl": "http://127.0.0.1:7/v1",
+            "approved": true,
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "openai",
+              "address": "127.0.0.1",
+              "port": 7
+            }
+          },
+          {
+            "id": "an",
+            "preset": "anthropic",
+            "baseUrl": "http://127.0.0.1:10/v1",
+            "approved": true,
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "anthropic",
+              "address": "127.0.0.1",
+              "port": 10
+            }
+          },
+          {
+            "id": "pv",
+            "preset": "ollama",
+            "baseUrl": "http://127.0.0.1:11434/v1",
+            "span": {
+              "name": "ollama",
+              "address": "127.0.0.1",
+              "port": 11434
+            }
+          },
+          {
+            "id": "gm",
+            "preset": "gemini",
+            "baseUrl": "http://127.0.0.1:12/v1beta/openai",
+            "approved": true,
+            "auth": {
+              "type": "key"
+            },
+            "span": {
+              "name": "gcp.gemini",
+              "address": "127.0.0.1",
+              "port": 12
+            }
+          }
+        ],
+        "routes": [
+          {
+            "name": "router/fb",
+            "targets": [
+              "oa/m1",
+              "ob/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/rr2",
+            "targets": [
+              "oa/m1",
+              "ob/m1"
+            ],
+            "strategy": "round-robin"
+          },
+          {
+            "name": "router/rr3",
+            "targets": [
+              "oa/m1",
+              "ob/m1",
+              "op/gpt-6.1"
+            ],
+            "strategy": "round-robin"
+          },
+          {
+            "name": "router/mix",
+            "targets": [
+              "pv/llama-9",
+              "oa/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/an",
+            "targets": [
+              "an/claude-x",
+              "oa/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/native",
+            "targets": [
+              "op/gpt-6.1",
+              "op2/gpt-6.1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/gem",
+            "targets": [
+              "gm/gemini-2.5-pro",
+              "oa/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/emb",
+            "targets": [
+              "oa/e1",
+              "ob/e1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/priced",
+            "targets": [
+              "oa/nopr",
+              "ob/m1"
+            ],
+            "strategy": "fallback"
+          },
+          {
+            "name": "router/unpriced",
+            "targets": [
+              "oa/nopr",
+              "ob/nopr2"
+            ],
+            "strategy": "fallback"
+          }
+        ],
+        "guardrails": {
+          "scope": "external",
+          "secrets": "block",
+          "pii": "off",
+          "injection": "off"
+        },
+        "defaults": {
+          "model": "",
+          "plannerModel": "",
+          "codeModel": ""
+        },
+        "tokenSaver": true,
+        "modelMap": [
+          {
+            "match": "claude-*",
+            "to": "router/rr2"
+          }
+        ]
+      },
+      "keys": [
+        {
+          "id": "k1",
+          "name": "k1",
+          "scopes": [
+            "llm"
+          ],
+          "models": [],
+          "agents": [],
+          "knowledge": [],
+          "budgetUSD": null,
+          "rpm": 10000,
+          "privateOnly": false,
+          "expiresAt": null,
+          "revokedAt": null,
+          "guardrails": {},
+          "prefix": "zp_routerF…",
+          "approveOwnRuns": false,
+          "createdAt": 1,
+          "lastUsedAt": null,
+          "hash": "28a9c32172074ff9d6f0afa42572407d6874a715e66e4373202b991333f9fafe"
+        },
+        {
+          "id": "k3",
+          "name": "k3",
+          "scopes": [
+            "llm"
+          ],
+          "models": [],
+          "agents": [],
+          "knowledge": [],
+          "budgetUSD": 1,
+          "rpm": 10000,
+          "privateOnly": false,
+          "expiresAt": null,
+          "revokedAt": null,
+          "guardrails": {},
+          "prefix": "zp_routerF…",
+          "approveOwnRuns": false,
+          "createdAt": 1,
+          "lastUsedAt": null,
+          "hash": "7bd8a61ff646ac231bd5289ba83aa44b972351f353b5af5b952514ee5beeb0d6"
+        },
+        {
+          "id": "k5",
+          "name": "k5",
+          "scopes": [
+            "llm"
+          ],
+          "models": [],
+          "agents": [],
+          "knowledge": [],
+          "budgetUSD": null,
+          "rpm": 10000,
+          "privateOnly": true,
+          "expiresAt": null,
+          "revokedAt": null,
+          "guardrails": {},
+          "prefix": "zp_routerF…",
+          "approveOwnRuns": false,
+          "createdAt": 1,
+          "lastUsedAt": null,
+          "hash": "f7dfc2084b7612afe54312bca00d6f060929ea004f19c48b515f195a17a0e46b"
+        }
+      ],
+      "pricing": {
+        "m1": {
+          "input": 1000000000,
+          "output": 2000000000
+        },
+        "llama-9": {
+          "input": 100000000,
+          "output": 300000000,
+          "cacheRead": 10000000
+        },
+        "gpt-6.1": {
+          "input": 2000000000,
+          "output": 8000000000
+        },
+        "claude-x": {
+          "input": 3000000000,
+          "output": 15000000000,
+          "cacheRead": 300000000
+        },
+        "e1": {
+          "input": 20000000,
+          "output": 0
+        },
+        "gemini-2.5-pro": {
+          "input": 1250000000,
+          "output": 10000000000
+        }
+      },
+      "egress": {
+        "allow": [],
+        "allowList": "enforce",
+        "classes": {
+          "gateway": "direct",
+          "connectors": "direct",
+          "mcp": "direct",
+          "routers": "direct",
+          "pricing": "direct",
+          "evals": "direct",
+          "agents": "direct",
+          "notify": "direct",
+          "brain": "direct",
+          "public": "direct",
+          "otel": "direct",
+          "runtimes": "direct"
+        }
+      }
+    },
+    "secretsPush": {
+      "providers": [
+        {
+          "id": "oa",
+          "value": "<<ZPSECRET:3>>"
+        },
+        {
+          "id": "ob",
+          "value": "<<ZPSECRET:4>>"
+        },
+        {
+          "id": "op",
+          "value": "<<ZPSECRET:3>>"
+        },
+        {
+          "id": "op2",
+          "value": "<<ZPSECRET:4>>"
+        },
+        {
+          "id": "an",
+          "value": "<<ZPSECRET:2>>"
+        },
+        {
+          "id": "gm",
+          "value": "<<ZPSECRET:3>>"
+        }
+      ],
+      "mask": [
+        "<<ZPSECRET:3>>",
+        "<<ZPSECRET:4>>",
+        "<<ZPSECRET:2>>"
+      ]
+    },
+    "snapshot": {
+      "budgets": [],
+      "keyCenter": {},
+      "at": 1767225600000
+    },
+    "start": 1767225600000,
+    "steps": [
+      {
+        "advanceMs": 0,
+        "request": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "headers": {
+            "content-type": "application/json",
+            "user-agent": "claude-cli/9.9.9",
+            "authorization": "Bearer <<ZPSECRET:1>>"
+          },
+          "body": "{\"model\":\"router/rr3\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"t1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"t1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\"}]}"
+        },
+        "answers": [
+          {
+            "throw": "ECONNREFUSED"
+          },
+          {
+            "status": 503,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"error\":{\"message\":\"busy\",\"type\":\"upstream\"}}"
+          },
+          {
+            "status": 200,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+          }
+        ]
+      },
+      {
+        "advanceMs": 0,
+        "request": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "headers": {
+            "content-type": "application/json",
+            "user-agent": "claude-cli/9.9.9",
+            "authorization": "Bearer <<ZPSECRET:1>>"
+          },
+          "body": "{\"model\":\"router/mix\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"t1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"t1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n+ line 60\\n+ line 61\\n+ line 62\\n+ line 63\\n+ line 64\\n+ line 65\\n+ line 66\\n+ line 67\\n+ line 68\\n+ line 69\\n+ line 70\\n+ line 71\\n+ line 72\\n+ line 73\\n+ line 74\\n+ line 75\\n+ line 76\\n+ line 77\\n+ line 78\\n+ line 79\\n+ line 80\\n+ line 81\\n+ line 82\\n+ line 83\\n+ line 84\\n+ line 85\\n+ line 86\\n+ line 87\\n+ line 88\\n+ line 89\"},{\"role\":\"user\",\"content\":\"key <<ZPSECRET:0>>\"}]}"
+        },
+        "answers": [
+          {
+            "status": 500,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"error\":{\"message\":\"down\",\"type\":\"upstream\"}}"
+          }
+        ]
+      }
+    ]
+  },
+  "out": {
+    "steps": [
+      {
+        "now": 1767225600000,
+        "requests": [
+          {
+            "url": "http://127.0.0.1:9/v1/chat/completions",
+            "method": "POST",
+            "headers": {
+              "content-type": "application/json",
+              "accept": "application/json",
+              "authorization": "Bearer <<ZPSECRET:3>>"
+            },
+            "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"t1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"t1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\"}]}"
+          },
+          {
+            "url": "http://127.0.0.1:13/v1/chat/completions",
+            "method": "POST",
+            "headers": {
+              "content-type": "application/json",
+              "accept": "application/json",
+              "authorization": "Bearer <<ZPSECRET:4>>"
+            },
+            "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"t1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"t1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\"}]}"
+          },
+          {
+            "url": "http://127.0.0.1:8/v1/chat/completions",
+            "method": "POST",
+            "headers": {
+              "content-type": "application/json",
+              "accept": "application/json",
+              "authorization": "Bearer <<ZPSECRET:3>>"
+            },
+            "body": "{\"model\":\"gpt-6.1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"t1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"t1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\"}]}"
+          }
+        ],
+        "client": {
+          "status": 200,
+          "headers": {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "access-control-allow-origin": "*",
+            "retry-after": null,
+            "x-zp-dropped": null
+          },
+          "body": "{\"id\":\"chatcmpl-up\",\"object\":\"chat.completion\",\"model\":\"router/rr3\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"prompt_tokens_details\":{\"cached_tokens\":200}}}"
+        },
+        "usage": [
+          {
+            "keyId": "k1",
+            "provider": "oa",
+            "model": "router/rr3",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 599,
+            "error": "oa: ECONNREFUSED",
+            "cost": 0,
+            "ttft": "absent"
+          },
+          {
+            "keyId": "k1",
+            "provider": "ob",
+            "model": "router/rr3",
+            "routedTo": "ob/m1",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 503,
+            "error": "fell back to the next route target",
+            "cost": 0,
+            "ttft": "absent"
+          },
+          {
+            "keyId": "k1",
+            "provider": "op",
+            "model": "router/rr3",
+            "routedTo": "op/gpt-6.1",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "savedTokens": 206,
+            "client": "claude-code",
+            "local": true,
+            "status": 200,
+            "input": 1000,
+            "output": 500,
+            "cached": 200,
+            "cost": 6000000,
+            "ttft": "absent"
+          }
+        ],
+        "events": [
+          {
+            "type": "route.take",
+            "body": {
+              "name": "router/rr3",
+              "at": 1767225600000
+            }
+          },
+          {
+            "type": "provider.note",
+            "body": {
+              "providerId": "ob",
+              "status": 503,
+              "at": 1767225600000,
+              "headers": {}
+            }
+          },
+          {
+            "type": "provider.note",
+            "body": {
+              "providerId": "op",
+              "status": 200,
+              "at": 1767225600000,
+              "headers": {}
+            }
+          }
+        ],
+        "state": {
+          "rr": [
+            {
+              "name": "router/rr3",
+              "n": 1
+            }
+          ],
+          "cooldown": [
+            {
+              "providerId": "ob",
+              "until": 1767225601000,
+              "strikes": 1,
+              "reason": "HTTP 503"
+            }
+          ]
+        }
+      },
+      {
+        "now": 1767225600000,
+        "requests": [
+          {
+            "url": "http://127.0.0.1:11434/v1/chat/completions",
+            "method": "POST",
+            "headers": {
+              "content-type": "application/json",
+              "accept": "application/json"
+            },
+            "body": "{\"model\":\"llama-9\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"t1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"git diff\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"t1\",\"content\":\"diff --git a/f0.js b/f0.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f1.js b/f1.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\\ndiff --git a/f2.js b/f2.js\\n@@ -1,90 +1,90 @@\\n+ line 0\\n+ line 1\\n+ line 2\\n+ line 3\\n+ line 4\\n+ line 5\\n+ line 6\\n+ line 7\\n+ line 8\\n+ line 9\\n+ line 10\\n+ line 11\\n+ line 12\\n+ line 13\\n+ line 14\\n+ line 15\\n+ line 16\\n+ line 17\\n+ line 18\\n+ line 19\\n+ line 20\\n+ line 21\\n+ line 22\\n+ line 23\\n+ line 24\\n+ line 25\\n+ line 26\\n+ line 27\\n+ line 28\\n+ line 29\\n+ line 30\\n+ line 31\\n+ line 32\\n+ line 33\\n+ line 34\\n+ line 35\\n+ line 36\\n+ line 37\\n+ line 38\\n+ line 39\\n+ line 40\\n+ line 41\\n+ line 42\\n+ line 43\\n+ line 44\\n+ line 45\\n+ line 46\\n+ line 47\\n+ line 48\\n+ line 49\\n+ line 50\\n+ line 51\\n+ line 52\\n+ line 53\\n+ line 54\\n+ line 55\\n+ line 56\\n+ line 57\\n+ line 58\\n+ line 59\\n  … rest of hunk omitted\"},{\"role\":\"user\",\"content\":\"key <<ZPSECRET:0>>\"}]}"
+          }
+        ],
+        "client": {
+          "status": 400,
+          "headers": {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "access-control-allow-origin": "*",
+            "retry-after": null,
+            "x-zp-dropped": null
+          },
+          "body": "{\"error\":{\"message\":\"Blocked by ZAAFPulse guardrails: secret (Anthropic API key). Remove it, or ask the owner to change the policy.\",\"type\":\"invalid_request_error\",\"code\":\"guardrail_blocked\"}}"
+        },
+        "usage": [
+          {
+            "keyId": "k1",
+            "provider": "pv",
+            "model": "router/mix",
+            "routedTo": "pv/llama-9",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 500,
+            "error": "fell back to the next route target",
+            "cost": 0,
+            "ttft": "absent"
+          },
+          {
+            "keyId": "k1",
+            "provider": "oa",
+            "model": "router/mix",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 400,
+            "error": "blocked by guardrails",
+            "guard": {
+              "action": "blocked",
+              "hits": [
+                {
+                  "check": "secrets",
+                  "label": "Anthropic API key",
+                  "count": 1
+                }
+              ]
+            },
+            "cost": 0,
+            "ttft": "absent"
+          }
+        ],
+        "events": [
+          {
+            "type": "provider.note",
+            "body": {
+              "providerId": "pv",
+              "status": 500,
+              "at": 1767225600000,
+              "headers": {}
+            }
+          }
+        ],
+        "state": {
+          "rr": [
+            {
+              "name": "router/rr3",
+              "n": 1
+            }
+          ],
+          "cooldown": [
+            {
+              "providerId": "ob",
+              "until": 1767225601000,
+              "strikes": 1,
+              "reason": "HTTP 503"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

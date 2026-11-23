@@ -1,0 +1,1 @@
+{"v":1,"type":"trace.span","seq":47,"ts":1767225650400,"body":{"span":{"t":"4bf92f3577b34da6a3ce929d0e0e4736","s":"53995c3f42cd8ad8","p":null,"n":"POST /v1/chat/completions","k":"server","st":1767225600100000,"d":1900000,"ok":false,"err":"upstream answered 503","src":"gateway","svc":"zaafpulse","a":{}}}}

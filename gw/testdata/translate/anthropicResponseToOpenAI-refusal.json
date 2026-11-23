@@ -1,0 +1,17 @@
+{
+  "fn": "anthropicResponseToOpenAI",
+  "in": [
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": ""
+        }
+      ],
+      "stop_reason": "refusal",
+      "usage": null
+    },
+    null
+  ],
+  "throws": "Cannot read properties of null (reading 'cache_read_input_tokens')"
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\nstat: cannot stat 'build/index.html': No such file or directory"
+  ],
+  "out": null
+}

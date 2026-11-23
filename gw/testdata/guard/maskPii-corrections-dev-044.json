@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "no problem, next please update the changelog"
+  ],
+  "out": {
+    "text": "no problem, next please update the changelog",
+    "counts": {}
+  }
+}

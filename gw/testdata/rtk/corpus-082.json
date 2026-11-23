@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "same repeated line\nnpm ERR! failed 1\nnpm ERR! failed 2\n     3\tcode line 3\nnpm ERR! failed 4\nnpm ERR! failed 5\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\n    12\tcode line 12\nsame repeated line\n    14\tcode line 14\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\n    20\tcode line 20\nnpm ERR! failed 21\nsame repeated line\nsame repeated line\nsame repeated line\n    25\tcode line 25\nnpm ERR! failed 26\n    27\tcode line 27\nnpm ERR! failed 28\nsame repeated line\nsame repeated line\nsame repeated line\nnpm ERR! failed 32\n    33\tcode line 33\nsame repeated line\n    35\tcode line 35\n    36\tcode line 36\nsame repeated line\nsame repeated line\nsame repeated line\n    40\tcode line 40\n    40\tcode line 40\n    40\tcode line 40\n    40\tcode line 40\n    40\tcode line 40\nnpm ERR! failed 45\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line",
+    ""
+  ],
+  "out": {
+    "text": "npm ERR! failed 1\n  (× 2 similar lines)\n     3\tcode line 3\nnpm ERR! failed 4\n  (× 2 similar lines)\nsame repeated line\n  (× 3 similar lines)\nnpm ERR! failed 21\nsame repeated line\n  (× 3 similar lines)\nnpm ERR! failed 26\n    27\tcode line 27\nnpm ERR! failed 28\nsame repeated line\n  (× 3 similar lines)\nnpm ERR! failed 32\n    33\tcode line 33\nsame repeated line\n    35\tcode line 35\nnpm ERR! failed 45\nsame repeated line\n  (× 3 similar lines)\n…\n    27\tcode line 27\nnpm ERR! failed 28\nsame repeated line\nsame repeated line\nsame repeated line\nnpm ERR! failed 32\n    33\tcode line 33\nsame repeated line\n    35\tcode line 35\n    36\tcode line 36\nsame repeated line\nsame repeated line\nsame repeated line\n    40\tcode line 40\n    40\tcode line 40\n    40\tcode line 40\n    40\tcode line 40\n    40\tcode line 40\nnpm ERR! failed 45\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line\nsame repeated line",
+    "filter": "build",
+    "saved": 74
+  }
+}

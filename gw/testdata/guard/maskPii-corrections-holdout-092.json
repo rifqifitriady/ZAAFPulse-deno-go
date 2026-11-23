@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "undo the last migration and write a new one that adds a nullable column"
+  ],
+  "out": {
+    "text": "undo the last migration and write a new one that adds a nullable column",
+    "counts": {}
+  }
+}

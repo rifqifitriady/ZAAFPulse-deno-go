@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Command timed out after 120000ms"
+  ],
+  "out": {
+    "text": "Command timed out after 120000ms",
+    "counts": {}
+  }
+}

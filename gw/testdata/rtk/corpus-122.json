@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "﻿bom 0\n﻿bom 1\n﻿bom 2\n﻿bom 3\n﻿bom 4\n﻿bom 5\n﻿bom 6\n﻿bom 7\n﻿bom 8\n﻿bom 9\n﻿bom 10\n﻿bom 11\n﻿bom 12\n﻿bom 13\n﻿bom 14\n﻿bom 15\n﻿bom 16\n﻿bom 17\n﻿bom 18\n﻿bom 19\n﻿bom 20\n﻿bom 21\n﻿bom 22\n﻿bom 23\n﻿bom 24\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 25\n﻿bom 41\n﻿bom 42\n﻿bom 43\n﻿bom 44\n﻿bom 45\n﻿bom 46\n﻿bom 47\n﻿bom 48\n﻿bom 49\n﻿bom 50\n﻿bom 51\n﻿bom 52\n﻿bom 53\n﻿bom 54\n﻿bom 55\n﻿bom 56\n﻿bom 57\n﻿bom 58\n﻿bom 59\n﻿bom 60\n﻿bom 61\n﻿bom 62\n﻿bom 63\n﻿bom 64\n﻿bom 65\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 66\n﻿bom 88\n﻿bom 89\n﻿bom 90\n﻿bom 91\n﻿bom 92\n﻿bom 93\n﻿bom 94\n﻿bom 95\n﻿bom 96\n﻿bom 97\n﻿bom 98\n﻿bom 99\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 100\n﻿bom 113\n﻿bom 114\n﻿bom 115\n﻿bom 116\n﻿bom 117\n﻿bom 118\n﻿bom 119\n﻿bom 120\n﻿bom 121\n﻿bom 122\n﻿bom 123\n﻿bom 124\n﻿bom 125\n﻿bom 126\n﻿bom 127\n﻿bom 128\n﻿bom 129\n﻿bom 130\n﻿bom 131\n﻿bom 132\n﻿bom 133\n﻿bom 134\n﻿bom 135\n﻿bom 136\n﻿bom 137\n﻿bom 138\n﻿bom 139\n﻿bom 140\n﻿bom 140\n﻿bom 140\n﻿bom 140\n﻿bom 140\n﻿bom 140\n﻿bom 140\n﻿bom 140\n﻿bom 140\n﻿bom 149\n﻿bom 150\n﻿bom 151\n﻿bom 152\n﻿bom 153\n﻿bom 154\n﻿bom 155\n﻿bom 156\n﻿bom 157\n﻿bom 158\n﻿bom 159\n﻿bom 160\n﻿bom 161\n﻿bom 162\n﻿bom 163\n﻿bom 164\n﻿bom 165\n﻿bom 166\n﻿bom 167\n﻿bom 168\n﻿bom 169\n﻿bom 170\n﻿bom 171\n﻿bom 172\n﻿bom 172\n﻿bom 172\n﻿bom 172",
+    "Read /src/a.ts"
+  ],
+  "out": null
+}

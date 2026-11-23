@@ -1,0 +1,12 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Error: connect ETIMEDOUT 104.18.2.35:443"
+  ],
+  "out": {
+    "text": "Error: connect ETIMEDOUT ‹ip›:443",
+    "counts": {
+      "ip": 1
+    }
+  }
+}

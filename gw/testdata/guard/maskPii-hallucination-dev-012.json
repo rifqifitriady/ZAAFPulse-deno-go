@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 127\n/bin/bash: line 1: pnpx: command not found"
+  ],
+  "out": {
+    "text": "Exit code 127\n/bin/bash: line 1: pnpx: command not found",
+    "counts": {}
+  }
+}

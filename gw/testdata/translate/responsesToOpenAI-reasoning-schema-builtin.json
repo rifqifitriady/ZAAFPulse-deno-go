@@ -1,0 +1,77 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "input": "hi",
+      "reasoning": {
+        "effort": "high",
+        "summary": "auto"
+      },
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "name": "answer",
+          "schema": {
+            "type": "object"
+          },
+          "strict": true
+        }
+      },
+      "tools": [
+        {
+          "type": "web_search"
+        },
+        {
+          "type": "function",
+          "name": "f",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "reasoning_effort": "high",
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "answer",
+          "schema": {
+            "type": "object"
+          },
+          "strict": true
+        }
+      },
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "f",
+            "description": "",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "stream": false
+    },
+    "soft": [
+      "reasoning_effort"
+    ],
+    "dropped": [
+      "tool web_search"
+    ],
+    "custom": []
+  }
+}

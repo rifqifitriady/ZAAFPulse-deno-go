@@ -1,0 +1,8 @@
+{
+  "fn": "pickFilter",
+  "in": [
+    "",
+    "GREP"
+  ],
+  "out": "grep"
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "query yang kamu bikin salah, harusnya group by user_id bukan by date. ulangi ya"
+  ],
+  "out": {
+    "text": "query yang kamu bikin salah, harusnya group by user_id bukan by date. ulangi ya",
+    "counts": {}
+  }
+}

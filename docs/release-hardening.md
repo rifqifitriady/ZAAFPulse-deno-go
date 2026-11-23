@@ -108,3 +108,60 @@ Turning immutable releases off does not unlock releases that were already publis
 ## Local clones
 
 A clone fetched before the tag moved still has `v1.0.3` at `1306279`. To align it with GitHub, run `git fetch origin --tags --force`. Once the ruleset is active, a push of the old tag is rejected anyway.
+
+## The v2 repository: `rifqifitriady/ZAAFPulse-deno-go`
+
+v2 is released from `rifqifitriady/ZAAFPulse-deno-go`, which has neither setting today. Checked on 2026-11-23 (read-only, checked again while v2.0.0 was prepared):
+
+| Check | Command | Result |
+|---|---|---|
+| Repository | `gh api repos/rifqifitriady/ZAAFPulse-deno-go --jq '{visibility, default_branch}'` | `{"default_branch":"main","visibility":"public"}` |
+| Rulesets | `gh api repos/rifqifitriady/ZAAFPulse-deno-go/rulesets` | `[]` (none) |
+| Immutable releases | `gh api repos/rifqifitriady/ZAAFPulse-deno-go/immutable-releases` | `{"enabled":false,"enforced_by_owner":false}` |
+| Tags | `gh api repos/rifqifitriady/ZAAFPulse-deno-go/tags --jq length` | `0` |
+| Releases | `gh api repos/rifqifitriady/ZAAFPulse-deno-go/releases --jq length` | `0` |
+
+Both settings are to be applied by the owner **before the first `v*` tag is pushed**, so that the first v2 release is immutable and its tag can never move. A published v2.0.0 can then never be changed (its files, its tag), only its title and notes; the order of steps is in [docs/release-checklist-v2.0.0.md](release-checklist-v2.0.0.md). They have not been applied; run these once, with admin rights on the repository:
+
+```bash
+gh api --method POST repos/rifqifitriady/ZAAFPulse-deno-go/rulesets --input - <<'JSON'
+{
+  "name": "Release tags are permanent",
+  "target": "tag",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {
+    "ref_name": { "include": ["refs/tags/v*"], "exclude": [] }
+  },
+  "rules": [
+    { "type": "update" },
+    { "type": "deletion" },
+    { "type": "non_fast_forward" }
+  ]
+}
+JSON
+# HTTP 201, prints the new ruleset; note its "id"
+
+gh api --method PUT repos/rifqifitriady/ZAAFPulse-deno-go/immutable-releases
+# HTTP 204, no output
+```
+
+Verify:
+
+```bash
+gh api repos/rifqifitriady/ZAAFPulse-deno-go/rulesets \
+  --jq '.[] | select(.target == "tag") | {id, name, enforcement}'
+# expected: {"enforcement":"active","id":<ID>,"name":"Release tags are permanent"}
+
+gh api repos/rifqifitriady/ZAAFPulse-deno-go/immutable-releases
+# expected: {"enabled":true,"enforced_by_owner":false}
+```
+
+What each setting does, and how to undo it, is as described above for `rifqifitriady/ZAAFPulse`; replace the repository name in those commands. The v2 release workflow already uses `gh release create --verify-tag`, so it never creates a tag. After the first v2 release (replace `vX.Y.Z`):
+
+```bash
+gh api repos/rifqifitriady/ZAAFPulse-deno-go/releases/tags/vX.Y.Z --jq '{tag_name, immutable}'
+# expected: {"immutable":true,"tag_name":"vX.Y.Z"}
+gh release verify vX.Y.Z --repo rifqifitriady/ZAAFPulse-deno-go
+gh release verify-asset vX.Y.Z zaafpulse-X.Y.Z-linux-x64.tar.gz --repo rifqifitriady/ZAAFPulse-deno-go
+```

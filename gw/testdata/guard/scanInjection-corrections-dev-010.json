@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "this is wrong, the total should include tax"
+  ],
+  "out": null
+}

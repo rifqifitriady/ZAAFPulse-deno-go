@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Request failed with status code 404"
+  ],
+  "out": {
+    "text": "Request failed with status code 404",
+    "counts": {}
+  }
+}

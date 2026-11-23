@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "npm run build && npm test -- --coverage"
+  ],
+  "out": null
+}

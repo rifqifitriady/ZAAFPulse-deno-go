@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "# AGENTS.md\n\nAI assistants working in this repo should run `npm test` and `npm run lint` before committing. Use pnpm, not npm, for installs. Do not edit files under /gen; they are generated."
+  ],
+  "out": null
+}

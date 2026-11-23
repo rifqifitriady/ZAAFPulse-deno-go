@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "+ added line 0 é\n+ added line 1 é\n+ added line 2 é\nnode_modules/p3/index.js\n+ added line 4 é\nnode_modules/p5/index.js\n+ added line 6 é\n+ added line 7 é\n\n+ added line 9 é\n+ added line 10 é\nnode_modules/p11/index.js\n\n+ added line 13 é\n\n\n\n+ added line 17 é\nnode_modules/p18/index.js\nnode_modules/p19/index.js\n\nnode_modules/p21/index.js\n+ added line 22 é\n+ added line 23 é\n+ added line 23 é\n+ added line 23 é\n+ added line 23 é\n+ added line 23 é\n+ added line 23 é\n+ added line 23 é\n+ added line 23 é\n+ added line 23 é\n+ added line 23 é\n+ added line 33 é\n\n+ added line 35 é\n\nnode_modules/p37/index.js\nnode_modules/p38/index.js\nnode_modules/p39/index.js\n\n+ added line 41 é\n\n+ added line 43 é\n+ added line 44 é\n+ added line 45 é\n+ added line 46 é\nnode_modules/p47/index.js\n\n+ added line 49 é\n+ added line 50 é\nnode_modules/p51/index.js\n+ added line 52 é\n+ added line 53 é",
+    "Bash find . -name x"
+  ],
+  "out": {
+    "text": "+ added line 0 é\n+ added line 1 é\n+ added line 2 é\n+ added line 4 é\n+ added line 6 é\n+ added line 7 é\n+ added line 9 é\n+ added line 10 é\n+ added line 13 é\n+ added line 17 é\n+ added line 22 é\n+ added line 23 é\n  … 20 more in . omitted",
+    "filter": "listing",
+    "saved": 630
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Langkah instalasi: jalankan `npm install`, lalu `npm start`. Pastikan Node versi 18 ke atas. Jika ada masalah, buka issue di GitHub."
+  ],
+  "out": null
+}

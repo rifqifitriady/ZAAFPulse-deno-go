@@ -7,7 +7,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createClaude, childEnv, destinationOf, removeOpts } = require('../lib/evals/claude-cli');
-const { fakeClaude, winEnv } = require('./helpers');
+const { fakeClaude, winEnv, NODE } = require('./helpers');
+const { trusted } = require('../lib/trust');
 
 const POSIX = process.platform !== 'win32';
 const dirs = [];
@@ -217,13 +218,22 @@ test('call: an error answer throws with a status and a short message, without pa
 });
 
 test('call: a slow CLI is stopped at the timeout, and SIGKILL follows a SIGTERM it ignores', async () => {
-  const t = rig('hang');
-  const started = Date.now();
-  await assert.rejects(judge(t, { timeoutMs: 300 }), (e) => e.status === 0 && /timed out/.test(e.message));
-  const [run] = t.runs();
+  // The timeout starts at spawn, and the fake records its pid only once it runs: a slow start (Windows CI, where a
+  // node child can take over 300 ms) is stopped before it records anything. So the timeout grows until a child that
+  // was really running is the one stopped; every attempt must still time out and end well within its bound.
+  let t;
+  let run;
+  for (const timeoutMs of [300, 1500, 5000]) {
+    t = rig('hang');
+    const started = Date.now();
+    await assert.rejects(judge(t, { timeoutMs }), (e) => e.status === 0 && /timed out/.test(e.message));
+    assert.ok(Date.now() - started < timeoutMs + 5000, `stopped within ${timeoutMs} ms and the grace period`);
+    [run] = t.runs();
+    if (run) break;
+  }
+  assert.ok(run, 'a running child was stopped by the timeout');
   assert.equal(alive(run.pid), false, 'the child is gone');
   assert.equal(fs.existsSync(run.cwd), false);
-  assert.ok(Date.now() - started < 5000);
 
   if (POSIX) {
     const s = rig('stubborn');
@@ -451,7 +461,7 @@ test('discovery: --version must say "(Claude Code)"', async () => {
 
 test('discovery: in the single-file build a script runs through a real node, or is skipped', async () => {
   const t = rig();
-  const sea = { home: tmp(), systemDirs: [], nodeDirs: [], isSea: () => true };
+  const sea = { home: tmp(), systemDirs: [], nodeDirs: [], useOwnNode: () => false };
   const none = createClaude({ env: { ...t.env, PATH: '' }, ...sea });
   const script = fakeClaude(tmp('zp-claude-js-'), 'claude.js');
   const noNode = createClaude({
@@ -459,7 +469,7 @@ test('discovery: in the single-file build a script runs through a real node, or 
     home: tmp(),
     systemDirs: [],
     nodeDirs: [],
-    isSea: () => true,
+    useOwnNode: () => false,
   });
   assert.equal(await noNode.find(), null, 'no node: the script cannot run');
   if (POSIX) {
@@ -468,13 +478,13 @@ test('discovery: in the single-file build a script runs through a real node, or 
     // A node of the test's own in a private folder: the runner's node may sit where anyone can write (Ubuntu's
     // preinstalled tool cache is mode 777), and discovery rightly refuses to run that one (see the next test).
     const nodeDir = tmp('zp-claude-node-');
-    fs.writeFileSync(path.join(nodeDir, 'node'), `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(nodeDir, 'node'), `#!/bin/sh\nexec "${NODE}" "$@"\n`, { mode: 0o755 });
     const withNode = createClaude({
       env: { ZAAFPULSE_CLAUDE_BIN: script, PATH: nodeDir },
       home: tmp(),
       systemDirs: [],
       nodeDirs: [],
-      isSea: () => true,
+      useOwnNode: () => false,
     });
     const bin = await withNode.find();
     assert.equal(bin.file, path.join(nodeDir, 'node'));
@@ -486,19 +496,34 @@ test('discovery: in the single-file build a node that anyone can write is not us
   const script = fakeClaude(tmp('zp-claude-js-'), 'claude.js');
   const nodeDir = tmp('zp-claude-node-');
   const node = path.join(nodeDir, 'node');
-  fs.writeFileSync(node, `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(node, `#!/bin/sh\nexec "${NODE}" "$@"\n`, { mode: 0o755 });
   const find = () =>
     createClaude({
       env: { ZAAFPULSE_CLAUDE_BIN: script, PATH: nodeDir },
       home: tmp(),
       systemDirs: [],
       nodeDirs: [],
-      isSea: () => true,
+      useOwnNode: () => false,
     }).find();
   assert.equal((await find()).file, node, 'a private node is used');
   fs.chmodSync(nodeDir, 0o777);
   fs.chmodSync(node, 0o777);
   assert.equal(await find(), null, 'a node in a folder anyone can write is passed over');
+});
+
+test('discovery: by default a script runs through this process only under Node from source', { skip: !POSIX }, async () => {
+  const script = fakeClaude(tmp('zp-claude-js-'), 'claude.js');
+  const nodeDir = tmp('zp-claude-node-');
+  fs.writeFileSync(path.join(nodeDir, 'node'), `#!/bin/sh\nexec "${NODE}" "$@"\n`, { mode: 0o755 });
+  const bin = await createClaude({
+    env: { ZAAFPULSE_CLAUDE_BIN: script, PATH: nodeDir },
+    home: tmp(),
+    systemDirs: [],
+    nodeDirs: [],
+  }).find();
+  if (process.versions.deno) assert.equal(bin.file, path.join(nodeDir, 'node'), 'a real node, never deno');
+  else assert.equal(bin.file, process.execPath);
+  assert.deepEqual(bin.args, [script]);
 });
 
 test('discovery: only absolute PATH entries, and no found binary that anyone can write', { skip: !POSIX }, async () => {
@@ -546,6 +571,9 @@ test('discovery: a binary that cannot be started any more is looked for again at
 
 test('discovery: a script run through node that is gone is looked for again, not started', async () => {
   // As on Windows, where the fake (and an npm .cmd's cli.js) runs as `node <script>`: node itself still starts.
+  // Under Deno the node on PATH runs it, and discovery passes over one others can write (as the image's own node on
+  // ubuntu-latest is): say so instead of failing on a null below.
+  if (process.versions.deno) assert.ok(trusted(NODE), `the node on PATH (${NODE}) must not be writable by others`);
   const t = rig('ok', { ZAAFPULSE_CLAUDE_BIN: '' });
   const script = fakeClaude(tmp('zp-claude-js-'), 'claude.js');
   const c = createClaude({ env: { ...t.env, ZAAFPULSE_CLAUDE_BIN: script }, home: tmp(), systemDirs: [] });
@@ -573,7 +601,7 @@ test('call: node failing to load the mapped script clears the cached answer', as
   // A script that is there when it is checked but that node cannot load (it went between the check and the start).
   const broken = path.join(tmp('zp-claude-broken-'), 'cli.js');
   fs.writeFileSync(broken, "require('./part-that-is-gone');\n");
-  const bin = { file: process.execPath, args: [broken] };
+  const bin = { file: NODE, args: [broken] };
   await assert.rejects(c.run(bin, { system: 's', user: 'u', schema: SCHEMA }), (e) => {
     assert.equal(e.status, 0);
     assert.equal(e.message, 'Claude Code could not start');

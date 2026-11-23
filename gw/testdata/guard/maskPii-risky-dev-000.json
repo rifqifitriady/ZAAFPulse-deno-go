@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm -rf node_modules && npm i"
+  ],
+  "out": {
+    "text": "rm -rf node_modules && npm i",
+    "counts": {}
+  }
+}

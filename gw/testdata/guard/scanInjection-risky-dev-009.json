@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "cd /srv && sudo rm -rf releases/old"
+  ],
+  "out": null
+}

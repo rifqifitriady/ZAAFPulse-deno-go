@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "yes go ahead with option B"
+  ],
+  "out": {
+    "text": "yes go ahead with option B",
+    "counts": {}
+  }
+}

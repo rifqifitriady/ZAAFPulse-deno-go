@@ -1,16 +1,51 @@
-# Runs the whole test suite on Linux, macOS and Windows for every push and pull request to main.
-# The release workflow calls it too (workflow_call), so a tag is only built when the suite passes.
-# Actions are pinned by commit SHA (the comment names the release); Node is pinned to the exact version
-# the single-file binaries embed. Update both together with release.yml.
+# Runs the whole test suite on Linux, macOS, Windows and Windows on Arm for every push and pull request to main and to
+# the migration branches (migrate/**, which includes migrate/deno-go). The release workflow calls it too
+# (workflow_call, with skip-build: true), so a tag is only published when the suite passes.
+# Actions are pinned by commit SHA (the comment names the release); Node and Deno are pinned to exact versions. The
+# single-file binaries embed Deno (the build-deno job), not Node. The same versions are pinned in build.yml (Deno, Go)
+# and in release.yml's install-test (Node, which the v1.1.0 installer needs): change them together.
+# The deno job runs the same suite and the contract suite under the pinned Deno with the "test" permission set of
+# deno.json (never -A), and blocks like the Node job (P2 T4). The Node job keeps running until the cut-over (P7).
+# The build-deno job calls build.yml (P6 Decision 13): five packages, the four release targets and darwin-arm64
+# (zaafpulse and zaafpulse-gw in one archive), are built, signature-checked on macOS and smoke-tested unpacked on native
+# runners, with the gateway in front, and the Go gateway is started in front of the server under deno run on each of
+# them (P4a T6, scripts/smoke-front.js).
+# The input skip-build (workflow_call only, default false) skips it: release.yml calls build.yml itself.
+# The Node and Deno jobs also run the contract suite with the Go gateway in front (ZP_ENGINE=front, P4a T6).
+# The contract-go-engine job runs the contract suite with chat shadowed by, and served by, the go engine (P4b).
+# The m4-bench job (P4c) runs the gateway benchmark in its three modes on Ubuntu, on manual runs of this workflow only
+# (not when a manually started release.yml calls it with skip-build).
+# The fixtures job regenerates the Go ports' fixtures from the JS on Node and Deno and fails on a diff (P4 stage 1).
+# The guard-bench job times the Go guard against its P4e targets and against the JS guard on the same runner.
+# The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
+# the test job's OS matrix. The Node and Deno jobs set up the same Go, so the cross-language IPC tests build the stub
+# (gw/cmd/zaafpulse-gw) and never skip; the Deno job builds it once up front (ZP_GW_BIN). Go is pinned to 1.27.4
+# (go1.27.3 carries GO-2026-6859, P7 review L4).
+# Scope, to keep a private repo inside its Actions minutes (macOS minutes bill at 10x, Windows at 2x): a push to a work
+# branch (migrate/<anything> other than migrate/deno-go) runs the Ubuntu jobs only (Node suite, Deno suite,
+# Go, typecheck). The full matrix (four OS for Node, ubuntu and macOS for Deno, the five build-deno targets) runs on pull
+# requests, on pushes to main and migrate/deno-go, on tags (through release.yml, which builds through build.yml itself)
+# and on a manual run (workflow_dispatch). The condition is repeated in the four places that use it, because a matrix cannot read
+# workflow env.
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, 'migrate/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'migrate/**']
   workflow_call:
+    inputs:
+      skip-build:
+        description: Skip the build-deno job (release.yml builds the packages itself)
+        type: boolean
+        default: false
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  # A newer push to the same branch or pull request supersedes a run still in progress; tags are never cancelled.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -19,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false # report every OS, not just the first failure
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON((github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest","macos-latest","windows-latest","windows-11-arm"]' || '["ubuntu-latest"]') }}
     steps:
       # Windows runners convert line endings on checkout; keep LF so text fixtures read alike everywhere.
       - run: git config --global core.autocrlf false
@@ -30,11 +65,343 @@ jobs:
         with:
           node-version: 24.21.0
           package-manager-cache: false
-      # No npm install: the app and its tests have no dependencies.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+          cache: false
+      # No npm install: the app and its tests have no runtime dependencies.
+      # A hang must end in a named failure, not in a cancelled job, which keeps no log. --test-timeout fails a test or
+      # hook that runs over 3 min, by its name (the slowest take about 40 s, measured on all four OS); --test-force-exit
+      # then ends its file even when the test left a server or a timer behind, so the run finishes and lists it. A file
+      # that still never ends (a child it started holds its output) is named every 3 min by scripts/test-watch.js, and
+      # the step's own timeout, below the job's, stops it while the job, and so the log, carries on.
       - name: Test suite
         shell: bash
+        timeout-minutes: 12 # about 3.5 min normally (macOS, the slowest)
         run: |
           export ZAAFPULSE_DATA="$RUNNER_TEMP/zp-data" HOME="$RUNNER_TEMP/zp-home"
           mkdir -p "$ZAAFPULSE_DATA" "$HOME"
-          node --test test/*.test.js
+          node --test --test-timeout=180000 --test-force-exit \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=./scripts/test-watch.js --test-reporter-destination=stderr test/*.test.js
+      # The gateway contract suite (test/contract/): server.js as a child process against a fake upstream, black-box.
+      # The script carries the same --test-timeout and --test-force-exit (package.json).
+      - name: Gateway contract suite
+        shell: bash
+        timeout-minutes: 4 # under 30 s normally
+        run: npm run test:contract
+      # The same suite with gateway.engine "front": the Go gateway, built from gw/, holds the port (P4a).
+      - name: Gateway contract suite through the Go front
+        shell: bash
+        timeout-minutes: 4 # about 1 min normally
+        run: ZP_ENGINE=front npm run test:contract
       - run: node bin/zaafpulse.js doctor
+  deno:
+    name: deno (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]') }}
+    env:
+      DENO_DIR: ${{ github.workspace }}/../deno-dir # outside HOME, which the test step points at a temp folder
+      NO_COLOR: '1'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      # Under Deno a script (the judge's fake Claude Code, an npm cli.js) runs through a real node found on PATH, and
+      # discovery passes over a node others can write. The image's own node on ubuntu-latest is /usr/local/bin/node,
+      # mode 0777 in a 0777 folder (measured), so the pinned node is put first on PATH, as in the Node job.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+          cache: false
+      # The cross-language IPC tests use this build of the gateway stub instead of building it themselves.
+      - name: Build the gateway stub
+        shell: bash
+        run: |
+          go -C gw build -o "$RUNNER_TEMP/gw/zaafpulse-gw" ./cmd/zaafpulse-gw
+          echo "ZP_GW_BIN=$RUNNER_TEMP/gw/zaafpulse-gw" >> "$GITHUB_ENV"
+      # Installs exactly what deno.lock pins; fails when the lockfile is stale.
+      - run: deno ci
+      # deno test has no per-test timeout: each step has its own, below the job's, so a hang fails the step and the
+      # upload at the end still runs. deno prints a test's name when it starts, so a cut-off log ends at the hung one.
+      - name: Test suite under Deno
+        shell: bash
+        timeout-minutes: 15 # about 6 min normally (macOS)
+        run: |
+          export ZAAFPULSE_DATA="$RUNNER_TEMP/zp-data" HOME="$RUNNER_TEMP/zp-home"
+          mkdir -p "$ZAAFPULSE_DATA" "$HOME"
+          set +e
+          deno test -q --no-check --no-prompt -P=test test/*.test.js > "$RUNNER_TEMP/deno-test.log" 2>&1
+          code=$?
+          set -e
+          scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-test.log" "deno test (${{ matrix.os }})" \
+            > "$RUNNER_TEMP/deno-summary.md"
+          cat "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+      # Runs even when the unit suite above failed, so both results are reported.
+      - name: Gateway contract suite on the Deno server
+        if: ${{ !cancelled() }}
+        shell: bash
+        timeout-minutes: 4 # under 30 s normally
+        run: |
+          set +e
+          # The "test" set: read anywhere, write and run unscoped (symlinks and fakes, see deno.json), net to this
+          # machine only. The harness starts server.js under its own narrow set.
+          ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ > "$RUNNER_TEMP/deno-contract.log" 2>&1
+          code=$?
+          set -e
+          scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract.log" "contract suite under Deno (${{ matrix.os }})" \
+            | tee -a "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+      - name: Gateway contract suite on the Deno server through the Go front
+        if: ${{ !cancelled() }}
+        shell: bash
+        timeout-minutes: 4 # under 30 s normally
+        run: |
+          set +e
+          ZP_ENGINE=front ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ > "$RUNNER_TEMP/deno-contract-front.log" 2>&1
+          code=$?
+          set -e
+          scripts/migration/deno-test-summary.sh "$RUNNER_TEMP/deno-contract-front.log" "contract suite under Deno, Go front (${{ matrix.os }})" \
+            | tee -a "$RUNNER_TEMP/deno-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deno-test-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/deno-summary.md
+            ${{ runner.temp }}/deno-test.log
+            ${{ runner.temp }}/deno-contract.log
+            ${{ runner.temp }}/deno-contract-front.log
+          if-no-files-found: warn
+
+  typecheck:
+    name: typecheck (deno check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      - run: deno ci
+      # lib/gateway, lib/cost and lib/governance with // @ts-check and tsconfig.json; @types/node is dev-only.
+      - run: deno task typecheck
+
+  # The Go gateway module (P3): gofmt, go vet and go test, including every fixture of ipc/v1.
+  go:
+    name: go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest","macos-latest","windows-latest","windows-11-arm"]' || '["ubuntu-latest"]') }}
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - name: gofmt
+        shell: bash
+        run: test -z "$(gofmt -l gw)" || { gofmt -l gw; exit 1; }
+      - run: go -C gw vet ./...
+      - run: go -C gw test -count=1 ./...
+
+  # The go engine (P4b): the contract suite with chat shadowed by the go engine (ZP_ENGINE=shadow: any diff line in a
+  # server's .data/gateway-shadow.jsonl fails the run) and with chat on the go engine (ZP_ENGINE=go). Node and Deno on
+  # Ubuntu on every run; Node on Windows too in the full scope (the Winsock error names), per the scope rule above.
+  contract-go-engine:
+    name: contract go engine (${{ matrix.runtime }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON((github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) && '[{"runtime":"node","os":"ubuntu-latest"},{"runtime":"deno","os":"ubuntu-latest"},{"runtime":"node","os":"windows-latest"}]' || '[{"runtime":"node","os":"ubuntu-latest"},{"runtime":"deno","os":"ubuntu-latest"}]') }}
+    env:
+      DENO_DIR: ${{ github.workspace }}/../deno-dir
+      NO_COLOR: '1'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      - if: matrix.runtime == 'deno'
+        run: deno ci
+      - name: Contract suite, chat shadowed by the go engine, then chat on the go engine
+        shell: bash
+        run: |
+          set +e
+          code=0
+          for e in shadow go; do
+            if [ "${{ matrix.runtime }}" = deno ]; then
+              ZP_ENGINE=$e ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ || code=1
+            else
+              ZP_ENGINE=$e npm run test:contract || code=1
+            fi
+          done
+          exit $code
+
+  # M4 reference (P4c): the gateway benchmark (bench/run.js) on a quiet Ubuntu runner, in the three modes of one session
+  # (the JS gateway, the Go gateway in front, the go engine serving chat and chat-stream), with the bench provider on the
+  # private tier (the go engine serves only calls no guardrail check applies to until P4e). Manual runs only: it takes
+  # about 10 minutes and measures, it does not gate. A go run that hands calls to the server, or that opens a connection
+  # per stream to the provider, fails. The result files are an artifact; the summary prints each run's line.
+  # A called workflow sees its caller's event, so a release.yml started by hand (tests=true) would start it too:
+  # skip-build, which only release.yml sets, rules that out.
+  m4-bench:
+    name: M4 bench (ubuntu)
+    if: github.event_name == 'workflow_dispatch' && !inputs.skip-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - name: The three M4 runs (js, front, go), private tier
+        shell: bash
+        env:
+          ZP_BENCH_TIER: private
+          ZP_BENCH_HOST: gha-ubuntu
+        run: |
+          ulimit -n 8192
+          nproc; free -m; uptime
+          out="$RUNNER_TEMP/bench"
+          for e in js front go; do
+            if [ "$e" = js ]; then ZP_BENCH_OUT="$out" node bench/run.js; else ZP_ENGINE=$e ZP_BENCH_OUT="$out" node bench/run.js; fi | tee -a "$RUNNER_TEMP/bench.log"
+          done
+          { echo '```'; cat "$RUNNER_TEMP/bench.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: m4-bench
+          path: ${{ runner.temp }}/bench
+
+  # The Go ports of the gateway's JS libraries (P4 stage 1) are proven by fixtures the JS writes
+  # (scripts/fixtures/gen-*.js → gw/testdata/<lib>/); the go job replays them. This job runs the generators on Node and
+  # on Deno and fails when either output differs from the committed fixtures, so the JS and the Go cannot drift
+  # silently. Ubuntu only: the generators are pure JS.
+  fixtures:
+    name: fixtures (regenerate and diff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DENO_DIR: ${{ github.workspace }}/../deno-dir
+      NO_COLOR: '1'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      - name: Regenerate on Node and diff
+        shell: bash
+        run: |
+          for g in scripts/fixtures/gen-*.js; do node "$g"; done
+          git add -N gw/testdata
+          git diff --exit-code --stat gw/testdata || { echo "::error::fixtures differ from the JS output (Node)"; exit 1; }
+      - name: Regenerate on Deno and diff
+        shell: bash
+        run: |
+          # One permission set for every generator: read anywhere, write only gw/testdata, nothing else (explicitly
+          # denied, so a generator that starts needing more fails here instead of prompting). Checked against
+          # gen-translate.js, gen-guard.js and stream C's gen-provauth.js (PR #6, writes gw/testdata/provauth).
+          for g in scripts/fixtures/gen-*.js; do
+            deno run -q --no-prompt --allow-read --allow-write=gw/testdata --deny-env --deny-net --deny-run --deny-sys "$g"
+          done
+          git add -N gw/testdata
+          git diff --exit-code --stat gw/testdata || { echo "::error::fixtures differ from the JS output (Deno)"; exit 1; }
+
+  # The guard benchmark (P4e entry conditions, the p4e-guard-ready plan): one CheckBody pass
+  # of the Go guard (gw/guard) on real text at 32 KB, 128 KB and 1 MB, all three checks on, against the absolute
+  # targets and at most 3x the JS guard timed on the same slices on this runner (scripts/bench-guard.js), each size
+  # judged on the median of three attempts. Then: the real-text corpus up to 20 MB, and legitimate 20 MB bodies under
+  # CPU load, never block (step budget and 10 s backstop); every adversarial input is stopped by the step budget (or
+  # the stack cap), its CPU time logged and bounded loosely at 8 s. Ubuntu only: the targets are set for this runner.
+  # Its own job, so other jobs' steps never mix with it.
+  guard-bench:
+    name: guard benchmark (Go vs JS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - name: Time the JS guard
+        run: node scripts/bench-guard.js --json "$RUNNER_TEMP/guard-js.json"
+      - name: Time the Go guard and check the targets
+        env:
+          ZP_GUARD_BENCH: '1'
+        run: |
+          ZP_GUARD_BENCH_JS="$RUNNER_TEMP/guard-js.json" go -C gw test -count=1 -timeout 10m -v \
+            -run 'TestGuardBench|TestBenchCorpusNeverOverruns|TestOneBudgetPerCall|TestLegitimateBodiesUnderLoad' ./guard/
+
+  # The package of each of the five CI targets (P6 Decision 13): build.yml builds both binaries, packs them, checks
+  # the macOS signatures and smoke-tests the unpacked package (and the Go front) on a native runner of the target's OS
+  # and CPU, and uploads pkg-<name> and sum-<name>. Full-scope runs only (see the header). A job that calls a reusable
+  # workflow takes no runs-on or steps (the runners are in build.yml). release.yml runs this workflow with skip-build,
+  # because it calls build.yml itself.
+  build-deno:
+    name: build-deno
+    if: ${{ !inputs.skip-build && (github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) }}
+    uses: ./.github/workflows/build.yml
+    with:
+      skip-darwin-x64: true # no darwin-x64 build or test in the regular CI (owner, 2026-11-23); nor in a release (four targets, no macOS)

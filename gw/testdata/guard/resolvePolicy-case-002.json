@@ -1,0 +1,15 @@
+{
+  "fn": "resolvePolicy",
+  "in": [
+    null,
+    {
+      "guardrails": {}
+    }
+  ],
+  "out": {
+    "scope": "external",
+    "secrets": "redact",
+    "pii": "off",
+    "injection": "log"
+  }
+}

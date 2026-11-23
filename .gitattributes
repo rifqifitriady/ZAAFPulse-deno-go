@@ -1,2 +1,5 @@
 # Skill files are parsed for YAML frontmatter; keep them LF on every checkout, Windows included.
 *.md text eol=lf
+
+# The IPC framing fixtures are compared byte for byte (ipc/v1/framing/crlf.ndjson ends a line with \r\n on purpose).
+ipc/v1/framing/*.ndjson -text

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm -r -f ./coverage"
+  ],
+  "out": {
+    "text": "rm -r -f ./coverage",
+    "counts": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "grep -rn \"rm -rf\" scripts/ | head"
+  ],
+  "out": {
+    "text": "grep -rn \"rm -rf\" scripts/ | head",
+    "counts": {}
+  }
+}

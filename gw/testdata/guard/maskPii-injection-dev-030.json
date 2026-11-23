@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "## Install\nRun `npm install` and then `npm run dev`. Do not commit your .env file."
+  ],
+  "out": {
+    "text": "## Install\nRun `npm install` and then `npm run dev`. Do not commit your .env file.",
+    "counts": {}
+  }
+}

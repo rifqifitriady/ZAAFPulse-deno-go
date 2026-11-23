@@ -9,7 +9,7 @@
 <br>
 
 <img alt="macOS, Linux, Windows" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-0f1b2a?style=flat-square">
-<img alt="Node 18+" src="https://img.shields.io/badge/Node-18%2B-1f7f95?style=flat-square&logo=nodedotjs&logoColor=white">
+<img alt="Deno and Go" src="https://img.shields.io/badge/runtime-Deno%20%C2%B7%20Go-1f7f95?style=flat-square&logo=deno&logoColor=white">
 <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-0-1baf7a?style=flat-square">
 <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-1f7f95?style=flat-square"></a>
 <img alt="Local first" src="https://img.shields.io/badge/data-local%20first-6250d6?style=flat-square">
@@ -264,7 +264,7 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 <td valign="top">
 
 **AI governance**<br>
-<sub>An inventory of every AI system here (apps, the MCP servers in your AI clients, providers, models, agents, keys) with its owner, purpose, risk and your decision; eighteen controls mapped to the EU AI Act, the NIST AI RMF and ISO/IEC 42001 with their evidence, exportable as Markdown or JSON; an audit log of every change made by a person or an API key, chained so an edited or deleted line shows when you verify; and sign-ins of their own for auditors (viewers) and reviewers, each change recorded under their name. <a href="docs/governance.md">docs/governance.md</a> · <a href="docs/users.md">docs/users.md</a></sub>
+<sub>An inventory of every AI system here (apps, the MCP servers in your AI clients, providers, models, agents, keys) with its owner, purpose, risk and your decision; twenty controls mapped to the EU AI Act, the NIST AI RMF and ISO/IEC 42001 with their evidence, exportable as Markdown or JSON; an audit log of every change made by a person or an API key, chained so an edited or deleted line shows when you verify; and sign-ins of their own for auditors (viewers) and reviewers, each change recorded under their name. <a href="docs/governance.md">docs/governance.md</a> · <a href="docs/users.md">docs/users.md</a></sub>
 
 </td>
 </tr>
@@ -272,7 +272,7 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 
 | At a glance | |
 |---|---|
-| Runtime dependencies | **0** (Node standard library only; postject is a build-only dev dependency) |
+| Runtime dependencies | **0** (Deno and Node standard libraries; the Go gateway uses the Go standard library only) |
 | First index of 2 GB of logs | about **30 s** with worker threads, about **70 s** on one thread or a busy machine; a rescan with no changes takes **1–3 ms**. Worked out from 66 MB/s (worker threads) and 24–62 MB/s (one thread) measured on synthetic logs on an Apple M4 ([method and numbers](docs/performance.md)) |
 | Network exposure | **127.0.0.1 only**, host-header checked, sign-in on by default; outbound only to the places listed under [Privacy](#privacy) |
 | 3D scenes | plain `<canvas>` 2D with an isometric projection: no WebGL, no libraries |
@@ -469,21 +469,21 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 
 ## Quick start
 
-ZAAFPulse runs on **macOS, Linux (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux, SUSE, Alpine) and Windows 10/11**, on a laptop or a server. Pick one of these:
+The ZAAFPulse v2.0.0 packages run on **Linux with glibc (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux, SUSE) and Windows 10/11, on x64 or arm64**, on a laptop or a server. **macOS has no v2 package in v2.0.0**: Macs (Apple silicon and Intel) stay on [v1.x](https://github.com/rifqifitriady/ZAAFPulse), as do Alpine and other musl Linux, armv7l, ppc64le, s390x and 32-bit Windows; the v2 installer stops there and prints the v1.x command. On a Mac, v2 runs only from source (below). Pick one of these:
 
 | | One command |
 |---|---|
-| **macOS / Linux** | `curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.sh \| sh` |
-| **Windows 11** (PowerShell) | `irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.ps1 \| iex` |
-| **Linux server** | `curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.sh \| sudo sh -s -- --server` |
+| **Linux** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` |
+| **Windows 11** (PowerShell) | `irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 \| iex` |
+| **Linux server** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sudo sh -s -- --server` |
 | **Docker** | `docker compose up -d` (see [compose.yaml](compose.yaml)); mainly a gateway and server deployment, see [Docker](#docker) |
-| **Single file** | download `zaafpulse-<version>-<os>-<cpu>` from [Releases](https://github.com/rifqifitriady/ZAAFPulse/releases) and run it |
+| **Release package** | download `zaafpulse-<version>-<os>-<cpu>` (`.tar.gz`, `.zip` on Windows) from [Releases](https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases), unpack it and run it with its folder first on `PATH` ([how](docs/install.md#running-from-an-unpacked-archive)) |
 
-The installers use your Node.js 18+ or download the official Node.js LTS (checksum verified) into their own folder. They add the `zaafpulse` command and start it in the background (launchd, systemd or Task Scheduler). Then run **`zaafpulse open`**: it opens http://localhost:4777 in your browser, already signed in.
+The installers download the archive for your OS and CPU from this repository's latest release, check it against `SHA256SUMS.txt`, and install both programs, `zaafpulse` and the `zaafpulse-gw` gateway; no Node.js is needed. They add the `zaafpulse` command and start it in the background (launchd, systemd or the Startup folder). Then run **`zaafpulse open`**: it opens http://localhost:4777 in your browser, already signed in. Coming from v1.1.x? The installer keeps your old install for `--rollback`, and your data carries over: read **[the migration note](docs/migration/2026-11-23-migration-note.md)** first. What is in v2.0.0 and what is still being verified: [the release notes](docs/release-notes/v2.0.0.md).
 
 ```bash
 zaafpulse status      # is it running?
-zaafpulse doctor      # OS, Node.js, data folder, secret store, log folders and file counts, service
+zaafpulse doctor      # OS, Deno, the gateway, data folder, secret store, log folders and file counts, service, MCP clients
 zaafpulse eval --judge --session <id>   # judge one session with a local model (or a confirmed Claude Code), no dashboard needed
 zaafpulse eval --dataset <slug> --model <provider/model> --ci   # replay a dataset and gate on pass rates (docs/datasets.md)
 zaafpulse open        # open the dashboard, signed in
@@ -491,10 +491,10 @@ zaafpulse service restart | uninstall
 zaafpulse help
 ```
 
-**From source** (any OS with Node 18+, no npm packages):
+**From source** (any OS with Node 18+ or Deno 2.9, no npm packages; Go 1.27 to build the gateway):
 
 ```bash
-git clone https://github.com/rifqifitriady/ZAAFPulse.git && cd ZAAFPulse
+git clone https://github.com/rifqifitriady/ZAAFPulse-deno-go.git && cd ZAAFPulse-deno-go
 npm start          # reads your logs  → http://localhost:4777 (then `node bin/zaafpulse.js open` to sign in)
 npm run demo       # synthetic data   → http://localhost:4778
 npm test           # run the test suite (node:test, no dependencies)
@@ -505,11 +505,11 @@ The first start indexes your logs: about 30 seconds for 2 GB with worker threads
 
 ### Verifying a download
 
-- Every release after 1.0.0 has `SHA256SUMS.txt`. The installers check the release's source package against it and stop when they cannot.
-- From 1.0.3, every release file also has a build-provenance attestation: `gh attestation verify zaafpulse-<v>-linux-x64 --repo rifqifitriady/ZAAFPulse` shows the workflow and commit that built it.
-- Single-file binaries after 1.0.3 carry the SHA-256 of every app file. On every start they check the unpacked copy in the cache folder, restore any file that was changed, removed or added, and stop when they cannot.
-- Version tags are never moved; a fix ships as a new version. A tag ruleset blocks moving or deleting `v*` tags, and releases are immutable once published ([docs/release-hardening.md](docs/release-hardening.md)). Both have been on since 20 October 2026, so releases after 1.0.3 also pass `gh release verify`; v1.0.0 to v1.0.3 were published before and are not immutable.
-- The binaries are **not yet notarized or code-signed**. macOS quarantines a browser download (run `xattr -d com.apple.quarantine zaafpulse-*` once, or download with `curl`), and Windows SmartScreen asks once (*More info → Run anyway*).
+- Every v2 release has `SHA256SUMS.txt`. The installers check the archive against it and install nothing when it does not match.
+- Every archive, both binaries inside each, the two installers and `SHA256SUMS.txt` get a build-provenance attestation from the release workflow: `gh attestation verify zaafpulse-<v>-linux-x64.tar.gz --repo rifqifitriady/ZAAFPulse-deno-go` names the workflow and the tag that built it (`install.sh --verify-attestation` runs the same check).
+- The binary serves the app from inside itself and unpacks nothing, so the start-time file check of the v1 single-file binaries is gone; integrity comes from the checksum and the attestation.
+- A tag ruleset that keeps `v*` tags from being moved or deleted, and immutable releases, are to be turned on for this repository before its first tag ([docs/release-hardening.md](docs/release-hardening.md#the-v2-repository-rifqifitriadyzaafpulse-deno-go)). The v1.x releases in [rifqifitriady/ZAAFPulse](https://github.com/rifqifitriady/ZAAFPulse) have both since 20 October 2026.
+- The binaries are **not notarized or code-signed** (ad-hoc signed on macOS). macOS quarantines a browser download and Windows SmartScreen asks once per `.exe`; the installers' downloads are not marked. Steps: [docs/install.md](docs/install.md#unsigned-binaries-first-start-and-verifying-a-download).
 
 ### Signing in
 
@@ -536,7 +536,7 @@ By default ZAAFPulse listens on 127.0.0.1 only. `--server` (or `zaafpulse start 
 
 ### Docker
 
-The image runs in server mode (password sign-in) and keeps its data in the `/data` volume. [compose.yaml](compose.yaml) does **not** mount `~/.claude` or `~/.codex`, so out of the box the usage, cost, quality and office pages are empty, and the live monitor only sees the container's own processes. In Docker, ZAAFPulse is mainly the Agent Gateway, agentic workspace and MCP tools.
+The image runs in server mode (password sign-in) and keeps its data in the `/data` volume. [compose.yaml](compose.yaml) does **not** mount `~/.claude` or `~/.codex`, so out of the box the usage, cost, quality and office pages are empty, and the live monitor only sees the container's own processes. In Docker, ZAAFPulse is mainly the Agent Gateway, agentic workspace and MCP tools. The image still runs the app on Node.js (`node:24-alpine`) and has no Go gateway: `gateway.engine` `"front"` there falls back to the built-in gateway.
 
 To see the host's Claude Code and Codex logs, mount them read-only where the parsers look: `~/.claude/projects` and `~/.codex/sessions` under the home of the container's `node` user. For example, under `volumes:` in compose.yaml:
 
@@ -554,6 +554,104 @@ If the Overview shows 0 sessions, 0 tokens and $0 even though your AI apps are r
 - Claude Code logs are read from each folder in `ZAAFPULSE_CLAUDE_DIRS` (comma-separated, each with a `projects/` folder inside) when it is set; otherwise from `$CLAUDE_CONFIG_DIR/projects` (one folder, as Claude Code reads it) when that is set; otherwise from `~/.config/claude/projects` (or `$XDG_CONFIG_HOME/claude/projects`) and then `~/.claude/projects`. Codex logs are read from `~/.codex/sessions`, or `$CODEX_HOME/sessions`.
 - Using another folder? Set `CLAUDE_CONFIG_DIR` (or `ZAAFPULSE_CLAUDE_DIRS` for several) or `CODEX_HOME` **before starting ZAAFPulse**. The background service does not inherit your shell profile; `zaafpulse service install` copies these variables from the shell it runs in, so export them and run it again after any change. Details: see [docs/install.md](docs/install.md#the-background-service-does-not-see-your-shell-variables).
 - Claude Desktop, ChatGPT and other chat apps keep no readable logs; they show as apps only.
+
+### Run on Deno (v2 line)
+
+ZAAFPulse runs on Deno 2.9.8 with a narrow permission set per entry point (`deno.json`: `server`, `cli`,
+`mcp-stdio`, `test`). The single-file binaries carry the `cli` set, because their entry point is the command line
+(it serves the dashboard, the MCP server, the service install and `doctor`). From a checkout:
+
+```bash
+deno task build                                   # dist/zaafpulse-<version>-<os>-<cpu>
+deno run -q --no-prompt -P=cli bin/zaafpulse.js service install   # background service, scopes computed for you
+```
+
+`service install` writes the whole launch line into the service file: `-P=server` with the write scope (data folder,
+temp, the skill folders `~/.claude/skills` and `~/.agents/skills`, and the AI clients' config folders) and the run list
+computed for this machine (`lib/permissions.js writeScope`, `runScope`). Run it again after approving a model server or
+changing `CLAUDE_CONFIG_DIR` (see [docs/install.md](docs/install.md#on-deno-permissions-are-fixed-when-the-service-is-installed)).
+To run in a terminal instead, copy that launch line from the service file. A hand-made
+`--allow-write` that holds only the data folder and temp starts the dashboard, but installing a skill and registering an
+MCP client are then refused with "Requires write access"; `-P=cli bin/zaafpulse.js start` without an `--allow-write`
+works too, with an unscoped write (the `cli` set's `write: true`, as in the single-file binary).
+
+A denied action fails with "Requires ... access to ..." in the UI or the log, never silently. The Compliance page
+shows what the running process holds (control "Runtime permissions"). Any environment variable can be named by a
+secret reference in `config.json`; a program outside the run list of `deno.json` (an owner model server that is not one
+of the presets, a Claude Code that is installed only inside an IDE extension folder) is refused with "Requires run
+access", and a build of your own can add it to the list.
+
+### The gateway process (v2)
+
+ZAAFPulse v2 is two programs, shipped together in one archive per platform:
+
+- **`zaafpulse`, the control plane**, a Deno binary. It is everything v1 was: the dashboard and its API, the indexer,
+  Cost Control, governance and the audit log, the MCP server, agents, workflows and process control.
+- **`zaafpulse-gw`, the data plane**, a Go binary that `zaafpulse` starts, watches and restarts (back-off from 1 s to
+  30 s). It can hold the main port, answer gateway calls itself, and carry the control plane's outbound calls.
+
+The two talk over **IPC v1**: the gateway's stdin and stdout, one JSON message per line, with every message type frozen
+as a schema in [`ipc/v1`](ipc/v1/README.md) (inside v1 only new optional fields and new types may be added). There is
+no port and no token; only the parent holds the pipes, and the gateway exits when they close. Config, provider secrets
+(read from the OS store by the control plane; the gateway never reads it), a budget snapshot every second, rate-limit
+windows and routing state go in. Usage lines, audit events, trace spans and egress records come out through a durable
+outbox that the control plane acknowledges, so killing either process loses or duplicates no record. The control plane
+stays the only writer of the usage log, the cost ledger and the audit chain.
+
+**Front mode.** With `"gateway": { "engine": "front" }` in `config.json` (read at start) the Go gateway holds the main
+port (4777, with TLS when `ZAAFPULSE_TLS_CERT` and `ZAAFPULSE_TLS_KEY` are set) and the dashboard listens on an
+internal port on `127.0.0.1`; each request Go forwards carries the client's address in a header signed with a
+per-start token. The Overview's topology card shows a chip, `Gateway: Go (front) · ready · v<version>`. If the gateway
+cannot run, or restarts 5 times in 60 s, the dashboard takes the main port itself and the chip turns red, with the
+reason in its tooltip. **The default is `"js"`: no Go process, exactly as v1.1.**
+
+**Engine switches, per route class.** In front mode every gateway call is still answered by the control plane until
+its class is switched in `config.json`: `"gateway": { "engines": { "chat": "go" } }`. The classes that can run on Go
+are `chat`, `chat-stream`, `chat-anthropic`, `chat-anthropic-stream`, `messages`, `messages-stream`, `messages-count`,
+`responses`, `responses-stream`, `gemini`, `gemini-stream`, `gemini-count`, `embeddings` and `mcp` (`/mcp`
+`tools/call`), plus three switches a call needs on top of its class: `token-saver` (a call whose tool results the
+token saver shortens), `provider-auth` (OAuth2 client-credentials and Google service-account providers) and `routes`
+(`router/<name>` calls, with their round-robin, cooldowns and quota readings replicated between both sides). On Go a
+call gets the same key checks, guardrails, budget check, token saver, translation and usage line as on the server; the
+budget is checked from the snapshot, and when that is more than 5 s old metered calls still pass, each marked
+`budget: "unchecked"` with an alert.
+
+Before a class moves it is compared: `"shadow": ["chat", …]` makes the gateway build its own answer from the same
+provider answer and compare it with the server's (`.data/gateway-shadow.jsonl`, no prompt or answer text). A class
+asked for `"go"` moves only after 20 compared calls and 1 day without a difference (`"shadowMinCompares"`,
+`"shadowDays"`), and while OpenTelemetry export does not capture content; until then it stays on the server, and
+`GET /api/gateway/status` (owner) says why. **Every class defaults to `"js"`**; the owner moves the live dashboard class
+by class with [the switch runbook](docs/migration/2026-11-23-switch-runbook.md). The gateway runs with a soft memory
+limit of 64 MiB (`"memLimitMB"`, 0 for none).
+
+**Network egress through Go.** In front mode the Go process also offers an egress endpoint on `127.0.0.1` (a random
+port, a token derived from the per-start one) through which the control plane's own outbound calls can leave: provider
+calls of the server's gateway, connectors, upstream MCP servers, routers, price sync, evals, remote agents, monitor
+webhooks, second-brain apps and vector stores (Postgres through a tunnel), URL ingest (public addresses only, checked
+when Go connects), OpenTelemetry export and model servers on another machine. Each caller class has a switch in
+`config.json`, `"egress": { "classes": { "connectors": "go" } }`: `"direct"` (the default, as before), `"check"` (the
+call goes direct and Go records whether its allow-list would let it pass) and `"go"`, which takes effect once the
+class's checks have been clean for 1 day and 20 calls (`"gateDays"`, `"gateMinChecks"`). Every call through Go, and
+every provider call the Go process makes itself, is recorded in `.data/egress.jsonl` (host, port, purpose, status,
+bytes, time; never a path or a header). The allow-list is built from `config.json` (providers, integrations, brain
+sources, webhooks, the OTLP endpoint, …): `"allowList": "enforce"` (the default since v2.0.0) refuses a host off the
+list, `"report"` records it and lets it pass. It only acts on calls that go through Go: those of a class on `"go"`, and
+the Go engine's own provider calls, whose hosts are on the list (a provider on this machine is never checked). The cloud metadata addresses are refused on every path, whatever the list says. Calls to
+`localhost`, `127.0.0.1` and `[::1]` always go direct.
+
+`"egress": { "lockdown": true }` (the default since v2.0.0) makes every outbound call leave through Go: only when
+`gateway.engine` is `"front"` and all twelve classes are on `"go"` and have met their gate (a class with nothing
+configured to call counts as met). While the Go process is not running such calls fail
+with `EGRESS_UNAVAILABLE` instead of going direct. Started by `deno run` (a service installed from source), the
+server's own network permission is also narrowed to loopback; the single-file build keeps the permission it was built
+with and applies the lock-down in the egress client only. To turn it off, set `"lockdown": false` and restart, or start
+with `ZAAFPULSE_EGRESS_LOCKDOWN=0`; a service from source computes its launch line when it is installed, so run
+`zaafpulse service install` again after a change. Programs ZAAFPulse starts (Claude Code, Codex, model servers) are
+outside both.
+
+Every setting, the Compliance control **Network egress is mediated and logged** and what makes it `in place`:
+[docs/governance.md](docs/governance.md#network-egress-settings). Upgrading from v1.1.x:
+[the migration note](docs/migration/2026-11-23-migration-note.md).
 
 ### Run it on login (macOS, from source)
 
@@ -763,8 +861,9 @@ found, its state and the days it was first and last seen.
   looks like a token. The package is the first other package-looking argument, so it can be a plain flag's value
   (`--port 8080`).
 
-**Governance → Compliance** shows eighteen controls (the guardrails, the audit log, approvals, keys, agent control,
-the Monitors, evals, budgets, sign-in, roles and access reviews, retention, the inventory itself …) with their status from your settings and
+**Governance → Compliance** shows twenty controls (the guardrails, the audit log, approvals, keys, agent control,
+the Monitors, evals, budgets, sign-in, roles and access reviews, retention, the inventory itself, the runtime
+permissions and network egress …) with their status from your settings and
 their evidence, mapped to the EU AI Act, the NIST AI RMF 1.0 and ISO/IEC 42001:2023. **Export** the inventory, the
 controls and the audit log's state as Markdown or JSON. It is evidence for your assessment, not a certification.
 
@@ -824,8 +923,10 @@ The stdio MCP server (`mcp.js`) does not export spans; calls through the gateway
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/architecture-light.svg">
-  <img alt="Local logs, second-brain sources and integrations are collected, cached, aggregated and served on 127.0.0.1; apps and code tools reach every model and the agents through the Agent Gateway" src="docs/assets/architecture-dark.svg" width="100%">
+  <img alt="ZAAFPulse v2: the Go gateway zaafpulse-gw holds the main port 4777 and answers the route classes switched to go; other calls are forwarded to the Deno control plane zaafpulse on an internal port. The two talk over IPC v1 on stdin and stdout: config, secrets and budgets go in, records come out to the only writer of the usage log, cost ledger and audit chain. Outbound calls of the egress classes on go leave through the gateway's egress endpoint and are recorded; the rest leave directly" src="docs/assets/architecture-dark.svg" width="100%">
 </picture>
+
+The diagram shows v2 with the gateway in front (`gateway.engine` `"front"`). By default there is no Go process: the control plane holds port 4777 itself and answers every call, as in v1.1 ([The gateway process](#the-gateway-process-v2)). Inside the control plane the pipeline is unchanged: the sources below are read, cached, aggregated and served.
 
 | Source | Read from | Gives |
 |---|---|---|
@@ -941,9 +1042,9 @@ By default the server listens on `127.0.0.1` only and rejects requests whose `Ho
 | Anthropic (or the Bedrock, Vertex or `ANTHROPIC_BASE_URL` host your Claude Code uses), through your Claude Code CLI (local evals) | Only when you choose **Claude Code** as the judge and confirm its preview for that destination; `claude --version` runs to find the CLI | The masked text of a finished turn, through your Claude login or API key |
 | Gateway providers you pick as dataset replay models | Only when you run a replay: local models stay on this machine; an external model only after you preview the masked text and press Send ([Datasets](#datasets-replay--the-ci-gate)) | The saved prompt and tool results of the examples, with secrets and personal data masked, one call per example and model |
 | Your OTLP endpoint | Only when `"otel": { "enabled": true }` or an `OTEL_EXPORTER_OTLP_*ENDPOINT` variable is set ([OpenTelemetry](#opentelemetry-export)) | Spans; no prompt text unless `captureContent` is on |
-| GitHub and nodejs.org | Only while `install.sh` or `install.ps1` runs | The release (or `main` when you ask), and the official Node.js LTS when your system has no Node 18+ |
+| GitHub | Only while `install.sh` or `install.ps1` runs | The release archive and `SHA256SUMS.txt` (and the attestation, with `--verify-attestation`) |
 
-Nothing else: no telemetry, no update checks, no accounts. Demo mode fetches nothing. (The maintainer script `scripts/build-single.js` downloads official Node.js binaries to build releases; the running app never does.) Integration and provider secrets stay in the OS secret store or environment variables, never in `config.json`.
+Nothing else: no telemetry, no update checks, no accounts. With the Go gateway in front, each of these can be sent through it and recorded in `.data/egress.jsonl` ([Network egress through Go](#the-gateway-process-v2)); the destinations stay the same. Demo mode fetches nothing. (The build, `deno task build`, downloads Deno's runtime base binaries once; the running app never does.) Integration and provider secrets stay in the OS secret store or environment variables, never in `config.json`.
 
 - The office, logs and timeline read transcript tails on demand and keep only tool names, sizes, file and command names, hostnames, timing and state; message text is never shown.
 - Message text from your logs is never stored. The cache keeps token counts, metadata and, for flagged quality or safety items only, a masked snippet of up to 160 characters. Secret values are never kept.
@@ -960,6 +1061,10 @@ Nothing else: no telemetry, no update checks, no accounts. Demo mode fetches not
 
 ```
 bin/zaafpulse.js       the zaafpulse command: start, open, set-password, service, status, doctor, register-mcp, mcp, eval
+deno.json              Deno permission sets per entry point (server, cli, mcp-stdio, test); the reasons in lib/permissions.js
+gw/                    zaafpulse-gw, the Go gateway (standard library only): front proxy, engine (keys, guardrails, translate,
+                       token saver, routes, budgets), provider auth, egress proxy, the IPC side
+ipc/v1/                the IPC contract: one JSON Schema per message, shared fixtures, the version rule
 server.js              HTTP server, API routes, config, sign-in, TLS, demo switch
 mcp.js                 MCP server "zaafpulse" over stdio for AI clients
 lib/mcp/               MCP protocol (stdio server, protocol versions up to 2025-11-25, Streamable HTTP client)
@@ -969,6 +1074,10 @@ lib/secrets.js         secret references (secret store or env), masking
 lib/secret-store.js    per-OS secret store: macOS Keychain, Linux keyring, AES-256-GCM file (DPAPI-sealed key on Windows)
 lib/secret-binding.js  keeps a stored secret bound to the addresses it was saved for
 lib/net.js             guarded fetch for addresses someone else typed (no loopback, private or metadata addresses)
+lib/front/             the Go gateway in front: supervisor wiring, internal port, config push, engine switches, shadow log
+lib/ipc/               the control plane's IPC side: channel, supervisor, ingest of usage, audit, spans and egress records
+lib/egress*.js         the egress client, the per-class switches and gate, the allow-list, the status and the MCP discovery
+lib/permissions.js     the permission matrix's reasons, the computed write and run scopes, the lock-down's launch line
 lib/platform.js        OS differences: data folder, machine and user name, Obsidian config, open URL, MCP command
 lib/auth.js            dashboard sign-in: local one-time-code sign-in (default), server-mode password (scrypt,
                        sessions, per-address throttling), accounts by name with their role
@@ -1018,13 +1127,15 @@ skills/                nine Agent Skills (SKILL.md) that teach an AI to use ZAAF
 public/                dashboard UI: plain HTML, CSS and JavaScript, no build step
 public/iso.js          isometric 3D engine, KPI cards and SVG chart helpers shared by all pages
 scripts/               macOS LaunchAgent install/uninstall, launcher, Chrome opener, MCP client registration
-                       (register-mcp.js), media capture, single-file build (build-single.js, sea-main.js)
+                       (register-mcp.js), media capture, single-file build (build-deno.js, smoke-binary.js)
 scripts/eval-signals.js precision and recall of the detectors on the labelled corpus
 scripts/bench-index.js indexer benchmark on seeded synthetic logs
 install.sh, install.ps1 one-command installers for macOS/Linux and Windows
 Dockerfile, compose.yaml container image for servers
-.github/workflows/     ci.yml (the full suite on Linux, macOS and Windows), release.yml (binaries, checksums, attestations)
-test/                  108 node:test suites with fake HTTP and MCP servers
+.github/workflows/     ci.yml (the full suite on Linux, macOS and Windows), build.yml (the release packages), release.yml
+                       (packages, checksums, attestations)
+test/                  263 node:test files (test/*.test.js) with fake HTTP and MCP servers, run on Node and Deno, and
+                       the contract suite (test/contract/, 16 files) that runs against both gateway engines
 test/fixtures/         the labelled synthetic signal corpus (signals/) and cost fixtures (cost/)
 config.example.json    every integration type with placeholder references
 docs/install.md        installers, sign-in, server mode, Docker, single-file binaries, verifying a download
@@ -1043,6 +1154,8 @@ docs/cost.md           cost ledger: who counts what, frozen cost, billing, cost 
 docs/guardrails.md     gateway guardrails: the checks, modes, scope, per-key policy, what is recorded, reading a block
 docs/governance.md     governance: the AI inventory and reviews, compliance controls, evidence export, the audit log, API
 docs/users.md          dashboard users and roles: owner, reviewer, viewer, what each may do, passwords, audit, API
+docs/migration/        the Deno + Go migration: the program plan, each phase's results, the v1.1.x migration note and the
+                       owner's switch runbook
 docs/assets/           README banner, diagrams, screenshots and GIFs
 ```
 </details>
@@ -1109,8 +1222,10 @@ Everything is editable in **Settings** and saved to `config.json`:
 | Gateway guardrails (`gateway.guardrails`) | secrets `redact`, personal data `off`, prompt injection `log`, scope `external` ([docs/guardrails.md](docs/guardrails.md)) |
 | Audit log retention (`governance.audit.retentionMonths`) | 12 months, from 6 to 120 ([docs/governance.md](docs/governance.md#retention)) |
 | AI inventory reviews (`governance.inventory`) | none; set on **Governance → Inventory** ([docs/governance.md](docs/governance.md#reviews)) |
+| Gateway in front (`gateway.engine`, `gateway.engines`, `gateway.shadow`) | `js`: no Go process; every route class on `js`; set in `config.json` only ([The gateway process](#the-gateway-process-v2), [docs/governance.md](docs/governance.md#gateway-engine-switches)) |
+| Network egress (`egress`) | every class `direct`, allow-list `report`, lock-down off; set in `config.json` only ([docs/governance.md](docs/governance.md#network-egress-settings)) |
 
-Environment variables: `PORT` / `ZAAFPULSE_PORT` (default `4777`), `ZAAFPULSE_HOST`, `ZAAFPULSE_DATA`, `ZAAFPULSE_AUTH` (`local` by default on 127.0.0.1, `1` for password, `none` to turn sign-in off), `ZAAFPULSE_INDEX_WORKERS` (worker threads for the first index; `0` turns them off), `ZAAFPULSE_CONTENT` (`off` hides transcript text in the Trace explorer, and eval explanations; in server mode it is off unless `on`), `ZAAFPULSE_OLLAMA_URL` and `ZAAFPULSE_LMSTUDIO_URL` (move the local judge servers; for tests and unusual setups, see [docs/evals.md](docs/evals.md)), `ZAAFPULSE_CLAUDE_BIN` (the Claude Code CLI for the [Claude Code judge](docs/evals.md#claude-code), when it is not found on its own), the server-mode settings in [docs/install.md](docs/install.md), the standard `OTEL_*` variables ([docs/otel.md](docs/otel.md)), and `DEMO=1` for synthetic data. Demo mode never writes `config.json`, the Keychain or your coding tools, and fetches nothing: model calls are answered by a scripted model inside the process, and gateway data lives in a temporary folder. It uses the cached price list if one exists.
+Environment variables: `PORT` / `ZAAFPULSE_PORT` (default `4777`), `ZAAFPULSE_HOST`, `ZAAFPULSE_DATA`, `ZAAFPULSE_AUTH` (`local` by default on 127.0.0.1, `1` for password, `none` to turn sign-in off), `ZAAFPULSE_INDEX_WORKERS` (worker threads for the first index; `0` turns them off), `ZAAFPULSE_CONTENT` (`off` hides transcript text in the Trace explorer, and eval explanations; in server mode it is off unless `on`), `ZAAFPULSE_OLLAMA_URL` and `ZAAFPULSE_LMSTUDIO_URL` (move the local judge servers; for tests and unusual setups, see [docs/evals.md](docs/evals.md)), `ZAAFPULSE_CLAUDE_BIN` (the Claude Code CLI for the [Claude Code judge](docs/evals.md#claude-code), when it is not found on its own), `ZAAFPULSE_EGRESS_LOCKDOWN=0` (start without the egress lock-down, see [Network egress through Go](#the-gateway-process-v2)), `ZAAFPULSE_GW_BIN` (the `zaafpulse-gw` binary to start in front mode, when it is not next to `zaafpulse` or in `gw/bin/`), the server-mode settings in [docs/install.md](docs/install.md), the standard `OTEL_*` variables ([docs/otel.md](docs/otel.md)), and `DEMO=1` for synthetic data. Demo mode never writes `config.json`, the Keychain or your coding tools, and fetches nothing: model calls are answered by a scripted model inside the process, and gateway data lives in a temporary folder. It uses the cached price list if one exists.
 </details>
 
 ## Contributing
@@ -1133,5 +1248,5 @@ ZAAFPulse is released under the [MIT License](LICENSE). Copyright © 2026 Rifqi 
 <br>
 
 <div align="center">
-<sub>Built with plain Node and the browser. No frameworks, no build step, no cloud.</sub>
+<sub>Built with Deno, Go and the browser. No frameworks, no build step for the UI, no cloud.</sub>
 </div>

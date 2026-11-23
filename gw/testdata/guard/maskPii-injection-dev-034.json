@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "The forget() method clears all previous entries from the cache; call reset() to ignore stale rules."
+  ],
+  "out": {
+    "text": "The forget() method clears all previous entries from the cache; call reset() to ignore stale rules.",
+    "counts": {}
+  }
+}

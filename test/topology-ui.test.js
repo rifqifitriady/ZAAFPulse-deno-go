@@ -4,7 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { topoLayout, topoPaint, topoMetaText, topoAgo, topoMount } = require('../public/topologyview');
+const {
+  topoLayout,
+  topoPaint,
+  topoMetaText,
+  topoAgo,
+  topoMount,
+  topoGatewayChip,
+  topoPaintGatewayChip,
+} = require('../public/topologyview');
 
 const SRC = path.join(__dirname, '..', 'public', 'topologyview.js');
 const N = (id, layer, status = 'idle', over = {}) => ({
@@ -674,4 +682,105 @@ test('the Overview holds the section above AI Office and the page loads the scri
   for (const [, v] of css.matchAll(/(?:^|[;{\s])font:\s*([^;}]+)/g))
     if (/\binherit\b/.test(v)) assert.equal(v.trim(), 'inherit', `font: ${v}`);
   assert.match(css, /\.topo-zbtn \{[^}]*font-family: inherit;[^}]*\}/);
+});
+
+test('the gateway chip (P4a D6): none in js mode or without an answer; ready, restarting and fallback in front', () => {
+  assert.equal(topoGatewayChip(null), null);
+  assert.equal(topoGatewayChip({ mode: 'js', state: 'off' }), null);
+  assert.deepEqual(topoGatewayChip({ mode: 'front', state: 'ready', restarts: 2 }), {
+    text: 'Gateway: Go (front) · ready',
+    tone: 'green',
+    title: 'Restarts 2.',
+  });
+  assert.equal(
+    topoGatewayChip({ mode: 'front', state: 'restarting', restarts: 1 }).text,
+    'Gateway: Go (front) · restarting',
+  );
+  assert.equal(topoGatewayChip({ mode: 'front', state: 'starting' }).tone, 'amber');
+  const fb = topoGatewayChip({ mode: 'fallback', state: 'failed', reason: '<b>port 4777 is in use</b>' });
+  assert.equal(fb.text, 'Gateway: Go (front) · fallback');
+  assert.equal(fb.tone, 'red');
+  assert.match(fb.title, /port 4777 is in use/);
+  // Painted as text: the reason's markup stays text.
+  const el = { hidden: true, className: '', textContent: '', title: '' };
+  topoPaintGatewayChip(el, { mode: 'fallback', state: 'failed', reason: '<b>x</b>' });
+  assert.deepEqual([el.hidden, el.className, el.textContent], [false, 'chip red', 'Gateway: Go (front) · fallback']);
+  topoPaintGatewayChip(el, { mode: 'js' });
+  assert.deepEqual([el.hidden, el.textContent], [true, '']);
+});
+
+test('the gateway chip (P6 Decision 6): the version, its health in the tooltip, stale and version differs in amber', () => {
+  const health = { uptimeMs: 330000, inflight: 2, outboxDepth: 7, snapshotAgeMs: 400, gen: 3, at: 1 };
+  const ready = {
+    mode: 'front',
+    state: 'ready',
+    restarts: 1,
+    gwVersion: '2.0.0',
+    version: '2.0.0',
+    versionMismatch: false,
+    healthAgeMs: 800,
+    lastHealth: health,
+    lastFailure: { kind: 'store', message: 'disk full', at: 1 },
+  };
+  assert.deepEqual(topoGatewayChip(ready), {
+    text: 'Gateway: Go (front) · ready · v2.0.0',
+    tone: 'green',
+    title: 'Up 5 min, in flight 2, outbox 7, snapshot 400 ms old, restarts 1, last failure: disk full.',
+  });
+  const stale = topoGatewayChip({ ...ready, healthAgeMs: 7200 });
+  assert.equal(stale.text, 'Gateway: Go (front) · ready · v2.0.0 · stale');
+  assert.equal(stale.tone, 'amber');
+  assert.match(stale.title, /No health for 7 s\.$/);
+  assert.equal(topoGatewayChip({ ...ready, healthAgeMs: 5000 }).tone, 'green', 'up to 5 s is fresh');
+  const differs = topoGatewayChip({ ...ready, gwVersion: '1.0.9', versionMismatch: true });
+  assert.equal(differs.text, 'Gateway: Go (front) · ready · v1.0.9 · version differs');
+  assert.equal(differs.tone, 'amber');
+  assert.match(differs.title, /The gateway is v1\.0\.9, ZAAFPulse v2\.0\.0\.$/);
+  // The fallback carries the Decision 4 reason, painted as text.
+  const why =
+    "zaafpulse-gw is next to zaafpulse but not allowed to run: put its folder first on PATH (the installer's zaafpulse command does)";
+  const fb = topoGatewayChip({ mode: 'fallback', state: 'failed', reason: why, restartNeeded: false });
+  assert.equal(fb.tone, 'red');
+  assert.ok(fb.title.includes(why.slice(0, 120)), fb.title);
+  const el = { hidden: true, className: '', textContent: '', title: '' };
+  assert.equal(topoGatewayChip({ ...ready, gwVersion: 'dev' }).text, 'Gateway: Go (front) · ready · dev');
+  assert.equal(topoGatewayChip({ ...ready, gwVersion: null }).text, 'Gateway: Go (front) · ready');
+  topoPaintGatewayChip(el, { ...ready, gwVersion: '<i>x</i>' });
+  assert.equal(el.textContent, 'Gateway: Go (front) · ready · v<i>x</i>');
+});
+
+test('the gateway chip says "restart needed" after a crash loop (P4b entry condition 8)', () => {
+  const st = { mode: 'fallback', state: 'failed', reason: '6 restarts within 60 s', restartNeeded: true };
+  const fb = topoGatewayChip(st);
+  assert.equal(fb.text, 'Gateway: Go (front) · fallback, restart needed');
+  assert.equal(fb.tone, 'red');
+  assert.match(fb.title, /Restart ZAAFPulse to try the gateway again\.$/);
+  assert.doesNotMatch(topoGatewayChip({ ...st, restartNeeded: false }).title, /Restart ZAAFPulse/);
+});
+
+test('the gateway chip asks for /api/gateway/status only as the owner (no 403 or audit entry for other roles)', async () => {
+  for (const owner of [false, true]) {
+    const b = fakeBrowser(fakeDoc({ icons: true }));
+    const chip = { hidden: true, className: '', textContent: '', title: '' };
+    b.install();
+    const pick = globalThis.document.querySelector;
+    globalThis.document.querySelector = (sel) => (sel === '[data-gw-chip]' ? chip : pick(sel));
+    globalThis.isOwner = () => owner;
+    try {
+      if (owner) b.answers.push({ mode: 'front', state: 'ready', restarts: 0 });
+      b.answers.push(DATA);
+      b.withTimers(() => topoMount());
+      await settle();
+      assert.deepEqual(
+        b.calls.api,
+        owner ? ['/api/gateway/status', '/api/topology'] : ['/api/topology'],
+        owner ? 'owner' : 'viewer',
+      );
+      assert.equal(chip.textContent, owner ? 'Gateway: Go (front) · ready' : '');
+      b.withTimers(() => b.calls.hooks.splice(0).forEach((fn) => fn()));
+    } finally {
+      delete globalThis.isOwner;
+      b.remove();
+    }
+  }
 });

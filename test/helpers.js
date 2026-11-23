@@ -1,6 +1,7 @@
 // Shared test helpers: a fake HTTP server that records requests, secrets without Keychain, and a fake `claude`.
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const { createSecrets } = require('../lib/secrets');
 
@@ -12,10 +13,13 @@ function safeJson(s) {
   }
 }
 
-// routes: { 'GET /path': { status?, body?, headers? } | (req) => same | Promise<same> }
-async function fakeServer(routes) {
+// routes: { 'GET /path': { status?, body?, headers?, sse?, delayMs?, destroy? } | (req) => same | Promise<same> }
+// sse: a list of raw chunks written one by one as text/event-stream (delayMs apart); destroy: the socket is closed
+// with no answer (a connection reset). Without either, body is sent as JSON (a string as it is).
+// tls: { key, cert } (PEM) serves HTTPS instead of HTTP.
+async function fakeServer(routes, { tls } = {}) {
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const handle = (req, res) => {
     let body = '';
     req.on('data', (c) => {
       body += c;
@@ -36,13 +40,25 @@ async function fakeServer(routes) {
         return res.end('{"error":"no route"}');
       }
       const out = (await (typeof handler === 'function' ? handler(r) : handler)) || {};
+      if (out.destroy) return req.socket.destroy();
+      if (Array.isArray(out.sse)) {
+        res.writeHead(out.status || 200, { 'content-type': 'text/event-stream', ...(out.headers || {}) });
+        for (const [i, chunk] of out.sse.entries()) {
+          // A provider that breaks off after cutAfter chunks (written first, so the client has its headers and those chunks).
+          if (out.cutAfter !== undefined && i >= out.cutAfter) return setTimeout(() => req.socket.destroy(), 100);
+          res.write(chunk);
+          if (out.delayMs) await new Promise((resolve) => setTimeout(resolve, out.delayMs));
+        }
+        return res.end();
+      }
       res.writeHead(out.status || 200, { 'content-type': 'application/json', ...(out.headers || {}) });
       res.end(typeof out.body === 'string' ? out.body : JSON.stringify(out.body ?? {}));
     });
-  });
+  };
+  const server = tls ? https.createServer(tls, handle) : http.createServer(handle);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}`,
+    url: `${tls ? 'https' : 'http'}://127.0.0.1:${server.address().port}`,
     requests,
     close: () =>
       new Promise((resolve) => {
@@ -181,9 +197,17 @@ process.stdin.on('end', () => {
 `;
 // Writes the fake into `dir`: an executable named `claude` on POSIX, `claude.js` (run through Node) on Windows,
 // where a .cmd wrapper could only be started through a shell.
+// The node that runs the fakes and the scripts the tests hand to a node: this process's own under Node; under Deno,
+// whose process.execPath is deno, the node on PATH (an absolute path, so a test that empties PATH still runs it).
+const NODE = process.versions.deno
+  ? require('child_process')
+      .execFileSync(process.platform === 'win32' ? 'where' : 'which', ['node'], { encoding: 'utf8' })
+      .split(/\r?\n/)[0]
+      .trim()
+  : process.execPath;
 function fakeClaude(dir, name = process.platform === 'win32' ? 'claude.js' : 'claude') {
   const file = path.join(dir, name);
-  const node = /\s/.test(process.execPath) ? '/usr/bin/env node' : process.execPath;
+  const node = /\s/.test(NODE) ? '/usr/bin/env node' : NODE;
   const shebang = name.endsWith('.js') ? '' : `#!${node}\n`;
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(file, shebang + FAKE_CLAUDE, { mode: 0o755 });
@@ -199,4 +223,52 @@ const WIN_ENV = ['SystemRoot', 'SYSTEMROOT', 'PATHEXT', 'TEMP', 'TMP'];
 const winEnv = () =>
   Object.fromEntries(WIN_ENV.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
 
-module.exports = { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, winEnv };
+// Replaces a global for one test. Deno defines some globals as accessors (localStorage, which Deno keeps on disk), and a
+// plain assignment to one is ignored; defineProperty works on both runtimes. set(undefined) removes the global;
+// restore() puts back what was there before.
+function stubGlobal(name) {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, name);
+  const set = (value) => {
+    delete globalThis[name];
+    if (value !== undefined)
+      Object.defineProperty(globalThis, name, { value, configurable: true, writable: true, enumerable: true });
+  };
+  const restore = () => {
+    delete globalThis[name];
+    if (saved) Object.defineProperty(globalThis, name, saved);
+  };
+  return { set, restore };
+}
+
+// A dated trace fixture copied so that it is recent: every ISO time in its files (YYYY-MM-DDTHH:MM:SS[.sss]Z) moves by the
+// same whole number of days, so its newest day becomes yesterday and the gaps between times stay. The dashboard's
+// session list reaches back 30 days at most (server.js /api/trace/sessions), so a fixture copied as dated falls out of
+// it a month after it was written. File names are copied as they are.
+function copyRecent(src, dest) {
+  const ISO = /\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z/g;
+  const files = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else files.push(p);
+    }
+  };
+  walk(src);
+  let newest = -Infinity;
+  for (const f of files)
+    for (const m of fs.readFileSync(f, 'utf8').match(ISO) || []) newest = Math.max(newest, Date.parse(m));
+  const DAY = 86400e3;
+  const yesterday = Math.floor(Date.now() / DAY) * DAY - DAY;
+  const shift = Number.isFinite(newest) ? yesterday - Math.floor(newest / DAY) * DAY : 0;
+  for (const f of files) {
+    const out = path.join(dest, path.relative(src, f));
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(
+      out,
+      fs.readFileSync(f, 'utf8').replace(ISO, (m) => new Date(Date.parse(m) + shift).toISOString()),
+    );
+  }
+}
+
+module.exports = { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, winEnv, NODE, stubGlobal, copyRecent };

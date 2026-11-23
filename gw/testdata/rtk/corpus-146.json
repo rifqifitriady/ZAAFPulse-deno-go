@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "npm ERR! failed 0\n nbsp 1 ls\n nbsp 2 ls\n nbsp 3 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\n nbsp 4 ls\nnpm ERR! failed 33",
+    "cat"
+  ],
+  "out": null
+}

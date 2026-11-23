@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "{\"command\":[\"bash\",\"-lc\",\"git diff --stat && git log --oneline -5\"]}"
+  ],
+  "out": {
+    "text": "{\"command\":[\"bash\",\"-lc\",\"git diff --stat && git log --oneline -5\"]}",
+    "counts": {}
+  }
+}

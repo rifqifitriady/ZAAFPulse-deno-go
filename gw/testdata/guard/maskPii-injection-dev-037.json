@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "<configuration><system>production</system><region>eu-west-1</region></configuration>"
+  ],
+  "out": {
+    "text": "<configuration><system>production</system><region>eu-west-1</region></configuration>",
+    "counts": {}
+  }
+}

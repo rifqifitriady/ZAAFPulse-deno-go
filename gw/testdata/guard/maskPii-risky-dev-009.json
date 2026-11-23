@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "cd /srv && sudo rm -rf releases/old"
+  ],
+  "out": {
+    "text": "cd /srv && sudo rm -rf releases/old",
+    "counts": {}
+  }
+}

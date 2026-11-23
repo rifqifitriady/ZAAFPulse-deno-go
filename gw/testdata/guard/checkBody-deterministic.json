@@ -1,0 +1,44 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkBody",
+  "in": [
+    {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "<<ZPSECRET:0>> <<ZPSECRET:0>>"
+        }
+      ]
+    },
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "off",
+      "injection": "log"
+    },
+    "openai-chat"
+  ],
+  "out": {
+    "body": {
+      "model": "gpt-x",
+      "messages": [
+        {
+          "role": "user",
+          "content": "‹secret: Anthropic API key› ‹secret: Anthropic API key›"
+        }
+      ]
+    },
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 2
+      }
+    ],
+    "error": false
+  }
+}

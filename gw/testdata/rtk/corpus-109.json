@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    " nbsp 0 ls\n nbsp 1 ls\nCompiling crate2 v0.2.0\n nbsp 3 ls\nCompiling crate4 v0.4.0\n nbsp 5 ls\n nbsp 6 ls\nCompiling crate7 v0.7.0\n nbsp 8 ls\nCompiling crate9 v0.9.0\nCompiling crate10 v0.10.0\n nbsp 11 ls\nCompiling crate12 v0.12.0\nCompiling crate13 v0.13.0\nCompiling crate14 v0.14.0\n nbsp 15 ls\n nbsp 16 ls\n nbsp 17 ls\n nbsp 18 ls\nCompiling crate19 v0.19.0\nCompiling crate20 v0.20.0\nCompiling crate21 v0.21.0\n nbsp 22 ls\n nbsp 23 ls\nCompiling crate24 v0.24.0\nCompiling crate25 v0.25.0\nCompiling crate26 v0.26.0\nCompiling crate27 v0.27.0\nCompiling crate28 v0.28.0\n nbsp 29 ls\n nbsp 29 ls\n nbsp 29 ls\n nbsp 29 ls\n nbsp 29 ls\n nbsp 29 ls\n nbsp 29 ls\n nbsp 29 ls\n nbsp 29 ls\n nbsp 29 ls\n nbsp 39 ls\nCompiling crate40 v0.40.0\nCompiling crate41 v0.41.0\nCompiling crate42 v0.42.0\nCompiling crate43 v0.43.0\nCompiling crate44 v0.44.0\n nbsp 45 ls\nCompiling crate46 v0.46.0\n nbsp 47 ls\nCompiling crate48 v0.48.0\n nbsp 49 ls\nCompiling crate50 v0.50.0\nCompiling crate51 v0.51.0\nCompiling crate52 v0.52.0\n nbsp 53 ls\n nbsp 54 ls\n nbsp 55 ls\nCompiling crate56 v0.56.0\nCompiling crate57 v0.57.0\nCompiling crate58 v0.58.0\n nbsp 59 ls\nCompiling crate60 v0.60.0\nCompiling crate61 v0.61.0\n nbsp 62 ls\nCompiling crate63 v0.63.0\nCompiling crate64 v0.64.0\nCompiling crate65 v0.65.0\n nbsp 66 ls\n nbsp 67 ls\n nbsp 68 ls\n nbsp 69 ls\nCompiling crate70 v0.70.0\nCompiling crate71 v0.71.0",
+    "Bash find . -name x"
+  ],
+  "out": {
+    "text": "(36 progress lines)\n nbsp 47 ls\nCompiling crate48 v0.48.0\n nbsp 49 ls\nCompiling crate50 v0.50.0\nCompiling crate51 v0.51.0\nCompiling crate52 v0.52.0\n nbsp 53 ls\n nbsp 54 ls\n nbsp 55 ls\nCompiling crate56 v0.56.0\nCompiling crate57 v0.57.0\nCompiling crate58 v0.58.0\n nbsp 59 ls\nCompiling crate60 v0.60.0\nCompiling crate61 v0.61.0\n nbsp 62 ls\nCompiling crate63 v0.63.0\nCompiling crate64 v0.64.0\nCompiling crate65 v0.65.0\n nbsp 66 ls\n nbsp 67 ls\n nbsp 68 ls\n nbsp 69 ls\nCompiling crate70 v0.70.0\nCompiling crate71 v0.71.0",
+    "filter": "build",
+    "saved": 838
+  }
+}
