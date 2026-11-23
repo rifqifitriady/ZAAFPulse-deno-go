@@ -258,7 +258,7 @@ test('sticky gate: met, then 20k ok records and a restart, the class stays on go
   for (const r of many('connectors:dynatrace', 20, NOW - 2 * DAY)) log.append(r);
   const g = open();
   assert.deepEqual(g.gate('connectors', { days: 1, min: 20 }), { ok: true });
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600); // Windows has no mode bits
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(saved.connectors.passedAt, NOW);
   assert.equal(saved.connectors.since, NOW - 2 * DAY);
