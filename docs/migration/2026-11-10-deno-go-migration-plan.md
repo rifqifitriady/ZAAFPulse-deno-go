@@ -313,8 +313,21 @@ like any client.
   `govulncheck`.
 - ~~7-day soak on the owner's live dashboard (M13)~~ dropped (§11.7). The owner tests in the browser on the preview
   after each change; the cut-over keeps the rollback to the Node line one command away.
-- Docs: README, architecture diagram, `docs/governance.md` (the new controls), and a migration note.
+- Docs: README, architecture diagram, `docs/governance.md` (the new controls), and a migration note. **Delivered on
+  `migrate/p7-docs`** (2026-11-23):
+  - [x] README for v2: the two programs, IPC v1, front mode, the engine switches (all `js` by default), egress through
+    Go, the v2 install and download checks, twenty controls;
+  - [x] `docs/assets/architecture-light.svg` and `-dark.svg`: the two processes, IPC v1, the Go front on the main port
+    and the internal port, the egress endpoint, the path of a gateway call;
+  - [x] `docs/governance.md`: the egress settings, the gate, the allow-list sources, the lock-down's conditions and
+    fallback, the gateway engine switches and the owner's switch rule;
+  - [x] `docs/migration/2026-11-23-migration-note.md` for v1.1.x users;
+  - [x] `docs/migration/2026-11-23-switch-runbook.md`, the owner's runbook for moving the live gateway class by class.
 - Release **v2.0.0** from this repo (§11.1, public since 2026-11-11, §11.5), and remove the Node-only code paths.
+- [ ] **Egress defaults at the cut-over** (owner decision 2026-11-23, §11.8): make `egress.allowList: "enforce"` and
+  `egress.lockdown: true` the defaults for an install with no setting of its own (`lib/front/push.js egressSection`,
+  `lib/permissions.js lockdownState`, `lib/egress-status.js`, their tests, `docs/governance.md`, the README and the
+  runbook). Not done yet.
 - **Exit (gate G4):** every metric M1–M12 is met and recorded in `bench/results/` and the release notes (M13 dropped,
   §11.7).
 
@@ -419,3 +432,9 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
 7. **No 7-day soak before v2.0.0 (2026-11-12).** M13 is dropped. The owner tests in the browser on the preview
    (port 4787) after each change, as for P2–P3. Long-running issues (launchd PATH, notifications, the owner's
    runtimes) surface at the P7 cut-over, where the rollback to the Node line must stay one command away.
+8. **Egress defaults at v2.0.0 (2026-11-23, answers P5 Q3).** At the v2.0.0 cut-over `egress.allowList: "enforce"`
+   and `egress.lockdown: true` become the defaults. Both can still be switched off in `config.json`
+   (`"allowList": "report"`, `"lockdown": false`), and the lock-down also with `ZAAFPULSE_EGRESS_LOCKDOWN=0`. The change
+   itself is a remaining P7 task (§5, P7). As the code stands, a default `lockdown: true` is asked but not in force until
+   `gateway.engine` is `"front"` and all twelve egress classes are on `go` and have met their gate, and a class with no
+   traffic never meets the default gate (runbook §2).
