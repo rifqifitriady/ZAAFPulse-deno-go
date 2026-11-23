@@ -111,7 +111,7 @@ test('package: the go child sees only the allowed names, plus the target and CGO
   assert.deepEqual(env, { PATH: '/bin', HOME: '/h', GOOS: 'windows', GOARCH: 'arm64', CGO_ENABLED: '0' });
   const script = require('../package.json').scripts.build;
   assert.ok(script.includes(`--allow-env=${build.GO_ENV.join(',')} `), 'the task allows exactly GO_ENV');
-  assert.ok(script.includes('--allow-run=git,tar,deno,go ') && script.includes('--ignore-env'));
+  assert.ok(script.includes('--allow-run=git,tar,deno,go,codesign ') && script.includes('--ignore-env'));
 });
 
 test('package: a Windows host packs only the win-* zips; a tar.gz there would lose the execute bit', () => {
@@ -209,4 +209,13 @@ test('package: the zip is written in JS, readable, executable on unix, and the s
 test('package: crc32 is the zip CRC-32', () => {
   assert.equal(build.crc32(Buffer.from('123456789')), 0xcbf43926);
   assert.equal(build.crc32(Buffer.alloc(0)), 0);
+});
+
+test('package: a darwin gateway is ad-hoc signed on macOS, other targets are not signed (P6 Decision 7)', () => {
+  const out = '/tmp/x/zaafpulse-gw';
+  for (const t of ['x86_64-apple-darwin', 'aarch64-apple-darwin'])
+    assert.deepEqual(build.gwSignArgs(t, out, 'darwin'), ['--force', '--sign', '-', out]);
+  assert.equal(build.gwSignArgs('x86_64-unknown-linux-gnu', out, 'darwin'), null);
+  assert.equal(build.gwSignArgs('x86_64-pc-windows-msvc', out, 'darwin'), null);
+  assert.equal(build.gwSignArgs('x86_64-apple-darwin', out, 'linux'), null);
 });

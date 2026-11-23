@@ -320,6 +320,18 @@ function checkPackHost(targets, platform = process.platform) {
     );
 }
 
+// The ad-hoc signature of a darwin gateway (P6 Decision 7): the Go linker signs darwin/arm64 itself but leaves darwin/amd64
+// unsigned (measured in the release dry run 45101126221), so both are signed here with `codesign --sign -` (ad-hoc, no
+// identity). codesign exists only on macOS: another host warns and leaves the file as Go wrote it. null: nothing to do.
+function gwSignArgs(target, out, platform = process.platform) {
+  if (GO_TARGETS[target].goos !== 'darwin') return null;
+  if (platform !== 'darwin') {
+    console.warn(`warning: ${path.basename(out)} for ${target} is not ad-hoc signed (codesign needs macOS)`);
+    return null;
+  }
+  return ['--force', '--sign', '-', out];
+}
+
 // One target's archive (P6 Decisions 1-3): stage both binaries and LICENSE in dist/.pkg/<folder>/, pack, clean up.
 function pack(src, version, target) {
   const file = archiveName(version, target);
@@ -338,6 +350,8 @@ function pack(src, version, target) {
     env: gwEnv(target),
     stdio: 'inherit',
   });
+  const sign = gwSignArgs(target, gw);
+  if (sign) execFileSync('codesign', sign, { stdio: 'inherit' });
   fs.copyFileSync(path.join(src, 'LICENSE'), path.join(stage, 'LICENSE'));
   const out = path.join(DIST, file);
   fs.rmSync(out, { force: true });
@@ -395,6 +409,7 @@ if (require.main === module) {
     GO_TARGETS,
     GO_ENV,
     checkPackHost,
+    gwSignArgs,
     hostTarget,
     outName,
     archiveName,
