@@ -128,6 +128,11 @@ func outboundHeader(in http.Header) http.Header {
 var bodyHeaders = []string{"Content-Type", "Content-Length", "Content-Encoding", "Content-Language",
 	"Content-Location"}
 
+// crossOriginDrop are the credential headers a cross-origin redirect hop does not carry (P7 review L3), as undici's
+// fetch drops them; Proxy-* is already gone (stripHop). A caller's custom key header (x-api-key, api-key) is kept, as
+// fetch keeps it: a caller that sends one uses fetchSameOrigin, which refuses a cross-origin redirect.
+var crossOriginDrop = []string{"Authorization", "Cookie", "Proxy-Authorization"}
+
 func isRedirect(status int) bool {
 	switch status {
 	case 301, 302, 303, 307, 308:
@@ -312,7 +317,9 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				if !sameOrigin(cur, next) {
-					header.Del("Authorization")
+					for _, k := range crossOriginDrop {
+						header.Del(k)
+					}
 				}
 				cur = next
 				continue
