@@ -94,7 +94,7 @@ Two consequences:
 | `GET /api/egress` (owner) | each egress class's engine, the allow-list and its mode, the lock-down and why it is not in force, the newest records, the last 24 h per class |
 | `.data/egress.jsonl` | one record per outbound call through the gateway and per `check` verdict; look for `"outcome":"would-refuse"` and `"outcome":"refused"` |
 | Governance → Compliance | **Network egress is mediated and logged**: how many classes are on go, which are on check or direct, the allow-list mode, the last 24 h of records, the lock-down. **Gateway guardrails** and **Budgets that block or pause** should not change when a class moves. |
-| `zaafpulse doctor` | `Gateway (zaafpulse-gw)`: found, allowed, version; `Server` answering; `Service` running; `MCP clients`: no registration needs renewing |
+| `zaafpulse doctor` | `Gateway (zaafpulse-gw)`: found, allowed, version; `Server` answering; `Service` running; `MCP clients`: no registration needs renewing; `MCP entries`: every entry starts a program that exists |
 | Governance → Audit log, Monitors | `gateway.budget_unchecked` entries and the matching alert mean the gateway passed metered calls on a stale budget snapshot (fail open, design rule 2): look at the chip's snapshot age |
 
 ## 4. Order
