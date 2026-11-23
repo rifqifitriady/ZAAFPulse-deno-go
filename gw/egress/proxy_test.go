@@ -142,7 +142,8 @@ func TestForwardHeadersBodyAndRecord(t *testing.T) {
 	if r != want {
 		t.Fatalf("record %+v\nwant   %+v", r, want)
 	}
-	if r.TS < time.Now().Add(-time.Minute).UnixMilli() || r.MS <= 0 {
+	// MS may be 0 on Windows, whose clock is coarse; never negative.
+	if r.TS < time.Now().Add(-time.Minute).UnixMilli() || r.MS < 0 {
 		t.Errorf("ts %d ms %v", r.TS, r.MS)
 	}
 	j, _ := json.Marshal(r)
