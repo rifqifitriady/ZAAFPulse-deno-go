@@ -172,7 +172,9 @@ server's Deno net grant to `127.0.0.1`, `localhost` and `[::1]` at a `deno run` 
 and the gateway runs in front mode; turn it off with `"lockdown": false` and a restart (a service: install it again) or
 `ZAAFPULSE_EGRESS_LOCKDOWN=0`. The single-file build keeps the net grant it was built with and applies the lock-down
 in the egress client only. Programs ZAAFPulse starts (Claude Code, Codex, model servers) are outside Deno's
-permissions and outside the gateway.
+permissions and outside the gateway. Every setting, the gate and the lock-down's conditions:
+[Network egress settings](#network-egress-settings); the gateway's own route switches:
+[Gateway engine switches](#gateway-engine-switches).
 
 **Run is not a sandbox boundary.** The run list holds interpreters and launchers that ZAAFPulse needs: `node` (a
 Claude Code installed as `cli.js`), `osascript`, `powershell`, `cmd`, `open`, `xdg-open`, `brew`, `claude`, `codex`,
@@ -200,6 +202,111 @@ Guardrails are the strictest of these: the default configuration (secrets `redac
 the evidence, not `off`: nothing says it is switched off. The same goes for an inventory in which every source failed
 and for OpenTelemetry settings that could not be used. The page and the exports count all four statuses:
 "<n> in place · <n> partial · <n> off · <n> unknown".
+
+### Network egress settings
+
+All in `config.json` under `egress`; there is no settings page for them. With no `egress` section every class is
+`direct`, the allow-list only reports and the lock-down is off, which is how ZAAFPulse behaved before the egress
+endpoint existed.
+
+| Setting | Values | Default |
+|---|---|---|
+| `egress.classes.<class>` | `direct`, `check` or `go` (anything else is `direct`) | `direct` |
+| `egress.gateDays` | days without a disagreeing check before a class asked for `go` moves (0 lifts this part) | `1` |
+| `egress.gateMinChecks` | checked calls since the last disagreement before it moves (0 lifts this part; both 0 lift the gate) | `20` |
+| `egress.allowList` | `report` (a host off the list is recorded `would-refuse` and passes) or `enforce` (it is refused, `EGRESS_REFUSED`) | `report` |
+| `egress.lockdown` | `true` narrows the server's Deno net grant to loopback when the conditions below hold | `false` |
+| `ZAAFPULSE_EGRESS_LOCKDOWN=0` | environment variable: no lock-down for this launch, whatever `config.json` says | not set |
+
+The classes and what each covers: `gateway` (the server's own provider calls and token fetches), `connectors`
+(Dynatrace, Arize, n8n, HTTP, the router connector, OpenRouter), `mcp` (upstream MCP servers), `routers` (OmniRoute,
+the OpenRouter page), `pricing` (price sync), `evals` (the judge's model servers), `agents` (remote A2A agents),
+`notify` (monitor webhooks), `brain` (second-brain apps and vector stores, Postgres through a tunnel), `public` (URL
+ingest: public addresses only, checked when Go connects, never matched against the allow-list), `otel` (OTLP export)
+and `runtimes` (model servers on another machine). Calls to `localhost`, `127.0.0.1` and `[::1]` always go direct.
+
+**The gate.** A class asked for `go` runs on `check` until its gate is met: its evidence is the `check` verdicts in
+`.data/egress.jsonl` (`checked` agrees, `would-refuse` disagrees) and the checks the client could not ask, which also
+count as a disagreement. Once met, the class stays on `go` across restarts (`.data/egress-gate.json`) until a check of
+its own disagrees or you set it to `direct` or `check`. `GET /api/gateway/status` (owner) shows each class's engine
+under `egress.engines` and why one asked for `go` is still on `check` under `egress.notes`. The endpoint exists only
+in front mode (`gateway.engine: "front"`): in js mode every class goes direct, and while the gateway restarts a class on
+`go` goes direct too, unless the lock-down holds.
+
+**The allow-list** is built from `config.json` and pushed to the gateway on every change: the providers' base and token
+URLs, the integrations, the brain sources, remote agents (`agents.json`), the monitor webhook, the OTLP endpoint, the
+model servers you added, `ZAAFPULSE_OLLAMA_URL` and `ZAAFPULSE_LMSTUDIO_URL`, and `openrouter.ai`. A rule names a host
+and an exact port. There is no way to add a host by hand: a host belongs on the list because something in the settings
+calls it. The cloud metadata addresses and names (`169.254.169.254`, `metadata.google.internal` and the others listed
+under **Runtime permissions**) are refused on every path in every mode, the redirect hops included, and the allow-list
+cannot open them. A redirect to another origin drops `Authorization`, `Cookie` and `Proxy-Authorization`.
+
+**The lock-down** applies only when all of these hold, else `GET /api/egress` and the control's evidence say which one
+does not:
+
+- `egress.lockdown` is `true` and `ZAAFPULSE_EGRESS_LOCKDOWN` is not `0`;
+- `gateway.engine` is `"front"`;
+- every one of the twelve classes is asked for `go` and has met its gate (with both gate parts at 0 no pass is needed);
+- the listen host (`ZAAFPULSE_HOST` or `HOST`, default `127.0.0.1`) is an address, not a name.
+
+A `deno run` launch of the server then gets `--allow-net=127.0.0.1,localhost,[::1]` (plus the listen address when it
+is not loopback); the line is computed when the server is launched, and for a service when it is installed. While no
+gateway is ready a locked client fails with `EGRESS_UNAVAILABLE` and never goes direct. The single-file build (what the
+installers put in place) keeps the net grant it was built with: the lock-down there is the egress client's alone, so the
+**Network egress** control stays `partial` with the evidence "enforced by the egress client; Deno's grant is not
+narrowed in the single-file build". Only a `deno run` launch can show `in place`.
+
+To leave the lock-down, set `"lockdown": false` and restart; a `deno run` service needs `zaafpulse service install`
+again, because its launch line holds the narrowed grant (the control's evidence says so while a narrowed grant
+outlives the setting). `ZAAFPULSE_EGRESS_LOCKDOWN=0` works for a launch from a shell and for
+`ZAAFPULSE_EGRESS_LOCKDOWN=0 zaafpulse service install` from source, which then writes an unnarrowed line; the service
+file does not carry the variable itself, so for an installed single-file service use the `config.json` setting.
+
+### Gateway engine switches
+
+In front mode the Go gateway can answer gateway calls itself instead of handing them to the server. Which calls is set
+per route class in `config.json`. These settings decide where the checks run, not which checks run: both engines apply
+the same keys, guardrails, budgets and usage lines, and the server stays the only writer of the usage log, the cost
+ledger and the audit chain.
+
+| Setting | Values | Default |
+|---|---|---|
+| `gateway.engine` | `"js"` (no Go process) or `"front"` (the Go gateway holds the main port); read at start | `"js"` |
+| `gateway.engines.<class>` | `"js"` or `"go"` | every class `"js"` |
+| `gateway.shadow` | a list of classes to compare while they are on `js` | `[]` |
+| `gateway.shadowDays` | days without a diff before a class asked for `go` moves (0 lifts this part) | `1` |
+| `gateway.shadowMinCompares` | compared calls since the last diff (0 lifts this part; both 0 lift the rule) | `20` |
+| `gateway.memLimitMB` | the gateway's soft memory limit in MiB, 0 for none; read at start | `64` |
+
+The classes that can run on `go`: `chat`, `chat-stream`, `chat-anthropic`, `chat-anthropic-stream` (chat calls to an
+Anthropic-format provider), `messages`, `messages-stream`, `messages-count`, `responses`, `responses-stream`,
+`gemini`, `gemini-stream`, `gemini-count`, `embeddings`, `mcp` (`/mcp` `tools/call` only; every other `/mcp` method
+stays on js), and three switches that are not paths:
+
+- `token-saver`: a call in which the token saver shortens a tool result runs on `go` only when its own class and
+  `token-saver` are both on `go`;
+- `provider-auth`: a call to an OAuth2 `client_credentials` or Google service-account provider runs on `go` only when
+  its class and `provider-auth` are both on `go`; providers with a `refresh_token` grant always stay on js;
+- `routes`: a call to a route (`router/<name>`) runs on `go` only when its class and `routes` are both on `go`.
+
+`models`, `a2a`, `skills` and `agents` are route classes too, but have no Go engine: they always run on js, and a
+`"go"` for them is ignored.
+
+**The switch rule.** A class asked for `go` moves only when the shadow has, since its last diff, compared at least
+`shadowMinCompares` of its calls and seen no diff for `shadowDays` days; until then it stays on js and
+`GET /api/gateway/status` says why under `notes` (`"12 of 20 chat calls compared without a diff since the last
+one"`). A class on `go` is no longer compared. While OpenTelemetry export captures content (`otel.captureContent`),
+every class stays on js. The routing is looked at once a minute, so a class whose rule is met moves within a minute.
+
+**The shadow log**, `.data/gateway-shadow.jsonl`, holds one line per shadowed call: the class, the outcome (`same`,
+`diff`, `handoff` or `skipped`) and, for a diff, the field, the lengths and a hash prefix, never prompt or answer
+text. `GET /api/gateway/status` shows per class `compared`, `diffs`, `handoffs`, `cleanSince` and `lastDiffAt`. A
+hand-off (the engine would have handed the call to the server) and a skipped call (the provider call failed, or a
+rate limit answered) never count as compares.
+
+Changes to these settings are hand edits of `config.json`, so they are not recorded in the audit log (see
+[What is recorded](#what-is-recorded)). The owner's procedure for moving classes, and for moving them back, is in
+[docs/migration/2026-11-23-switch-runbook.md](migration/2026-11-23-switch-runbook.md).
 
 ### Evidence export
 
