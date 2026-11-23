@@ -1,0 +1,159 @@
+# Builds and smoke-tests the release package of each of the six targets on a native runner of its own OS and CPU (P6
+# Decision 13). Called by ci.yml (job build-deno, full scope only) and by release.yml (job build); it has no trigger of
+# its own (workflow_call only), and a calling job takes no runs-on: the runners are set here.
+# Each job:
+#   1. `deno task build --package --target <triple>`: the Deno binary ("cli" set) and the Go gateway (zaafpulse-gw,
+#      built with the pinned Go, GOTOOLCHAIN=local) packed into dist/zaafpulse-<v>-<name>.tar.gz (.zip for win-*), with
+#      dist/SHA256SUMS.txt;
+#   2. unpacks the archive into dist/pkg (tar; Expand-Archive for the zip on Windows, where bash's tar is GNU tar);
+#   3. on macOS, `codesign --verify --strict` on both binaries (Decision 7: both are signed ad hoc);
+#   4. scripts/smoke-binary.js on the unpacked binary: the demo pass (version, /login.html, /api/platform, doctor) and,
+#      with --front, the pass with the gateway next to it in front (ready, gwVersion = the package version, the main
+#      port free after the stop). One run does both and prints one JSON line;
+#   5. the Go-front smoke test of P4a (scripts/smoke-front.js: deno run of server.js with a native go build);
+#   6. the step summary: the archive's size against v1.1.0's asset for the same target (M6: PASS when not larger; a
+#      FAIL is a warning, not a failed job, since M6 is judged on the dry run's table), and the smoke line;
+#   7. uploads pkg-<name> (the archive) and sum-<name> (SHA256SUMS-<name>.txt).
+# The denort base binary of each target is cached (a download failed once in P1). Actions are pinned by commit SHA, as
+# in ci.yml; Deno and Go are pinned to exact versions. persist-credentials is off.
+name: Build
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false # report every target
+      matrix:
+        # v1: the size in bytes of v1.1.0's release asset for this target (M6's reference; it never changes).
+        include:
+          - { name: linux-x64, runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, v1: 128322752 }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, v1: 124652672 }
+          - { name: darwin-arm64, runner: macos-latest, target: aarch64-apple-darwin, v1: 122888272 }
+          - { name: darwin-x64, runner: macos-15-intel, target: x86_64-apple-darwin, v1: 126752320 }
+          - { name: win-x64, runner: windows-latest, target: x86_64-pc-windows-msvc, v1: 95406080 }
+          - { name: win-arm64, runner: windows-11-arm, target: aarch64-pc-windows-msvc, v1: 83707392 }
+    env:
+      DENO_DIR: ${{ github.workspace }}/../deno-dir
+      NO_COLOR: '1'
+      GOTOOLCHAIN: local
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.8
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/../deno-dir/dl
+          key: denort-2.9.8-${{ matrix.target }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Build the package
+        shell: bash
+        run: |
+          deno task build --package --target ${{ matrix.target }}
+          # Exactly one archive for this target.
+          set -- dist/zaafpulse-*-${{ matrix.name }}.tar.gz dist/zaafpulse-*-${{ matrix.name }}.zip
+          A=""
+          for f in "$@"; do
+            if [ -f "$f" ]; then
+              [ -z "$A" ] || { echo "::error::more than one archive for ${{ matrix.name }}: $A $f"; exit 1; }
+              A="$f"
+            fi
+          done
+          [ -n "$A" ] || { echo "::error::no archive for ${{ matrix.name }} in dist/"; ls -la dist; exit 1; }
+          B="$(basename "$A")"
+          case "$B" in *.zip) TOP="${B%.zip}"; EXE=.exe ;; *) TOP="${B%.tar.gz}"; EXE= ;; esac
+          {
+            echo "ARCHIVE=$B"
+            echo "PKG_DIR=dist/pkg/$TOP"
+            echo "EXE=$EXE"
+          } >> "$GITHUB_ENV"
+      - name: Unpack (tar)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          rm -rf dist/pkg && mkdir -p dist/pkg
+          tar -xzf "dist/$ARCHIVE" -C dist/pkg
+      - name: Unpack (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path dist/pkg) { Remove-Item -Recurse -Force dist/pkg }
+          Expand-Archive -LiteralPath "dist/$env:ARCHIVE" -DestinationPath dist/pkg
+      - name: Package contents
+        shell: bash
+        run: |
+          ls -la "$PKG_DIR"
+          for f in "zaafpulse$EXE" "zaafpulse-gw$EXE" LICENSE; do
+            [ -f "$PKG_DIR/$f" ] || { echo "::error::$ARCHIVE holds no $f"; exit 1; }
+          done
+      # Decision 7: both binaries are signed ad hoc (deno compile and the Go linker); an unsigned one fails here.
+      - name: Code signatures (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          codesign --verify --strict --verbose=2 "$PKG_DIR/zaafpulse"
+          codesign --verify --strict --verbose=2 "$PKG_DIR/zaafpulse-gw"
+      - name: Smoke test of the package (demo pass and gateway in front)
+        shell: bash
+        run: |
+          B="$PKG_DIR/zaafpulse$EXE"
+          GW="$PKG_DIR/zaafpulse-gw$EXE"
+          deno run -q --no-prompt --allow-read --allow-write=dist --allow-net=127.0.0.1 --allow-run="$B" \
+            --allow-env=PATH,SystemRoot,SYSTEMROOT,PATHEXT,TEMP,TMP,windir,ComSpec --ignore-env \
+            scripts/smoke-binary.js "$B" --front "$GW" | tee "$RUNNER_TEMP/smoke.json"
+      # The Go gateway built natively, started in front of server.js (deno run, "server" set) and stopped with it.
+      - name: Smoke test of the Go front (deno run)
+        shell: bash
+        run: |
+          go -C gw build -o "$RUNNER_TEMP/gw/" ./cmd/zaafpulse-gw
+          GW="$(ls "$RUNNER_TEMP"/gw/zaafpulse-gw*)"
+          deno run -q --no-prompt -P=test scripts/smoke-front.js "$GW" | tee "$RUNNER_TEMP/smoke-front.json"
+      # M6: the archive (the download) against v1.1.0's asset for this target. Runs after a failed smoke test too.
+      - name: Step summary (M6 size, smoke results)
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          V1_BYTES: ${{ matrix.v1 }}
+        run: |
+          [ -n "${ARCHIVE:-}" ] && [ -f "dist/$ARCHIVE" ] || { echo "no archive to measure" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          BYTES="$(wc -c < "dist/$ARCHIVE" | tr -d ' ')"
+          MB="$(awk -v b="$BYTES" 'BEGIN { printf "%.1f", b / 1e6 }')"
+          V1MB="$(awk -v b="$V1_BYTES" 'BEGIN { printf "%.1f", b / 1e6 }')"
+          if [ "$BYTES" -le "$V1_BYTES" ]; then M6=PASS; else M6=FAIL; echo "::warning::M6: $ARCHIVE is $MB MB, v1.1.0 was $V1MB MB"; fi
+          SMOKE="$(cat "$RUNNER_TEMP/smoke.json" 2>/dev/null || echo 'not run')"
+          FRONT="$(cat "$RUNNER_TEMP/smoke-front.json" 2>/dev/null || echo 'not run')"
+          {
+            echo "### ${{ matrix.name }}"
+            echo
+            echo "| target | archive | bytes | MB | v1.1.0 MB | M6 |"
+            echo "|---|---|---:|---:|---:|---|"
+            echo "| ${{ matrix.name }} | $ARCHIVE | $BYTES | $MB | $V1MB | $M6 |"
+            echo
+            echo "| smoke | result |"
+            echo "|---|---|"
+            echo "| package (demo + front) | \`$SMOKE\` |"
+            echo "| Go front (deno run) | \`$FRONT\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - run: mv dist/SHA256SUMS.txt dist/SHA256SUMS-${{ matrix.name }}.txt
+        shell: bash
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pkg-${{ matrix.name }}
+          path: dist/${{ env.ARCHIVE }}
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sum-${{ matrix.name }}
+          path: dist/SHA256SUMS-${{ matrix.name }}.txt
+          if-no-files-found: error
