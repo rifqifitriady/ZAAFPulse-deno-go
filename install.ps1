@@ -313,7 +313,12 @@ if (Test-Path -LiteralPath (Join-Path $Root 'app\bin\zaafpulse.js')) {
 }
 $oldTag = if ("$oldVersion" -match '^\d+\.\d+') { "v$oldVersion" } else { 'unknown' }
 
-if ($oldKind) {
+# A re-run at the version already installed replaces only bin\: the saved rollback stays the install before it.
+$same = $oldKind -eq 'v2' -and $oldVersion -and ("$oldVersion" -ceq "$(@($newOut) | Select-Object -First 1)")
+if ($same) {
+  Stop-ZaafService (Get-Launcher)
+  Say "Reinstalling $oldTag; the saved rollback (if any) is kept."
+} elseif ($oldKind) {
   # Stop the old service through the old launcher: it must not run while its files move, and a running .exe
   # cannot be replaced. A v1 app wins over a leftover zaafpulse.exe (the v1 installer run after a v2 one).
   $oldLauncher = if ($oldKind -eq 'v1' -and (Test-Path -LiteralPath $OldCmd)) { $OldCmd } else { Get-Launcher }
@@ -399,5 +404,5 @@ if ($serverMode) {
 } else { Write-Host "    Dashboard:  http://localhost:$p   (also in the Start menu)" }
 Write-Host '    Commands:   zaafpulse status | doctor | open | service restart | help'
 $self = "https://github.com/$Repo/releases/latest/download/install.ps1"
-if ($oldKind) { Write-Host "    Roll back:  & ([scriptblock]::Create((irm $self))) -Rollback" }
+if (Test-Path -LiteralPath (Join-Path $RollbackDir 'VERSION')) { Write-Host "    Roll back:  & ([scriptblock]::Create((irm $self))) -Rollback" }
 Write-Host "    Uninstall:  & ([scriptblock]::Create((irm $self))) -Uninstall"
