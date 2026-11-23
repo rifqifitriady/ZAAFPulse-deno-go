@@ -1,6 +1,6 @@
 # The install test of one release package on Windows (P6 Decision 14; release.yml job install-test):
 #
-#   ./scripts/install-test.ps1 -Archive FILE -Sums FILE -Name <win-x64|win-arm64> [-NoServiceTest] [-NoUpgrade]
+#   ./scripts/install-test.ps1 -Archive FILE -Sums FILE -Name <win-x64|win-arm64> [-NoServiceTest] [-UpgradeLeg]
 #                              [-M12 auto|on|off] [-InstallerHost powershell.exe]
 #
 # CI runners only (GITHUB_ACTIONS=true): install.ps1 always writes the user PATH and a Start menu shortcut, and the
@@ -17,10 +17,13 @@
 #      -NoService and a background start); `zaafpulse version` is the package version and `zaafpulse doctor` passes;
 #      /login.html answers and /api/gateway/status is front and ready with the package version (gateway.engine "front"
 #      is written first); then -Uninstall, and the port is free.
-#   2. Upgrade from v1.1.0: the v1.1.0 install.ps1 from the public repo at its tag (-NoService; needs Node 18+ on PATH);
-#      v1 starts and a marker setting is written (userName, POST /api/config); the v2 installer from the package; v2
-#      starts in front mode and sees the marker, and rollback\VERSION says v1.1.0; -Rollback; v1 starts again and still
-#      sees the marker. -NoUpgrade skips it.
+#   2. Upgrade from v1.1.0, only with -UpgradeLeg: the v1.1.0 install.ps1 from the public repo at its tag (-NoService;
+#      needs Node 18+ on PATH); v1 starts and a marker setting is written (userName, POST /api/config); the v2 installer
+#      from the package; v2 starts in front mode and sees the marker, and rollback\VERSION says v1.1.0; -Rollback; v1
+#      starts again and still sees the marker. Off by default (owner decision, 2026-11-23): v1.1.0's own Windows
+#      installer cannot install v1.1.0 from GitHub in any setup tried (Test-Upgrade says why; the v2.0.0 release
+#      notes, "Windows and v1.1.0"), so without -UpgradeLeg the part is reported SKIPPED and does not fail the run.
+#      -NoUpgrade (the old switch) still skips it. The Linux upgrade leg (scripts/install-test.sh) runs as before.
 #   3. M12: scripts/upgrade-check.js --v2 on the unpacked package (needs Node). By default on win-x64 only.
 # Prints one summary line per part (also to $env:GITHUB_STEP_SUMMARY when set) and exits non-zero when a part fails.
 # Every wait is bounded: each program (an installer, zaafpulse version|doctor|service status, node) runs through
@@ -36,6 +39,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Name,
   [switch]$NoServiceTest,
   [switch]$NoUpgrade,
+  [switch]$UpgradeLeg,
   [ValidateSet('auto', 'on', 'off')][string]$M12 = 'auto',
   [string]$InstallerHost = ''
 )
@@ -45,6 +49,8 @@ $ProgressPreference = 'SilentlyContinue'
 
 $Port = 4877
 $V1Tag = 'v1.1.0'
+# The upgrade part's result without -UpgradeLeg: reported, not a failure.
+$UpgradeSkipped = "upgrade: SKIPPED (v1.1.0's own Windows installer cannot install v1.1.0 from GitHub; see the release notes)"
 $V1Installer = "https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/$V1Tag/install.ps1"
 function Say($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 
@@ -376,8 +382,7 @@ function Test-Upgrade {
   $v1 = Join-Path $T 'install-v1.ps1'
   Say "upgrade: downloading $V1Installer (at most 120 s)"
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $V1Installer -OutFile $v1
-  # v1.1.0's installer (which cannot change) works in one setup only, the one a Windows user has to roll back with:
-  # Windows PowerShell 5.1 and no node on PATH (it then downloads Node.js LTS into $Root\node).
+  # v1.1.0's installer (which cannot change) fails in every Windows setup tried:
   # - 5.1 with any node on PATH: its line 54, `& node -p 'process.versions.node.split(".")[0]' 2>$null`, has double
   #   quotes inside a native argument, which 5.1's legacy argument passing (its only mode) drops: node gets
   #   `split(.)`, a SyntaxError, and under $ErrorActionPreference = 'Stop' the redirected stderr ends the installer
@@ -385,9 +390,11 @@ function Test-Upgrade {
   # - PowerShell 7: Invoke-WebRequest's .Content is a byte array for SHA256SUMS.txt (GitHub serves release assets as
   #   application/octet-stream), so `.Content -split "`n"` finds no checksum line and line 103 throws "Could not get a
   #   verified package" (the third v2.0.0 dry run).
-  # So it runs in -InstallerHost (5.1) with every folder that holds a node command (node.exe, or a .cmd, .bat or .ps1
-  # shim) taken off its PATH; this script keeps its own PATH (Set-Front and M12 need node). Downloading and unpacking
-  # Node.js takes a while in 5.1: 900 s.
+  # - 5.1 without node on PATH (it then downloads Node.js LTS into $Root\node): the same line 103 in the fourth dry
+  #   run, after the Node.js download: 5.1 also gives a non-text response's .Content as bytes.
+  # So this part runs only with -UpgradeLeg (see the header), in the setup that came closest: -InstallerHost (5.1)
+  # with every folder that holds a node command (node.exe, or a .cmd, .bat or .ps1 shim) taken off its PATH; this
+  # script keeps its own PATH (Set-Front and M12 need node). Downloading and unpacking Node.js takes a while: 900 s.
   $noNode = (@($env:Path -split ';') | Where-Object {
       $dir = $_
       if (-not $dir) { return $false }
@@ -467,7 +474,9 @@ function Invoke-Part([string]$label, [scriptblock]$body) {
 try {
   Say "install test of $Base (version $Version) on Windows, port $Port, temp $T, installers in $InstallerHost"
   Invoke-Part 'clean install' { Test-CleanInstall }
-  if (-not $NoUpgrade) { Invoke-Part 'upgrade' { Test-Upgrade } } else { $summary.Add('upgrade: skipped (-NoUpgrade)') }
+  if ($NoUpgrade) { $summary.Add('upgrade: skipped (-NoUpgrade)') }
+  elseif (-not $UpgradeLeg) { $summary.Add($UpgradeSkipped) }
+  else { Invoke-Part 'upgrade' { Test-Upgrade } }
   if ($M12 -eq 'on') { Invoke-Part 'M12' { Test-M12 } } else { $summary.Add('M12: skipped (runs on linux-x64 and win-x64)') }
 } finally {
   Complete-Part

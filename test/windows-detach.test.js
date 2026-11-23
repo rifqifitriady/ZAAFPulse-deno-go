@@ -381,3 +381,51 @@ test('install.ps1 Get-Sha256 is the file SHA-256', { skip: !pwsh && 'pwsh is not
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout.trim(), want);
 });
+
+// Owner decision (2026-11-23): the Windows upgrade-from-v1.1.0 part is off by default and reported SKIPPED, because
+// v1.1.0's own Windows installer cannot install v1.1.0 from GitHub (fourth dry run). -UpgradeLeg turns it back on.
+test('install-test.ps1: the Windows upgrade part runs only with -UpgradeLeg; without it SKIPPED, not a failure', () => {
+  const src = code(read('scripts/install-test.ps1'));
+  assert.match(src, /\n {2}\[switch\]\$UpgradeLeg,\n/);
+  assert.match(
+    src,
+    /\$UpgradeSkipped = "upgrade: SKIPPED \(v1\.1\.0's own Windows installer cannot install v1\.1\.0 from GitHub; see the release notes\)"/,
+  );
+  // The summary line only: no Invoke-Part, so $failed stays as it is.
+  assert.match(
+    src,
+    /if \(\$NoUpgrade\) \{ \$summary\.Add\('upgrade: skipped \(-NoUpgrade\)'\) \}\s+elseif \(-not \$UpgradeLeg\) \{ \$summary\.Add\(\$UpgradeSkipped\) \}\s+else \{ Invoke-Part 'upgrade' \{ Test-Upgrade \} \}/,
+  );
+  // The code stays for later; the clean install and M12 run as before.
+  assert.match(src, /function Test-Upgrade\b/);
+  assert.match(src, /Invoke-Part 'clean install' \{ Test-CleanInstall \}/);
+  assert.match(src, /Invoke-Part 'M12' \{ Test-M12 \}/);
+  // release.yml does not pass -UpgradeLeg; the Linux leg (install-test.sh) is untouched.
+  const steps = read('.github/workflows/release.yml')
+    .split('\n')
+    .filter((l) => !/^\s*#/.test(l));
+  const call = steps.find((l) => l.includes('./scripts/install-test.ps1'));
+  assert.ok(call && !call.includes('-UpgradeLeg'), call);
+  assert.ok(!steps.some((l) => l.includes('-UpgradeLeg')));
+  assert.doesNotMatch(read('scripts/install-test.sh'), /UpgradeLeg|upgrade: SKIPPED/);
+});
+
+test('the release notes and docs say what the Windows release test covers, and why v1.1.0 is not reinstalled', () => {
+  const notes = read('docs/release-notes/v2.0.0.md');
+  assert.match(notes, /\n## Windows and v1\.1\.0\n/);
+  assert.match(notes, /\(#windows-and-v110\)/);
+  for (const s of [
+    'PowerShell 7:',
+    'Windows PowerShell 5.1 with `node` on PATH:',
+    'Windows PowerShell 5.1 without `node` on PATH:',
+  ])
+    assert.ok(notes.includes(s), s);
+  assert.match(
+    notes,
+    /Upgrading an installer-made v1\.1\.0 install on Windows, and `-Rollback` to it, are not verified/,
+  );
+  assert.match(notes, /\*\*The Windows install, in the release workflow\.\*\*/);
+  assert.match(notes, /"gateway": \{ "engine": "js" \}/);
+  assert.match(read('docs/install.md'), /\*\*On Windows, the v1\.1\.0 installer does not work\*\*/);
+  assert.match(read('docs/release-checklist-v2.0.0.md'), /scripts\/install-test\.ps1 -UpgradeLeg/);
+});
