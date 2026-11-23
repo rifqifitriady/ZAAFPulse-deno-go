@@ -222,7 +222,10 @@ async function runScenario(def, { smoke, runtime, prep, tmp, echo = false }) {
       const files = fs.readdirSync(out).filter((f) => f.endsWith('.json'));
       if (r.code !== 0 || files.length !== 1)
         return done({ ok: false, error: r.timedOut ? `timed out after ${timeoutMs / 1000} s` : tail(r.stderr) || `exit ${r.code}` });
-      return done({ ok: true, data: JSON.parse(fs.readFileSync(path.join(out, files[0]), 'utf8')) });
+      const data = JSON.parse(fs.readFileSync(path.join(out, files[0]), 'utf8'));
+      // A base tree from `git archive` has no .git: its run.js cannot name its commit, so the runner does.
+      if (def.commit && (!data.git || !data.git.sha)) data.git = { sha: def.commit, dirty: false, from: 'git archive' };
+      return done({ ok: true, data });
     }
     if (def.kind === 'egress' || def.kind === 'json') {
       const script = path.join(ROOT, def.kind === 'egress' ? 'bench/egress-overhead.js' : def.script);
