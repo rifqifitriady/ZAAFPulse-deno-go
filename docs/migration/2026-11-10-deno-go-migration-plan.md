@@ -449,3 +449,12 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    is not the default for new installs, the macOS autostart scripts stay, and every contract-suite mode stays. Source:
    `docs/superpowers/specs/2026-11-23-p7-remove-node-design.md` and
    `docs/migration/2026-11-23-p7-remove-node-results.md`.
+10. **Five release targets, no darwin-x64 (2026-11-23).** v2.0.0 and later releases ship linux-x64, linux-arm64,
+    darwin-arm64, win-x64 and win-arm64. `release.yml` builds and install-tests these five and requires five archives;
+    the regular CI already left darwin-x64 out the same day. `install.sh` stops on an Intel Mac and prints the v1.x
+    installer, which keeps serving Intel Macs. darwin-x64 stays buildable on demand (`scripts/build-deno.js`) but is
+    neither tested nor released. M8 is judged on the five. v2.0.0 is released before the final quiet-machine
+    benchmarks: the items of G3 and G4 still open (M3 and M4 on the external tier, the translated path and the token
+    saver, the re-recorded stream baseline, and M5 and M7 on the packaged binary, all from `deno task bench:final`) are
+    measured and published after the release, and the release notes say so (`docs/release-notes/v2.0.0.md`,
+    "Verification status").

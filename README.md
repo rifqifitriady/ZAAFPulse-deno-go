@@ -469,17 +469,17 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 
 ## Quick start
 
-ZAAFPulse v2 runs on **macOS, Linux with glibc (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux, SUSE) and Windows 10/11**, on x64 or arm64, on a laptop or a server. Alpine and other musl Linux, armv7l, ppc64le, s390x and 32-bit Windows stay on [v1.x](https://github.com/rifqifitriady/ZAAFPulse). Pick one of these:
+ZAAFPulse v2 runs on **macOS on Apple silicon, Linux with glibc (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux, SUSE) on x64 or arm64, and Windows 10/11 on x64 or arm64**, on a laptop or a server. Intel Macs, Alpine and other musl Linux, armv7l, ppc64le, s390x and 32-bit Windows stay on [v1.x](https://github.com/rifqifitriady/ZAAFPulse): the v2 installer stops there and prints the v1.x command. Pick one of these:
 
 | | One command |
 |---|---|
-| **macOS / Linux** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` |
+| **macOS (Apple silicon) / Linux** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` |
 | **Windows 11** (PowerShell) | `irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 \| iex` |
 | **Linux server** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sudo sh -s -- --server` |
 | **Docker** | `docker compose up -d` (see [compose.yaml](compose.yaml)); mainly a gateway and server deployment, see [Docker](#docker) |
 | **Release package** | download `zaafpulse-<version>-<os>-<cpu>` (`.tar.gz`, `.zip` on Windows) from [Releases](https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases), unpack it and run it with its folder first on `PATH` ([how](docs/install.md#running-from-an-unpacked-archive)) |
 
-The installers download the archive for your OS and CPU from this repository's latest release, check it against `SHA256SUMS.txt`, and install both programs, `zaafpulse` and the `zaafpulse-gw` gateway; no Node.js is needed. They add the `zaafpulse` command and start it in the background (launchd, systemd or the Startup folder). Then run **`zaafpulse open`**: it opens http://localhost:4777 in your browser, already signed in. Coming from v1.1.x? The installer keeps your old install for `--rollback`, and your data carries over: read **[the migration note](docs/migration/2026-11-23-migration-note.md)** first. (v2.0.0 is not released yet; until it is, `releases/latest` has nothing to install.)
+The installers download the archive for your OS and CPU from this repository's latest release, check it against `SHA256SUMS.txt`, and install both programs, `zaafpulse` and the `zaafpulse-gw` gateway; no Node.js is needed. They add the `zaafpulse` command and start it in the background (launchd, systemd or the Startup folder). Then run **`zaafpulse open`**: it opens http://localhost:4777 in your browser, already signed in. Coming from v1.1.x? The installer keeps your old install for `--rollback`, and your data carries over: read **[the migration note](docs/migration/2026-11-23-migration-note.md)** first. What is in v2.0.0 and what is still being verified: [the release notes](docs/release-notes/v2.0.0.md).
 
 ```bash
 zaafpulse status      # is it running?
@@ -1132,7 +1132,7 @@ scripts/eval-signals.js precision and recall of the detectors on the labelled co
 scripts/bench-index.js indexer benchmark on seeded synthetic logs
 install.sh, install.ps1 one-command installers for macOS/Linux and Windows
 Dockerfile, compose.yaml container image for servers
-.github/workflows/     ci.yml (the full suite on Linux, macOS and Windows), build.yml (the six packages), release.yml
+.github/workflows/     ci.yml (the full suite on Linux, macOS and Windows), build.yml (the five release packages), release.yml
                        (packages, checksums, attestations)
 test/                  263 node:test files (test/*.test.js) with fake HTTP and MCP servers, run on Node and Deno, and
                        the contract suite (test/contract/, 16 files) that runs against both gateway engines
