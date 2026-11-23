@@ -2,8 +2,9 @@
 # - A version tag (v1.2.3, pushed): `version` checks the tag is v + package.json's version; `test` runs ci.yml with
 #   skip-build (the suites only); `build` runs build.yml with skip-darwin-x64 and skip-darwin-arm64 (the four release
 #   packages, built and smoke-tested on native runners); `install-test` installs each package on its own runner
-#   (scripts/install-test.sh / .ps1: a clean install, the upgrade from v1.1.0 and the rollback, and M12 on linux-x64 and
-#   win-x64, Decision 14); then `publish` assembles dist/ (the four archives, install.sh, install.ps1 and SHA256SUMS.txt
+#   (scripts/install-test.sh / .ps1: a clean install, the upgrade from v1.1.0 and the rollback on Linux only (on
+#   Windows v1.1.0's own installer cannot install v1.1.0, so that part is reported SKIPPED: install-test.ps1
+#   -UpgradeLeg), and M12 on linux-x64 and win-x64, Decision 14); then `publish` assembles dist/ (the four archives, install.sh, install.ps1 and SHA256SUMS.txt
 #   over all of them), attests every one of those files and every binary inside the archives (Decision 8,
 #   actions/attest-build-provenance, the v1 pin), and runs `gh release create --verify-tag`, which never creates a tag:
 #   the tag must already exist. The release notes are docs/release-notes/<tag>.md; publish fails before anything is

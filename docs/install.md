@@ -127,7 +127,7 @@ Before it moves an earlier install, the installer stops its service through that
 
 ## Upgrading from v1.x
 
-Run the v2 installer, with the same options you installed with (`sudo` and `--server` for a server). On a Mac there is no v2.0.0 package to upgrade to: the installer stops and v1.x stays as it is.
+Run the v2 installer, with the same options you installed with (`sudo` and `--server` for a server). On a Mac there is no v2.0.0 package to upgrade to: the installer stops and v1.x stays as it is. On Windows the upgrade of a v1.1.0 install is not verified by the release tests, and the v1.1.0 installer itself does not work there ([Rolling back](#rolling-back)).
 
 ```bash
 curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh | sh
@@ -189,6 +189,8 @@ Remove-Item "$env:LOCALAPPDATA\ZAAFPulse\bin\zaafpulse.exe", "$env:LOCALAPPDATA\
 ```
 
 The v1.1.x installer writes its own `app` folder and `zaafpulse` command, so on macOS and Linux the leftover `bin` folder is inert; delete it anyway. **On Windows the two `.exe` files must be deleted:** the v1 installer puts `zaafpulse.cmd` into the same `bin` folder, and Windows runs `zaafpulse.exe` before `zaafpulse.cmd` (`.EXE` comes first in `PATHEXT`), so `zaafpulse` would still start v2. If the v2 installer runs later, it treats the v1 `app` as the current install.
+
+**On Windows, the v1.1.0 installer does not work** (way 2 above, or a fresh v1.1.0 install): it stops before it installs anything in every setup the v2.0.0 release tests tried. In PowerShell 7 and in Windows PowerShell 5.1 it reads `SHA256SUMS.txt` as bytes, finds no checksum line and stops with "Could not get a verified package for v1.1.0"; in Windows PowerShell 5.1 with `node` on PATH it stops earlier, at its Node.js version check, whose quoted argument 5.1 passes to `node` without its quotes. A v1.x install made earlier keeps working, and `-Rollback` (way 1) puts the one an upgrade saved back in place; upgrading and `-Rollback` on Windows are not verified by the release tests, because they cannot make a v1.1.0 install to start from. To take the Go gateway out of the path, stay on v2: `"gateway": { "engine": "js" }` and `"egress": { "lockdown": false }` in `config.json`, then `zaafpulse service restart` ([the switch runbook, Rolling back](migration/2026-11-23-switch-runbook.md#5-rolling-back)).
 
 ## Release packages
 
