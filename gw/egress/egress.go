@@ -5,7 +5,8 @@
 // connection as an egress.event. Raw TCP goes through CONNECT on the same listener.
 //
 // Every request carries X-ZP-Egress-Token, DeriveToken(frontToken); without it the connection is closed with no
-// reply.
+// reply. The one exception is GET /hello?n=<nonce>, which proves the endpoint holds the token (HelloProof) to a caller
+// that must not send it before it knows who listens (mcp.js).
 package egress
 
 import (
@@ -124,7 +125,7 @@ func (s *Server) SetPolicy(p Policy) {
 // Policy is the allow-list in force (never nil; a caller must not change it).
 func (s *Server) Policy() *Policy { return s.policy.Load() }
 
-// Handler serves "/" (forward), "/check" and CONNECT.
+// Handler serves "/" (forward), "/check", CONNECT and GET "/hello" (the endpoint's proof, no token).
 func (s *Server) Handler() http.Handler { return http.HandlerFunc(s.serve) }
 
 // Listen opens the endpoint on 127.0.0.1 on a free port and serves it until Close.
@@ -170,6 +171,10 @@ func (s *Server) Close(grace time.Duration) {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == "/hello" {
+		s.hello(w, r) // the endpoint's proof, answered without the token (P7 review L1)
+		return
+	}
 	if !s.authorized(r) {
 		drop(w)
 		return
