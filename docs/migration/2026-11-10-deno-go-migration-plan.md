@@ -458,3 +458,9 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
     saver, the re-recorded stream baseline, and M5 and M7 on the packaged binary, all from `deno task bench:final`) are
     measured and published after the release, and the release notes say so (`docs/release-notes/v2.0.0.md`,
     "Verification status").
+11. **Four release targets, no macOS package in v2.0.0 (2026-11-23, extends decision 10).** The release targets are
+    linux-x64, linux-arm64, win-x64 and win-arm64. v2.0.0 has no macOS package on either CPU: `install.sh` stops on any
+    Mac and prints the v1.x installer, while `--rollback` and `--uninstall` still work there. macOS builds stay
+    available on demand (`deno task build --package --target aarch64-apple-darwin` or `x86_64-apple-darwin`, `--all`),
+    and the regular CI keeps building and smoke-testing darwin-arm64 (`build.yml` input `skip-darwin-arm64`, set only by
+    `release.yml`). The macOS launchd install path is not covered by a release install test.
