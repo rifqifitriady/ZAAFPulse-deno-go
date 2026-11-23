@@ -516,3 +516,14 @@ profile edit, server mode and the closing summary.
   inert there: the docs must say to delete `bin\zaafpulse.exe` and `bin\zaafpulse-gw.exe` after that second way of
   rolling back (Decision 11). `install.ps1` itself treats a v1 `app\` as the current install in that case and stops its
   service through `zaafpulse.cmd`.
+- **Tasks 6–7, review fixes:** both installers run the staged binary's `version` before they stop or move the old
+  install, and stop with "nothing was changed" when it fails. `rollback.new` gets its `VERSION` before anything moves
+  into it; a later run that finds a `rollback.new` with `VERSION` and no install in place finishes the move and keeps it
+  as `rollback`, and otherwise moves its folders back and removes it. A successful install removes `rollforward/`.
+  `install.sh --rollback` is gated on `rollback/VERSION`; a generation saved without a launcher gets a fresh v2 wrapper
+  (v2) or, for v1, the stale wrapper is removed with a warning that names the node command. `install.ps1` ends what
+  still runs from `$Root` (an executable under it, or v1's node running `app\bin\zaafpulse.js`) after each service
+  stop, waiting up to 10 s, but not under `-NoService`, which leaves running processes alone as it leaves the service
+  alone. `lib/service.js` finds a Windows server by PowerShell `-match` patterns (`WIN_SERVER_RE`, `WIN_START_RE`,
+  exported for the test) that accept `start` bare or quoted, with `\x22` for the quote so none crosses the
+  powershell.exe command line. `install.ps1` is still not parsed or run here (no PowerShell on this machine).
