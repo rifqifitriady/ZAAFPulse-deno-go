@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { engineOf, enginesOf, frontSection, configBody, CLASSES, SUB_CLASSES } = require('../lib/front');
-const { gwBinary, existingGwBinary } = require('../lib/front/bin');
+const { gwBinary, existingGwBinary, gwAllowed, gwStatus, gwRefusal } = require('../lib/front/bin');
 const permissions = require('../lib/permissions');
 const { check } = require('../lib/ipc/schema');
 const { tmpDir } = require('./ipc-stub');
@@ -68,6 +68,38 @@ test('runScope: a deno run launch is granted the gateway binary when it is there
   assert.ok(permissions.runScope({ set: 'server', env }).includes(bin));
   assert.ok(permissions.runScope({ set: 'cli', env }).includes(bin));
   assert.ok(!permissions.runScope({ set: 'mcp-stdio', env }).includes(bin));
+});
+
+const REFUSED =
+  "zaafpulse-gw is next to zaafpulse but not allowed to run: put its folder first on PATH (the installer's zaafpulse command does)";
+
+test('gwAllowed: always on Node; on Deno the run grant of that path decides (P6 Decision 4)', () => {
+  assert.equal(gwAllowed('/x/zaafpulse-gw', { deno: null }), true);
+  const asked = [];
+  const deno = (state) => ({ permissions: { querySync: (d) => (asked.push(d), { state }) } });
+  assert.equal(gwAllowed('/x/zaafpulse-gw', { deno: deno('granted') }), true);
+  assert.equal(gwAllowed('/x/zaafpulse-gw', { deno: deno('prompt') }), false);
+  assert.equal(gwAllowed('/x/zaafpulse-gw', { deno: deno('denied') }), false);
+  assert.deepEqual(asked[0], { name: 'run', command: '/x/zaafpulse-gw' });
+  const throws = { permissions: { querySync: () => assert.fail('no') } };
+  assert.equal(gwAllowed('/x/zaafpulse-gw', { deno: throws }), false);
+});
+
+test('gwStatus and gwRefusal: missing, found but not allowed, and allowed', (t) => {
+  const dir = tmpDir(t, 'gwstatus');
+  const bin = path.join(dir, 'zaafpulse-gw');
+  const no = { permissions: { querySync: () => ({ state: 'prompt' }) } };
+  const missing = gwStatus({ env: { ZAAFPULSE_GW_BIN: bin }, deno: null });
+  assert.deepEqual(missing, { path: bin, found: false, allowed: false });
+  assert.equal(gwRefusal(missing), `zaafpulse-gw not found at ${bin}`);
+  fs.writeFileSync(bin, '');
+  const refused = gwStatus({ path: bin, deno: no });
+  assert.deepEqual(refused, { path: bin, found: true, allowed: false });
+  assert.equal(gwRefusal(refused), REFUSED);
+  const ok = gwStatus({ path: bin, deno: null });
+  assert.deepEqual(ok, { path: bin, found: true, allowed: true });
+  assert.equal(gwRefusal(ok), null);
+  assert.equal(gwStatus({ path: '/elsewhere', exists: (p) => p === '/elsewhere', deno: null }).found, true);
 });
 
 test('bin.js keeps the rules of lib/platform.js: the source folder and the single-file check', () => {
@@ -174,6 +206,20 @@ test('P5: onEgress follows the current gateway; every push carries an egress sec
   f.sups[1].opts.onEgress(5002);
   assert.deepEqual(seen, [{ port: 5001, token: 'tok' }, null, { port: 5002, token: 'tok' }]);
   assert.equal(f.front.egressPort, 5002);
+});
+
+test('P6 Decision 4: each supervisor is asked to check the binary first; the refusal is the reason it fails with', async (t) => {
+  const seen = [];
+  const f = await frontWithFakes(t, {
+    gwStatus: (p) => (seen.push(p), { path: p, found: true, allowed: false }),
+  });
+  assert.equal(f.sups[0].opts.precheck(), REFUSED);
+  assert.deepEqual(seen, ['/no/such/gateway']);
+  // The supervisor's fatal path (onFailed with kind fatal) is the fallback, carrying that reason.
+  f.sups[0].opts.onFailed(f.sups[0].opts.precheck(), { kind: 'fatal' });
+  await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
+  assert.equal(f.front.status().reason, REFUSED);
+  assert.equal(f.front.status().restartNeeded, false, 'a save of the gateway section tries again');
 });
 
 test('I1: two reloads in fallback start front once; a stale supervisor cannot fall back over the new one', async (t) => {

@@ -555,3 +555,30 @@ test('the routing state goes with each session; notes and takes travel both ways
   bare.start();
   assert.equal(other.sessions[0].opts.initial.routes(), null, 'no source: no route.state');
 });
+
+test('a precheck that refuses is the failed state at once: no launch, onFailed with kind fatal (P6 Decision 4)', () => {
+  let launched = 0;
+  const failed = [];
+  const logs = [];
+  const sup = createSupervisor({
+    bin: '/x/zaafpulse-gw',
+    cpVersion: 'test',
+    sources: { config: () => ({}), secrets: () => ({}), snapshot: () => ({}) },
+    ingest: { handle: () => true },
+    log: (l) => logs.push(l),
+    start: () => {
+      launched++;
+      throw new Error('not reached');
+    },
+    precheck: () => 'zaafpulse-gw not found at /x/zaafpulse-gw',
+    onFailed: (why, info) => failed.push([why, info]),
+  });
+  sup.start();
+  assert.equal(launched, 0);
+  assert.deepEqual(failed, [['zaafpulse-gw not found at /x/zaafpulse-gw', { kind: 'fatal' }]]);
+  const st = sup.status();
+  assert.equal(st.state, 'failed');
+  assert.equal(st.failed.reason, 'zaafpulse-gw not found at /x/zaafpulse-gw');
+  assert.equal(st.restarts, 0);
+  assert.match(logs.join('\n'), /the gateway failed \(not started\): zaafpulse-gw not found/);
+});

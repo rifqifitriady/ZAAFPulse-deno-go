@@ -473,3 +473,12 @@ profile edit, server mode and the closing summary.
   build runs under bash, where `tar` is Git's GNU tar, which cannot write a zip, so the bsdtar check would have failed
   every win-* package in CI. The bsdtar check is gone, and win-* packages now build on any OS. The tar.gz path is
   unchanged (`tar -czf`).
+- **Task 3, the fatal start (spec Decision 4):** the check runs inside the supervisor, through a new `precheck` option
+  of `createSupervisor` (`lib/ipc/supervisor.js`), which `start()` asks before the first launch and, on a reason, ends
+  in the existing `fail(reason, code, 'fatal')`. The front passes `precheck: () => gwRefusal(gwStatus(bin))`. Checking in
+  `lib/front/index.js` alone could only reach the fallback without the supervisor's failed state (`state: 'failed'`,
+  `failed.reason`), which `test/front-server.test.js` and the Task 5 chip read. `lib/front/bin.js` also exports
+  `gwRefusal(status)`, the one source of the two reason texts. A missing binary now reads `zaafpulse-gw not found at
+  <path>` instead of the spawn error. `servicePath` adds the binary's folder only when it writes a PATH at all: on
+  Windows with no PATH at install, a PATH of that folder alone would hide the system's programs (the install folder is
+  on the user PATH there anyway).
