@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "## Instalasi\n\n1. Clone repositori.\n2. Jalankan `composer install`.\n3. Salin `.env.example` menjadi `.env` lalu isi konfigurasi database.\n4. Jalankan `php artisan migrate`."
+  ],
+  "out": {
+    "text": "## Instalasi\n\n1. Clone repositori.\n2. Jalankan `composer install`.\n3. Salin `.env.example` menjadi `.env` lalu isi konfigurasi database.\n4. Jalankan `php artisan migrate`.",
+    "counts": {}
+  }
+}

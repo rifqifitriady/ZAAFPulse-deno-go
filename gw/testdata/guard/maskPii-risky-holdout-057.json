@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm -r -f old_backups/"
+  ],
+  "out": {
+    "text": "rm -r -f old_backups/",
+    "counts": {}
+  }
+}

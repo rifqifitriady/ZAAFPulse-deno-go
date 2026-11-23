@@ -1,0 +1,28 @@
+{
+  "secrets": [
+    "c2stYW50LWFwaTAzLUFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OWFiY2Q="
+  ],
+  "fn": "checkText",
+  "in": [
+    "<<ZPSECRET:0>>",
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "off",
+      "injection": "log"
+    },
+    "other"
+  ],
+  "out": {
+    "text": "‹secret: Anthropic API key›",
+    "action": "redacted",
+    "hits": [
+      {
+        "check": "secrets",
+        "label": "Anthropic API key",
+        "count": 1
+      }
+    ],
+    "error": false
+  }
+}

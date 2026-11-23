@@ -590,9 +590,10 @@ test('a failed snooze save puts the snoozed flags back too', (t) => {
   state.apply('cost_burn', [live('s1', 'triggered', 9)]);
   // Make the next write fail: a directory where the temp file must go.
   fs.mkdirSync(`${file}.tmp`);
+  fs.writeFileSync(path.join(`${file}.tmp`, 'keep'), ''); // not empty: Deno's unlinkSync removes an empty folder
   assert.throws(() => state.snooze('cost_burn', 's1', HOUR));
   assert.equal(state.states()[0].state, 'triggered');
-  fs.rmdirSync(`${file}.tmp`);
+  fs.rmSync(`${file}.tmp`, { recursive: true });
   // The flag was restored, so a later apply after the (never stored) snooze is not treated as a snooze end.
   assert.deepEqual(state.apply('cost_burn', [live('s1', 'triggered', 9)]), [], 'still the same open alert');
 });

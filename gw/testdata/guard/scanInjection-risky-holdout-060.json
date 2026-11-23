@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "git push --force-with-lease origin dev"
+  ],
+  "out": null
+}

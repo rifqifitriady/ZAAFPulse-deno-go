@@ -1,0 +1,1 @@
+{"fn":"authorize","in":{"key":{"models":["oa/*"],"agents":[],"scopes":["llm"]},"want":{"scope":"llm","model":"oa/m1"}},"out":null}

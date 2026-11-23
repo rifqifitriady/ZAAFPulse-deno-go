@@ -1,0 +1,19 @@
+{
+  "fn": "openAIToAnthropicRequest",
+  "in": [
+    {
+      "model": "c",
+      "messages": [
+        {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "id": "a"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "throws": "Cannot read properties of undefined (reading 'name')"
+}

@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    " nbsp 0 ls\n nbsp 1 ls\n[2/40] building\n[3/40] building\n nbsp 4 ls\n nbsp 5 ls\n./a/b2/c6.txt\n nbsp 7 ls\n./a/b0/c8.txt\n./a/b1/c9.txt\n nbsp 10 ls\n nbsp 11 ls\n nbsp 11 ls\n nbsp 11 ls\n nbsp 11 ls\n nbsp 11 ls\n nbsp 11 ls\n nbsp 11 ls\n nbsp 11 ls\n[19/40] building\n./a/b0/c20.txt\n./a/b1/c21.txt\n nbsp 22 ls\n nbsp 23 ls\n./a/b0/c24.txt\n[25/40] building\n nbsp 26 ls\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt\n./a/b3/c27.txt",
+    "cat"
+  ],
+  "out": null
+}

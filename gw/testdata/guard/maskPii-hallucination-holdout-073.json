@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nerror: pathspec 'feature/foo' did not match any file(s) known to git"
+  ],
+  "out": {
+    "text": "Exit code 1\nerror: pathspec 'feature/foo' did not match any file(s) known to git",
+    "counts": {}
+  }
+}

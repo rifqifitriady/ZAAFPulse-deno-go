@@ -1,0 +1,2 @@
+{"runtime":"node","count":2000,"paths":["/login.html","/api/platform"],"js":{"p50":0.091,"p99":0.368,"mean":0.1},"front":{"p50":0.132,"p99":0.274,"mean":0.141},"overhead":{"p50":0.041,"p99":-0.094,"mean":0.041}}
+{"runtime":"deno","count":2000,"paths":["/login.html","/api/platform"],"js":{"p50":0.094,"p99":0.343,"mean":0.114},"front":{"p50":0.145,"p99":0.42,"mean":0.17},"overhead":{"p50":0.051,"p99":0.077,"mean":0.056}}

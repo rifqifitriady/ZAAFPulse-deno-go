@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "# hapus build lama\nrm -rf build/"
+  ],
+  "out": null
+}

@@ -65,7 +65,73 @@ function topoAgo(ms) {
   return `${Math.floor(s / 3600)} h ago`;
 }
 const topoNum = (n) => (n >= 1e6 ? `${topoR(n / 1e6)}M` : n >= 1000 ? `${topoR(n / 1000)}k` : String(Math.round(n)));
+// A duration: "42 s", "5 min", "3 h".
+function topoDur(ms) {
+  const s = Math.floor(Number(ms) / 1000);
+  if (s < 60) return `${Math.max(0, s)} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min`;
+  return `${Math.floor(s / 3600)} h`;
+}
 const topoMs = (ms) => (ms >= 1000 ? `${topoR(ms / 1000)} s` : `${Math.round(ms)} ms`);
+
+// The "Gateway: Go (front)" chip in the card's head (P4a D6), from GET /api/gateway/status: null (no chip) when the
+// gateway is not in front (js mode, no answer, or a role that may not read it); else its text, colour and tooltip.
+function topoGatewayChip(st) {
+  if (!st || typeof st !== 'object' || (st.mode !== 'front' && st.mode !== 'fallback')) return null;
+  if (st.mode === 'fallback')
+    return {
+      text: st.restartNeeded ? 'Gateway: Go (front) · fallback, restart needed' : 'Gateway: Go (front) · fallback',
+      tone: 'red',
+      title:
+        `The Go gateway failed${st.reason ? `: ${String(st.reason).slice(0, 200)}` : ''}. ZAAFPulse serves on its own.` +
+        (st.restartNeeded ? ' Restart ZAAFPulse to try the gateway again.' : ''),
+    };
+  if (st.state === 'ready') {
+    // P6 Decision 6: the version, amber when the health is late (it comes every second) or the versions differ.
+    // A build without a version (npm run gw:build) says "dev", not "vdev".
+    const gv = typeof st.gwVersion === 'string' ? st.gwVersion : '';
+    const v = gv === 'dev' ? ' · dev' : gv ? ` · v${gv}` : '';
+    const stale = Number.isFinite(st.healthAgeMs) && st.healthAgeMs > 5000;
+    const h = st.lastHealth && typeof st.lastHealth === 'object' ? st.lastHealth : {};
+    const parts = [];
+    if (Number.isFinite(h.uptimeMs)) parts.push(`Up ${topoDur(h.uptimeMs)}`);
+    if (Number.isFinite(h.inflight)) parts.push(`in flight ${h.inflight}`);
+    if (Number.isFinite(h.outboxDepth)) parts.push(`outbox ${h.outboxDepth}`);
+    if (Number.isFinite(h.snapshotAgeMs)) parts.push(`snapshot ${topoMs(h.snapshotAgeMs)} old`);
+    parts.push(`restarts ${Number(st.restarts) || 0}`);
+    const fail = st.lastFailure && st.lastFailure.message ? String(st.lastFailure.message).slice(0, 200) : '';
+    if (fail) parts.push(`last failure: ${fail}`);
+    let title = `${parts.join(', ')}.`;
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+    if (stale) title += ` No health for ${topoDur(st.healthAgeMs)}.`;
+    if (st.versionMismatch) title += ` The gateway is v${st.gwVersion}, ZAAFPulse v${st.version}.`;
+    return {
+      text: `Gateway: Go (front) · ready${v}${stale ? ' · stale' : ''}${st.versionMismatch ? ' · version differs' : ''}`,
+      tone: stale || st.versionMismatch ? 'amber' : 'green',
+      title,
+    };
+  }
+  return {
+    text: 'Gateway: Go (front) · restarting',
+    tone: 'amber',
+    title: `Restarts: ${Number(st.restarts) || 0}. The main port answers again once it is ready.`,
+  };
+}
+
+// Paints the chip into `el` (a span): text and attributes only, never HTML.
+function topoPaintGatewayChip(el, st) {
+  if (!el) return;
+  const chip = topoGatewayChip(st);
+  if (!chip) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  el.hidden = false;
+  el.className = `chip ${chip.tone}`;
+  el.textContent = chip.text;
+  el.title = chip.title;
+}
 
 // The section head's meta line: "— N active · M error". The hub is always active (it is the dashboard), so it is
 // not counted.
@@ -621,7 +687,15 @@ function topoMount() {
       failed();
     }
   };
+  const chipEl = document.querySelector('[data-gw-chip]');
   const load = async () => {
+    // The gateway chip has its own request, made only as the owner: the route is owner-only, and another role's refusal
+    // would be a 403 and a governance audit entry on every poll. An error only hides the chip.
+    if (chipEl && typeof isOwner === 'function' && isOwner())
+      api('/api/gateway/status').then(
+        (st) => root.isConnected && topoPaintGatewayChip(chipEl, st),
+        () => root.isConnected && topoPaintGatewayChip(chipEl, null),
+      );
     try {
       TOPO.data = await api('/api/topology');
       TOPO.failed = false;
@@ -651,4 +725,5 @@ function topoMount() {
   });
 }
 
-if (typeof module !== 'undefined') module.exports = { topoLayout, topoPaint, topoMetaText, topoAgo, topoMount };
+if (typeof module !== 'undefined')
+  module.exports = { topoLayout, topoPaint, topoMetaText, topoAgo, topoMount, topoGatewayChip, topoPaintGatewayChip };

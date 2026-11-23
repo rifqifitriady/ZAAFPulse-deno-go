@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "git push --force-with-lease origin feat/cart"
+  ],
+  "out": {
+    "text": "git push --force-with-lease origin feat/cart",
+    "counts": {}
+  }
+}

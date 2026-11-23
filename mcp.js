@@ -13,6 +13,8 @@ const { createAudit } = require('./lib/audit');
 const { createLocal } = require('./lib/local');
 const { createCostReader } = require('./lib/cost/reader');
 const otel = require('./lib/otel');
+const egress = require('./lib/egress');
+const { createDiscoveryLoader } = require('./lib/egress-discovery');
 const { version } = require('./package.json');
 
 process.umask(0o077); // caches and audit logs are private to this OS account
@@ -49,6 +51,21 @@ const integrations = createIntegrations({
   local,
 });
 local.integrationsStatus = () => integrations.status();
+// P5 Decision 15: the tool calls' outbound connections use the dashboard's egress endpoint while it runs, read from
+// .data/egress.json before each call (lib/egress-discovery.js); without it they go direct.
+const egressDiscovery = createDiscoveryLoader({
+  file: path.join(DIR, '.data', 'egress.json'),
+  configure: (opts) => egress.configure(opts && { ...opts, log }),
+  log,
+});
+const callTool = async (...args) => {
+  try {
+    await egressDiscovery.refresh();
+  } catch (err) {
+    log(`egress: ${err.message}`);
+  }
+  return integrations.callTool(...args);
+};
 
 createServer({
   name: 'zaafpulse',
@@ -56,7 +73,7 @@ createServer({
   version,
   instructions: INSTRUCTIONS,
   listTools: integrations.listTools,
-  callTool: integrations.callTool,
+  callTool,
   log,
 })
   .serve()

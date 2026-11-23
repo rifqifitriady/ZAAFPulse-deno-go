@@ -231,6 +231,23 @@ test('local sign-in: signing out revokes every local cookie; only a signed-in br
   }
 });
 
+test('origin rule: trailing slashes are trimmed in linear time, so a long Origin cannot stall the server', () => {
+  const req = (origin) => ({ headers: { host: 'ai.example.com', origin } });
+  const allow = { mode: 'password', allowedOrigins: ['https://app.example.org'] };
+  assert.ok(originAllowed(req('https://app.example.org'), allow));
+  assert.ok(originAllowed(req('https://app.example.org/'), allow), 'one trailing slash');
+  assert.ok(originAllowed(req('https://app.example.org///'), allow), 'several trailing slashes');
+  assert.ok(!originAllowed(req('https://app.example.org/x'), allow), 'a path is not a trailing slash');
+  assert.ok(!originAllowed(req('https://app.example.org//x//'), allow));
+  assert.ok(!originAllowed(req('/'.repeat(5)), allow), 'slashes only');
+  // A regex /\/+$/ backtracks quadratically on many slashes followed by another character (seconds at 100k).
+  const t0 = performance.now();
+  assert.ok(!originAllowed(req(`https://a${'/'.repeat(100000)}x`), allow));
+  assert.ok(!originAllowed(req(`https://a${'/'.repeat(100000)}`), allow));
+  const ms = performance.now() - t0;
+  assert.ok(ms < 500, `a 100k-slash Origin took ${Math.round(ms)} ms`);
+});
+
 test('origin rule: same site and allowed origins only, in every mode; file pages and other sites refused', () => {
   const req = (origin, host = 'localhost:4777', extra = {}) => ({
     headers: { host, ...(origin === undefined ? {} : { origin }), ...extra },

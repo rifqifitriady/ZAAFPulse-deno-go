@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "✖ failed step 0\nstep 1\nstep 2\nstep 3\nstep 4\nstep 5\nstep 6\nstep 7\nstep 8\n✖ failed step 9\nstep 10\nstep 11\nstep 12\nstep 13\nstep 14\nstep 15\nstep 16\nstep 17\n✖ failed step 18\nstep 19\nstep 20\nstep 21\nstep 22\nstep 23\nstep 24\nstep 25\nstep 26\n✖ failed step 27\nstep 28\nstep 29\nstep 30\nstep 31\nstep 32\nstep 33\nstep 34\nstep 35\n✖ failed step 36\nstep 37\nstep 38\nstep 39\nstep 40\nstep 41\nstep 42\nstep 43\nstep 44\n✖ failed step 45\nstep 46\nstep 47\nstep 48\nstep 49\nstep 50\nstep 51\nstep 52\nstep 53\n✖ failed step 54\nstep 55\nstep 56\nstep 57\nstep 58\nstep 59",
+    "Bash pytest -q"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nAuto-merging src/app.js\nCONFLICT (content): Merge conflict in src/app.js\nAutomatic merge failed; fix conflicts and then commit the result."
+  ],
+  "out": {
+    "text": "Exit code 1\nAuto-merging src/app.js\nCONFLICT (content): Merge conflict in src/app.js\nAutomatic merge failed; fix conflicts and then commit the result.",
+    "counts": {}
+  }
+}

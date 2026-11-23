@@ -1,0 +1,308 @@
+package engine
+
+// The engine's provider calls (P4b): what lib/gateway/providers.js request() and lib/net.js fetchSameOrigin do, with Go's
+// client. The proxy comes from HTTPS_PROXY, HTTP_PROXY and NO_PROXY (the control plane passes them on an allow-list,
+// lib/ipc/env.js); the trusted roots are the system's plus the PEM files named by SSL_CERT_FILE, NODE_EXTRA_CA_CERTS and
+// DENO_CERT (Go reads SSL_CERT_FILE and SSL_CERT_DIR itself on Linux, never on macOS or Windows). The call has 120 s to
+// get the provider's answer started (TIMEOUT_MS; the body then has no limit, as in JS); a connection has 10 s (undici's
+// connect timeout). A redirect is followed (at most 5, same method and body) only to the same origin.
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"sync/atomic"
+	"syscall"
+	"time"
+)
+
+const (
+	// Timeout is providers.js TIMEOUT_MS: the provider must start its answer within it.
+	Timeout = 120 * time.Second
+	// ConnectTimeout is undici's default connect timeout.
+	ConnectTimeout = 10 * time.Second
+	maxRedirects   = 5
+)
+
+// Upstream calls providers.
+type Upstream struct {
+	client  *http.Client
+	base    *http.Transport // the client's own transport, under any wrapper (WrapTransport); nil in the shadow's replay
+	timeout time.Duration
+	// onAnswer hears every provider answer once its headers are in (after the redirects; both answers of a 401 replay),
+	// as providers.js request() calls noteResponse (P4h Decision 3); nil: nobody.
+	onAnswer func(p *Plan, status int, h http.Header)
+}
+
+// SetOnAnswer gives the upstream who hears each provider answer at header time (the engine's route state); call it
+// before serving.
+func (u *Upstream) SetOnAnswer(f func(p *Plan, status int, h http.Header)) { u.onAnswer = f }
+
+// NewUpstream builds the client from the environment (getenv: os.Getenv).
+func NewUpstream(getenv func(string) string) *Upstream {
+	roots, _ := x509.SystemCertPool()
+	if roots == nil {
+		roots = x509.NewCertPool()
+	}
+	for _, name := range []string{"SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "DENO_CERT"} {
+		if f := getenv(name); f != "" {
+			if pem, err := os.ReadFile(f); err == nil {
+				roots.AppendCertsFromPEM(pem)
+			}
+		}
+	}
+	tr := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         (&net.Dialer{Timeout: ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext,
+		TLSClientConfig:     &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
+		TLSHandshakeTimeout: ConnectTimeout,
+		// Every connection to a provider that frees up stays open for the next request (P4c M4 root cause): with 64,
+		// requests that ended together (streams paced alike) overflowed the idle pool, those connections were closed,
+		// and the next wave dialled them again: handshakes, TIME_WAIT and bursts past the listen backlog (1 s SYN
+		// retries). Idle connections still close after IdleConnTimeout.
+		MaxIdleConnsPerHost: 1024,
+		// The request is written once per call (a large body bypasses the buffer); a small write buffer keeps a held
+		// stream's connection light (P4c Decision 11). The read buffer stays at net/http's 4 KiB.
+		WriteBufferSize:    1 << 10,
+		IdleConnTimeout:    90 * time.Second,
+		DisableCompression: true, // the body goes to the client as the provider wrote it, as fetch gives it
+		ForceAttemptHTTP2:  true,
+	}
+	return &Upstream{
+		base: tr,
+		client: &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
+		timeout: Timeout,
+	}
+}
+
+// Result of one call: the provider's status and body, or Why the call failed (the text after "<provider id>: ").
+type Result struct {
+	Status int
+	Body   []byte
+	Why    string
+}
+
+// Client is the provider client (proxy env, trusted roots); gw/provauth copies it for the token endpoints.
+func (u *Upstream) Client() *http.Client {
+	if u == nil {
+		return nil
+	}
+	return u.client
+}
+
+// Transport is the provider client's own transport (proxy environment, trusted roots, connect limit), under any wrapper
+// WrapTransport put on it: the gateway's egress endpoint copies its settings (P5 Decision 1). Nil for an upstream not
+// built by NewUpstream.
+func (u *Upstream) Transport() *http.Transport {
+	if u == nil {
+		return nil
+	}
+	return u.base
+}
+
+// WrapTransport puts wrap around the provider client's round trips: the gateway's recording RoundTripper (P5 Decision 9,
+// every provider call and token fetch recorded as an egress.event). Call it before New: the engine's token sources copy
+// the client (gw/provauth), and they must copy the wrapped one.
+func (u *Upstream) WrapTransport(wrap func(http.RoundTripper) http.RoundTripper) {
+	u.client.Transport = wrap(u.client.Transport)
+}
+
+// Start sends the plan's request and returns the provider's answer once its headers are in, its body unread, or Why the
+// call failed. Closing the answer's body ends the call. ctx ends when the client goes away. The 120 s limit covers
+// the headers only; the body has none, as in JS. A plan's own limit (Plan.Timeout) covers the body too.
+//
+// A token-auth plan (P4g) gets its token inside the limit and sends it on its copy of the headers (never on p.Header);
+// a token error fails the call with the source's message. A 401 answer (after the redirects) is replayed once: the
+// body closed, the token refreshed, the request sent again with a new limit (providers.js request).
+func (u *Upstream) Start(ctx context.Context, p *Plan) (*http.Response, string) {
+	resp, why := u.send(ctx, p, false)
+	if why == "" && resp.StatusCode == http.StatusUnauthorized && p.auth != nil {
+		_ = resp.Body.Close()
+		return u.send(ctx, p, true)
+	}
+	return resp, why
+}
+
+// send is one attempt of Start; force refreshes the token first (the replay).
+func (u *Upstream) send(ctx context.Context, p *Plan, force bool) (*http.Response, string) {
+	ctx, cancel := context.WithCancel(ctx)
+	var timedOut atomic.Bool
+	limit := u.timeout
+	if p.Timeout > 0 {
+		limit = p.Timeout // a plan's own limit (count_tokens: 15 s, P4d)
+	}
+	timer := time.AfterFunc(limit, func() { timedOut.Store(true); cancel() })
+	fail := func(why string) (*http.Response, string) {
+		timer.Stop()
+		cancel()
+		return nil, why
+	}
+	header := p.Header.Clone()
+	if p.auth != nil {
+		get := p.auth.Token
+		if force {
+			get = p.auth.Refresh
+		}
+		tok, _, err := get(ctx)
+		if err != nil {
+			switch {
+			case timedOut.Load():
+				return fail("timed out")
+			case ctx.Err() != nil:
+				return fail(ErrorCode(err)) // the client left while the token was on its way
+			}
+			return fail(err.Error()) // "<id>: token refresh failed (…)", masked by the source
+		}
+		setToken(header, p.Target, tok)
+	}
+	current := p.URL
+	for hop := 0; hop <= maxRedirects; hop++ {
+		// An in-memory body (bytes.Reader): net/http then writes the headers and the body in one go. A body type it does
+		// not know makes it flush the headers first (two writes), which a provider that closes after its first read sees
+		// as a reset on Windows (P4c Task 3 CI); so the request keeps its bytes until the call ends.
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, current, bytes.NewReader(p.Body))
+		if err != nil {
+			return fail("fetch failed")
+		}
+		req.Header = header.Clone()
+		resp, err := u.client.Do(req)
+		if err != nil {
+			if timedOut.Load() {
+				return fail("timed out")
+			}
+			return fail(ErrorCode(err))
+		}
+		loc := resp.Header.Get("Location")
+		if resp.StatusCode < 300 || resp.StatusCode >= 400 || loc == "" {
+			if u.onAnswer != nil {
+				u.onAnswer(p, resp.StatusCode, resp.Header)
+			}
+			if p.Timeout > 0 {
+				// A plan's own limit bounds the whole call, its body included, as an AbortSignal.timeout passed to fetch
+				// does (count_tokens, P4d review I1): the timer runs on and is stopped when the body is closed.
+				resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: func() { timer.Stop(); cancel() }}
+				return resp, ""
+			}
+			timer.Stop() // the answer has started: the body has no time limit, as in JS
+			resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: cancel}
+			return resp, ""
+		}
+		_ = resp.Body.Close()
+		from, _ := url.Parse(current)
+		next, err := from.Parse(loc)
+		if err != nil {
+			return fail("fetch failed")
+		}
+		if origin(next) != origin(from) {
+			return fail("refused a redirect from " + from.Host + " to " + next.Host +
+				"; credentials are not forwarded to another host")
+		}
+		current = next.String()
+	}
+	return fail("too many redirects")
+}
+
+// Call sends the plan's request and reads the whole answer.
+func (u *Upstream) Call(ctx context.Context, p *Plan) Result {
+	resp, why := u.Start(ctx, p)
+	if why != "" {
+		return Result{Why: why}
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil && ctx.Err() != nil {
+		return Result{Status: resp.StatusCode, Body: body, Why: "client gone"}
+	}
+	return Result{Status: resp.StatusCode, Body: body}
+}
+
+// cancelBody ends the call when the answer's body is closed.
+type cancelBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelBody) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
+}
+
+func origin(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443"}[u.Scheme]
+	}
+	return u.Scheme + "://" + u.Hostname() + ":" + port
+}
+
+var winsock = map[syscall.Errno]string{10061: "ECONNREFUSED", 10054: "ECONNRESET", 10060: "ETIMEDOUT",
+	10065: "EHOSTUNREACH", 10051: "ENETUNREACH", 10053: "ECONNABORTED"}
+
+// ErrorCode is what the JS gateway names a failed fetch by (err.cause.code of Node's fetch, else its message): the
+// common system and undici codes, else "fetch failed". Deno names some of these differently; a failed call has no
+// provider answer, so the shadow compare never reads it.
+func ErrorCode(err error) string {
+	// The shadow's replay of a provider call that threw in the control plane (shadow_route.go): named as JS named it.
+	var rf replayFailure
+	if errors.As(err, &rf) {
+		return string(rf)
+	}
+	// A call the gateway's egress allow-list refused (gw/egress RecordingTransport, P5 Decision 13): named by its code,
+	// EGRESS_REFUSED, as a proxied fetch's err.cause.code names it. Matched by method: gw/engine does not import gw/egress.
+	var eg interface{ EgressCode() string }
+	if errors.As(err, &eg) {
+		return eg.EgressCode()
+	}
+	// Winsock codes (Windows) by the names Node gives them there (re-review N4); no Unix errno is this large.
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		if name, ok := winsock[errno]; ok {
+			return name
+		}
+	}
+	var dns *net.DNSError
+	var hn x509.HostnameError
+	var ua x509.UnknownAuthorityError
+	var ci x509.CertificateInvalidError
+	switch {
+	case errors.As(err, &dns):
+		if dns.IsNotFound {
+			return "ENOTFOUND"
+		}
+		return "EAI_AGAIN"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "ECONNREFUSED"
+	case errors.Is(err, syscall.ECONNRESET):
+		return "ECONNRESET"
+	case errors.Is(err, syscall.EHOSTUNREACH):
+		return "EHOSTUNREACH"
+	case errors.Is(err, syscall.ENETUNREACH):
+		return "ENETUNREACH"
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return "UND_ERR_SOCKET"
+	case errors.As(err, &hn):
+		return "ERR_TLS_CERT_ALTNAME_INVALID"
+	case errors.As(err, &ua):
+		return "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+	case errors.As(err, &ci):
+		if ci.Reason == x509.Expired {
+			return "CERT_HAS_EXPIRED"
+		}
+		return "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return "UND_ERR_CONNECT_TIMEOUT"
+	}
+	return "fetch failed"
+}

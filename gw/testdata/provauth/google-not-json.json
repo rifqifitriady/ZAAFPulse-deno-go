@@ -1,0 +1,26 @@
+{
+  "fn": "accessToken",
+  "in": {
+    "id": "prov",
+    "auth": {
+      "type": "google-sa",
+      "scope": "https://www.googleapis.com/auth/cloud-platform"
+    },
+    "secret": "{not json",
+    "mask": [],
+    "responses": [],
+    "steps": [
+      {
+        "now": 1767225600000
+      }
+    ]
+  },
+  "out": {
+    "requests": [],
+    "results": [
+      {
+        "throws": "prov: the credential is not a service account JSON"
+      }
+    ]
+  }
+}

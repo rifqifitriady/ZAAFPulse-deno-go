@@ -66,15 +66,33 @@ const { createOpenRouter } = require('./lib/openrouter');
 const { createIntegrations } = require('./lib/integrations');
 const { createSecrets } = require('./lib/secrets');
 const { createAudit } = require('./lib/audit');
+const { createEgressLog } = require('./lib/egress-log');
+const egressClient = require('./lib/egress');
+const { egressRouting, createEgressGate } = require('./lib/egress-switch');
+const { writeDiscovery, removeDiscovery } = require('./lib/egress-discovery');
+const { allowList } = require('./lib/egress-allow');
+const { createEgressStatus, lockdownNow, clientLock } = require('./lib/egress-status');
 const { createLocal } = require('./lib/local');
 const { describeRoots } = require('./lib/logroots');
 const register = require('./scripts/register-mcp');
 const platform = require('./lib/platform');
-const { createAuth, isLoopback, originAllowed } = require('./lib/auth');
+const { createAuth, isLoopback, originAllowed, peerMayConnect } = require('./lib/auth');
 const otel = require('./lib/otel');
 const { createTraceStore } = require('./lib/trace/store');
+const { createIngest } = require('./lib/ipc/ingest');
+const { localPaths } = require('./lib/ipc/local');
+const { recoverMarks } = require('./lib/ipc/marks');
+const { createMarkFile } = require('./lib/ipc/markfile');
+const { serverSinks } = require('./lib/ipc/server-sinks');
+const { gwEnv } = require('./lib/ipc/env');
+const { createFront, engineOf, routing, shadowOf, gwArgs } = require('./lib/front');
+const { createShadowLog, shadowEndpoints } = require('./lib/front/shadow-log');
+const { toolEndpoint } = require('./lib/front/tools');
+const { configPush, secretsPush, snapshotPush, windowPush, routeStatePush } = require('./lib/front/push');
+const { gwBinary } = require('./lib/front/bin');
 const { createRecorder } = require('./lib/trace/recorder');
 const { createReceiver } = require('./lib/trace/otlp');
+const { isTraceCaller } = require('./lib/gateway/client');
 const govContext = require('./lib/governance/context');
 const { requestEntry, controlEntry } = require('./lib/governance/events');
 const { createGovernanceAudit, keySource } = require('./lib/governance/audit');
@@ -194,6 +212,7 @@ const priceSync = createPriceSync({
     config = loadConfig();
     memo.clear();
     insightMemo.clear();
+    if (front) front.push(); // new prices: the gateway in front prices its calls with them (P4b)
   },
 });
 
@@ -225,6 +244,10 @@ function loadConfig() {
   };
 }
 let config = loadConfig();
+// The Go gateway in front, or the server alone (lib/front, gateway.engine): set where the server starts listening.
+let front = null;
+// The response of the request being handled, so a save that asks the front to retry is answered first (P4a review I2).
+const currentResponse = new (require('async_hooks').AsyncLocalStorage)();
 
 const indexer = DEMO
   ? {
@@ -243,6 +266,158 @@ const memo = new Map();
 
 // Integrations are rebuilt whenever config.json changes on disk (they are edited in the file).
 const audit = createAudit(path.join(DIR, '.cache', 'mcp-audit.jsonl'));
+// P5: the gateway's outbound connections (egress.event), .data/egress.jsonl.
+const egressLog = createEgressLog({ dir: path.join(DIR, '.data') });
+// Each egress caller class's engine (P5 Decision 11, lib/egress-switch.js): direct, check, or go once its gate is met.
+// The gate is sticky (review I1): its evidence (the /check verdicts of .data/egress.jsonl, both files) is read once
+// here, then fed as the ingest stores each record and as the client reports a check it could not ask; a class that met
+// it stays on go (.data/egress-gate.json) until a diff of its own or the owner sets it to direct or check.
+const egressGate = createEgressGate({
+  file: path.join(DIR, '.data', 'egress-gate.json'),
+  evidence: () => egressLog.scan('"via":"check"'),
+  log: (line) => console.error(line),
+});
+egressClient.onCheckError((rec) => egressGate.note(rec));
+// The routing last applied (each ready, config save and minute): what /api/gateway/status shows (review M8).
+let egressRouted = null;
+const egressRoutingNow = () =>
+  egressRouting(rawConfig().egress, { gate: (c, rule) => egressGate.gate(c, rule), forget: (c) => egressGate.forget(c) });
+// The ready gateway's egress endpoint ({ port, token: the front token }), or null; the classes last pushed to it.
+let egressEndpoint = null;
+let pushedEgress = null;
+// P5 Decision 15: the discovery file the stdio MCP server (mcp.js) reads to use the same endpoint; present only while
+// the gateway is ready (lib/egress-discovery.js), removed when it is gone and when this process exits.
+const EGRESS_DISCOVERY = path.join(DIR, '.data', 'egress.json');
+process.on('exit', () => removeDiscovery(EGRESS_DISCOVERY));
+// Points the client at the endpoint with each class's gated engine (direct when no gateway is ready), and writes or
+// removes the discovery file to match; returns the engines.
+function readEgressGate() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(DIR, '.data', 'egress-gate.json'), 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+// P5 Decisions 14, 16: whether the client must never send a non-loopback call direct. A Deno launch whose net grant is
+// scoped (the locked-down launch line, lib/permissions.js netScope) could not reach out anyway: it fails loudly with
+// EGRESS_UNAVAILABLE while no gateway is ready. The single-file build keeps its baked grant, so there the lock-down is
+// the client's alone, while lockdownState says it is in force. Node has no lock-down.
+const EGRESS_GRANT = (() => {
+  const d = require('./lib/permissions').describe();
+  // A scoped grant is not necessarily loopback only: an outside sentinel must be refused too (final review M3).
+  let outsideNet = false;
+  try {
+    outsideNet = globalThis.Deno.permissions.querySync({ name: 'net', host: 'example.com:443' }).state === 'granted';
+  } catch {
+    outsideNet = false;
+  }
+  return {
+    deno: d.runtime === 'deno',
+    scoped: !!(d.grants && d.grants.net === 'scoped'),
+    singleFile: !!d.singleFile,
+    outsideNet,
+  };
+})();
+// agents.json's list for the lock-down's gate condition (a remote agent is the agents class's destination), or undefined
+// while it cannot be read (before the gateway exists, or a read that failed): then a configured agent is assumed.
+function lockdownAgents() {
+  try {
+    return gateway.agents.list();
+  } catch {
+    return undefined;
+  }
+}
+function egressLockNow() {
+  return clientLock(
+    EGRESS_GRANT,
+    () =>
+      require('./lib/permissions').lockdownState({
+        config: rawConfig(),
+        env: process.env,
+        gate: readEgressGate(),
+        agents: lockdownAgents(),
+      }).inForce,
+  );
+}
+function applyEgress() {
+  egressRouted = egressRoutingNow();
+  const engines = egressRouted.engines;
+  const lockdown = egressLockNow();
+  const opts = egressEndpoint
+    ? {
+        port: egressEndpoint.port,
+        token: egressClient.deriveToken(egressEndpoint.token),
+        engines,
+        lockdown,
+      }
+    : null;
+  egressClient.configure(opts || (lockdown ? { lockdown: true } : null));
+  try {
+    if (opts) writeDiscovery(EGRESS_DISCOVERY, opts);
+    else removeDiscovery(EGRESS_DISCOVERY);
+  } catch (err) {
+    console.error(`egress: the discovery file ${EGRESS_DISCOVERY} could not be written: ${err.message}`);
+  }
+  return engines;
+}
+// P5 Decision 13: the allow-list pushed to the gateway (lib/egress-allow.js), from config.json, agents.json and the
+// environment. Two sources are secret references (the monitor webhook URL, a pgvector connection URL): each resolved
+// value is kept for 5 minutes, so the minute loop below does not ask the OS secret store each time.
+const ALLOW_SECRET_TTL_MS = 5 * 60 * 1000;
+const allowSecrets = new Map();
+// `pick` (lib/egress-allow.js, a Google service account's token_uri) reduces the value before it is kept, so the JSON
+// with its private key is never held here (P7 review).
+function allowSecret(ref, field, pick) {
+  const k = JSON.stringify(ref) + (pick ? ' picked' : '');
+  const hit = allowSecrets.get(k);
+  if (hit && Date.now() - hit.at < ALLOW_SECRET_TTL_MS) return hit.value;
+  let value = null;
+  try {
+    value = gwSecrets.resolve(ref, field);
+    if (pick) value = pick(value);
+  } catch {
+    // Not resolvable now: nothing on the list, and not kept (final review M8), so the next look tries again.
+    return null;
+  }
+  allowSecrets.set(k, { at: Date.now(), value });
+  return value;
+}
+function egressAllowNow(cfg = rawConfig()) {
+  let agents = [];
+  try {
+    agents = gateway.agents.list();
+  } catch {
+    agents = [];
+  }
+  return allowList(cfg, { env: process.env, agents, resolveSecret: allowSecret });
+}
+// The allow-list last pushed (JSON), to push again when a save or the minute loop finds it changed.
+let pushedAllow = null;
+// P5 Decisions 10, 18: GET /api/egress and the network_egress control (lib/egress-status.js, cached 10 s). The lock-down
+// is lib/permissions.js lockdownState (asked, conditions met) and in force only when this launch's net grant is scoped.
+const egressStatus = createEgressStatus({
+  log: egressLog,
+  state: () => {
+    const cfg = rawConfig();
+    const ec = cfg.egress && typeof cfg.egress === 'object' ? cfg.egress : {};
+    const eg = egressRouted || egressRoutingNow();
+    const perms = require('./lib/permissions');
+    const gate = readEgressGate();
+    return {
+      mode: ENGINE,
+      port: front ? front.egressPort : null,
+      engines: eg.engines,
+      notes: eg.notes,
+      allow: egressAllowNow(cfg),
+      allowList: ec.allowList,
+      lockdown: lockdownNow(perms.lockdownState({ config: cfg, env: process.env, gate, agents: lockdownAgents() }), {
+        ...perms.describe(),
+        outsideNet: EGRESS_GRANT.outsideNet,
+      }),
+    };
+  },
+});
+
 let integ = { mtimeMs: -1, registry: null };
 function getIntegrations() {
   let mtimeMs = 0;
@@ -327,6 +502,28 @@ function govRecord(entry) {
 // config.change entry with its field-level changes, secrets masked (lib/governance/diff.js). A write that changed
 // nothing is no entry.
 function configChanged(before, after) {
+  // A saved config may name new secret references or a stored value changed with it: the allow-list reads them again.
+  allowSecrets.clear();
+  // The gateway section changed: a new config generation for the gateway in front, or front again after a fallback.
+  if (front && JSON.stringify((before || {}).gateway) !== JSON.stringify((after || {}).gateway)) {
+    // From a request: the main port goes back to the gateway only once that request's answer is sent.
+    const res = currentResponse.getStore();
+    const sent = res && !res.writableFinished ? new Promise((r) => res.once('close', r)) : null;
+    front.reload({ after: sent }).catch((err) => console.error(`gateway: ${err.message}`));
+  } else if (front && JSON.stringify((before || {}).pricing) !== JSON.stringify((after || {}).pricing)) {
+    config = loadConfig(); // the owner's prices are merged into config.pricing, which the push reads
+    front.push();
+  } else if (front && JSON.stringify((before || {}).otel) !== JSON.stringify((after || {}).otel)) {
+    front.push(); // OTLP export on or off moves chat between the engines (final review I2), and the trace switch
+  } else if (front && JSON.stringify((before || {}).tracing) !== JSON.stringify((after || {}).tracing)) {
+    front.push(); // the local trace store on or off: the gateway's trace switch (P4f D8)
+  } else if (front && JSON.stringify((before || {}).egress) !== JSON.stringify((after || {}).egress)) {
+    front.push(); // P5: the egress classes the gateway shows, the allow-list's mode
+  } else if (front && pushedAllow !== null && JSON.stringify(egressAllowNow(after || {})) !== pushedAllow) {
+    front.push(); // P5 Decision 13: a source of the allow-list changed (an integration, a brain source, OTLP …)
+  }
+  // P5: the egress client takes a changed switch or gate rule at once.
+  if (JSON.stringify((before || {}).egress) !== JSON.stringify((after || {}).egress)) applyEgress();
   try {
     const d = govDiff(before, after);
     if (!d.changes.length) return;
@@ -506,6 +703,10 @@ const tracingOn = () => {
   }
   return tracingOnValue;
 };
+// Whether a gateway span is recorded anywhere (P4f D8): the local store exists and tracing is on, or OTLP export is on
+// (lib/otel.js live()). Pushed to the gateway in front with each generation (pushedTrace: the last value pushed).
+const traceLive = () => (!!traceStore && tracingOn()) || otel.status({ fresh: true }).enabled === true;
+let pushedTrace = null;
 const recorder = traceStore
   ? createRecorder({ store: traceStore, enabled: tracingOn })
   : createRecorder({ store: { writeSpans: () => 0 }, enabled: () => false });
@@ -524,6 +725,9 @@ otel.init({
   sink: recorder,
 });
 const gatewaySecret = secretResolver({ store: DEMO ? () => {} : keychainStore });
+// The gateway's secret resolver, shared with the push to the Go gateway (lib/front/push.js), so both know every
+// resolved credential and mask() hides the same values on both sides.
+const gwSecrets = createSecrets();
 // Cost Control budgets: the gateway asks the guard before each request and reports each call to the budget service.
 // Both are made with the ledger below, after the gateway; until then (startup, before the server listens) nothing is
 // refused.
@@ -540,7 +744,7 @@ const gateway = createGateway({
   ...(DEMO ? { fetchImpl: demoGw.createDemoFetch(), toolsHome: demoDir } : {}),
   getConfig: rawConfig,
   writeGatewayConfig: (g) => saveConfigSection('gateway', g),
-  secrets: createSecrets(),
+  secrets: gwSecrets,
   // Provider keys go to the Keychain as acc.gw-<provider id>, apart from integration keys.
   resolveSecret: (id, input, current) =>
     gatewaySecret(`gw-${id}`, { key: 'apiKey', label: 'API key', required: false }, input, current),
@@ -553,7 +757,51 @@ const gateway = createGateway({
   trustProxy: process.env.ZAAFPULSE_TRUST_PROXY === '1',
   budgetGuard,
   audit: (e) => govRecord(e), // key changes, run approvals and cancels
+  onKeysChange: () => front && front.push(), // the gateway in front enforces keys too (P4b)
+  // A remote agent added, moved or removed changes the egress allow-list (P5 Decision 13): pushed at once, so an
+  // enforcing allow-list (the default since v2.0.0) does not refuse a new agent until the minute loop.
+  onAgentsChange: () => {
+    if (front && pushedAllow !== null && JSON.stringify(egressAllowNow()) !== pushedAllow) front.push();
+  },
 });
+
+// One rate-limit window across the engines (P4f D16): a request this server admits under a key goes to the gateway in
+// front (a control message; nothing while no gateway is ready).
+gateway.onRateTake((keyId, at) => front && front.sendControl('ratelimit.take', { keyId, at }));
+// The routing state across the engines (P4h Decision 3): each provider answer this server reads (provider.note) and each
+// round-robin take (route.take) goes to the gateway in front, a control message (nothing while none is ready).
+gateway.onRouteEvent((type, body) => front && front.sendControl(type, body));
+
+// The IPC ingest of the Go gateway (P4a E3, E4): strict writers of its own (lib/ipc/server-sinks.js), never the
+// wrapped ones (the gateway's usage.record, govRecord, the trace recorder), and the marks from the stores' tails and
+// .data/ipc-marks.json. Built when the gateway starts in front (gateway.engine "front").
+function frontIngest() {
+  const files = localPaths(DIR);
+  const sinks = serverSinks({
+    recordUsage: (e) => gateway.ingestUsage(e),
+    budgetRecord: (entry) => budgetGuard.record(entry),
+    governance,
+    mcpAudit: audit,
+    traceStore,
+    traceDir: files.traceDir,
+    // P4f D9: a span is stored only while tracing is on, then exported when OTLP export is on.
+    traceOn: tracingOn,
+    exportSpan: (span, extra) => otel.exportRecord(span, extra),
+    egressLog,
+    afterEgress: (e) => egressGate.note(e), // each stored record also reaches the sticky gate (review I1)
+  });
+  const markFile = createMarkFile(files.marksFile);
+  // P4f D25: the gateway's spans are written in batches, before each ack (every 100 ms or 256 events), as the JS
+  // recorder writes its own once a second: one trace-store write per span saturated the control plane at 500 streams.
+  const ingest = createIngest({ ...sinks, marks: recoverMarks(files), spanBatch: true });
+  return {
+    ingest,
+    beforeAck: (b) => {
+      ingest.flushSpans();
+      markFile.save(b.stream, b.upTo);
+    },
+  };
+}
 
 // Trace explorer: every log source behind opaque keys and ids. Content (prompts, replies, tool output) is off
 // when asked for, and by default in server mode, where other people may sign in. Demo reads no real files.
@@ -1269,7 +1517,7 @@ async function controlState() {
       })),
     workflows: () =>
       gateway.workflows.list().map((w) => ({ tier: w.tier, gated: list(w.steps).some((x) => x && x.approve) })),
-    agentControl: () => ({ off: agentControl.off() }),
+    agentControl: () => ({ off: agentControl.off(), limited: agentControl.limited() }),
     monitors: () =>
       MONITOR_RULES.filter((r) => !RETIRED_RULES.includes(r.id)).map((r) => ({
         id: r.id,
@@ -1331,6 +1579,24 @@ async function controlState() {
       retentionDays: TRACE_RETENTION.days,
       maxBytes: TRACE_RETENTION.maxBytes,
     }),
+    // P2: what the Deno permission sandbox holds (lib/permissions.js); { runtime: 'node' } under Node.
+    runtimePermissions: () => require('./lib/permissions').describe(),
+    // P5 Decision 18: the egress classes, the allow-list, the lock-down and the last 24 h of records.
+    egress: () => {
+      const e = egressStatus();
+      const grants = require('./lib/permissions').describe().grants;
+      return {
+        mode: e.mode,
+        port: e.port,
+        engines: e.engines,
+        allowList: e.allowList,
+        allowCount: e.allowCount,
+        lockdown: e.lockdown,
+        counts24h: e.counts24h,
+        netGrant: grants ? grants.net : null,
+        locked: egressClient.state().lockdown, // the client never goes direct (EGRESS_UNAVAILABLE without a gateway)
+      };
+    },
   };
   const names = Object.keys(parts);
   const values = await Promise.all(names.map((k) => invSource(parts[k])));
@@ -1418,18 +1684,11 @@ const MIME = {
   '.svg': 'image/svg+xml',
 };
 
-// Any of these on a request means it came through a proxy, even when the proxy runs on this machine.
-const TRACE_PROXY_HEADERS = [
-  'x-forwarded-for',
-  'x-forwarded-host',
-  'x-forwarded-proto',
-  'x-forwarded-port',
-  'forwarded',
-  'x-real-ip',
-  'via',
-];
-
 const handler = async (req, res) => {
+  // An absolute-form target ("GET http://host/ HTTP/1.1") is for proxies. Node checks its Host header, the Go front
+  // never sees that header (net/http drops it), so both modes refuse it, with the same answer (P4a final review I1).
+  if (/^[a-z][a-z0-9+.-]*:/i.test(req.url))
+    return send(res, 400, { error: 'absolute-form request targets are not accepted' });
   const url = new URL(req.url, 'http://localhost');
   // Reject requests addressed to other names (DNS rebinding / cross-origin writes).
   const host = String(req.headers.host || '')
@@ -1438,6 +1697,8 @@ const handler = async (req, res) => {
   // Names other than loopback are accepted only when sign-in is on (server mode or behind a proxy).
   if (!isLoopback(host) && !(auth.mode === 'password' && (!ALLOWED_HOSTS.length || ALLOWED_HOSTS.includes(host))))
     return send(res, 403, { error: 'forbidden' });
+  // Without sign-in only this machine may connect: through the Go front the peer is the client Go named (P4a H1).
+  if (!peerMayConnect(req, auth.mode)) return send(res, 403, { error: 'forbidden' });
   // In every mode, a browser page from another site is refused (DNS rebinding, and MCP's Origin rule).
   if (
     !originAllowed(req, {
@@ -1489,11 +1750,7 @@ const handler = async (req, res) => {
     // this ZAAFPulse sent out. From this machine only; bodies over 1 MB are cut off by readBody. A reverse proxy on
     // this host connects from loopback too, so a forwarding header or a public Host name is refused as well.
     if (url.pathname === '/v1/traces' && req.method === 'POST') {
-      if (
-        !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) ||
-        !isLoopback(host) ||
-        TRACE_PROXY_HEADERS.some((h) => req.headers[h] !== undefined)
-      )
+      if (!isTraceCaller(req) || !isLoopback(host))
         return send(res, 403, { error: 'the trace return channel accepts calls from this machine only' });
       if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] || ''))
         return send(res, 415, { error: 'send OTLP as JSON (content-type: application/json)' });
@@ -1576,13 +1833,28 @@ const handler = async (req, res) => {
         baseUrl: BASE_URL,
         auth: auth.required,
         authMode: auth.mode,
-        single: platform.isSea(),
+        single: platform.isSingleFile(),
+        runtime: platform.runtime(),
         version: require('./package.json').version,
       });
     }
     // A reviewer or a viewer gets the redacted view: no prompt, note, title, task or secret reference.
     if (url.pathname === '/api/gateway' && req.method === 'GET')
       return send(res, 200, redactGateway(await gateway.admin('', 'GET'), role));
+    // The gateway process (P4a D6): mode, state, restarts. Before the admin routes, whose pattern it matches; owner only
+    // (it is no viewer read, so the role check above refuses anyone else).
+    if (url.pathname === '/api/gateway/status' && req.method === 'GET') {
+      const eg = egressRouted || egressRoutingNow();
+      return send(res, 200, {
+        ...front.status(),
+        notes: frontRouting().notes,
+        shadow: shadowLog.stats(),
+        egress: { port: front.egressPort, engines: eg.engines, notes: eg.notes, lockdown: egressClient.state().lockdown },
+      });
+    }
+    // P5 Decision 10: the egress records for the Compliance page (owner only, as /api/gateway/status: it is no viewer
+    // read, so the role check above refuses anyone else). Cached 10 s; the log reads are bounded.
+    if (url.pathname === '/api/egress' && req.method === 'GET') return send(res, 200, egressStatus());
     const gwAdmin = url.pathname.match(/^\/api\/gateway\/([a-z]+)$/);
     if (gwAdmin) {
       // Only the request log is read with GET. Every other admin route writes (defaults, settings), spends tokens
@@ -1598,6 +1870,8 @@ const handler = async (req, res) => {
       try {
         // A refused guardrails setting (badRequest) is a 400; every other admin answer keeps its 200, errors included.
         const out = await gateway.admin(gwAdmin[1], 'POST', await jsonBody(req));
+        // A key, provider or route change is answered once the gateway in front enforces it too (P4b; 2 s at most).
+        await front.synced(2000);
         return send(res, out && out.badRequest === true ? 400 : 200, out);
       } catch (err) {
         return send(res, 200, { errors: [err.message] });
@@ -1797,7 +2071,16 @@ const handler = async (req, res) => {
         contentType: req.headers['content-type'],
         readBody: () => readBody(req),
       });
-      if (hit) return send(res, hit.status, hit.body, hit.type || 'application/json', hit.headers);
+      if (hit) {
+        // A budget or cost-settings change goes to the gateway in front before the save answers: the reload sends the
+        // budget snapshot first, so the go engine enforces the change at once (P4e Decision 25; 2 s at most).
+        const budgetsChange =
+          req.method === 'POST' &&
+          hit.status === 200 &&
+          (url.pathname.startsWith('/api/cost/budgets') || url.pathname === '/api/cost/settings');
+        if (budgetsChange && front && front.push()) await front.synced(2000);
+        return send(res, hit.status, hit.body, hit.type || 'application/json', hit.headers);
+      }
     }
     // The governance audit log: entries, export (a download), verify, status and the retention setting. Behind the
     // same sign-in; no gateway key or MCP client reaches it. A reviewer or a viewer sees no change's values.
@@ -2109,18 +2392,27 @@ const handler = async (req, res) => {
 };
 // Each request runs with its own actor slot for the governance audit log (filled after sign-in or the key check);
 // otel continues an incoming traceparent on gateway requests.
-const traced = otel.wrapHandler((req, res) => govContext.runAs(null, () => handler(req, res)));
+const traced = otel.wrapHandler((req, res) =>
+  currentResponse.run(res, () => govContext.runAs(null, () => handler(req, res))),
+);
 const server = TLS ? https.createServer(TLS, traced) : http.createServer(traced);
+// Errors once listening end the server, as before P4a; an error while the listen starts is front.start()'s to report.
 server.on('error', (err) => {
+  if (!server.listening) return;
+  console.error(err.message);
+  process.exit(1);
+});
+const portTaken = (err) => {
   console.error(
     err.code === 'EADDRINUSE'
       ? `Port ${PORT} is already in use: is ZAAFPulse running? (zaafpulse status)`
       : err.message,
   );
   process.exit(1);
-});
+};
 
-server.listen(PORT, HOST, () => {
+// The main port first answers: the banner, then the passes that run while the server is up (once, in any mode).
+function serving() {
   console.log(
     `ZAAFPulse${DEMO ? ' (demo data)' : ''} → ${TLS ? 'https' : 'http'}://${SERVER_MODE ? HOST : 'localhost'}:${PORT}${SERVER_MODE ? `  (server mode: sign-in required; apps use ${BASE_URL})` : ''}`,
   );
@@ -2191,7 +2483,127 @@ server.listen(PORT, HOST, () => {
       .finally(() => {
         demoReady = true;
       });
+}
+
+// The shadow compare's log (P4b): the gateway posts a line per shadowed chat call; the switch of a class to go reads it.
+const shadowLog = createShadowLog({ file: path.join(DIR, '.data', 'gateway-shadow.jsonl') });
+// Which class runs on which engine, and why one asked for go stays on js (lib/front routing).
+const frontRouting = () =>
+  routing(rawConfig().gateway, {
+    gate: (c, rule) => shadowLog.gate(c, rule),
+    // As otel itself sees it: config.json, or an OTEL_EXPORTER_OTLP_* variable (final review I1).
+    otel: otel.status({ fresh: true }),
+  });
+// A class whose shadow gate is met (or broken) switches at the next push: looked at once a minute, against the engines
+// the gateway was last pushed (final review I2).
+// The trace switch too (P4f D8): tracing or OTLP export turned on or off without a save (an environment variable read at
+// start, a store that failed to open) reaches the gateway within a minute.
+// P5 Decision 11: each egress class's engine, its gate looked at in the same minute: the client follows at once, and
+// the gateway gets a new push when the classes it shows changed.
+setInterval(() => {
+  const egressNow = JSON.stringify(applyEgress());
+  if (!front || front.pushIfChanged(frontRouting().engines)) return;
+  if (
+    (pushedTrace !== null && traceLive() !== pushedTrace) ||
+    (pushedEgress !== null && egressNow !== pushedEgress) ||
+    // P5 Decision 13: an allow-list source that changes without a config save (agents.json, a secret, the environment)
+    (pushedAllow !== null && JSON.stringify(egressAllowNow()) !== pushedAllow)
+  )
+    front.push();
+}, 60000).unref();
+// gateway.engine (P4a): "js" (the default) listens here as before; "front" puts zaafpulse-gw on the main port.
+const ENGINE = DEMO ? 'js' : engineOf(rawConfig());
+const askedEngine = (rawConfig().gateway || {}).engine;
+if (!DEMO && askedEngine !== undefined && !['js', 'front'].includes(askedEngine))
+  console.error(`config.json gateway.engine ${JSON.stringify(askedEngine)} is not "js" or "front": serving on Deno`);
+const fi = ENGINE === 'front' ? frontIngest() : null;
+front = createFront({
+  engine: ENGINE,
+  host: HOST, // the public listen host: the auth mode and the host checks keep reading HOST, never 127.0.0.1
+  port: PORT,
+  tls: TLS
+    ? { certPath: path.resolve(process.env.ZAAFPULSE_TLS_CERT), keyPath: path.resolve(process.env.ZAAFPULSE_TLS_KEY) }
+    : null,
+  mainServer: server,
+  bin: gwBinary(),
+  // The gateway's soft memory limit (P4c; config.json gateway.memLimitMB, default 64 MiB), read at start.
+  args: gwArgs(rawConfig().gateway),
+  env: gwEnv(process.env, DIR),
+  cpVersion: require('./package.json').version,
+  ingest: fi && fi.ingest,
+  engines: () => frontRouting().engines,
+  shadow: (engines) => shadowOf(rawConfig().gateway, engines),
+  // The gateway's own requests: the go engine's /mcp tool calls (P4g), then the shadow endpoints (404 for the rest).
+  own: ((tools, shadow) => (req, res) => tools(req, res) || shadow(req, res))(
+    toolEndpoint({ getIntegrations: () => getIntegrations() }),
+    shadowEndpoints({ shadowLog }),
+  ),
+  // Each generation, from the state the JS gateway reads (P4b): config.json, keys.json, the effective prices, the
+  // provider credentials, the blocking budgets and the keys' cost centers.
+  sources: {
+    config: () => {
+      pushedTrace = traceLive();
+      const ec = rawConfig().egress;
+      egressRouted = egressRoutingNow();
+      const egressEngines = egressRouted.engines;
+      pushedEgress = JSON.stringify(egressEngines);
+      const egressAllow = egressAllowNow();
+      pushedAllow = JSON.stringify(egressAllow);
+      return configPush({
+        gateway: rawConfig().gateway,
+        keys: gateway.rawKeys(),
+        pricing: config.pricing,
+        trace: { spans: pushedTrace },
+        // P5: the egress section: each class's engine after its gate (shown by the gateway), the allow-list and its mode.
+        egress: { ...(ec && typeof ec === 'object' ? ec : {}), classes: egressEngines },
+        egressAllow,
+      });
+    },
+    secrets: () => secretsPush({ gateway: rawConfig().gateway, resolve: (ref, field) => gwSecrets.resolve(ref, field) }),
+    snapshot: () => snapshotPush({ service: costBudgets, keyIds: gateway.rawKeys().map((k) => k.id) }),
+    window: () => windowPush(gateway.rateWindows()), // P4f D16: the rate-limit window a new gateway starts with
+    routes: () => routeStatePush(gateway.routeState()), // P4h Decision 3: the rotation counters and every cooldown
+  },
+  // Design rule 2 (P4f D24, owner decision; final review I5): calls that passed a stale budget snapshot are marked,
+  // alerted and audited: per alert window, an "opened" entry at the alert and a "closed" one with the window's count
+  // (a minute later, at the first call past it, or when the gateway stops), as the system.
+  onUncheckedAlert: ({ phase, calls, since, at }) =>
+    govContext.runAs({ via: 'system' }, () =>
+      govRecord({
+        action: 'gateway.budget_unchecked',
+        outcome: 'error',
+        target: { type: 'gateway' },
+        actor: { via: 'system' },
+        phase,
+        calls,
+        since: new Date(since).toISOString(),
+        ...(phase === 'closed' ? { until: new Date(at).toISOString() } : {}),
+      }),
+    ),
+  // P4f D16: a request the go engine admitted counts in the key's window here.
+  onControl: (msg) => {
+    if (msg.type === 'ratelimit.take' && msg.body) gateway.noteRateTake(msg.body.keyId, msg.body.at);
+    // P4h Decision 3: a provider answer the go engine read, and a round-robin take it made.
+    else if (msg.type === 'provider.note' && msg.body) gateway.noteProvider(msg.body);
+    else if (msg.type === 'route.take' && msg.body) gateway.noteRouteTake(msg.body);
+  },
+  beforeAck: fi ? fi.beforeAck : undefined,
+  // P5: the egress client follows the gateway: its endpoint on each ready, direct again when the gateway is gone.
+  onEgress: (e) => {
+    egressEndpoint = e ? { port: e.port, token: e.token } : null;
+    applyEgress();
+  },
+  log: (line) => console.error(line),
+  onServing: (mode) => {
+    serving();
+    if (mode === 'front') console.log(`Gateway: Go in front (zaafpulse-gw pid ${front.status().pid})`);
+  },
+  onListenError: portTaken,
 });
+// P5 final review M1: the client's switches and lock from the first moment, not from the gateway's first ready or the
+// first minute tick (a locked launch fails loudly with EGRESS_UNAVAILABLE until the gateway is ready).
+applyEgress();
+front.start().catch(portTaken);
 
 // Sessions are written within a second; flush them when launchd, Ctrl-C or a closed terminal stops the server.
 for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'])
@@ -2202,7 +2614,19 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'])
       recorder.flush();
       if (traceStore) traceStore.snapshot();
     } finally {
-      // Queued spans get up to 2 seconds to reach the OTLP endpoint.
-      otel.shutdown(2000).finally(() => process.exit(0));
+      // The gateway gets 1 second to stop (it exits on its own too, once this process is gone); queued spans get up
+      // to 2 seconds to reach the OTLP endpoint.
+      front
+        .stop(1000)
+        .catch(() => {})
+        .finally(() => {
+          // The gateway's spans the ingest still holds (P4f D25, final review m4): written and exported before the exit.
+          try {
+            if (fi) fi.ingest.flushSpans();
+          } catch {
+            /* spans only */
+          }
+          return otel.shutdown(2000).finally(() => process.exit(0));
+        });
     }
   });

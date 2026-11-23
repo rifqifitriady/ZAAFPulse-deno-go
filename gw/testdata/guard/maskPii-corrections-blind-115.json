@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "ok keliatannya bagus, commit aja"
+  ],
+  "out": {
+    "text": "ok keliatannya bagus, commit aja",
+    "counts": {}
+  }
+}

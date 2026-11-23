@@ -1,0 +1,18 @@
+{
+  "fn": "compressBig",
+  "in": [
+    [
+      [
+        "src/a.js:1: x\n",
+        80000
+      ]
+    ],
+    ""
+  ],
+  "out": {
+    "filter": "grep",
+    "saved": 1119818,
+    "length": 182,
+    "sha256": "de2ddad9c1961e81ca9a516639070bbef3dcc880f296b985d7e817d12ef56eb3"
+  }
+}

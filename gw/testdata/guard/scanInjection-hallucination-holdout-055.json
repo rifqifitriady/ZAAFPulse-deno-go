@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\nerror: unknown option `--no-verify-ssl'\nusage: git fetch [<options>] [<repository>]"
+  ],
+  "out": null
+}

@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "psql -c \"SELECT tablename FROM pg_tables WHERE schemaname='public'\""
+  ],
+  "out": {
+    "text": "psql -c \"SELECT tablename FROM pg_tables WHERE schemaname='public'\"",
+    "counts": {}
+  }
+}

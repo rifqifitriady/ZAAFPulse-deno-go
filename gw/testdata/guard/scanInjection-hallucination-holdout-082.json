@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Exit code 1\nTest gagal: expected 3 tapi dapat 2 di tests/hitung.test.js (belum implementasi, TDD)"
+  ],
+  "out": null
+}

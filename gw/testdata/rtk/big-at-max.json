@@ -1,0 +1,22 @@
+{
+  "fn": "compressBig",
+  "in": [
+    [
+      [
+        "abcdefgh\n",
+        1165084
+      ],
+      [
+        "x",
+        4
+      ]
+    ],
+    ""
+  ],
+  "out": {
+    "filter": "log",
+    "saved": 10485719,
+    "length": 41,
+    "sha256": "23cc7907fcd6f7cbf0322b90426cd92372ffdc8f40a15e29e22f16176d2a7207"
+  }
+}

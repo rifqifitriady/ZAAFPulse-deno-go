@@ -5,7 +5,7 @@
 //   zaafpulse service install|uninstall|status|restart [--system] [--host H] [--port P]
 //   zaafpulse eval --judge --session <id> [--source claude|codex] [--data DIR] [--json]   judge one session locally
 //   zaafpulse eval --dataset <slug> --model <provider/model> [--require id>=0.8] [--ci] [--json]   CI quality gate
-//   zaafpulse status | open | doctor | mcp | register-mcp <client|all> [--remove] | version
+//   zaafpulse status | open | doctor | mcp | register-mcp <client|all|registered> [--remove] | version
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -221,11 +221,38 @@ const commands = {
     const home = os.homedir();
     const rows = [];
     const add = (k, v, ok = true) => rows.push(`${ok ? '✓' : '·'} ${k.padEnd(16)} ${v}`);
-    add('ZAAFPulse', `${pkg.version}${platform.isSea() ? ' (single-file build)' : ''}`);
+    add('ZAAFPulse', `${pkg.version}${platform.isSingleFile() ? ' (single-file build)' : ''}`);
     add('OS', `${platform.OS_LABEL} ${os.release()} ${process.arch}`);
-    const major = Number(process.versions.node.split('.')[0]);
-    add('Node.js', process.versions.node, major >= 18);
+    if (platform.runtime() === 'deno') add('Deno', process.versions.deno);
+    else {
+      const major = Number(process.versions.node.split('.')[0]);
+      add('Node.js', process.versions.node, major >= 18);
+    }
     add('Data folder', platform.dataDir());
+    // The gateway's IPC contract, read the way the server reads it (a single-file build carries the schemas: P4a E5).
+    try {
+      const ipc = require('../lib/ipc/schema');
+      add('Gateway IPC', `v${ipc.PROTOCOL}, ${Object.keys(ipc.schemas()).length} schemas`);
+    } catch (err) {
+      add('Gateway IPC', `the ipc/v1 schemas cannot be read: ${err.message}`, false);
+    }
+    // The gateway this build would start (P6 Decision 4): the same check the front makes before its first start.
+    // Information only: it does not change doctor's exit code.
+    {
+      const { gwStatus } = require('../lib/front/bin');
+      const gw = gwStatus();
+      let line = `${gw.path} — ${gw.found ? 'found' : 'missing'}`;
+      if (gw.found) line += `, ${gw.allowed ? 'allowed' : 'not allowed'}`;
+      if (gw.found && gw.allowed) {
+        const r = require('child_process').spawnSync(gw.path, ['-version'], {
+          encoding: 'utf8',
+          timeout: 5000,
+          windowsHide: true,
+        });
+        line += `, ${r.status === 0 && r.stdout.trim() ? r.stdout.trim() : 'version unknown'}`;
+      }
+      add('Gateway (zaafpulse-gw)', line, gw.found && gw.allowed);
+    }
     let store;
     try {
       store = defaultStore();
@@ -292,11 +319,47 @@ const commands = {
       svc = err.message;
     }
     add('Service', svc, svc === 'running');
+    // P7 review L1: an AI client registered while the stdio MCP server still checked the dashboard's pid keeps a run
+    // grant with kill and tasklist; registering it again drops them (the endpoint now proves itself instead).
+    try {
+      const old = require('../lib/egress-discovery').oldRegistrations();
+      add(
+        'MCP clients',
+        old.length
+          ? `registered before the egress endpoint proof: ${old.join(', ')}; run \`zaafpulse register-mcp <client>\` again for each`
+          : 'no registration needs renewing',
+        old.length === 0,
+      );
+    } catch (err) {
+      add('MCP clients', `the registrations cannot be read: ${err.message}`, false);
+    }
+    // P7: an entry that starts a program or script that is gone (a v1.x entry after the v2 upgrade moved app/ into
+    // rollback/, or a v2 entry after a rollback): that client can no longer start ZAAFPulse's MCP server.
+    try {
+      const broken = require('../lib/mcp-registrations').brokenRegistrations();
+      const said = (b) =>
+        `${b.client}${b.scope === 'project' ? ' (a project entry)' : ''} starts ${b.paths.join(' and ')}, which no longer exists`;
+      const fix = [
+        ...(broken.some((b) => b.scope !== 'project') ? ['run `zaafpulse register-mcp registered`'] : []),
+        ...(broken.some((b) => b.scope === 'project')
+          ? ['remove a project entry in that project (`claude mcp remove zaafpulse`) or add it again there']
+          : []),
+      ];
+      add(
+        'MCP entries',
+        broken.length
+          ? `${broken.map(said).join('; ')}; ${fix.join('; ')}`
+          : 'every entry starts a program that exists',
+        broken.length === 0,
+      );
+    } catch (err) {
+      add('MCP entries', `the registrations cannot be read: ${err.message}`, false);
+    }
     console.log(rows.join('\n'));
   },
   'register-mcp'() {
     const target = positional[1];
-    if (!target) die(`usage: zaafpulse register-mcp <${mcpClients().join('|')}|all> [--remove]`, 2);
+    if (!target) die(`usage: zaafpulse register-mcp <${mcpClients().join('|')}|all|registered> [--remove]`, 2);
     try {
       require('../scripts/register-mcp').run(target, { remove: !!flag('remove') });
     } catch (err) {
@@ -367,8 +430,9 @@ const commands = {
                                     (--data DIR: the data folder)
   zaafpulse eval --dataset <slug> --model <provider/model> [--require <evaluator>>=<0..1>] [--ci] [--json]
                                     replay a dataset and gate on pass rates (--max-cost USD, --max-requests N)
-  zaafpulse register-mcp <client|all> [--remove]
-                                    clients: ${mcpClients().join(', ')}
+  zaafpulse register-mcp <client|all|registered> [--remove]
+                                    clients: ${mcpClients().join(', ')}; registered: every client that
+                                    already holds a ZAAFPulse entry, written again for this install
   zaafpulse mcp                     the stdio MCP server (what AI clients start)
   zaafpulse version`);
   },

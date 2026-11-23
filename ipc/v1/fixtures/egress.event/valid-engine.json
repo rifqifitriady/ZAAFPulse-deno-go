@@ -1,0 +1,1 @@
+{"v":1,"type":"egress.event","seq":54,"ts":1767225700031,"body":{"ts":1767225700030,"purpose":"gateway","method":"POST","scheme":"https","host":"api.openai.example","port":443,"status":503,"outcome":"ok","bytesOut":512,"bytesIn":88,"ms":340,"via":"engine"}}

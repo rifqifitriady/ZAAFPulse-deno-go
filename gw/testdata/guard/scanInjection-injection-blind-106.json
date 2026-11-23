@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "## v2.0.1\n- Fix: instructions in the config file were ignored when the path contained spaces.\n- Docs: clarify that system settings override user settings."
+  ],
+  "out": null
+}

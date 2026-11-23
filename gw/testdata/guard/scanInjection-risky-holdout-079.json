@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "# hapus cache lama\nrm -rf ~/.cache/yarn"
+  ],
+  "out": null
+}

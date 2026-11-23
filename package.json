@@ -1,25 +1,34 @@
 {
   "name": "zaafpulse",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "ZAAFPulse: AI command center and agentic workspace for macOS, Linux and Windows.",
   "main": "server.js",
   "bin": {
     "zaafpulse": "bin/zaafpulse.js"
   },
   "private": true,
+  "type": "commonjs",
   "license": "MIT",
   "scripts": {
     "start": "node server.js",
     "demo": "node bin/zaafpulse.js start --demo",
     "mcp": "node mcp.js",
     "mcp:register": "node scripts/register-mcp.js",
-    "test": "node --test test/*.test.js",
-    "media": "node scripts/capture-media.js"
+    "test": "node --test --test-timeout=180000 --test-force-exit test/*.test.js",
+    "test:contract": "node --test --test-concurrency=1 --test-timeout=180000 --test-force-exit test/contract/*.test.js",
+    "test:go": "go -C gw vet ./... && go -C gw test -count=1 ./...",
+    "gw:dev": "node scripts/gw-dev.js",
+    "gw:build": "go -C gw build -o bin/ ./cmd/zaafpulse-gw",
+    "typecheck": "deno check --sloppy-imports lib/front lib/gateway lib/cost lib/governance lib/money.js lib/types.js",
+    "build": "deno run -q --no-prompt --allow-read --allow-write=dist --allow-run=git,tar,deno,go,codesign --allow-env=PATH,HOME,GOCACHE,GOPATH,GOROOT,GOTOOLCHAIN,GOFLAGS,GOMODCACHE,LOCALAPPDATA,USERPROFILE,TMPDIR,TEMP,TMP,SystemRoot,APPDATA,HTTPS_PROXY,HTTP_PROXY,NO_PROXY,GOPROXY,GOPRIVATE,GONOSUMDB,GOSUMDB,XDG_CACHE_HOME --ignore-env scripts/build-deno.js",
+    "media": "node scripts/capture-media.js",
+    "bench:final": "deno run -q --no-prompt --allow-read --allow-write --allow-net=127.0.0.1,localhost --allow-env --allow-run --allow-sys=loadavg,cpus,systemMemoryInfo,osRelease,hostname,osUptime,homedir,uid,gid,userInfo scripts/final-bench.js",
+    "bench:final:node": "node scripts/final-bench.js"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
-    "postject": "1.0.0-alpha.6"
+    "@types/node": "24.19.2"
   }
 }

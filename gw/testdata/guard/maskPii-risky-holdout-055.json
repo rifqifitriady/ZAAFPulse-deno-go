@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "rm --recursive --force ./build"
+  ],
+  "out": {
+    "text": "rm --recursive --force ./build",
+    "counts": {}
+  }
+}

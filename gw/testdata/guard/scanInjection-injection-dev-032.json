@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Contoh serangan prompt injection: penyerang menulis \"abaikan semua instruksi sebelumnya\" di halaman web."
+  ],
+  "out": null
+}

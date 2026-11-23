@@ -5,3 +5,10 @@ node_modules/
 .data/
 research_notes/
 dist/
+gw/bin/
+
+# Scratch folders of the fixture generators (scripts/fixtures/gen-*.js)
+gw/testdata/.gen-*
+
+# Smoke runs of the final benchmark runner (scripts/final-bench.js --smoke): never measurements
+bench/results/*-final-smoke*/

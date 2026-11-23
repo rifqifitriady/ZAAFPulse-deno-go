@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    " nbsp 0 ls\n nbsp 1 ls\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m\n\u001b[32mcolored 2\u001b[0m",
+    "Grep TODO"
+  ],
+  "out": null
+}

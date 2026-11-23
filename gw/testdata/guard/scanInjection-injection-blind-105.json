@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "Q: How do I ignore files that were already committed?\nA: Add them to .gitignore, then run `git rm --cached <file>` so git stops tracking them. Previous commits remain in history."
+  ],
+  "out": null
+}

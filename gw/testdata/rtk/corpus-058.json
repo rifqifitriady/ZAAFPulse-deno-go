@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "./a/b0/c0.txt\n./a/b1/c1.txt\n./a/b2/c2.txt\n./a/b3/c3.txt\n./a/b0/c4.txt\n./a/b1/c5.txt\n./a/b2/c6.txt\n./a/b3/c7.txt\n./a/b0/c8.txt\n./a/b1/c9.txt\n./a/b2/c10.txt\n./a/b3/c11.txt\n./a/b0/c12.txt\n./a/b1/c13.txt\n./a/b2/c14.txt\n./a/b3/c15.txt\n./a/b0/c16.txt\n./a/b1/c17.txt\n./a/b2/c18.txt\n./a/b3/c19.txt\n./a/b0/c20.txt\n./a/b1/c21.txt\n./a/b2/c22.txt\n./a/b3/c23.txt",
+    "grep"
+  ],
+  "out": null
+}

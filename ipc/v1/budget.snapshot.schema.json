@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "budget.snapshot (control plane to gateway): the budgets as the guard enforces them, pushed on change and every second",
+  "type": "object",
+  "required": ["at", "budgets", "keyCenter"],
+  "additionalProperties": false,
+  "properties": {
+    "at": { "type": "integer", "minimum": 0 },
+    "budgets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "name", "scope", "period", "currency", "measure", "enforce", "amount", "from", "to", "state",
+          "spentUSD", "amountUSD", "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string" },
+          "scope": {
+            "oneOf": [
+              { "type": "string", "const": "global" },
+              {
+                "type": "object",
+                "required": ["dim", "value"],
+                "additionalProperties": false,
+                "properties": {
+                  "dim": { "type": "string", "minLength": 1 },
+                  "value": { "type": "string", "minLength": 1 }
+                }
+              }
+            ]
+          },
+          "period": { "type": "string", "enum": ["day", "week", "month"] },
+          "currency": { "type": "string" },
+          "measure": { "type": "string", "enum": ["list", "billed"] },
+          "enforce": { "type": "string", "enum": ["none", "block", "pause"] },
+          "amount": { "type": "number" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "state": { "type": "string", "minLength": 1 },
+          "spentUSD": { "type": ["number", "null"] },
+          "amountUSD": { "type": ["number", "null"] },
+          "reason": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "keyCenter": { "type": "object", "additionalProperties": { "type": "string" } }
+  }
+}

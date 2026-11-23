@@ -1,0 +1,1973 @@
+{
+  "fn": "noteResponse",
+  "in": {
+    "providers": [
+      {
+        "id": "a",
+        "preset": "openai",
+        "baseUrl": "https://a.example.test/v1",
+        "approved": true,
+        "aliases": {
+          "fast": "m-fast"
+        }
+      },
+      {
+        "id": "b",
+        "preset": "groq",
+        "baseUrl": "https://b.example.test/v1",
+        "approved": true
+      },
+      {
+        "id": "c",
+        "preset": "anthropic",
+        "baseUrl": "https://c.example.test/v1",
+        "approved": true,
+        "format": "anthropic"
+      },
+      {
+        "id": "loc",
+        "preset": "ollama",
+        "baseUrl": "http://localhost:11434/v1"
+      },
+      {
+        "id": "off",
+        "preset": "openai",
+        "baseUrl": "https://off.example.test/v1",
+        "approved": true,
+        "enabled": false
+      },
+      {
+        "id": "ext",
+        "preset": "openai",
+        "baseUrl": "https://ext.example.test/v1",
+        "approved": false
+      }
+    ],
+    "sequences": [
+      {
+        "note": "429 with retry-after: 3, then a 2xx clears",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 429,
+            "headers": {
+              "retry-after": "3"
+            }
+          },
+          {
+            "at": 1767225601000,
+            "provider": "a",
+            "status": 200,
+            "headers": {}
+          },
+          {
+            "at": 1767225601000
+          }
+        ]
+      },
+      {
+        "note": "429, remaining requests 0 and reset 6m0s: capped at 5 minutes",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 429,
+            "headers": {
+              "x-ratelimit-remaining-requests": "0",
+              "x-ratelimit-reset-requests": "6m0s"
+            }
+          },
+          {
+            "at": 1767225899000
+          },
+          {
+            "at": 1767225900000
+          }
+        ]
+      },
+      {
+        "note": "429, remaining tokens 0 and reset 20s (requests not exhausted)",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "b",
+            "status": 429,
+            "headers": {
+              "x-ratelimit-limit-requests": "30",
+              "x-ratelimit-remaining-requests": "29",
+              "x-ratelimit-remaining-tokens": "0",
+              "x-ratelimit-reset-requests": "2s",
+              "x-ratelimit-reset-tokens": "20s"
+            }
+          }
+        ]
+      },
+      {
+        "note": "anthropic headers: remaining 0 and an RFC 3339 reset; a reading on a 200 without cooldown",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "c",
+            "status": 200,
+            "headers": {
+              "anthropic-ratelimit-requests-limit": "50",
+              "anthropic-ratelimit-requests-remaining": "49"
+            }
+          },
+          {
+            "at": 1767225601000,
+            "provider": "c",
+            "status": 429,
+            "headers": {
+              "anthropic-ratelimit-requests-limit": "50",
+              "anthropic-ratelimit-requests-remaining": "0",
+              "anthropic-ratelimit-requests-reset": "2026-01-01T00:00:45Z"
+            }
+          }
+        ]
+      },
+      {
+        "note": "remaining '' is Number('') = 0; remaining '0.0' is 0; remaining '-0' is 0",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 429,
+            "headers": {
+              "x-ratelimit-remaining-requests": "",
+              "x-ratelimit-reset-requests": "7s"
+            }
+          },
+          {
+            "at": 1767225600000,
+            "provider": "b",
+            "status": 429,
+            "headers": {
+              "x-ratelimit-remaining-requests": "0.0",
+              "x-ratelimit-reset-requests": "9s"
+            }
+          },
+          {
+            "at": 1767225600000,
+            "provider": "c",
+            "status": 429,
+            "headers": {
+              "x-ratelimit-remaining-tokens": "-0",
+              "x-ratelimit-reset-tokens": "11s"
+            }
+          }
+        ]
+      },
+      {
+        "note": "remaining 0 without a reset, and remaining 1: exponential back-off",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 429,
+            "headers": {
+              "x-ratelimit-remaining-requests": "0"
+            }
+          },
+          {
+            "at": 1767225600000,
+            "provider": "b",
+            "status": 429,
+            "headers": {
+              "x-ratelimit-remaining-requests": "1",
+              "x-ratelimit-reset-requests": "9s"
+            }
+          }
+        ]
+      },
+      {
+        "note": "503 without headers four times: 1, 2, 4, 8 s; then 529 and a 2xx",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225602000,
+            "provider": "a",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225605000,
+            "provider": "a",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225610000,
+            "provider": "a",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225630000,
+            "provider": "a",
+            "status": 529,
+            "headers": {}
+          },
+          {
+            "at": 1767225631000,
+            "provider": "a",
+            "status": 204,
+            "headers": {}
+          },
+          {
+            "at": 1767225632000,
+            "provider": "a",
+            "status": 503,
+            "headers": {}
+          }
+        ]
+      },
+      {
+        "note": "back-off up to the cap: strikes keep growing while the wait stays at 5 minutes",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225601000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225602000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225603000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225604000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225605000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225606000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225607000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225608000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225609000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225610000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225611000,
+            "provider": "b",
+            "status": 503,
+            "headers": {}
+          }
+        ]
+      },
+      {
+        "note": "a 401, a 500, a 404 and a 302 leave the cooldown; a 299 clears it",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 529,
+            "headers": {
+              "retry-after": "60"
+            }
+          },
+          {
+            "at": 1767225601000,
+            "provider": "a",
+            "status": 401,
+            "headers": {}
+          },
+          {
+            "at": 1767225601000,
+            "provider": "a",
+            "status": 500,
+            "headers": {}
+          },
+          {
+            "at": 1767225601000,
+            "provider": "a",
+            "status": 404,
+            "headers": {
+              "x-ratelimit-remaining-requests": "0"
+            }
+          },
+          {
+            "at": 1767225601000,
+            "provider": "a",
+            "status": 302,
+            "headers": {}
+          },
+          {
+            "at": 1767225601000,
+            "provider": "a",
+            "status": 299,
+            "headers": {}
+          }
+        ]
+      },
+      {
+        "note": "a reset in the past: max(1000, ...)",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 429,
+            "headers": {
+              "retry-after": "2025-06-01T00:00:00Z"
+            }
+          },
+          {
+            "at": 1767225600000,
+            "provider": "b",
+            "status": 429,
+            "headers": {
+              "anthropic-ratelimit-tokens-remaining": "0",
+              "anthropic-ratelimit-tokens-reset": "2025-06-01"
+            }
+          },
+          {
+            "at": 1767225600000,
+            "provider": "c",
+            "status": 429,
+            "headers": {
+              "retry-after": "0"
+            }
+          }
+        ]
+      },
+      {
+        "note": "a cooldown that expires by the clock keeps its strikes",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225600999
+          },
+          {
+            "at": 1767225601000
+          },
+          {
+            "at": 1767225605000,
+            "provider": "a",
+            "status": 503,
+            "headers": {}
+          },
+          {
+            "at": 1767225607000
+          },
+          {
+            "at": 1767225608000,
+            "provider": "a",
+            "status": 503,
+            "headers": {}
+          }
+        ]
+      },
+      {
+        "note": "retry-after wins over the reset; fractional, huge, date and unreadable retry-after values",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 429,
+            "headers": {
+              "retry-after": "4",
+              "x-ratelimit-remaining-requests": "0",
+              "x-ratelimit-reset-requests": "20s"
+            }
+          },
+          {
+            "at": 1767225600000,
+            "provider": "b",
+            "status": 429,
+            "headers": {
+              "retry-after": "1.0005"
+            }
+          },
+          {
+            "at": 1767225600000,
+            "provider": "c",
+            "status": 429,
+            "headers": {
+              "retry-after": "1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "at": 1767225601000,
+            "provider": "a",
+            "status": 429,
+            "headers": {
+              "retry-after": "2026-01-01T00:00:31.5Z"
+            }
+          },
+          {
+            "at": 1767225601000,
+            "provider": "b",
+            "status": 429,
+            "headers": {
+              "retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"
+            }
+          },
+          {
+            "at": 1767225601000,
+            "provider": "c",
+            "status": 503,
+            "headers": {
+              "retry-after": "12.5s"
+            }
+          }
+        ]
+      },
+      {
+        "note": "a 429 without headers on two providers, a 2xx for one",
+        "steps": [
+          {
+            "at": 1767225600000,
+            "provider": "a",
+            "status": 429,
+            "headers": {}
+          },
+          {
+            "at": 1767225600000,
+            "provider": "b",
+            "status": 429,
+            "headers": {}
+          },
+          {
+            "at": 1767225600100,
+            "provider": "b",
+            "status": 200,
+            "headers": {
+              "x-ratelimit-remaining-requests": "0"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "out": [
+    [
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 3000
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225603000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 3000
+          }
+        },
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 3000
+          }
+        },
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": {
+          "requests": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": 1767225960000
+          },
+          "tokens": null
+        },
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225960000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225900000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225960000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225900000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225960000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": {
+          "requests": {
+            "limit": 30,
+            "remaining": 29,
+            "resetAt": 1767225602000
+          },
+          "tokens": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": 1767225620000
+          }
+        },
+        "quota": {
+          "b": {
+            "requests": {
+              "limit": 30,
+              "remaining": 29,
+              "resetAt": 1767225602000
+            },
+            "tokens": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225620000
+            },
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225620000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": {
+          "requests": {
+            "limit": 50,
+            "remaining": 49,
+            "resetAt": null
+          },
+          "tokens": null
+        },
+        "quota": {
+          "c": {
+            "requests": {
+              "limit": 50,
+              "remaining": 49,
+              "resetAt": null
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 200
+          }
+        },
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": {
+          "requests": {
+            "limit": 50,
+            "remaining": 0,
+            "resetAt": 1767225645000
+          },
+          "tokens": null
+        },
+        "quota": {
+          "c": {
+            "requests": {
+              "limit": 50,
+              "remaining": 0,
+              "resetAt": 1767225645000
+            },
+            "tokens": null,
+            "at": 1767225601000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": {
+            "until": 1767225645000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": {
+          "requests": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": 1767225607000
+          },
+          "tokens": null
+        },
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225607000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225607000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": {
+          "requests": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": 1767225609000
+          },
+          "tokens": null
+        },
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225607000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          },
+          "b": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225609000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225607000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225609000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": {
+          "requests": null,
+          "tokens": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": 1767225611000
+          }
+        },
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225607000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          },
+          "b": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225609000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          },
+          "c": {
+            "requests": null,
+            "tokens": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225611000
+            },
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225607000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225609000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": {
+            "until": 1767225611000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": {
+          "requests": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": null
+          },
+          "tokens": null
+        },
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": null
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": {
+          "requests": {
+            "limit": null,
+            "remaining": 1,
+            "resetAt": 1767225609000
+          },
+          "tokens": null
+        },
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": null
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          },
+          "b": {
+            "requests": {
+              "limit": null,
+              "remaining": 1,
+              "resetAt": 1767225609000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225604000,
+            "strikes": 2,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225609000,
+            "strikes": 3,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225618000,
+            "strikes": 4,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225646000,
+            "strikes": 5,
+            "reason": "HTTP 529"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225633000,
+            "strikes": 1,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225603000,
+            "strikes": 2,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225606000,
+            "strikes": 3,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225611000,
+            "strikes": 4,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225620000,
+            "strikes": 5,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225637000,
+            "strikes": 6,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225670000,
+            "strikes": 7,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225735000,
+            "strikes": 8,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225864000,
+            "strikes": 9,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225909000,
+            "strikes": 10,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225910000,
+            "strikes": 11,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": {
+            "until": 1767225911000,
+            "strikes": 12,
+            "reason": "HTTP 503"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225660000,
+            "strikes": 1,
+            "reason": "HTTP 529"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225660000,
+            "strikes": 1,
+            "reason": "HTTP 529"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225660000,
+            "strikes": 1,
+            "reason": "HTTP 529"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": {
+          "requests": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": null
+          },
+          "tokens": null
+        },
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": null
+            },
+            "tokens": null,
+            "at": 1767225601000,
+            "status": 404
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225660000,
+            "strikes": 1,
+            "reason": "HTTP 529"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": null
+            },
+            "tokens": null,
+            "at": 1767225601000,
+            "status": 404
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225660000,
+            "strikes": 1,
+            "reason": "HTTP 529"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": null
+            },
+            "tokens": null,
+            "at": 1767225601000,
+            "status": 404
+          }
+        },
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 0
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": {
+          "requests": null,
+          "tokens": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": 1767225600000
+          }
+        },
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 0
+          },
+          "b": {
+            "requests": null,
+            "tokens": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225600000
+            },
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 0
+          },
+          "b": {
+            "requests": null,
+            "tokens": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225600000
+            },
+            "at": 1767225600000,
+            "status": 429
+          },
+          "c": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 0
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225607000,
+            "strikes": 2,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {},
+        "cooldown": {
+          "a": {
+            "until": 1767225612000,
+            "strikes": 3,
+            "reason": "HTTP 503"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": {
+          "requests": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": 1767225620000
+          },
+          "tokens": null
+        },
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225620000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 4000
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225604000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225620000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 4000
+          },
+          "b": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 1000.5
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225604000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225601000.5,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225620000
+            },
+            "tokens": null,
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 4000
+          },
+          "b": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 1000.5
+          },
+          "c": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": "Infinity"
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225604000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225601000.5,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": {
+            "until": 1767225900000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225620000
+            },
+            "tokens": null,
+            "at": 1767225601000,
+            "status": 429,
+            "retryAfterMs": 30500
+          },
+          "b": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": 1000.5
+          },
+          "c": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": "Infinity"
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225631500,
+            "strikes": 2,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225601000.5,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": {
+            "until": 1767225900000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225620000
+            },
+            "tokens": null,
+            "at": 1767225601000,
+            "status": 429,
+            "retryAfterMs": 30500
+          },
+          "b": {
+            "at": 1767225601000,
+            "status": 429,
+            "retryAfterMs": 1000.5
+          },
+          "c": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": "Infinity"
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225631500,
+            "strikes": 2,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225603000,
+            "strikes": 2,
+            "reason": "HTTP 429"
+          },
+          "c": {
+            "until": 1767225900000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": 1767225620000
+            },
+            "tokens": null,
+            "at": 1767225601000,
+            "status": 429,
+            "retryAfterMs": 30500
+          },
+          "b": {
+            "at": 1767225601000,
+            "status": 429,
+            "retryAfterMs": 1000.5
+          },
+          "c": {
+            "at": 1767225600000,
+            "status": 429,
+            "retryAfterMs": "Infinity"
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225631500,
+            "strikes": 2,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225603000,
+            "strikes": 2,
+            "reason": "HTTP 429"
+          },
+          "c": {
+            "until": 1767225613500,
+            "strikes": 2,
+            "reason": "HTTP 503"
+          },
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ],
+    [
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": null,
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429
+          },
+          "b": {
+            "at": 1767225600000,
+            "status": 429
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      },
+      {
+        "reading": {
+          "requests": {
+            "limit": null,
+            "remaining": 0,
+            "resetAt": null
+          },
+          "tokens": null
+        },
+        "quota": {
+          "a": {
+            "at": 1767225600000,
+            "status": 429
+          },
+          "b": {
+            "at": 1767225600100,
+            "status": 200,
+            "requests": {
+              "limit": null,
+              "remaining": 0,
+              "resetAt": null
+            },
+            "tokens": null
+          }
+        },
+        "cooldown": {
+          "a": {
+            "until": 1767225601000,
+            "strikes": 1,
+            "reason": "HTTP 429"
+          },
+          "b": null,
+          "c": null,
+          "loc": null,
+          "off": null,
+          "ext": null
+        }
+      }
+    ]
+  ]
+}

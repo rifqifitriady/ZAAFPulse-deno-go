@@ -576,3 +576,28 @@ test("a reviewer's identical review saves change nothing and are capped; a chang
   assert.equal(saves.length, 32);
   assert.ok(s.alive());
 });
+
+test("GET /api/gateway/status and /api/egress are the owner's: a viewer and a reviewer are refused (P4a D6, P5)", async (t) => {
+  const s = await startServer(t);
+  const owner = await signIn(s, { password: ADMIN });
+  const mine = await call(s, '/api/gateway/status', { as: owner });
+  assert.equal(mine.status, 200);
+  assert.deepEqual([mine.body.mode, mine.body.state], ['js', 'off']);
+  const eg = await call(s, '/api/egress', { as: owner });
+  assert.equal(eg.status, 200);
+  assert.equal(eg.body.mode, 'js');
+  for (const [name, role, first, next] of [
+    ['vera', 'viewer', 'vera first 0001', VERA],
+    ['rex', 'reviewer', 'rex first 00001', REX],
+  ]) {
+    const body = { action: 'create', name, role, password: first };
+    assert.equal((await call(s, '/api/users', { method: 'POST', body, as: owner })).status, 200);
+    const as = await signIn(s, { name, password: first });
+    const change = { method: 'POST', body: { current: first, next }, as };
+    assert.equal((await call(s, '/api/account/password', change)).status, 200);
+    for (const route of ['/api/gateway/status', '/api/egress']) {
+      const r = await call(s, route, { as });
+      assert.deepEqual([r.status, r.body], [403, { error: 'your role cannot do this' }], `${role} ${route}`);
+    }
+  }
+});

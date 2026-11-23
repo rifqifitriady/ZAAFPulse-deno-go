@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "ls dist"
+  ],
+  "out": {
+    "text": "ls dist",
+    "counts": {}
+  }
+}

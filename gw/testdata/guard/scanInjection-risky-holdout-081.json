@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "chmod 777 -R ./storage"
+  ],
+  "out": null
+}

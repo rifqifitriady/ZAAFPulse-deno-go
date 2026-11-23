@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "find /var/tmp -type f -mtime +7 -exec rm {} \\;"
+  ],
+  "out": null
+}

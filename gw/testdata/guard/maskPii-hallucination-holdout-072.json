@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Exit code 1\nwebpack compiled with 2 errors\nModule not found: Error: Can't resolve './Sidebar' in '/repo/src'"
+  ],
+  "out": {
+    "text": "Exit code 1\nwebpack compiled with 2 errors\nModule not found: Error: Can't resolve './Sidebar' in '/repo/src'",
+    "counts": {}
+  }
+}

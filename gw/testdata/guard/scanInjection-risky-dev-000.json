@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "rm -rf node_modules && npm i"
+  ],
+  "out": null
+}

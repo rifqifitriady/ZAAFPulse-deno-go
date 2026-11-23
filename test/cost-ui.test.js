@@ -5,6 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { stubGlobal } = require('./helpers');
 
 global.esc = (v) =>
   String(v ?? '').replace(
@@ -69,27 +70,27 @@ test('controls: the days each range covers, and the query and hash that name the
 });
 
 test('controls: localStorage is optional; a throwing store reads as empty and writes nothing', () => {
-  const saved = global.localStorage;
+  const store = stubGlobal('localStorage');
   try {
     const box = new Map();
-    global.localStorage = { getItem: (k) => box.get(k) ?? null, setItem: (k, v) => box.set(k, v) };
+    store.set({ getItem: (k) => box.get(k) ?? null, setItem: (k, v) => box.set(k, v) });
     U.costStoreSet({ range: '7d', cur: 'USD', measure: 'list' });
     assert.equal(box.get(U.COST_STORE_KEY), JSON.stringify({ range: '7d', cur: 'USD', measure: 'list' }));
     assert.equal(U.costStoreGet(), box.get('zp.cost.controls'));
-    global.localStorage = {
+    store.set({
       getItem: () => {
         throw new Error('blocked');
       },
       setItem: () => {
         throw new Error('blocked');
       },
-    };
+    });
     assert.equal(U.costStoreGet(), null);
     assert.doesNotThrow(() => U.costStoreSet({ range: '7d' }));
-    delete global.localStorage;
+    store.set(undefined);
     assert.equal(U.costStoreGet(), null, 'no storage at all');
   } finally {
-    if (saved !== undefined) global.localStorage = saved;
+    store.restore();
   }
 });
 

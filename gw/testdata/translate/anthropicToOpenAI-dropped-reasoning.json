@@ -1,0 +1,45 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "max_tokens": 3000,
+      "thinking": {
+        "type": "enabled",
+        "budget_tokens": 2000
+      },
+      "tools": [
+        {
+          "type": "web_search_20250305",
+          "name": "web_search"
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "model": "oai/gpt-5"
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "oai/gpt-5",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "max_tokens": 3000,
+      "reasoning_effort": "low",
+      "stream": false
+    },
+    "soft": [
+      "reasoning_effort"
+    ],
+    "dropped": [
+      "tool web_search"
+    ]
+  }
+}

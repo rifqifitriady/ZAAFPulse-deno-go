@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "Our OWASP guide: attackers may write \"ignore previous instructions\" in a page."
+  ],
+  "out": {
+    "text": "Our OWASP guide: attackers may write \"ignore previous instructions\" in a page.",
+    "counts": {}
+  }
+}

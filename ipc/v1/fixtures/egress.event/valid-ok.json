@@ -1,0 +1,1 @@
+{"v":1,"type":"egress.event","seq":51,"ts":1767225700001,"body":{"ts":1767225700000,"purpose":"connectors","method":"GET","scheme":"https","host":"api.example.com","port":443,"status":200,"outcome":"ok","bytesOut":0,"bytesIn":1834,"ms":212.5,"via":"proxy"}}

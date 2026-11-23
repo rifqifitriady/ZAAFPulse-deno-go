@@ -48,6 +48,22 @@ const good = () => ({
   content: { otelCapture: false, traceContentOff: false },
   otel: { enabled: true, error: false, failed: 0, origin: 'https://otel.example.com', protocol: 'http/protobuf' },
   traces: { store: true, enabled: true, retentionDays: 190, maxBytes: 500 * 1048576 },
+  runtimePermissions: {
+    runtime: 'deno',
+    version: '2.9.8',
+    singleFile: true,
+    grants: { read: 'scoped', write: 'scoped', net: 'scoped', env: 'scoped', run: 'scoped', sys: 'scoped' },
+  },
+  egress: {
+    mode: 'front',
+    port: 50123,
+    engines: Object.fromEntries(require('../lib/egress').CLASSES.map((c) => [c, 'go'])),
+    allowList: 'enforce',
+    allowCount: 7,
+    lockdown: { asked: true, inForce: true, why: '' },
+    counts24h: { total: 40, refused: 2, wouldRefuse: 0 },
+    netGrant: 'scoped',
+  },
   inventory: {
     total: 4,
     reviewed: 4,
@@ -62,7 +78,7 @@ const good = () => ({
 const statusOf = (state) => Object.fromEntries(controls(state).map((c) => [c.id, c.status]));
 const one = (state, id) => controls(state).find((c) => c.id === id);
 
-test('the catalogue: eighteen controls in a fixed order, each with a link and at least one clause', () => {
+test('the catalogue: twenty controls in a fixed order, each with a link and at least one clause', () => {
   assert.deepEqual(
     CATALOGUE.map((c) => c.id),
     [
@@ -84,6 +100,8 @@ test('the catalogue: eighteen controls in a fixed order, each with a link and at
       'otel_export',
       'trace_retention',
       'inventory_coverage',
+      'runtime_permissions',
+      'network_egress',
     ],
   );
   const ids = new Set(CLAUSES.map((c) => c.id));
@@ -302,6 +320,91 @@ test('inventory coverage: AI client files that could not be read cap it at parti
   assert.equal(one(s, 'inventory_coverage').status, 'off', 'a cap never raises a status');
 });
 
+test('runtime permissions: the compiled binary, whose set grants write: true, reads all but denied entries', () => {
+  // Deno reports a set's `write: true` as { state: 'granted', partial: true } in a binary built with -P (measured,
+  // 2.9.8), like net with its deny list: the label must not call write's exceptions "hosts".
+  const partial = new Set(['write', 'net']);
+  const deno = {
+    version: { deno: '2.9.8' },
+    build: { standalone: true },
+    permissions: {
+      querySync: ({ name }) =>
+        name === 'run' || name === 'sys' ? { state: 'prompt' } : { state: 'granted', partial: partial.has(name) },
+    },
+  };
+  const rp = require('../lib/permissions').describe({ deno, limits: () => null });
+  assert.equal(rp.grants.write, 'all but denied');
+  assert.equal(rp.grants.net, 'all but denied');
+  const c = one({ ...good(), runtimePermissions: rp }, 'runtime_permissions');
+  assert.ok(c.evidence.includes('all but denied entries: write, net'), c.evidence.join(' | '));
+  assert.ok(!c.evidence.some((e) => /hosts/.test(e)), c.evidence.join(' | '));
+});
+
+test('runtime permissions: off on Node, partial while a permission is unrestricted, in place when all are scoped', () => {
+  const rp = (v) => ({ ...good(), runtimePermissions: v });
+  assert.equal(one(rp({ runtime: 'node' }), 'runtime_permissions').status, 'off');
+  assert.deepEqual(one(rp({ runtime: 'node' }), 'runtime_permissions').evidence, [
+    'runs on Node.js: no runtime permission sandbox',
+  ]);
+  assert.equal(one(good(), 'runtime_permissions').status, 'in place');
+  const live = one(
+    rp({
+      runtime: 'deno',
+      version: '2.9.8',
+      singleFile: true,
+      grants: { read: 'all', write: 'all', net: 'all but denied', env: 'all', run: 'scoped', sys: 'scoped' },
+    }),
+    'runtime_permissions',
+  );
+  assert.equal(live.status, 'partial');
+  assert.deepEqual(live.evidence, [
+    'Deno 2.9.8, single-file build',
+    'unrestricted: read, write, env',
+    'all but denied entries: net',
+    'allow-listed: run, sys',
+    'matrix: deno.json; tests: test/permissions.test.js',
+  ]);
+  // On Linux Deno has no scoped route to /proc: what that costs is shown, and a lost agent control lowers the status.
+  const linux = one(
+    rp({ ...good().runtimePermissions, notes: ['this runtime cannot read /proc on Linux and lsof is not installed'] }),
+    'runtime_permissions',
+  );
+  assert.equal(linux.status, 'partial');
+  assert.equal(linux.evidence.at(-2), 'this runtime cannot read /proc on Linux and lsof is not installed');
+  const withLsof = one(
+    rp({ ...good().runtimePermissions, notes: ['this runtime cannot read /proc on Linux (Deno has no scoped grant)'] }),
+    'runtime_permissions',
+  );
+  assert.equal(withLsof.status, 'in place', 'ps and lsof stand in for /proc');
+  const noPs = one(
+    rp({ ...good().runtimePermissions, notes: ['this runtime cannot read /proc on Linux and ps is not installed'] }),
+    'runtime_permissions',
+  );
+  assert.equal(noPs.status, 'partial');
+});
+
+test('runtime permissions: a run grant that holds interpreters is no sandbox boundary, and the evidence says so', () => {
+  const rp = { ...good().runtimePermissions, launchers: ['node', 'osascript', 'claude'] };
+  const c = one({ ...good(), runtimePermissions: rp }, 'runtime_permissions');
+  assert.equal(c.status, 'partial');
+  assert.ok(
+    c.evidence.includes(
+      'run includes interpreters and launchers (node, osascript, claude): not a sandbox boundary; the write scope guards against accidents, not a determined attacker',
+    ),
+    c.evidence.join('\n'),
+  );
+  assert.equal(c.evidence.at(-1), 'matrix: deno.json; tests: test/permissions.test.js');
+});
+
+test('agent control: partial when it is on but cannot link a session to its process', () => {
+  const s = good();
+  s.agentControl = { off: null, limited: 'lsof is not installed: agent control and session linking are unavailable' };
+  assert.deepEqual(
+    [one(s, 'agent_control').status, one(s, 'agent_control').evidence],
+    ['partial', ['lsof is not installed: agent control and session linking are unavailable']],
+  );
+});
+
 test('budgets: pause budgets count for nothing when agent control cannot be read', () => {
   const s = good();
   s.budgets = [{ enforce: 'pause' }];
@@ -374,6 +477,8 @@ test('off: everything switched off, degraded or broken; unknown: a part that can
   s.otel = { enabled: false };
   s.traces = { store: true, enabled: false, retentionDays: 14, maxBytes: 1 };
   s.inventory = { total: 3, reviewed: 0 };
+  s.runtimePermissions = { runtime: 'node' };
+  s.egress = { mode: 'js' };
   s.usage = null;
   const st = statusOf(s);
   assert.equal(st.usage_log, 'unknown');
@@ -417,7 +522,7 @@ test('GET /api/governance/controls: the controls with the audit state and the in
   });
   assert.equal(r.status, 200);
   assert.deepEqual(Object.keys(r.body), ['generatedAt', 'notice', 'frameworks', 'clauses', 'controls']);
-  assert.equal(r.body.controls.length, 18);
+  assert.equal(r.body.controls.length, 20);
   const by = Object.fromEntries(r.body.controls.map((c) => [c.id, c]));
   assert.equal(by.audit_log.evidence[0], 'kept 24 months (at least 6)');
   assert.deepEqual(
@@ -502,4 +607,57 @@ test('usage.oldest: read when asked, so two rotations in one run move it to the 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('network egress: off in js mode, in place only with every condition, partial naming each one missing', () => {
+  const eg = (v) => ({ ...good(), egress: { ...good().egress, ...v } });
+  const outside =
+    "child processes (claude, codex, node, model servers …) are outside Deno's permissions and the egress proxy";
+  const off = one(eg({ mode: 'js' }), 'network_egress');
+  assert.equal(off.status, 'off');
+  assert.deepEqual(off.evidence, [
+    'js mode: no gateway runs, so every outbound call leaves directly and is not recorded',
+    outside,
+  ]);
+  const full = one(good(), 'network_egress');
+  assert.equal(full.status, 'in place');
+  assert.deepEqual(full.evidence, [
+    '12 of 12 caller classes on go',
+    'allow-list: enforce, 7 hosts',
+    'last 24 h: 40 records, 2 refused, 0 would be refused',
+    "lock-down in force: Deno's net grant is loopback only",
+    outside,
+  ]);
+  // Each condition alone lowers it to partial, and the evidence names it.
+  const cases = [
+    [
+      { engines: { ...good().egress.engines, brain: 'check', notify: 'direct', otel: 'direct' } },
+      /^on direct: notify, otel$/,
+    ],
+    [{ engines: { ...good().egress.engines, brain: 'check' } }, /^on check: brain$/],
+    [{ allowList: 'report' }, /^allow-list: report only, 7 hosts$/],
+    [
+      { lockdown: { asked: true, inForce: false, why: 'egress.lockdown is off' } },
+      /^lock-down not in force: egress\.lockdown is off$/,
+    ],
+    [{ lockdown: { asked: false, inForce: false } }, /^lock-down not in force: not asked$/],
+    [{ netGrant: 'all but denied' }, /^lock-down in force/],
+    [{ port: null }, /egress endpoint is not ready: calls on go leave directly meanwhile$/],
+    [
+      { allowList: 'report', counts24h: { total: 3, refused: 0, wouldRefuse: 1, truncated: true } },
+      /would be refused \(the newest 2 MB of the log only\)$/,
+    ],
+    [{ port: null, locked: true }, /not ready: outbound calls fail with EGRESS_UNAVAILABLE meanwhile/],
+    [{ engines: {} }, /^0 of 0 caller classes on go$/],
+  ];
+  for (const [v, re] of cases) {
+    const c = one(eg(v), 'network_egress');
+    assert.equal(c.status, 'partial', JSON.stringify(v));
+    assert.ok(
+      c.evidence.some((x) => re.test(x)),
+      `${JSON.stringify(v)}: ${c.evidence.join(' | ')}`,
+    );
+    assert.equal(c.evidence.at(-1), outside, 'the child-process note is always there');
+  }
+  assert.equal(one({ ...good(), egress: null }, 'network_egress').status, 'unknown');
 });

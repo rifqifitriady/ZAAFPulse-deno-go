@@ -9,7 +9,7 @@ const net = require('net');
 const path = require('path');
 const { spawn } = require('child_process');
 const { createGateway } = require('../lib/gateway');
-const { secretsFor, NO_JUDGE_PORTS, fakeServer } = require('./helpers');
+const { secretsFor, NO_JUDGE_PORTS, fakeServer, copyRecent } = require('./helpers');
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const ROOT = path.join(__dirname, '..');
@@ -34,6 +34,11 @@ async function startServer(env, { data = tmp('zp-trace-api-'), ports = freePort 
         ZAAFPULSE_AUTH: '',
         ZAAFPULSE_CONTENT: '',
         DEMO: '',
+        // The log roots come from HOME below, never from a variable an earlier test file left set.
+        ZAAFPULSE_CLAUDE_DIRS: '',
+        CLAUDE_CONFIG_DIR: '',
+        CODEX_HOME: '',
+        XDG_CONFIG_HOME: '',
         ...NO_JUDGE_PORTS,
         ...env,
         ZAAFPULSE_PORT: String(port),
@@ -404,7 +409,8 @@ test('trace api: sign-in gate, gateway keys refused, and the live cursor round-t
 // where the dashboard itself shows one (loopback, content on).
 test('gateway /mcp: acc_trace_sessions never returns a Kiro title, while the dashboard does', async () => {
   const data = tmp('zp-trace-api-mcp-');
-  fs.cpSync(path.join(__dirname, 'fixtures', 'trace', 'kiro'), path.join(data, '.kiro', 'sessions'), { recursive: true });
+  // The dashboard lists the last 30 days at most: the dated fixture is made recent (it fell out on 2026-11-17).
+  copyRecent(path.join(__dirname, 'fixtures', 'trace', 'kiro'), path.join(data, '.kiro', 'sessions'));
   const gw = createGateway({
     dataDir: path.join(data, '.data'),
     getConfig: () => ({ gateway: {} }),

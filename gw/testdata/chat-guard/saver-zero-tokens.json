@@ -1,0 +1,234 @@
+{
+  "secrets": [
+    "enBfZ3VhcmRGaXh0dXJlU2VjcmV0MDEyMzQ1Njc4OWFiY2RlZg==",
+    "c2stb2EtZ3VhcmQtZml4dHVyZS0xMjM0NTY="
+  ],
+  "fn": "chatGuard",
+  "in": [
+    {
+      "config": {
+        "gateway": {
+          "providers": [
+            {
+              "id": "oa",
+              "preset": "custom",
+              "baseUrl": "http://127.0.0.1:9/v1",
+              "approved": true,
+              "tier": "external",
+              "auth": {
+                "type": "key"
+              },
+              "span": {
+                "name": "oa",
+                "address": "127.0.0.1",
+                "port": 9
+              }
+            },
+            {
+              "id": "pv",
+              "preset": "ollama",
+              "baseUrl": "http://127.0.0.1:11434/v1",
+              "span": {
+                "name": "ollama",
+                "address": "127.0.0.1",
+                "port": 11434
+              }
+            }
+          ],
+          "routes": [],
+          "guardrails": {
+            "scope": "external",
+            "secrets": "redact",
+            "pii": "off",
+            "injection": "log"
+          },
+          "defaults": {
+            "model": "",
+            "plannerModel": "",
+            "codeModel": ""
+          },
+          "tokenSaver": true,
+          "modelMap": []
+        },
+        "keys": [
+          {
+            "id": "k1",
+            "name": "k1",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "2a112a7006cd1da46c57e5951470a8dfd3857d7817b10e1701a3bdcf396dea89"
+          },
+          {
+            "id": "k2",
+            "name": "k2",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {
+              "secrets": "block"
+            },
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "c1169397525ee08de6db12932650ccadba516fb8b81f641e5e65f89bc327aaf4"
+          },
+          {
+            "id": "k3",
+            "name": "k3",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": 1,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "f044cc78bef966c2d00d0169ce7f30bc4893fe7251e539a5a407f201aaf594ea"
+          },
+          {
+            "id": "k4",
+            "name": "k4",
+            "scopes": [
+              "llm"
+            ],
+            "models": [],
+            "agents": [],
+            "knowledge": [],
+            "budgetUSD": null,
+            "rpm": 10000,
+            "privateOnly": false,
+            "expiresAt": null,
+            "revokedAt": null,
+            "guardrails": {},
+            "prefix": "zp_guardFi…",
+            "approveOwnRuns": false,
+            "createdAt": 1,
+            "lastUsedAt": null,
+            "hash": "a882a973c69db193f3c62e390193120aadd6788c4a89adb971d70479138806ea"
+          }
+        ],
+        "pricing": {
+          "m1": {
+            "input": 1000000000,
+            "output": 2000000000
+          },
+          "llama-9": {
+            "input": 100000000,
+            "output": 300000000
+          }
+        },
+        "egress": {
+          "allow": [],
+          "allowList": "enforce",
+          "classes": {
+            "gateway": "direct",
+            "connectors": "direct",
+            "mcp": "direct",
+            "routers": "direct",
+            "pricing": "direct",
+            "evals": "direct",
+            "agents": "direct",
+            "notify": "direct",
+            "brain": "direct",
+            "public": "direct",
+            "otel": "direct",
+            "runtimes": "direct"
+          }
+        }
+      },
+      "secrets": {
+        "providers": [
+          {
+            "id": "oa",
+            "value": "<<ZPSECRET:1>>"
+          }
+        ],
+        "mask": [
+          "<<ZPSECRET:1>>"
+        ]
+      },
+      "snapshot": {
+        "budgets": [],
+        "keyCenter": {},
+        "at": 1767225600000
+      },
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer <<ZPSECRET:0>>"
+        },
+        "body": "{\"model\":\"oa/m1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"echo\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"item ggg zzzzzzzzzz\\n\\n\\nitem ggh zzzzzzzzzz\\nitem ggi zzzzzzzzzz\\nitem ggj zzzzzzzzzz\\nitem ggk zzzzzzzzzz\\nitem ggl zzzzzzzzzz\\nitem ggm zzzzzzzzzz\\nitem ggn zzzzzzzzzz\\nitem ggo zzzzzzzzzz\\nitem ggp zzzzzzzzzz\\nitem ggq zzzzzzzzzz\\nitem ggr zzzzzzzzzz\\nitem ggs zzzzzzzzzz\\nitem ggt zzzzzzzzzz\\nitem ggu zzzzzzzzzz\\nitem ggv zzzzzzzzzz\\nitem ggw zzzzzzzzzz\\nitem ggx zzzzzzzzzz\\nitem ggy zzzzzzzzzz\\nitem ggz zzzzzzzzzz\\nitem ghg zzzzzzzzzz\\nitem ghh zzzzzzzzzz\\nitem ghi zzzzzzzzzz\\nitem ghj zzzzzzzzzz\\nitem ghk zzzzzzzzzz\\nitem ghl zzzzzzzzzz\\nitem ghm zzzzzzzzzz\\nitem ghn zzzzzzzzzz\\nitem gho zzzzzzzzzz\\nitem ghp zzzzzzzzzz\\nitem ghq zzzzzzzzzz\\nitem ghr zzzzzzzzzz\\nitem ghs zzzzzzzzzz\\nitem ght zzzzzzzzzz\\nitem ghu zzzzzzzzzz\\nitem ghv zzzzzzzzzz\\nitem ghw zzzzzzzzzz\\nitem ghx zzzzzzzzzz\\nitem ghy zzzzzzzzzz\\nitem ghz zzzzzzzzzz\\nitem gig zzzzzzzzzz\\nitem gih zzzzzzzzzz\\nitem gii zzzzzzzzzz\\nitem gij zzzzzzzzzz\\nitem gik zzzzzzzzzz\\nitem gil zzzzzzzzzz\\nitem gim zzzzzzzzzz\\nitem gin zzzzzzzzzz\\nitem gio zzzzzzzzzz\\nitem gip zzzzzzzzzz\\nitem giq zzzzzzzzzz\\nitem gir zzzzzzzzzz\\nitem gis zzzzzzzzzz\\nitem git zzzzzzzzzz\\nitem giu zzzzzzzzzz\\nitem giv zzzzzzzzzz\\nitem giw zzzzzzzzzz\\nitem gix zzzzzzzzzz\\nitem giy zzzzzzzzzz\\nitem giz zzzzzzzzzz\\nitem gjg zzzzzzzzzz\\nitem gjh zzzzzzzzzz\\nitem gji zzzzzzzzzz\\nitem gjj zzzzzzzzzz\\nitem gjk zzzzzzzzzz\\nitem gjl zzzzzzzzzz\\nitem gjm zzzzzzzzzz\\nitem gjn zzzzzzzzzz\\nitem gjo zzzzzzzzzz\\nitem gjp zzzzzzzzzz\\nitem gjq zzzzzzzzzz\\nitem gjr zzzzzzzzzz\\nitem gjs zzzzzzzzzz\\nitem gjt zzzzzzzzzz\\nitem gju zzzzzzzzzz\\nitem gjv zzzzzzzzzz\\nitem gjw zzzzzzzzzz\\nitem gjx zzzzzzzzzz\\nitem gjy zzzzzzzzzz\\nitem gjz zzzzzzzzzz\\nitem gkg zzzzzzzzzz\\nitem gkh zzzzzzzzzz\\nitem gki zzzzzzzzzz\\nitem gkj zzzzzzzzzz\\nitem gkk zzzzzzzzzz\\nitem gkl zzzzzzzzzz\\nitem gkm zzzzzzzzzz\\nitem gkn zzzzzzzzzz\\nitem gko zzzzzzzzzz\\nitem gkp zzzzzzzzzz\\nitem gkq zzzzzzzzzz\\nitem gkr zzzzzzzzzz\\nitem gks zzzzzzzzzz\\nitem gkt zzzzzzzzzz\\nitem gku zzzzzzzzzz\\nitem gkv zzzzzzzzzz\\nitem gkw zzzzzzzzzz\\nitem gkx zzzzzzzzzz\\nitem gky zzzzzzzzzz\\nitem gkz zzzzzzzzzz\\nitem glg zzzzzzzzzz\\nitem glh zzzzzzzzzz\\nitem gli zzzzzzzzzz\\nitem glj zzzzzzzzzz\\nitem glk zzzzzzzzzz\\nitem gll zzzzzzzzzz\\nitem glm zzzzzzzzzz\\nitem gln zzzzzzzzzz\\nitem glo zzzzzzzzzz\\nitem glp zzzzzzzzzz\\nitem glq zzzzzzzzzz\\nitem glr zzzzzzzzzz\\nitem gls zzzzzzzzzz\\nitem glt zzzzzzzzzz\\nitem glu zzzzzzzzzz\\nitem glv zzzzzzzzzz\\nitem glw zzzzzzzzzz\\nitem glx zzzzzzzzzz\\nitem gly zzzzzzzzzz\\nitem glz zzzzzzzzzz\\nitem gmg zzzzzzzzzz\\nitem gmh zzzzzzzzzz\\nitem gmi zzzzzzzzzz\\nitem gmj zzzzzzzzzz\\nitem gmk zzzzzzzzzz\\nitem gml zzzzzzzzzz\\nitem gmm zzzzzzzzzz\\nitem gmn zzzzzzzzzz\\nitem gmo zzzzzzzzzz\\nitem gmp zzzzzzzzzz\\nitem gmq zzzzzzzzzz\\nitem gmr zzzzzzzzzz\\nitem gms zzzzzzzzzz\\nitem gmt zzzzzzzzzz\\nitem gmu zzzzzzzzzz\\nitem gmv zzzzzzzzzz\\nitem gmw zzzzzzzzzz\\nitem gmx zzzzzzzzzz\\nitem gmy zzzzzzzzzz\\nitem gmz zzzzzzzzzz\\nitem gng zzzzzzzzzz\\nitem gnh zzzzzzzzzz\\nitem gni zzzzzzzzzz\\nitem gnj zzzzzzzzzz\\nitem gnk zzzzzzzzzz\\nitem gnl zzzzzzzzzz\\nitem gnm zzzzzzzzzz\\nitem gnn zzzzzzzzzz\\nitem gno zzzzzzzzzz\\nitem gnp zzzzzzzzzz\\nitem gnq zzzzzzzzzz\\nitem gnr zzzzzzzzzz\\nitem gns zzzzzzzzzz\\nitem gnt zzzzzzzzzz\\nitem gnu zzzzzzzzzz\\nitem gnv zzzzzzzzzz\\nitem gnw zzzzzzzzzz\\nitem gnx zzzzzzzzzz\\nitem gny zzzzzzzzzz\\nitem gnz zzzzzzzzzz\\nitem gog zzzzzzzzzz\\nitem goh zzzzzzzzzz\\nitem goi zzzzzzzzzz\\nitem goj zzzzzzzzzz\\nitem gok zzzzzzzzzz\\nitem gol zzzzzzzzzz\\nitem gom zzzzzzzzzz\\nitem gon zzzzzzzzzz\\nitem goo zzzzzzzzzz\\nitem gop zzzzzzzzzz\\nitem goq zzzzzzzzzz\\nitem gor zzzzzzzzzz\\nitem gos zzzzzzzzzz\\nitem got zzzzzzzzzz\\nitem gou zzzzzzzzzz\\nitem gov zzzzzzzzzz\\nitem gow zzzzzzzzzz\\nitem gox zzzzzzzzzz\\nitem goy zzzzzzzzzz\\nitem goz zzzzzzzzzz\\nitem gpg zzzzzzzzzz\\nitem gph zzzzzzzzzz\\nitem gpi zzzzzzzzzz\\nitem gpj zzzzzzzzzz\\nitem gpk zzzzzzzzzz\\nitem gpl zzzzzzzzzz\\nitem gpm zzzzzzzzzz\\nitem gpn zzzzzzzzzz\\nitem gpo zzzzzzzzzz\\nitem gpp zzzzzzzzzz\\nitem gpq zzzzzzzzzz\\nitem gpr zzzzzzzzzz\\nitem gps zzzzzzzzzz\\nitem gpt zzzzzzzzzz\\nitem gpu zzzzzzzzzz\\nitem gpv zzzzzzzzzz\\nitem gpw zzzzzzzzzz\\nitem gpx zzzzzzzzzz\\nitem gpy zzzzzzzzzz\\nitem gpz zzzzzzzzzz\\nitem gqg zzzzzzzzzz\\nitem gqh zzzzzzzzzz\\nitem gqi zzzzzzzzzz\\nitem gqj zzzzzzzzzz\\nitem gqk zzzzzzzzzz\\nitem gql zzzzzzzzzz\\nitem gqm zzzzzzzzzz\\nitem gqn zzzzzzzzzz\\nitem gqo zzzzzzzzzz\\nitem gqp zzzzzzzzzz\\nitem gqq zzzzzzzzzz\\nitem gqr zzzzzzzzzz\\nitem gqs zzzzzzzzzz\\nitem gqt zzzzzzzzzz\\nitem gqu zzzzzzzzzz\\nitem gqv zzzzzzzzzz\\nitem gqw zzzzzzzzzz\\nitem gqx zzzzzzzzzz\\nitem gqy zzzzzzzzzz\\nitem gqz zzzzzzzzzz\\nitem grg zzzzzzzzzz\\nitem grh zzzzzzzzzz\\nitem gri zzzzzzzzzz\\nitem grj zzzzzzzzzz\\nitem grk zzzzzzzzzz\\nitem grl zzzzzzzzzz\\nitem grm zzzzzzzzzz\\nitem grn zzzzzzzzzz\\nitem gro zzzzzzzzzz\\nitem grp zzzzzzzzzz\\nitem grq zzzzzzzzzz\\nitem grr zzzzzzzzzz\\nitem grs zzzzzzzzzz\\nitem grt zzzzzzzzzz\\nitem gru zzzzzzzzzz\\nitem grv zzzzzzzzzz\\nitem grw zzzzzzzzzz\\nitem grx zzzzzzzzzz\\nitem gry zzzzzzzzzz\\nitem grz zzzzzzzzzz\\nitem gsg zzzzzzzzzz\\nitem gsh zzzzzzzzzz\\nitem gsi zzzzzzzzzz\\nitem gsj zzzzzzzzzz\\nitem gsk zzzzzzzzzz\\nitem gsl zzzzzzzzzz\\nitem gsm zzzzzzzzzz\\nitem gsn zzzzzzzzzz\\nitem gso zzzzzzzzzz\\nitem gsp zzzzzzzzzz\\nitem gsq zzzzzzzzzz\\nitem gsr zzzzzzzzzz\\nitem gss zzzzzzzzzz\\nitem gst zzzzzzzzzz\\nitem gsu zzzzzzzzzz\\nitem gsv zzzzzzzzzz\\nitem gsw zzzzzzzzzz\\nitem gsx zzzzzzzzzz\\nitem gsy zzzzzzzzzz\\nitem gsz zzzzzzzzzz\\nitem gtg zzzzzzzzzz\\nitem gth zzzzzzzzzz\\nitem gti zzzzzzzzzz\\nitem gtj zzzzzzzzzz\\nitem gtk zzzzzzzzzz\\nitem gtl zzzzzzzzzz\\nitem gtm zzzzzzzzzz\\nitem gtn zzzzzzzzzz\\nitem gto zzzzzzzzzz\\nitem gtp zzzzzzzzzz\"}]}"
+      },
+      "provider": {
+        "status": 200,
+        "body": "{\"id\":\"c1\",\"object\":\"chat.completion\",\"model\":\"upstream-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500}}"
+      }
+    }
+  ],
+  "out": {
+    "request": {
+      "url": "http://127.0.0.1:9/v1/chat/completions",
+      "headers": {
+        "content-type": "application/json",
+        "accept": "application/json",
+        "authorization": "Bearer <<ZPSECRET:1>>"
+      },
+      "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"go\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"command\\\":\\\"echo\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"item ggg zzzzzzzzzz\\n\\nitem ggh zzzzzzzzzz\\nitem ggi zzzzzzzzzz\\nitem ggj zzzzzzzzzz\\nitem ggk zzzzzzzzzz\\nitem ggl zzzzzzzzzz\\nitem ggm zzzzzzzzzz\\nitem ggn zzzzzzzzzz\\nitem ggo zzzzzzzzzz\\nitem ggp zzzzzzzzzz\\nitem ggq zzzzzzzzzz\\nitem ggr zzzzzzzzzz\\nitem ggs zzzzzzzzzz\\nitem ggt zzzzzzzzzz\\nitem ggu zzzzzzzzzz\\nitem ggv zzzzzzzzzz\\nitem ggw zzzzzzzzzz\\nitem ggx zzzzzzzzzz\\nitem ggy zzzzzzzzzz\\nitem ggz zzzzzzzzzz\\nitem ghg zzzzzzzzzz\\nitem ghh zzzzzzzzzz\\nitem ghi zzzzzzzzzz\\nitem ghj zzzzzzzzzz\\nitem ghk zzzzzzzzzz\\nitem ghl zzzzzzzzzz\\nitem ghm zzzzzzzzzz\\nitem ghn zzzzzzzzzz\\nitem gho zzzzzzzzzz\\nitem ghp zzzzzzzzzz\\nitem ghq zzzzzzzzzz\\nitem ghr zzzzzzzzzz\\nitem ghs zzzzzzzzzz\\nitem ght zzzzzzzzzz\\nitem ghu zzzzzzzzzz\\nitem ghv zzzzzzzzzz\\nitem ghw zzzzzzzzzz\\nitem ghx zzzzzzzzzz\\nitem ghy zzzzzzzzzz\\nitem ghz zzzzzzzzzz\\nitem gig zzzzzzzzzz\\nitem gih zzzzzzzzzz\\nitem gii zzzzzzzzzz\\nitem gij zzzzzzzzzz\\nitem gik zzzzzzzzzz\\nitem gil zzzzzzzzzz\\nitem gim zzzzzzzzzz\\nitem gin zzzzzzzzzz\\nitem gio zzzzzzzzzz\\nitem gip zzzzzzzzzz\\nitem giq zzzzzzzzzz\\nitem gir zzzzzzzzzz\\nitem gis zzzzzzzzzz\\nitem git zzzzzzzzzz\\nitem giu zzzzzzzzzz\\nitem giv zzzzzzzzzz\\nitem giw zzzzzzzzzz\\nitem gix zzzzzzzzzz\\nitem giy zzzzzzzzzz\\nitem giz zzzzzzzzzz\\nitem gjg zzzzzzzzzz\\nitem gjh zzzzzzzzzz\\nitem gji zzzzzzzzzz\\nitem gjj zzzzzzzzzz\\nitem gjk zzzzzzzzzz\\nitem gjl zzzzzzzzzz\\nitem gjm zzzzzzzzzz\\nitem gjn zzzzzzzzzz\\nitem gjo zzzzzzzzzz\\nitem gjp zzzzzzzzzz\\nitem gjq zzzzzzzzzz\\nitem gjr zzzzzzzzzz\\nitem gjs zzzzzzzzzz\\nitem gjt zzzzzzzzzz\\nitem gju zzzzzzzzzz\\nitem gjv zzzzzzzzzz\\nitem gjw zzzzzzzzzz\\nitem gjx zzzzzzzzzz\\nitem gjy zzzzzzzzzz\\nitem gjz zzzzzzzzzz\\nitem gkg zzzzzzzzzz\\nitem gkh zzzzzzzzzz\\nitem gki zzzzzzzzzz\\nitem gkj zzzzzzzzzz\\nitem gkk zzzzzzzzzz\\nitem gkl zzzzzzzzzz\\nitem gkm zzzzzzzzzz\\nitem gkn zzzzzzzzzz\\nitem gko zzzzzzzzzz\\nitem gkp zzzzzzzzzz\\nitem gkq zzzzzzzzzz\\nitem gkr zzzzzzzzzz\\nitem gks zzzzzzzzzz\\nitem gkt zzzzzzzzzz\\nitem gku zzzzzzzzzz\\nitem gkv zzzzzzzzzz\\nitem gkw zzzzzzzzzz\\nitem gkx zzzzzzzzzz\\nitem gky zzzzzzzzzz\\nitem gkz zzzzzzzzzz\\nitem glg zzzzzzzzzz\\nitem glh zzzzzzzzzz\\nitem gli zzzzzzzzzz\\nitem glj zzzzzzzzzz\\nitem glk zzzzzzzzzz\\nitem gll zzzzzzzzzz\\nitem glm zzzzzzzzzz\\nitem gln zzzzzzzzzz\\nitem glo zzzzzzzzzz\\nitem glp zzzzzzzzzz\\nitem glq zzzzzzzzzz\\nitem glr zzzzzzzzzz\\nitem gls zzzzzzzzzz\\nitem glt zzzzzzzzzz\\nitem glu zzzzzzzzzz\\nitem glv zzzzzzzzzz\\nitem glw zzzzzzzzzz\\nitem glx zzzzzzzzzz\\nitem gly zzzzzzzzzz\\nitem glz zzzzzzzzzz\\nitem gmg zzzzzzzzzz\\nitem gmh zzzzzzzzzz\\nitem gmi zzzzzzzzzz\\nitem gmj zzzzzzzzzz\\nitem gmk zzzzzzzzzz\\nitem gml zzzzzzzzzz\\nitem gmm zzzzzzzzzz\\nitem gmn zzzzzzzzzz\\nitem gmo zzzzzzzzzz\\nitem gmp zzzzzzzzzz\\nitem gmq zzzzzzzzzz\\nitem gmr zzzzzzzzzz\\nitem gms zzzzzzzzzz\\nitem gmt zzzzzzzzzz\\nitem gmu zzzzzzzzzz\\nitem gmv zzzzzzzzzz\\nitem gmw zzzzzzzzzz\\nitem gmx zzzzzzzzzz\\nitem gmy zzzzzzzzzz\\nitem gmz zzzzzzzzzz\\nitem gng zzzzzzzzzz\\nitem gnh zzzzzzzzzz\\nitem gni zzzzzzzzzz\\nitem gnj zzzzzzzzzz\\nitem gnk zzzzzzzzzz\\nitem gnl zzzzzzzzzz\\nitem gnm zzzzzzzzzz\\nitem gnn zzzzzzzzzz\\nitem gno zzzzzzzzzz\\nitem gnp zzzzzzzzzz\\nitem gnq zzzzzzzzzz\\nitem gnr zzzzzzzzzz\\nitem gns zzzzzzzzzz\\nitem gnt zzzzzzzzzz\\nitem gnu zzzzzzzzzz\\nitem gnv zzzzzzzzzz\\nitem gnw zzzzzzzzzz\\nitem gnx zzzzzzzzzz\\nitem gny zzzzzzzzzz\\nitem gnz zzzzzzzzzz\\nitem gog zzzzzzzzzz\\nitem goh zzzzzzzzzz\\nitem goi zzzzzzzzzz\\nitem goj zzzzzzzzzz\\nitem gok zzzzzzzzzz\\nitem gol zzzzzzzzzz\\nitem gom zzzzzzzzzz\\nitem gon zzzzzzzzzz\\nitem goo zzzzzzzzzz\\nitem gop zzzzzzzzzz\\nitem goq zzzzzzzzzz\\nitem gor zzzzzzzzzz\\nitem gos zzzzzzzzzz\\nitem got zzzzzzzzzz\\nitem gou zzzzzzzzzz\\nitem gov zzzzzzzzzz\\nitem gow zzzzzzzzzz\\nitem gox zzzzzzzzzz\\nitem goy zzzzzzzzzz\\nitem goz zzzzzzzzzz\\nitem gpg zzzzzzzzzz\\nitem gph zzzzzzzzzz\\nitem gpi zzzzzzzzzz\\nitem gpj zzzzzzzzzz\\nitem gpk zzzzzzzzzz\\nitem gpl zzzzzzzzzz\\nitem gpm zzzzzzzzzz\\nitem gpn zzzzzzzzzz\\nitem gpo zzzzzzzzzz\\nitem gpp zzzzzzzzzz\\nitem gpq zzzzzzzzzz\\nitem gpr zzzzzzzzzz\\nitem gps zzzzzzzzzz\\nitem gpt zzzzzzzzzz\\nitem gpu zzzzzzzzzz\\nitem gpv zzzzzzzzzz\\nitem gpw zzzzzzzzzz\\nitem gpx zzzzzzzzzz\\nitem gpy zzzzzzzzzz\\nitem gpz zzzzzzzzzz\\nitem gqg zzzzzzzzzz\\nitem gqh zzzzzzzzzz\\nitem gqi zzzzzzzzzz\\nitem gqj zzzzzzzzzz\\nitem gqk zzzzzzzzzz\\nitem gql zzzzzzzzzz\\nitem gqm zzzzzzzzzz\\nitem gqn zzzzzzzzzz\\nitem gqo zzzzzzzzzz\\nitem gqp zzzzzzzzzz\\nitem gqq zzzzzzzzzz\\nitem gqr zzzzzzzzzz\\nitem gqs zzzzzzzzzz\\nitem gqt zzzzzzzzzz\\nitem gqu zzzzzzzzzz\\nitem gqv zzzzzzzzzz\\nitem gqw zzzzzzzzzz\\nitem gqx zzzzzzzzzz\\nitem gqy zzzzzzzzzz\\nitem gqz zzzzzzzzzz\\nitem grg zzzzzzzzzz\\nitem grh zzzzzzzzzz\\nitem gri zzzzzzzzzz\\nitem grj zzzzzzzzzz\\nitem grk zzzzzzzzzz\\nitem grl zzzzzzzzzz\\nitem grm zzzzzzzzzz\\nitem grn zzzzzzzzzz\\nitem gro zzzzzzzzzz\\nitem grp zzzzzzzzzz\\nitem grq zzzzzzzzzz\\nitem grr zzzzzzzzzz\\nitem grs zzzzzzzzzz\\nitem grt zzzzzzzzzz\\nitem gru zzzzzzzzzz\\nitem grv zzzzzzzzzz\\nitem grw zzzzzzzzzz\\nitem grx zzzzzzzzzz\\nitem gry zzzzzzzzzz\\nitem grz zzzzzzzzzz\\nitem gsg zzzzzzzzzz\\nitem gsh zzzzzzzzzz\\nitem gsi zzzzzzzzzz\\nitem gsj zzzzzzzzzz\\nitem gsk zzzzzzzzzz\\nitem gsl zzzzzzzzzz\\nitem gsm zzzzzzzzzz\\nitem gsn zzzzzzzzzz\\nitem gso zzzzzzzzzz\\nitem gsp zzzzzzzzzz\\nitem gsq zzzzzzzzzz\\nitem gsr zzzzzzzzzz\\nitem gss zzzzzzzzzz\\nitem gst zzzzzzzzzz\\nitem gsu zzzzzzzzzz\\nitem gsv zzzzzzzzzz\\nitem gsw zzzzzzzzzz\\nitem gsx zzzzzzzzzz\\nitem gsy zzzzzzzzzz\\nitem gsz zzzzzzzzzz\\nitem gtg zzzzzzzzzz\\nitem gth zzzzzzzzzz\\nitem gti zzzzzzzzzz\\nitem gtj zzzzzzzzzz\\nitem gtk zzzzzzzzzz\\nitem gtl zzzzzzzzzz\\nitem gtm zzzzzzzzzz\\nitem gtn zzzzzzzzzz\\nitem gto zzzzzzzzzz\\nitem gtp zzzzzzzzzz\"}]}"
+    },
+    "client": {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*"
+      },
+      "body": "{\"id\":\"c1\",\"object\":\"chat.completion\",\"model\":\"oa/m1\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500}}"
+    },
+    "usage": {
+      "keyId": "k1",
+      "provider": "oa",
+      "model": "oa/m1",
+      "kind": "chat",
+      "format": "openai",
+      "stream": false,
+      "savedTokens": 0,
+      "local": true,
+      "status": 200,
+      "input": 1000,
+      "output": 500,
+      "cached": 0,
+      "cost": 2000000
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "fn": "compressBig",
+  "in": [
+    [
+      [
+        "2026-11-17 INFO line same\n",
+        40000
+      ]
+    ],
+    ""
+  ],
+  "out": {
+    "filter": "log",
+    "saved": 1039948,
+    "length": 52,
+    "sha256": "b16557979eaf1fbf17af6a475e506bb1429a55b5d525f45b420d196b58e9326c"
+  }
+}

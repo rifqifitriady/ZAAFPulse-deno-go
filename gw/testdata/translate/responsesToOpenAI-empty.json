@@ -1,0 +1,15 @@
+{
+  "fn": "responsesToOpenAI",
+  "in": [
+    {}
+  ],
+  "out": {
+    "body": {
+      "messages": [],
+      "stream": false
+    },
+    "soft": null,
+    "dropped": [],
+    "custom": []
+  }
+}

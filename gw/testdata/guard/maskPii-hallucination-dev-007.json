@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "getaddrinfo ENOTFOUND docs.nonexistent-framework.dev"
+  ],
+  "out": {
+    "text": "getaddrinfo ENOTFOUND docs.nonexistent-framework.dev",
+    "counts": {}
+  }
+}

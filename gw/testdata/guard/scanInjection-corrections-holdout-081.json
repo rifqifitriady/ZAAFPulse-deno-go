@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "saya salah ketik tadi, maksudnya tabel orders bukan order_items"
+  ],
+  "out": null
+}

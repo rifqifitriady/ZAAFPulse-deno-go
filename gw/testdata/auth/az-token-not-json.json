@@ -1,0 +1,263 @@
+{
+  "secrets": [
+    "\u0065yJ0eXBlIjoic2VydmljZV9hY2NvdW50IiwiY2xpZW50X2VtYWlsIjoiZ3dAcHJvai5leGFtcGxlLnRlc3QiLCJ0b2tlbl91cmkiOiJodHRwczovL29hdXRoMi5leGFtcGxlLnRlc3QvdG9rZW4iLCJwcml2YXRlX2tleSI6Ii0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZBSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS1l3Z2dTaUFnRUFBb0lCQVFDaWwyRTlvS292Zms0Q1xuMHZzV2prQjNzYkxHR3p0c3NEODl1bU9JZ3k0STc4cnZ6U3F0RWhNZ05UYTdNQlc1dTI5VmRMdmlPWWtmdDA1T1xuVVlUS2NidlpsMGdxMHVibnM3T3FzT0oxeFY2ZTZvd2dtbTRocFZ1ZXlNZythL1VvT2pEQ21LZjJSWFN4UnlKMFxuQmFnenZ1NkNQK1RuV0RHZ0FOYVZKVThYUmFxN2NMcDNIOEI4Qmt3WlZMaEtXYVZ2RGxGQW5JNXRYekRQa24yaFxuTWZuVmdOd0R0eE1HR2psczMyMVJCS1Y1aG85dG9LTlQwZXZDY3dTaXNDdDJKZDV1cHVtNzFOM3cyTzhVS0RZRVxuMGtWbUk5MnBWRVZFOUJTNzFvU3FldHpOdytmd1M2UzZtc3lja3RRZEt6SU1YeTBGaTdDb3FhcjRoRWtKcE94dVxubUhrZ3FVM0RBZ01CQUFFQ2dnRUFEcEp3c0ZHZytjYTJmb0dpNS8rY2Z0M0VsRnJHZGFtZmZBeDR5bzJ2UE4vT1xuUkFzUytHdEw5REZiYVdWdGg3V1R6SWlTSk9heE1uclVTdEtsaXh0WEViRUJwOHpsSXY1ZWE1THFNNmRGSVdCZ1xudjE5Tk5ZNFl3RjlsdGFwK3BnOVR1c0pzYzB4Vm9XU0FZdjVLelVYSnpJOVF3dnlLM2czcWdzMTlqQ3dUUkRTT1xucFZoUUEvdUVMSWh4SzRsb3NuZ0pKWGVib21sN0tsbG1aVk5KQ1VGblZCM3ljZE1Hc1BHcy9mcjRxU2c2QUFjV1xuM0lTMHNvVHpuNnAvdWJGM01tUzZSeStiV3lPVzhuc1dZQ1REbE1QWXRVV3NjdnRwN2EvRVJnYldreG11TCtVR1xuMkJKK2dhVVJncGFub0VqajJTYU8vLy9La2hCeTlkZ0RXa2JKMGxvVzRRS0JnUURTMHVEb0kzMkluTDFmYWRaY1xucU5NUGRDSnlacnQvMDZsbmpvdnYvWkZPY3d5RDJRNDV0OFlMODdwZGJsK2hUWWJDMTV3b21lanFGWGxnNTZZaFxudUhpSGRHS1YzTmpOQ2pUQlBKc1pOaDV1K3hocitoVmo4bWlBSHJtWVlmYXJhRUtHUXZHRGNaUHVwVkdtNFBwL1xuZXI1WXlQaUZkK0RvcTM3M2FSbitYNGRra1FLQmdRREZicCsvR1A1K0lKWTZGOFJmNU5iZXRhWkZRWUNZWlRNL1xudFRlMTd6K3QzaE1YKzVLWURQTC85QzVKYnNNRGNReEJIVUl3WXE2SXRMbWt1MGZsVnFJT2ZCS0F5dDVMRUM2YlxuUGhONWQvbVNRVG9wUVhZdDNweEtvM2w0M3N1UlZnVkFXM0tNTll3UE1YOVgvVlRIUVZTSkRtVDYwejZGYW81elxuQnBlUXR2N25Fd0tCZ0I0ZmEycy94dXdDR1R6TXpvZ214eUZxSXBIZUErUmJ4ZFM2RlZ5UkNuWC9Fa2EwZU1mZVxuYmptKzlWM3NLMVhNMGZoOC9oNysvcnlUbk9ndnNSa1lWb0JrTE1IazhFVTd0Qlg0SnVFUFRvSGs5clJXNHorSVxubjAzUEZnMmowYTdrRXIxRVMyWFFrS2FFa0lvYmt5OHJ4bzdCQ0dGcG80VWJHK1VWNjFUaEtXTkJBb0dBSHA2TlxuZitHc2Ruc3ZVVXNtVllqMEdnNHAvMHV0V2ZVNEFZVmxZbjM4YmthbXgyMW95dFFYUzhMZSt0eUd1aDNxUEo4QlxuQ09nRkVZYVYxQXFIbC9YYnBFdHh3eSt6VWdqc2NYOHJIZ2VSV1RGc2g4RnpScUhqczErdkV5UGFobXZFM0xwU1xuQlpTNGFCTFJJU0JVNmFJa0xpMWhVOVUzT1JIUmpkMVQzRW5GTnFrQ2dZQWw2SXdhdEFYeVJlUXRUOHR5NlBjSVxuVXRaMkRaSVoweXQ4d3N2WkpGRThkKzlxQmc2WHc1UjlTMlBncWJ2VnE1K3UwWXZBTFV0N1FZWVJrUGtnSnYzMVxuOUNkVkFvM2hwbzduK1hHZnVhRUFyaytxQjdqeDUxa29LTldZV0JteW02MDFjZ2FTaFVYMEFEeS9GbHJxZmY5elxuVXphQ2o3M1J6ZmNLMGUyVmtGYlhuZz09XG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tXG4ifQ==",
+    "\u0065yJjbGllbnRfc2VjcmV0IjoicnQtY2xpZW50LXNlY3JldC0xIiwicmVmcmVzaF90b2tlbiI6InJ0LXJlZnJlc2gtMSJ9",
+    "enBfYXV0aEZpeHR1cmVTZWNyZXQwMTIzNDU2Nzg5YWJjZGVm",
+    "YXgtY2xpZW50LXNlY3JldC05ODc2NTQzMjEw",
+    "YXotY2xpZW50LXNlY3JldC0wMTIzNDU2Nzg5"
+  ],
+  "fn": "chat",
+  "in": {
+    "note": "the token endpoint answers 200 with text that is not JSON",
+    "configPush": {
+      "gateway": {
+        "providers": [
+          {
+            "id": "az",
+            "preset": "azure-openai",
+            "baseUrl": "https://az.example.test/openai/v1",
+            "approved": true,
+            "auth": {
+              "type": "oauth2",
+              "tokenUrl": "https://login.example.test/t/oauth2/v2.0/token",
+              "clientId": "az-app",
+              "scope": "https://cognitiveservices.azure.com/.default",
+              "grant": "client_credentials"
+            },
+            "span": {
+              "name": "azure.ai.openai",
+              "address": "az.example.test",
+              "port": 443
+            }
+          },
+          {
+            "id": "rt",
+            "preset": "custom",
+            "baseUrl": "https://rt.example.test/v1",
+            "approved": true,
+            "tier": "external",
+            "auth": {
+              "type": "oauth2",
+              "tokenUrl": "https://login.example.test/rt/token",
+              "clientId": "rt-app",
+              "scope": "",
+              "grant": "refresh_token"
+            },
+            "span": {
+              "name": "rt",
+              "address": "rt.example.test",
+              "port": 443
+            }
+          },
+          {
+            "id": "vx",
+            "preset": "vertex",
+            "baseUrl": "https://vertex.example.test/v1/projects/p1/locations/global/endpoints/openapi",
+            "approved": true,
+            "auth": {
+              "type": "google-sa",
+              "scope": "https://www.googleapis.com/auth/cloud-platform"
+            },
+            "span": {
+              "name": "gcp.vertex_ai",
+              "address": "vertex.example.test",
+              "port": 443
+            }
+          },
+          {
+            "id": "ax",
+            "preset": "custom",
+            "baseUrl": "https://ax.example.test/v1",
+            "approved": true,
+            "tier": "external",
+            "format": "anthropic",
+            "auth": {
+              "type": "oauth2",
+              "tokenUrl": "https://login.example.test/ax/token",
+              "clientId": "ax-app",
+              "scope": "api://ax/.default",
+              "grant": "client_credentials"
+            },
+            "span": {
+              "name": "ax",
+              "address": "ax.example.test",
+              "port": 443
+            }
+          }
+        ],
+        "routes": [],
+        "guardrails": {
+          "scope": "external",
+          "secrets": "off",
+          "pii": "off",
+          "injection": "off"
+        },
+        "defaults": {
+          "model": "",
+          "plannerModel": "",
+          "codeModel": ""
+        },
+        "tokenSaver": true,
+        "modelMap": []
+      },
+      "keys": [
+        {
+          "id": "k1",
+          "name": "k1",
+          "scopes": [
+            "llm"
+          ],
+          "models": [],
+          "agents": [],
+          "knowledge": [],
+          "budgetUSD": null,
+          "rpm": 10000,
+          "privateOnly": false,
+          "expiresAt": null,
+          "revokedAt": null,
+          "guardrails": {},
+          "prefix": "zp_authFi…",
+          "approveOwnRuns": false,
+          "createdAt": 1,
+          "lastUsedAt": null,
+          "hash": "a1d6bbe1b945dbcd5bfa2c276fe8ee7d1a58c39491cf28997b366b7b5e98ae04"
+        }
+      ],
+      "pricing": {
+        "gpt-6.1": {
+          "input": 2000000000,
+          "output": 8000000000
+        },
+        "m1": {
+          "input": 1000000000,
+          "output": 2000000000
+        },
+        "claude-x": {
+          "input": 3000000000,
+          "output": 15000000000,
+          "cacheRead": 300000000
+        },
+        "e1": {
+          "input": 20000000,
+          "output": 0
+        },
+        "gemini-2.5-pro": {
+          "input": 1250000000,
+          "output": 10000000000
+        }
+      },
+      "egress": {
+        "allow": [],
+        "allowList": "enforce",
+        "classes": {
+          "gateway": "direct",
+          "connectors": "direct",
+          "mcp": "direct",
+          "routers": "direct",
+          "pricing": "direct",
+          "evals": "direct",
+          "agents": "direct",
+          "notify": "direct",
+          "brain": "direct",
+          "public": "direct",
+          "otel": "direct",
+          "runtimes": "direct"
+        }
+      }
+    },
+    "secretsPush": {
+      "providers": [
+        {
+          "id": "az",
+          "value": "<<ZPSECRET:4>>"
+        },
+        {
+          "id": "rt",
+          "value": "<<ZPSECRET:1>>"
+        },
+        {
+          "id": "vx",
+          "value": "<<ZPSECRET:0>>"
+        },
+        {
+          "id": "ax",
+          "value": "<<ZPSECRET:3>>"
+        }
+      ],
+      "mask": [
+        "<<ZPSECRET:4>>",
+        "<<ZPSECRET:1>>",
+        "<<ZPSECRET:0>>",
+        "<<ZPSECRET:3>>"
+      ]
+    },
+    "snapshot": {
+      "budgets": [],
+      "keyCenter": {},
+      "at": 1767225600000
+    },
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "headers": {
+          "content-type": "application/json",
+          "user-agent": "claude-cli/9.9.9",
+          "authorization": "Bearer <<ZPSECRET:2>>"
+        },
+        "body": "{\"model\":\"az/gpt-6.1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+      }
+    ],
+    "queue": [
+      {
+        "status": 200,
+        "headers": {
+          "content-type": "text/html"
+        },
+        "body": "<html>sign in</html>"
+      }
+    ]
+  },
+  "out": {
+    "exchanges": [
+      {
+        "url": "https://login.example.test/t/oauth2/v2.0/token",
+        "method": "POST",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json"
+        },
+        "body": "grant_type=client_credentials&client_id=az-app&client_secret=<<ZPSECRET:4>>&scope=https%3A%2F%2Fcognitiveservices.azure.com%2F.default"
+      }
+    ],
+    "clients": [
+      {
+        "status": 502,
+        "headers": {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+          "access-control-allow-origin": "*",
+          "retry-after": null,
+          "x-zp-dropped": null
+        },
+        "body": "{\"error\":{\"message\":\"az: az: token refresh failed (200)\",\"type\":\"upstream_error\"}}"
+      }
+    ],
+    "usage": [
+      {
+        "keyId": "k1",
+        "provider": "az",
+        "model": "az/gpt-6.1",
+        "kind": "chat",
+        "format": "openai",
+        "stream": false,
+        "client": "claude-code",
+        "local": true,
+        "status": 599,
+        "error": "az: az: token refresh failed (200)",
+        "cost": 0,
+        "ttft": "absent"
+      }
+    ]
+  }
+}

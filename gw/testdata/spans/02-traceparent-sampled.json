@@ -1,0 +1,105 @@
+{
+  "fn": "spans",
+  "in": {
+    "request": {
+      "headers": {
+        "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+        "tracestate": "a=1,b=2"
+      }
+    },
+    "answer": {
+      "status": 200,
+      "chunks": [
+        "{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}"
+      ]
+    },
+    "usage": {
+      "ts": 1767225600000,
+      "ms": 12.345,
+      "status": 200,
+      "input": 1000,
+      "output": 500,
+      "cost": 0.002,
+      "keyId": "k1",
+      "provider": "oa",
+      "model": "oa/m1",
+      "kind": "chat",
+      "format": "openai",
+      "stream": false,
+      "local": true
+    },
+    "providerSpan": {
+      "name": "oa",
+      "address": "127.0.0.1",
+      "port": 9
+    }
+  },
+  "out": {
+    "traceId": "0af7651916cd43dd8448eb211c80319c",
+    "spans": [
+      {
+        "span": {
+          "t": "0af7651916cd43dd8448eb211c80319c",
+          "s": "0101010101010101",
+          "p": "b7ad6b7169203331",
+          "n": "POST /v1/chat/completions",
+          "k": "server",
+          "st": 0,
+          "d": 0,
+          "ok": true,
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "http.request.method": "POST",
+            "http.route": "/v1/chat/completions",
+            "url.path": "/v1/chat/completions",
+            "url.scheme": "http",
+            "network.protocol.version": "1.1",
+            "http.response.status_code": 200
+          }
+        },
+        "otlp": {
+          "traceState": "a=1,b=2",
+          "remote": true
+        }
+      },
+      {
+        "span": {
+          "t": "0af7651916cd43dd8448eb211c80319c",
+          "s": "0202020202020202",
+          "p": "0101010101010101",
+          "n": "chat oa/m1",
+          "k": "client",
+          "st": 1767225599987655,
+          "d": 12345,
+          "ok": true,
+          "src": "gateway",
+          "svc": "zaafpulse",
+          "a": {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.provider.name": "oa",
+            "gen_ai.request.model": "oa/m1",
+            "gen_ai.response.model": "oa/m1",
+            "server.address": "127.0.0.1",
+            "server.port": 9,
+            "gen_ai.request.stream": false,
+            "gen_ai.usage.input_tokens": 1000,
+            "gen_ai.usage.output_tokens": 500,
+            "zaafpulse.cost.usd": 0.002,
+            "zaafpulse.api_key.id": "k1",
+            "zaafpulse.provider.id": "oa",
+            "zaafpulse.request.kind": "chat",
+            "zaafpulse.request.format": "openai",
+            "gen_ai.response.id": "chatcmpl-1",
+            "gen_ai.response.finish_reasons": [
+              "stop"
+            ]
+          }
+        },
+        "otlp": {
+          "traceState": "a=1,b=2"
+        }
+      }
+    ]
+  }
+}

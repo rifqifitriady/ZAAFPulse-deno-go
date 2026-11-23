@@ -1,0 +1,12 @@
+{
+  "fn": "compressText",
+  "in": [
+    "[0/40] building\n[1/40] building\n[2/40] building\n[3/40] building\n[4/40] building\n[5/40] building\n[6/40] building\n[7/40] building\n[8/40] building\n[9/40] building\n[10/40] building\n[11/40] building\n[12/40] building\n[13/40] building\n[14/40] building\n[15/40] building\n[16/40] building\n[17/40] building\n[18/40] building\n[19/40] building\n[20/40] building\n[21/40] building\n[22/40] building\n[23/40] building\n[24/40] building\n[25/40] building\n[26/40] building\n[27/40] building\n[28/40] building\n[29/40] building\n[30/40] building\n[31/40] building\n[32/40] building\n[33/40] building\n[34/40] building\n[35/40] building\n[36/40] building\n[37/40] building\n[38/40] building\n[39/40] building\n[40/40] building\n[41/40] building\n[42/40] building\n[43/40] building\n[44/40] building\n[45/40] building\n[46/40] building\n[47/40] building\n[48/40] building\n[49/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[50/40] building\n[76/40] building\n[77/40] building\n[78/40] building\n[79/40] building\n[80/40] building\n[81/40] building\n[82/40] building\n[83/40] building\n[84/40] building\n[85/40] building\n[86/40] building\n[87/40] building\n[88/40] building\n[89/40] building\n[90/40] building\n[91/40] building\n[92/40] building\n[93/40] building\n[94/40] building\n[94/40] building\n[94/40] building\n[94/40] building\n[94/40] building\n[94/40] building\n[94/40] building\n[94/40] building\n[94/40] building\n[103/40] building",
+    "Bash find . -name x"
+  ],
+  "out": {
+    "text": "[0/40] building\n[1/40] building\n[2/40] building\n[3/40] building\n[4/40] building\n[5/40] building\n[6/40] building\n[7/40] building\n[8/40] building\n[9/40] building\n[10/40] building\n[11/40] building\n  … 92 more in . omitted",
+    "filter": "listing",
+    "saved": 1540
+  }
+}

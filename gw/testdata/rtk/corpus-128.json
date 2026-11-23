@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    "2026-11-17T10:00:00Z INFO request 825e9edf0a2f done\nsame repeated line\n2026-11-17T10:00:02Z INFO request 93cf0925681a done\n2026-11-17T10:00:03Z INFO request 0e914d8dd597 done\nsame repeated line\n2026-11-17T10:00:05Z INFO request a15eae9766ec done\n2026-11-17T10:00:06Z INFO request ef81c6efcce6 done\nsame repeated line\nsame repeated line\nsame repeated line\n2026-11-17T10:00:10Z INFO request 4ddc00d7312f done\n2026-11-17T10:00:11Z INFO request 5883af2f0294 done\nsame repeated line\nsame repeated line\nsame repeated line\n2026-11-17T10:00:15Z INFO request 4b5825bec137 done",
+    "Glob **/*.ts"
+  ],
+  "out": null
+}

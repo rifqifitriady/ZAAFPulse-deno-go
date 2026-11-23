@@ -1,0 +1,14 @@
+{
+  "fn": "checkBody",
+  "in": [
+    {},
+    {
+      "scope": "external",
+      "secrets": "redact",
+      "pii": "off",
+      "injection": "log"
+    },
+    null
+  ],
+  "throws": "unknown body format \"null\""
+}

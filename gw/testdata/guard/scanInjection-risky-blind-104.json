@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "git reset --hard HEAD~3"
+  ],
+  "out": null
+}

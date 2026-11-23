@@ -1,22 +1,28 @@
-# ZAAFPulse installer for Windows 10 and 11 (PowerShell 5.1 or 7). One command in PowerShell:
+# ZAAFPulse installer for Windows 10 and 11, x64 and arm64 (PowerShell 5.1 or 7). One command in PowerShell:
 #
-#   irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.ps1 | iex
+#   irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 | iex
 #
-# With options (server mode, another port, no background task):
+# With options (server mode, another port, no background task, a local package, a rollback):
 #
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.ps1))) -Server -Port 4777
+#   & ([scriptblock]::Create((irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1))) -Server -Port 4777
 #
-# What it does: uses Node.js 18+ if you have it, else downloads the official Node.js LTS (checksum
-# verified) into %LOCALAPPDATA%\ZAAFPulse\node; downloads ZAAFPulse into %LOCALAPPDATA%\ZAAFPulse\app;
-# adds the `zaafpulse` command to your user PATH; starts it now and at every logon (a hidden launcher in
-# your Startup folder) and adds a Start menu shortcut. No administrator rights needed, except -System
-# (a Task Scheduler task at boot, as SYSTEM, for a server that runs without anyone logged on).
+# Options: -Server  -HostAddress ADDR  -Port N  -Version TAG  -System  -NoService
+#          -Archive FILE [-Sums FILE] (a local package, offline)  -VerifyAttestation (needs gh)
+#          -Rollback (back to the install this one replaced)  -Uninstall [-Purge]
+# What it does: downloads the release package for this system (checksum verified) and puts zaafpulse.exe and
+# zaafpulse-gw.exe in %LOCALAPPDATA%\ZAAFPulse\bin; adds that folder to your user PATH; starts it now and at
+# every logon (a hidden launcher in your Startup folder) and adds a Start menu shortcut. An earlier install
+# (v1.x or v2) is kept for -Rollback. No administrator rights needed, except -System (a Task Scheduler task at
+# boot, as SYSTEM, for a server that runs without anyone logged on). 32-bit Windows: use the v1.x installer.
 param(
   [switch]$Server,          # listen on the network (0.0.0.0); asks for the dashboard admin password
   [string]$HostAddress = '',
   [int]$Port = 0,
-  [string]$Version = '',    # a release tag, or main
-  [string]$Source = '',     # install from a local copy instead of downloading
+  [string]$Version = '',    # a release tag (vX.Y.Z); the latest when empty
+  [string]$Archive = '',    # install a local package (zaafpulse-<v>-win-<arch>.zip) instead of downloading
+  [string]$Sums = '',       # the SHA256SUMS.txt that lists -Archive
+  [switch]$VerifyAttestation,
+  [switch]$Rollback,
   [switch]$System,          # run at boot as SYSTEM, without a logged-on user (elevated PowerShell)
   [switch]$NoService,
   [switch]$Uninstall,
@@ -26,105 +32,431 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is far faster without the progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$Repo = 'rifqifitriady/ZAAFPulse'
+$Repo = 'rifqifitriady/ZAAFPulse-deno-go'
+$V1Install = 'irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.ps1 | iex'
+# One string for the install folder, used both to run the binary and on PATH: Deno matches the gateway's folder on
+# PATH against the binary's own path case-sensitively, so the two must be spelled the same.
 $Root = Join-Path $env:LOCALAPPDATA 'ZAAFPulse'
 $BinDir = Join-Path $Root 'bin'
-$Launcher = Join-Path $BinDir 'zaafpulse.cmd'
+$Exe = Join-Path $BinDir 'zaafpulse.exe'
+$OldCmd = Join-Path $BinDir 'zaafpulse.cmd'          # the v1 launcher
+$Opener = Join-Path $BinDir 'zaafpulse-open.vbs'
+$RollbackDir = Join-Path $Root 'rollback'
+$RollforwardDir = Join-Path $Root 'rollforward'
+# What an install keeps in bin\: v2's binaries, v1's launcher, and the Start menu opener of either.
+$BinFiles = @('zaafpulse.exe', 'zaafpulse-gw.exe', 'zaafpulse.cmd', 'zaafpulse-open.vbs', 'LICENSE')
 function Say($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn($m) { Write-Host "!  $m" -ForegroundColor Yellow }
 
-if ($Uninstall) {
-  if (Test-Path $Launcher) { & $Launcher service uninstall $(if ($System) { '--system' }) 2>$null }
-  Remove-Item -Recurse -Force (Join-Path $Root 'app'), (Join-Path $Root 'node'), $BinDir -ErrorAction SilentlyContinue
+# Windows PowerShell 5.1's module path: PSModulePath without PowerShell 7's folders (a pwsh install's Modules, with
+# pwsh.dll beside it, and the ...\PowerShell\Modules user and shared folders; ...\WindowsPowerShell\Modules stays), and
+# with 5.1's own system folder. A Windows PowerShell started from pwsh by anything but pwsh's own `&` (Start-Process,
+# a program pwsh started) inherits pwsh's folders first, and then cannot load its own script modules from them:
+# Get-FileHash "not recognized" (the second v2.0.0 dry run), and the same for Expand-Archive and the CIM cmdlets.
+# pwsh strips them only when it runs powershell.exe itself (ModuleIntrinsics.GetWindowsPowerShellModulePath);
+# lib/platform.js does the same for the powershell.exe that zaafpulse runs.
+function Get-WinPSModulePath([string]$value) {
+  $keep = New-Object System.Collections.Generic.List[string]
+  foreach ($d in @("$value" -split ';')) {
+    $p = $d.Trim().TrimEnd('\', '/')
+    if (-not $p -or $p -match '(^|[\\/])PowerShell[\\/]Modules$') { continue }
+    $parent = [IO.Path]::GetDirectoryName($p)
+    if ($parent -and [IO.File]::Exists([IO.Path]::Combine($parent, 'pwsh.dll'))) { continue }
+    if (-not ($keep -contains $p)) { $keep.Add($p) }
+  }
+  if ($env:SystemRoot) {
+    $sys = [IO.Path]::Combine($env:SystemRoot, 'System32\WindowsPowerShell\v1.0\Modules')
+    if (-not ($keep -contains $sys)) { $keep.Add($sys) }
+  }
+  return ($keep -join ';')
+}
+# This installer in Windows PowerShell (not pwsh): its own module path, so the modules it autoloads are 5.1's.
+if ($PSVersionTable.PSEdition -ne 'Core' -and $env:PSModulePath) { $env:PSModulePath = Get-WinPSModulePath $env:PSModulePath }
+# The SHA-256 of a file, lower-case hex, with .NET alone (no Get-FileHash, which lives in a script module).
+function Get-Sha256([string]$file) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  $fs = [IO.File]::OpenRead($file)
+  try { return ([BitConverter]::ToString($sha.ComputeHash($fs)) -replace '-', '').ToLowerInvariant() }
+  finally { $fs.Dispose(); $sha.Dispose() }
+}
+# Runs a native program: returns its stdout lines, shows its stderr lines (none with -Quiet), and leaves its exit code
+# in $LASTEXITCODE; never a terminating error. In Windows PowerShell 5.1 a stderr line that is redirected (2>$null,
+# 2>&1, or every line when this host's own stderr is redirected, as in a CI step) becomes an error record, and
+# $ErrorActionPreference = 'Stop' makes the first one fatal: `schtasks /Query` for a task that does not exist ended
+# -Uninstall with exit 1 in the third v2.0.0 dry run. Every native call of this installer goes through here, except
+# the service commands (Invoke-Service, no redirection at all). -InputText is piped to the program's stdin. A program
+# that cannot start at all still throws (the caller's catch sees it), as `& $file` did.
+function Invoke-Native([string]$file, [string[]]$argv = @(), $InputText = $null, [switch]$Quiet) {
+  $ErrorActionPreference = 'Continue'
+  try { $out = if ($null -ne $InputText) { $InputText | & $file @argv 2>&1 } else { & $file @argv 2>&1 } }
+  catch { throw }
+  foreach ($o in @($out)) {
+    if ($o -is [System.Management.Automation.ErrorRecord]) { if (-not $Quiet) { Write-Host "$o" } }
+    else { $o }
+  }
+}
+# The Start menu's Programs folder. GetFolderPath gives '' when the folder does not exist (a new or redirected profile;
+# the install test's temp APPDATA); then its usual place under APPDATA, or '' when there is no APPDATA either.
+function Get-ProgramsDir {
+  $d = [Environment]::GetFolderPath('Programs')
+  if (-not $d -and $env:APPDATA) { $d = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs' }
+  return "$d"
+}
+
+# The command that runs the current install: v2's zaafpulse.exe, else v1's zaafpulse.cmd, else none.
+function Get-Launcher {
+  if (Test-Path -LiteralPath $Exe) { return $Exe }
+  if (Test-Path -LiteralPath $OldCmd) { return $OldCmd }
+  return $null
+}
+# Runs `<launcher> service ...` and returns its exit code. It waits for that one process to exit (at most 180 s), not
+# for the end of its output: `service install` leaves the server running in the background, and a launcher whose
+# background processes inherit its handles (v1's zaafpulse.cmd, which -Rollback restores; v2 before the fix in
+# lib/service.js winLaunchCommand) would hold an output pipe open for as long as the server runs, so `& $launcher ... |
+# Out-Host` would never return. Without -RedirectStandard* the launcher writes straight to this console (or whatever
+# runs this installer), and without -Wait (which waits for every descendant) nothing waits on the server.
+# In pwsh, the launcher gets Windows PowerShell's module path (Get-WinPSModulePath) for the powershell.exe it runs.
+function Invoke-Service([string]$launcher, [string[]]$svcArgs) {
+  $saved = $env:PSModulePath
+  if ($PSVersionTable.PSEdition -eq 'Core' -and $saved) { $env:PSModulePath = Get-WinPSModulePath $saved }
+  try { $p = Start-Process -FilePath $launcher -ArgumentList ($svcArgs -join ' ') -NoNewWindow -PassThru }
+  finally { $env:PSModulePath = $saved }
+  $null = $p.Handle   # Windows PowerShell 5.1: without the handle cached, ExitCode stays empty
+  if (-not $p.WaitForExit(180000)) { throw "$launcher $($svcArgs -join ' ') did not finish within 180 s" }
+  return $p.ExitCode
+}
+# Stops the service through a launcher, then ends what still runs from this install (Stop-Leftovers). An old
+# launcher that no longer runs is only a warning.
+function Stop-ZaafService([string]$launcher) {
+  if ($NoService) { return }
+  if ($launcher) {
+    $svcArgs = @('service', 'uninstall'); if ($System) { $svcArgs += '--system' }
+    try {
+      $code = Invoke-Service $launcher $svcArgs
+      if ($code -ne 0) { Warn "Could not stop the running service through $launcher (exit $code)" }
+    } catch { Warn "Could not stop the running service through $launcher`: $($_.Exception.Message)" }
+  }
+  Stop-Leftovers
+}
+# Ends the processes still running from this install, and no others: an executable under $Root, or v1's node running
+# $Root\app\bin\zaafpulse.js. Waits up to 10 s for them to exit, since a running .exe cannot be moved or deleted.
+function Stop-Leftovers {
+  $under = $Root.TrimEnd('\') + '\'
+  $v1Js = Join-Path $Root 'app\bin\zaafpulse.js'
+  $procs = @(Get-CimInstance Win32_Process | Where-Object {
+      $_.ProcessId -ne $PID -and (
+        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($under, [StringComparison]::OrdinalIgnoreCase)) -or
+        ($_.CommandLine -and $_.CommandLine.IndexOf($v1Js, [StringComparison]::OrdinalIgnoreCase) -ge 0))
+    })
+  if ($procs.Count -eq 0) { return }
+  foreach ($p in $procs) {
+    try { Invoke-CimMethod -InputObject $p -MethodName Terminate | Out-Null } catch { }
+  }
+  $ids = @($procs | ForEach-Object { $_.ProcessId })
+  $deadline = (Get-Date).AddSeconds(10)
+  while (Get-Process -Id $ids -ErrorAction SilentlyContinue) {
+    if ((Get-Date) -ge $deadline) { Warn "ZAAFPulse processes still running from $Root after 10 s (ids $($ids -join ', '))"; return }
+    Start-Sleep -Milliseconds 250
+  }
+}
+function Start-ZaafService([string]$launcher) {
+  if ($NoService -or -not $launcher) { return }
+  $svcArgs = @('service', 'install'); if ($System) { $svcArgs += '--system' }
+  try {
+    $code = Invoke-Service $launcher $svcArgs
+    if ($code -ne 0) { Warn 'Not started in the background; start it yourself with: zaafpulse start' }
+  } catch { Warn "Not started in the background ($($_.Exception.Message)); start it yourself with: zaafpulse start" }
+}
+# The AI clients' MCP entries, through v2's zaafpulse.exe (install.sh reregister): an entry an earlier install
+# registered starts that install's own files (v1's node.exe and app\mcp.js, or v2's bin\zaafpulse.exe), which an
+# upgrade or a rollback moves away. `register-mcp registered` writes again every client that holds an entry, and no
+# other. A failure only warns. With -System (install.sh as root) the entries belong to the users who registered them,
+# so each of them is told what to run instead.
+function Register-Again([string]$launcher) {
+  if (-not $launcher) { return }
+  if ($System) {
+    Warn 'AI clients registered for the earlier install start files it moved: each user who registered one runs: zaafpulse register-mcp registered'
+    return
+  }
+  Say 'Registering the AI clients that had ZAAFPulse again'
+  try {
+    Invoke-Native $launcher @('register-mcp', 'registered') | Out-Host
+    if ($LASTEXITCODE -ne 0) { Warn 'Could not register the AI clients again; run: zaafpulse register-mcp registered' }
+  } catch { Warn "Could not register the AI clients again ($($_.Exception.Message)); run: zaafpulse register-mcp registered" }
+}
+# v1's app\ and node\ are the installers' only when v1's app\bin\zaafpulse.js is there.
+function Test-V1([string]$dir) { Test-Path -LiteralPath (Join-Path $dir 'app\bin\zaafpulse.js') }
+# Move the folders app and node, and the files of bin\, from one generation folder to another. A folder already in
+# the destination stays (an interrupted move is finished, not nested). From $Root, app and node move only with v1's
+# marker, in $Root or (an interrupted move) already in $to.
+function Move-Generation([string]$from, [string]$to) {
+  $fromBin = if ($from -eq $Root) { $BinDir } else { Join-Path $from 'bin' }
+  $toBin = if ($to -eq $Root) { $BinDir } else { Join-Path $to 'bin' }
+  $dirs = @('app', 'node')
+  if ($from -eq $Root -and -not (Test-V1 $Root) -and -not (Test-V1 $to)) {
+    $dirs = @()
+    foreach ($d in 'app', 'node') {
+      if (Test-Path -LiteralPath (Join-Path $Root $d)) { Warn "$(Join-Path $Root $d) was left alone: no ZAAFPulse v1 install is there" }
+    }
+  }
+  foreach ($d in $dirs) {
+    $p = Join-Path $from $d
+    $dest = Join-Path $to $d
+    if ((Test-Path -LiteralPath $p) -and -not (Test-Path -LiteralPath $dest)) { Move-Item -LiteralPath $p -Destination $dest }
+  }
+  foreach ($f in $BinFiles) {
+    $p = Join-Path $fromBin $f
+    if (Test-Path -LiteralPath $p) {
+      New-Item -ItemType Directory -Force -Path $toBin | Out-Null
+      Move-Item -LiteralPath $p -Destination (Join-Path $toBin $f) -Force
+    }
+  }
+}
+# The user PATH holds $BinDir exactly once, spelled as $BinDir; an entry that differs only in letter case (or a
+# trailing \) is replaced in place. Returns $true when the PATH changed.
+function Set-UserPath {
   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  if ($userPath) { [Environment]::SetEnvironmentVariable('Path', (($userPath -split ';') | Where-Object { $_ -and $_ -ne $BinDir }) -join ';', 'User') }
-  foreach ($f in 'ZAAFPulse.lnk', 'ZAAFPulse.url') { Remove-Item -Force (Join-Path ([Environment]::GetFolderPath('Programs')) $f) -ErrorAction SilentlyContinue }
+  $parts = @(); if ($userPath) { $parts = @($userPath -split ';' | Where-Object { $_ }) }
+  $out = New-Object System.Collections.Generic.List[string]
+  $placed = $false
+  foreach ($e in $parts) {
+    if ($e.TrimEnd('\') -ieq $BinDir.TrimEnd('\')) {
+      if (-not $placed) { $out.Add($BinDir); $placed = $true }
+    } else { $out.Add($e) }
+  }
+  if (-not $placed) { $out.Add($BinDir) }
+  $new = $out -join ';'
+  if ($new -ceq $userPath) { return $false }
+  [Environment]::SetEnvironmentVariable('Path', $new, 'User')
+  return $true
+}
+function Remove-UserPath {
+  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+  if (-not $userPath) { return }
+  $kept = @($userPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ine $BinDir.TrimEnd('\')) })
+  [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
+}
+
+if ($Uninstall) {
+  Stop-ZaafService (Get-Launcher)
+  # Only what the installers put there: v1's app and node with its marker, and bin\'s own files.
+  $dirs = @('bin.new', 'rollback', 'rollback.new', 'rollforward')
+  if (Test-V1 $Root) { $dirs += 'app', 'node' }
+  else { foreach ($d in 'app', 'node') { if (Test-Path -LiteralPath (Join-Path $Root $d)) { Warn "$(Join-Path $Root $d) was left alone: no ZAAFPulse v1 install is there" } } }
+  foreach ($d in $dirs) {
+    $p = Join-Path $Root $d
+    if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
+  }
+  foreach ($f in $BinFiles) {
+    $p = Join-Path $BinDir $f
+    if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
+  }
+  if ((Test-Path -LiteralPath $BinDir) -and -not (Get-ChildItem -LiteralPath $BinDir -Force)) { Remove-Item -LiteralPath $BinDir -Force }
+  Remove-UserPath
+  $programs = Get-ProgramsDir
+  if ($programs) {
+    foreach ($f in 'ZAAFPulse.lnk', 'ZAAFPulse.url') {
+      $p = Join-Path $programs $f
+      if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
+    }
+  }
   Say 'ZAAFPulse removed.'
-  if ($Purge) { Remove-Item -Recurse -Force (Join-Path $env:APPDATA 'ZAAFPulse'), $Root -ErrorAction SilentlyContinue; Say 'Data removed too.' }
-  else { Say "Your data (config, keys, history) in $env:APPDATA\ZAAFPulse was kept. Add -Purge to delete it." }
+  # Without -System only the Startup entry is removed; the boot task of a -System install stays behind.
+  if (-not $System) {
+    $null = Invoke-Native 'schtasks.exe' @('/Query', '/TN', 'ZAAFPulse') -Quiet
+    if ($LASTEXITCODE -eq 0) {
+      Warn 'The scheduled task ZAAFPulse (a -System install) remains. Remove it from an elevated prompt with: schtasks /Delete /TN ZAAFPulse /F'
+    }
+  }
+  if ($Purge) {
+    foreach ($p in (Join-Path $env:APPDATA 'ZAAFPulse'), $Root) {
+      if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
+    }
+    Say 'Data removed too.'
+  } else { Say "Your data (config, keys, history) in $env:APPDATA\ZAAFPulse was kept. Add -Purge to delete it." }
   return
 }
 
+if ($Rollback) {
+  $versionFile = Join-Path $RollbackDir 'VERSION'
+  if (-not (Test-Path -LiteralPath $versionFile)) { throw "Nothing to roll back to: $RollbackDir holds no saved install" }
+  Stop-ZaafService (Get-Launcher)
+  if (Test-Path -LiteralPath $RollforwardDir) { Remove-Item -LiteralPath $RollforwardDir -Recurse -Force }
+  New-Item -ItemType Directory -Path $RollforwardDir | Out-Null
+  Move-Generation $Root $RollforwardDir
+  Move-Generation $RollbackDir $Root
+  $old = (Get-Content -LiteralPath $versionFile | Select-Object -First 1)
+  Remove-Item -LiteralPath $RollbackDir -Recurse -Force
+  $env:Path = "$BinDir;$env:Path"
+  Start-ZaafService (Get-Launcher)
+  # The AI clients' entries start the install that was just moved to rollforward\.
+  if (Test-Path -LiteralPath $Exe) { Register-Again $Exe }
+  else { Warn "AI clients registered by v2 start files now in $RollforwardDir`: register them again with the restored version (zaafpulse register-mcp <client>)" }
+  Say "Rolled back: ZAAFPulse $old is active again. The install it replaced is in $RollforwardDir."
+  return
+}
+
+# ---- platform: the v2 builds ----
+if (-not [Environment]::Is64BitOperatingSystem) {
+  throw "No v2 build for 32-bit Windows; the v1.x installer still supports it: $V1Install"
+}
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') { 'arm64' } else { 'x64' }
-New-Item -ItemType Directory -Force -Path $Root, $BinDir | Out-Null
 
-# ---- Node.js: yours if it is 18 or newer, else the official LTS in $Root\node ----
-$node = $null
-$cmd = Get-Command node -ErrorAction SilentlyContinue
-if ($cmd) { $major = [int]((& $cmd.Source -p 'process.versions.node.split(".")[0]') 2>$null); if ($major -ge 18) { $node = $cmd.Source; Say "Using Node.js $(& $node -v) at $node" } }
-if (-not $node -and (Test-Path (Join-Path $Root 'node\node.exe'))) { $node = Join-Path $Root 'node\node.exe'; Say "Using bundled Node.js $(& $node -v)" }
-if (-not $node) {
-  Say "Downloading Node.js LTS for win-$arch"
-  $base = 'https://nodejs.org/dist/latest-v24.x'
-  $sums = (Invoke-WebRequest -UseBasicParsing "$base/SHASUMS256.txt").Content -split "`n"
-  $line = $sums | Where-Object { $_ -match "  node-v[\d.]+-win-$arch\.zip$" } | Select-Object -First 1
-  if (-not $line) { throw "No official Node.js build for win-$arch" }
-  $want, $file = $line.Trim() -split '\s+'
-  $tmp = Join-Path ([IO.Path]::GetTempPath()) ("zp-" + [guid]::NewGuid())
-  New-Item -ItemType Directory -Path $tmp | Out-Null
-  Invoke-WebRequest -UseBasicParsing "$base/$file" -OutFile (Join-Path $tmp $file)
-  if ((Get-FileHash (Join-Path $tmp $file) -Algorithm SHA256).Hash.ToLower() -ne $want.ToLower()) { throw 'Node.js checksum mismatch' }
-  Expand-Archive (Join-Path $tmp $file) -DestinationPath $tmp -Force
-  Remove-Item -Recurse -Force (Join-Path $Root 'node') -ErrorAction SilentlyContinue
-  Move-Item (Join-Path $tmp ($file -replace '\.zip$', '')) (Join-Path $Root 'node')
-  Remove-Item -Recurse -Force $tmp
-  $node = Join-Path $Root 'node\node.exe'
-  Say "Node.js $(& $node -v) installed in $Root\node"
-}
-
-# ---- ZAAFPulse: the latest release (checksum verified), or main only when asked for ----
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("zp-" + [guid]::NewGuid())
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ('zp-' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp | Out-Null
-if ($Source) { $src = (Resolve-Path $Source).Path; Say "Installing ZAAFPulse from $src" }
-else {
-  if (-not $Version) {
-    try { $Version = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest").tag_name }
-    catch { throw 'Could not find the latest release on GitHub; try again, or install the development version with -Version main' }
-  }
-  if ($Version -in @('main', 'master')) {
-    Warn "Installing the development branch ($Version): not a release, not checksum-verified."
-    Invoke-WebRequest -UseBasicParsing "https://codeload.github.com/$Repo/zip/refs/heads/$Version" -OutFile (Join-Path $tmp 'app.zip')
-    Expand-Archive (Join-Path $tmp 'app.zip') -DestinationPath $tmp -Force
+try {
+  # ---- the package: a local one, or the release's (checksum verified) ----
+  $sumsFile = Join-Path $tmp 'SHA256SUMS.txt'
+  if ($Archive) {
+    if (-not (Test-Path -LiteralPath $Archive -PathType Leaf)) { throw "No such archive: $Archive" }
+    $name = Split-Path -Leaf (Resolve-Path -LiteralPath $Archive).Path
+    # A copy: the checksum and the unpack read the same bytes.
+    $pkg = Join-Path $tmp 'pkg.zip'
+    Copy-Item -LiteralPath $Archive -Destination $pkg
+    if ($Sums) { Copy-Item -LiteralPath $Sums -Destination $sumsFile }
+    else { Warn "$name is not checksum-verified (local archive)" }
   } else {
-    Say "Downloading ZAAFPulse $Version"
-    $rel = "https://github.com/$Repo/releases/download/$Version"
-    $name = "zaafpulse-$($Version.TrimStart('v'))-source.tar.gz"
-    $sums = try { (Invoke-WebRequest -UseBasicParsing "$rel/SHA256SUMS.txt").Content -split "`n" } catch { @() }
-    $line = $sums | Where-Object { $_ -match "  $([regex]::Escape($name))$" } | Select-Object -First 1
-    $archive = Join-Path $tmp 'app.tar.gz'
-    if ($line) {
-      Invoke-WebRequest -UseBasicParsing "$rel/$name" -OutFile $archive
-      if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne ($line.Trim() -split '\s+')[0].ToLower()) { throw "Checksum mismatch for $name`: the download was changed or damaged" }
-      Say "Checksum verified ($name)"
-    } elseif ($Version -eq 'v1.0.0') {
-      Warn "Release $Version predates checksummed packages; downloading the tag without verification."
-      Invoke-WebRequest -UseBasicParsing "https://codeload.github.com/$Repo/tar.gz/refs/tags/$Version" -OutFile $archive
-    } else {
-      throw "Could not get a verified package for $Version (SHA256SUMS.txt missing or unreachable); nothing was installed"
+    if (-not $Version) {
+      try { $Version = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest").tag_name }
+      catch { throw 'Could not find the latest release on GitHub; try again, or name one with -Version vX.Y.Z' }
     }
-    tar -xzf $archive -C $tmp
-    if ($LASTEXITCODE -ne 0) { throw 'Could not unpack the download (tar)' }
+    if ($Version -in @('main', 'master')) { throw 'v2 installs releases only; name one with -Version vX.Y.Z' }
+    $name = "zaafpulse-$($Version.TrimStart('v'))-win-$arch.zip"
+    $rel = "https://github.com/$Repo/releases/download/$Version"
+    Say "Downloading ZAAFPulse $Version (win-$arch)"
+    try { Invoke-WebRequest -UseBasicParsing "$rel/SHA256SUMS.txt" -OutFile $sumsFile }
+    catch { throw "Could not get SHA256SUMS.txt for $Version; nothing was installed" }
+    $pkg = Join-Path $tmp $name
+    try { Invoke-WebRequest -UseBasicParsing "$rel/$name" -OutFile $pkg }
+    catch { throw "Could not download $name; nothing was installed" }
   }
-  $src = (Get-ChildItem $tmp -Directory | Select-Object -First 1).FullName
-}
-if (-not (Test-Path (Join-Path $src 'bin\zaafpulse.js'))) { throw 'The download does not look like ZAAFPulse' }
-# Stop a running copy so its files can be replaced.
-if (Test-Path $Launcher) { & $Launcher service uninstall 2>$null | Out-Null }
-$app = Join-Path $Root 'app'
-Remove-Item -Recurse -Force $app -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $app | Out-Null
-foreach ($item in 'bin', 'lib', 'public', 'skills', 'scripts', 'server.js', 'mcp.js', 'package.json', 'config.example.json', 'README.md', 'LICENSE') {
-  $p = Join-Path $src $item; if (Test-Path $p) { Copy-Item -Recurse -Force $p $app }
-}
-Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $sumsFile) {
+    $pattern = '^([0-9a-fA-F]{64})  ' + [regex]::Escape($name) + '$'
+    $line = Get-Content -LiteralPath $sumsFile | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ -match $pattern } | Select-Object -First 1
+    if (-not $line) { throw "No checksum for $name in SHA256SUMS.txt; nothing was installed" }
+    $want = ($line -split '\s+')[0].ToLower()
+    if ((Get-Sha256 $pkg) -ne $want) {
+      throw "Checksum mismatch for $name`: the download was changed or damaged; nothing was installed"
+    }
+    Say "Checksum verified ($name)"
+  }
+  if ($VerifyAttestation) {
+    $gh = Get-Command gh -ErrorAction SilentlyContinue
+    if (-not $gh) { throw '-VerifyAttestation needs the GitHub CLI (gh); nothing was installed' }
+    Invoke-Native $gh.Source @('attestation', 'verify', $pkg, '--repo', $Repo) | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "The attestation check failed for $name; nothing was installed" }
+    Say "Attestation verified ($name)"
+  }
 
-# ---- the zaafpulse command, on the user PATH ----
-Set-Content -Path $Launcher -Encoding ASCII -Value "@echo off`r`n`"$node`" `"$app\bin\zaafpulse.js`" %*"
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (-not (($userPath -split ';') -contains $BinDir)) {
-  [Environment]::SetEnvironmentVariable('Path', ((@($userPath -split ';') + $BinDir) | Where-Object { $_ }) -join ';', 'User')
-  Say 'Added the zaafpulse command to your PATH (open a new terminal to use it).'
+  $x = Join-Path $tmp 'x'
+  # .NET's zip reader, not Expand-Archive (a script module, as Get-FileHash; and slow in 5.1).
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::ExtractToDirectory($pkg, $x)
+  $src = Get-ChildItem -LiteralPath $x -Directory | Select-Object -First 1
+  if (-not $src) { throw "$name holds no package folder; nothing was installed" }
+  foreach ($f in 'zaafpulse.exe', 'zaafpulse-gw.exe') {
+    $p = Join-Path $src.FullName $f
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { throw "$name holds no $f; nothing was installed" }
+    Unblock-File -LiteralPath $p   # a browser download marks the files as from the internet
+  }
+
+  # ---- stage the new binaries next to the install ----
+  $newRoot = -not (Test-Path -LiteralPath $Root)
+  New-Item -ItemType Directory -Force -Path $Root | Out-Null
+  $staged = Join-Path $Root 'bin.new'
+  if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Recurse -Force }
+  New-Item -ItemType Directory -Path $staged | Out-Null
+  foreach ($f in 'zaafpulse.exe', 'zaafpulse-gw.exe', 'LICENSE') {
+    $p = Join-Path $src.FullName $f
+    if (Test-Path -LiteralPath $p) { Copy-Item -LiteralPath $p -Destination (Join-Path $staged $f) }
+  }
+  # Before anything is changed, the new binary must run on this system.
+  $runs = $false
+  try {
+    $newOut = Invoke-Native (Join-Path $staged 'zaafpulse.exe') @('version')
+    $runs = ($LASTEXITCODE -eq 0)
+  } catch { $runs = $false }
+  if (-not $runs) {
+    Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
+    if ($newRoot) { Remove-Item -LiteralPath $Root -Force -ErrorAction SilentlyContinue }
+    throw 'The new zaafpulse does not run on this system; nothing was changed'
+  }
+  Say "New version runs: $(@($newOut) | Select-Object -First 1)"
+} finally {
+  Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# An upgrade cut off while it saved the old install leaves rollback.new. With its VERSION written and no install left
+# in place, it is the whole old install: finish the move and keep it as the rollback. Otherwise put back what it holds.
+$rbNew = Join-Path $Root 'rollback.new'
+if (Test-Path -LiteralPath $rbNew) {
+  $noInstall = -not (Test-Path -LiteralPath (Join-Path $Root 'app\bin\zaafpulse.js')) -and -not (Test-Path -LiteralPath $Exe)
+  if ((Test-Path -LiteralPath (Join-Path $rbNew 'VERSION')) -and $noInstall) {
+    Move-Generation $Root $rbNew
+    if (Test-Path -LiteralPath $RollbackDir) { Remove-Item -LiteralPath $RollbackDir -Recurse -Force }
+    Move-Item -LiteralPath $rbNew -Destination $RollbackDir
+    Warn "An earlier upgrade was cut off; the install it saved is in $RollbackDir."
+  } else {
+    Move-Generation $rbNew $Root
+    Remove-Item -LiteralPath $rbNew -Recurse -Force
+  }
+}
+
+# ---- the current install: v1 (app\, run by node) or v2 (bin\zaafpulse.exe) ----
+$oldKind = $null; $oldVersion = $null
+if (Test-Path -LiteralPath (Join-Path $Root 'app\bin\zaafpulse.js')) {
+  $oldKind = 'v1'
+  try { $oldVersion = (Get-Content -Raw -LiteralPath (Join-Path $Root 'app\package.json') | ConvertFrom-Json).version } catch { $oldVersion = $null }
+} elseif (Test-Path -LiteralPath $Exe) {
+  $oldKind = 'v2'
+  try {
+    $out = Invoke-Native $Exe @('version')
+    if ($LASTEXITCODE -eq 0) { $oldVersion = (@($out) | Select-Object -First 1) }
+  } catch { $oldVersion = $null }
+}
+$oldTag = if ("$oldVersion" -match '^\d+\.\d+') { "v$oldVersion" } else { 'unknown' }
+
+# A re-run at the version already installed replaces only bin\: the saved rollback stays the install before it.
+$same = $oldKind -eq 'v2' -and $oldVersion -and ("$oldVersion" -ceq "$(@($newOut) | Select-Object -First 1)")
+if ($same) {
+  Stop-ZaafService (Get-Launcher)
+  Say "Reinstalling $oldTag; the saved rollback (if any) is kept."
+} elseif ($oldKind) {
+  # Stop the old service through the old launcher: it must not run while its files move, and a running .exe
+  # cannot be replaced. A v1 app wins over a leftover zaafpulse.exe (the v1 installer run after a v2 one).
+  $oldLauncher = if ($oldKind -eq 'v1' -and (Test-Path -LiteralPath $OldCmd)) { $OldCmd } else { Get-Launcher }
+  Stop-ZaafService $oldLauncher
+  # One generation for -Rollback: v1's app, node and launcher, or v2's binaries, with the Start menu opener.
+  # VERSION first: a rollback.new with it is known to hold the old install (see above).
+  New-Item -ItemType Directory -Path $rbNew | Out-Null
+  Set-Content -LiteralPath (Join-Path $rbNew 'VERSION') -Encoding ASCII -Value $oldTag
+  try {
+    Move-Generation $Root $rbNew
+    if (Test-Path -LiteralPath $RollbackDir) { Remove-Item -LiteralPath $RollbackDir -Recurse -Force }
+    Move-Item -LiteralPath $rbNew -Destination $RollbackDir
+  } catch {
+    $why = $_.Exception.Message
+    # Put back what was moved, and start the old install again.
+    try {
+      Move-Generation $rbNew $Root
+      Remove-Item -LiteralPath $rbNew -Recurse -Force
+    } catch { Warn "Could not put everything back from $rbNew`: $($_.Exception.Message)" }
+    Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
+    Start-ZaafService $oldLauncher
+    throw "Could not save the old install ($why); it was put back and nothing was installed"
+  }
+  Say "The $oldKind install ($oldTag) was saved in $RollbackDir`: -Rollback brings it back."
+}
+New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+foreach ($f in Get-ChildItem -LiteralPath $staged -File) {
+  Move-Item -LiteralPath $f.FullName -Destination (Join-Path $BinDir $f.Name) -Force
+}
+Remove-Item -LiteralPath $staged -Recurse -Force
+# A v1 launcher left behind would shadow nothing (.exe comes first in PATHEXT), but it runs the old app.
+if (Test-Path -LiteralPath $OldCmd) { Remove-Item -LiteralPath $OldCmd -Force }
+
+# ---- the zaafpulse command, on the user PATH (spelled as $BinDir), and first on this session's PATH ----
+if (Set-UserPath) { Say 'Added the zaafpulse command to your PATH (open a new terminal to use it).' }
 $env:Path = "$BinDir;$env:Path"
 
 # ---- server mode: an admin password before the first start ----
@@ -133,44 +465,55 @@ if ($HostAddress) { $env:ZAAFPULSE_HOST = $HostAddress }
 if ($Port) { $env:ZAAFPULSE_PORT = "$Port" }
 $serverMode = $HostAddress -and $HostAddress -notin @('127.0.0.1', 'localhost')
 if ($serverMode) {
-  if ($env:ZAAFPULSE_ADMIN_PASSWORD) { $env:ZAAFPULSE_ADMIN_PASSWORD | & $Launcher set-password }
+  if ($env:ZAAFPULSE_ADMIN_PASSWORD) { Invoke-Native $Exe @('set-password') -InputText $env:ZAAFPULSE_ADMIN_PASSWORD | Out-Host }
   else {
     Say 'Server mode: choose the dashboard admin password (10+ characters)'
     $s = Read-Host -AsSecureString 'Admin password'
     $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
-    $plain | & $Launcher set-password
+    Invoke-Native $Exe @('set-password') -InputText $plain | Out-Host
     $plain = $null
   }
+  if ($LASTEXITCODE -ne 0) { Warn 'The admin password was not set: run `zaafpulse set-password`, then `zaafpulse service restart`.' }
 }
 
-# ---- background launcher and Start menu shortcut ----
-if (-not $NoService) {
-  $svcArgs = @('service', 'install'); if ($System) { $svcArgs += '--system' }
-  & $Launcher @svcArgs
-  if ($LASTEXITCODE -ne 0) { Warn 'Not started in the background; start it yourself with: zaafpulse start' }
-}
+# ---- background launcher (written by `zaafpulse service install`) and Start menu shortcut ----
+Start-ZaafService $Exe
+# ---- the AI clients' MCP entries: an upgrade moved the files the earlier install's entries start ----
+if ($oldKind -and -not $same) { Register-Again $Exe }
 $p = if ($Port) { $Port } else { 4777 }
 # The shortcut runs `zaafpulse open`, which signs the browser in with a fresh one-time code, so it still works
 # after the 30-day local sign-in cookie expires (a link to the URL would land on the sign-in page). It points at
 # wscript.exe and a hidden launcher in $BinDir, so no console window flashes. The launcher is UTF-16 (Unicode),
 # which Windows Script Host reads, so a user folder with non-ASCII letters still works.
-$programs = [Environment]::GetFolderPath('Programs')
-Remove-Item -Force (Join-Path $programs 'ZAAFPulse.url') -ErrorAction SilentlyContinue   # earlier installs linked the URL
-$opener = Join-Path $BinDir 'zaafpulse-open.vbs'
-$run = "`"$node`" `"$app\bin\zaafpulse.js`" open --port $p" -replace '"', '""'
-Set-Content -Path $opener -Encoding Unicode -Value "' ZAAFPulse: opens the dashboard signed in (zaafpulse open), without a console window.`r`nCreateObject(`"WScript.Shell`").Run `"$run`", 0, False"
-$lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $programs 'ZAAFPulse.lnk'))
-$lnk.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
-$lnk.Arguments = "//B //NoLogo `"$opener`""
-$lnk.Description = 'Open the ZAAFPulse dashboard'
-$lnk.Save()
+$run = "`"$Exe`" open --port $p" -replace '"', '""'
+Set-Content -LiteralPath $Opener -Encoding Unicode -Value "' ZAAFPulse: opens the dashboard signed in (zaafpulse open), without a console window.`r`nCreateObject(`"WScript.Shell`").Run `"$run`", 0, False"
+$programs = Get-ProgramsDir
+if ($programs) {
+  New-Item -ItemType Directory -Force -Path $programs | Out-Null
+  $oldUrl = Join-Path $programs 'ZAAFPulse.url'   # earlier installs linked the URL
+  if (Test-Path -LiteralPath $oldUrl) { Remove-Item -LiteralPath $oldUrl -Force }
+  $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $programs 'ZAAFPulse.lnk'))
+  $lnk.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+  $lnk.Arguments = "//B //NoLogo `"$Opener`""
+  $lnk.Description = 'Open the ZAAFPulse dashboard'
+  $lnk.Save()
+} else { Warn 'No Start menu folder was found (no APPDATA): the Start menu shortcut was skipped; open the dashboard with: zaafpulse open' }
 
+$newVersion = Invoke-Native $Exe @('version')
+if ($LASTEXITCODE -ne 0) { throw "$Exe does not run (exit $LASTEXITCODE)" }
+# A rollback's leftover: this install replaces it.
+if (Test-Path -LiteralPath $RollforwardDir) { Remove-Item -LiteralPath $RollforwardDir -Recurse -Force }
 Write-Host ''
-Say 'ZAAFPulse is installed.'
+Say "ZAAFPulse $(@($newVersion) | Select-Object -First 1) is installed."
 if ($serverMode) {
   Write-Host "    Dashboard:  http://$($env:COMPUTERNAME):$p   (sign in with the admin password)"
   Write-Host "    Firewall:   New-NetFirewallRule -DisplayName ZAAFPulse -Direction Inbound -Protocol TCP -LocalPort $p -Action Allow   (elevated)"
   Write-Host '    Use HTTPS in production: a reverse proxy, or ZAAFPULSE_TLS_CERT and ZAAFPULSE_TLS_KEY.'
 } else { Write-Host "    Dashboard:  http://localhost:$p   (also in the Start menu)" }
 Write-Host '    Commands:   zaafpulse status | doctor | open | service restart | help'
-Write-Host "    Uninstall:  & ([scriptblock]::Create((irm https://raw.githubusercontent.com/$Repo/main/install.ps1))) -Uninstall"
+$self = "https://github.com/$Repo/releases/latest/download/install.ps1"
+if (Test-Path -LiteralPath (Join-Path $RollbackDir 'VERSION')) { Write-Host "    Roll back:  & ([scriptblock]::Create((irm $self))) -Rollback" }
+Write-Host "    Uninstall:  & ([scriptblock]::Create((irm $self))) -Uninstall"
+if ($oldKind -and $NoService) {
+  Warn '-NoService: the service of the earlier install (if any) was left running, on the old version. Switch it with: zaafpulse service install'
+}

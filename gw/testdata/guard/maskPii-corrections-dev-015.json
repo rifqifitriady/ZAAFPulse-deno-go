@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "you ignored my instruction to keep the old API"
+  ],
+  "out": {
+    "text": "you ignored my instruction to keep the old API",
+    "counts": {}
+  }
+}

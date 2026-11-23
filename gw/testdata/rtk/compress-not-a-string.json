@@ -1,0 +1,8 @@
+{
+  "fn": "compressText",
+  "in": [
+    12345,
+    "Bash git diff"
+  ],
+  "out": null
+}

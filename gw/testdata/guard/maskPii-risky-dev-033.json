@@ -1,0 +1,10 @@
+{
+  "fn": "maskPii",
+  "in": [
+    "echo \"never run sudo here\""
+  ],
+  "out": {
+    "text": "echo \"never run sudo here\"",
+    "counts": {}
+  }
+}

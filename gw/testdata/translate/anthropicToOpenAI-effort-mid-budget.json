@@ -1,0 +1,25 @@
+{
+  "fn": "anthropicToOpenAI",
+  "in": [
+    {
+      "model": "x",
+      "messages": [],
+      "thinking": {
+        "type": "enabled",
+        "budget_tokens": "8000"
+      }
+    }
+  ],
+  "out": {
+    "body": {
+      "model": "x",
+      "messages": [],
+      "reasoning_effort": "medium",
+      "stream": false
+    },
+    "soft": [
+      "reasoning_effort"
+    ],
+    "dropped": []
+  }
+}

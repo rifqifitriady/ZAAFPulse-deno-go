@@ -1,0 +1,234 @@
+{
+  "secrets": [
+    "c2stb2Etcm91dGVyLWZpeHR1cmUtMTIzNDU2",
+    "c2stb2Itcm91dGVyLWZpeHR1cmUtNzc4ODk5"
+  ],
+  "fn": "shadow",
+  "in": {
+    "seq": "seq-chat-fallback-then-throw"
+  },
+  "out": {
+    "steps": [
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:9/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+            },
+            {
+              "url": "http://127.0.0.1:13/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:1>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+            }
+          ],
+          "providerResponse": null,
+          "upstream": [
+            {
+              "status": 503,
+              "contentType": "application/json",
+              "body": "",
+              "ended": "cut",
+              "truncated": false
+            },
+            {
+              "thrown": "ob: ECONNREFUSED"
+            }
+          ],
+          "client": {
+            "status": 502,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"error\":{\"message\":\"<<runtime: body already used>>\",\"type\":\"upstream_error\"}}",
+            "truncated": false
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "ob",
+            "model": "router/fb",
+            "kind": "chat",
+            "format": "openai",
+            "stream": false,
+            "client": "claude-code",
+            "local": true,
+            "status": 599,
+            "ms": 0,
+            "error": "ob: ECONNREFUSED",
+            "cost": 0
+          },
+          "tape": {
+            "random": [],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/fb",
+              "n": 0,
+              "cooling": [],
+              "order": [
+                "oa/m1",
+                "ob/m1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/fb",
+              "routedTo": "oa/m1",
+              "kind": "chat",
+              "format": "openai",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 503,
+              "ms": 0,
+              "error": "fell back to the next route target",
+              "cost": 0
+            },
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "ob",
+              "model": "router/fb",
+              "kind": "chat",
+              "format": "openai",
+              "stream": false,
+              "client": "claude-code",
+              "local": true,
+              "status": 599,
+              "ms": 0,
+              "error": "ob: ECONNREFUSED",
+              "cost": 0
+            }
+          ],
+          "runtime": "<<runtime>>"
+        }
+      },
+      {
+        "capture": {
+          "providerRequests": [
+            {
+              "url": "http://127.0.0.1:13/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:1>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true}}"
+            },
+            {
+              "url": "http://127.0.0.1:9/v1/chat/completions",
+              "headers": {
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Bearer <<ZPSECRET:0>>"
+              },
+              "body": "{\"model\":\"m1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true}}"
+            }
+          ],
+          "providerResponse": null,
+          "upstream": [
+            {
+              "status": 503,
+              "contentType": "application/json",
+              "body": "",
+              "ended": "cut",
+              "truncated": false
+            },
+            {
+              "thrown": "oa: ECONNREFUSED"
+            }
+          ],
+          "client": {
+            "status": 502,
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body": "{\"error\":{\"message\":\"<<runtime: body already used>>\",\"type\":\"upstream_error\"}}",
+            "truncated": false
+          },
+          "usage": {
+            "ts": 1767225600000,
+            "keyId": "k1",
+            "provider": "oa",
+            "model": "router/fb",
+            "kind": "chat",
+            "format": "openai",
+            "stream": true,
+            "client": "claude-code",
+            "local": true,
+            "status": 599,
+            "ms": 0,
+            "error": "oa: ECONNREFUSED",
+            "cost": 0
+          },
+          "tape": {
+            "random": [],
+            "now": []
+          },
+          "routes": [
+            {
+              "name": "router/fb",
+              "n": 0,
+              "cooling": [
+                "oa"
+              ],
+              "order": [
+                "ob/m1",
+                "oa/m1"
+              ]
+            }
+          ],
+          "lines": [
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "ob",
+              "model": "router/fb",
+              "routedTo": "ob/m1",
+              "kind": "chat",
+              "format": "openai",
+              "stream": true,
+              "client": "claude-code",
+              "local": true,
+              "status": 503,
+              "ms": 0,
+              "error": "fell back to the next route target",
+              "cost": 0
+            },
+            {
+              "ts": 1767225600000,
+              "keyId": "k1",
+              "provider": "oa",
+              "model": "router/fb",
+              "kind": "chat",
+              "format": "openai",
+              "stream": true,
+              "client": "claude-code",
+              "local": true,
+              "status": 599,
+              "ms": 0,
+              "error": "oa: ECONNREFUSED",
+              "cost": 0
+            }
+          ],
+          "runtime": "<<runtime>>"
+        }
+      }
+    ]
+  }
+}

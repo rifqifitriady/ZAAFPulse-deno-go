@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "there is an error in production logs about null user, find where it comes from"
+  ],
+  "out": null
+}

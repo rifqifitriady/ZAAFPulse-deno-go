@@ -1,0 +1,7 @@
+{
+  "fn": "scanInjection",
+  "in": [
+    "tetep gagal, loginnya masih redirect loop padahal udah kamu fix"
+  ],
+  "out": null
+}

@@ -12,7 +12,7 @@ const { spawn } = require('child_process');
 const { createGateway } = require('../lib/gateway');
 const { createEvalApi } = require('../lib/evals/api');
 const { destinationOf } = require('../lib/evals/claude-cli');
-const { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude } = require('./helpers');
+const { fakeServer, secretsFor, NO_JUDGE_PORTS, fakeClaude, copyRecent } = require('./helpers');
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const ROOT = path.join(__dirname, '..');
@@ -556,7 +556,7 @@ test('evals api: the preview is refused when content viewing is off, and when a 
   const data = tmp('zp-evals-api-off-');
   writeClaudeLog(data);
   const kiroFixture = path.join(__dirname, 'fixtures', 'trace', 'kiro');
-  fs.cpSync(kiroFixture, path.join(data, '.kiro', 'sessions'), { recursive: true });
+  copyRecent(kiroFixture, path.join(data, '.kiro', 'sessions')); // dated: made recent for the 30-day list
   fs.writeFileSync(path.join(data, 'config.json'), extoneConfig());
   const s = await startServer({ ZAAFPULSE_AUTH: 'none', ZAAFPULSE_CONTENT: 'on' }, { data });
   const c = client(s.base);
@@ -770,30 +770,41 @@ test('evals api: Claude Code is a provider of its own, previewed like an externa
 });
 
 test('evals api: a slow Claude Code search answers "checking" instead of holding the settings', async () => {
-  const api = createEvalApi({
-    trace: {},
-    engine: { kick() {} },
-    feedback: {},
-    gateway: null,
-    settings: { get: () => ({}), save() {} },
-    claude: { available: () => new Promise(() => {}), destination: () => destinationOf({}) },
-    claudeWaitMs: 50,
-  });
-  const started = Date.now();
-  const r = await api.route({ method: 'GET', path: '/api/evals/settings', query: new URLSearchParams('refresh=1') });
-  assert.ok(Date.now() - started < 1000);
-  assert.equal(r.status, 200);
-  assert.equal(r.body.providers.find((p) => p.id === 'claude-code').available, null);
-  // A broken finder is "not found", never an error page.
-  const broken = createEvalApi({
-    trace: {},
-    engine: { kick() {} },
-    feedback: {},
-    settings: { get: () => ({}), save() {} },
-    claude: { available: () => Promise.reject(new Error('boom')), destination: () => destinationOf({}) },
-  });
-  const b = await broken.route({ method: 'GET', path: '/api/evals/settings', query: new URLSearchParams('refresh=1') });
-  assert.equal(b.body.providers.find((p) => p.id === 'claude-code').available, false);
+  // The wait's timer is unref'd, and the fake finder never answers and holds no handle: keep the event loop alive for
+  // the test. Deno's test runner ends a test whose loop is empty; Node's does not.
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    const api = createEvalApi({
+      trace: {},
+      engine: { kick() {} },
+      feedback: {},
+      gateway: null,
+      settings: { get: () => ({}), save() {} },
+      claude: { available: () => new Promise(() => {}), destination: () => destinationOf({}) },
+      claudeWaitMs: 50,
+    });
+    const started = Date.now();
+    const r = await api.route({ method: 'GET', path: '/api/evals/settings', query: new URLSearchParams('refresh=1') });
+    assert.ok(Date.now() - started < 1000);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.providers.find((p) => p.id === 'claude-code').available, null);
+    // A broken finder is "not found", never an error page.
+    const broken = createEvalApi({
+      trace: {},
+      engine: { kick() {} },
+      feedback: {},
+      settings: { get: () => ({}), save() {} },
+      claude: { available: () => Promise.reject(new Error('boom')), destination: () => destinationOf({}) },
+    });
+    const b = await broken.route({
+      method: 'GET',
+      path: '/api/evals/settings',
+      query: new URLSearchParams('refresh=1'),
+    });
+    assert.equal(b.body.providers.find((p) => p.id === 'claude-code').available, false);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 test('evals api: Claude Code is looked for only when it is the provider, or when the list is refreshed', async () => {
