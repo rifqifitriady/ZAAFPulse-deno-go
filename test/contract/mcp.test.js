@@ -12,18 +12,29 @@ const BLOCKED =
 
 const DEFAULTS = { scope: 'external', secrets: 'redact', pii: 'off', injection: 'log' };
 let h;
-test.before(async () => {
-  h = await start();
-  const r = await h.call('/api/integrations/save', {
-    body: { id: 'ct', type: 'mcp', values: { url: `${h.upstream.url}/mcp` } },
-  });
-  assert.equal(r.status, 200, r.text);
-  assert.equal(r.json.status.state, 'ok', r.text);
+// The setup is a case of its own, not a before hook: node:test reports a failed hook as the failure of every case, each
+// with the hook's error and the first one with the hook's time, so one setup that failed read as 13 cases that did. A
+// setup that fails is now one failure, and every case after it is skipped and names it.
+let setupError = null;
+test('mcp: setup: the server starts and the MCP integration "ct" is saved', async () => {
+  try {
+    h = await start();
+    const r = await h.call('/api/integrations/save', {
+      body: { id: 'ct', type: 'mcp', values: { url: `${h.upstream.url}/mcp` } },
+    });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.json.status.state, 'ok', r.text);
+  } catch (err) {
+    setupError = err;
+    throw err;
+  }
 });
 test.after(async () => {
-  if (h) {
+  if (!h) return;
+  try {
     await h.setGuardrails(DEFAULTS);
     await h.call('/api/integrations/delete', { body: { id: 'ct' } });
+  } finally {
     await h.stop();
   }
 });
@@ -183,4 +194,5 @@ const CASES = [
   },
 ];
 
-for (const c of CASES) test(`mcp: ${c.name}`, c.run);
+for (const c of CASES)
+  test(`mcp: ${c.name}`, (t) => (setupError ? t.skip(`the setup failed: ${setupError.message}`) : c.run()));
