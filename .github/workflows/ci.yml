@@ -6,7 +6,7 @@
 # and in release.yml's install-test (Node, which the v1.1.0 installer needs): change them together.
 # The deno job runs the same suite and the contract suite under the pinned Deno with the "test" permission set of
 # deno.json (never -A), and blocks like the Node job (P2 T4). The Node job keeps running until the cut-over (P7).
-# The build-deno job calls build.yml (P6 Decision 13): the six release packages (zaafpulse and zaafpulse-gw in one
+# The build-deno job calls build.yml (P6 Decision 13): the five release packages (zaafpulse and zaafpulse-gw in one
 # archive) are built, signature-checked on macOS and smoke-tested unpacked on native runners, with the gateway in front,
 # and the Go gateway is started in front of the server under deno run on each of them (P4a T6, scripts/smoke-front.js).
 # The input skip-build (workflow_call only, default false) skips it: release.yml calls build.yml itself.
@@ -22,7 +22,7 @@
 # (go1.27.3 carries GO-2026-6859, P7 review L4).
 # Scope, to keep a private repo inside its Actions minutes (macOS minutes bill at 10x, Windows at 2x): a push to a work
 # branch (migrate/<anything> other than migrate/deno-go) runs the Ubuntu jobs only (Node suite, Deno suite,
-# Go, typecheck). The full matrix (four OS for Node, ubuntu and macOS for Deno, the six build-deno targets) runs on pull
+# Go, typecheck). The full matrix (four OS for Node, ubuntu and macOS for Deno, the five build-deno targets) runs on pull
 # requests, on pushes to main and migrate/deno-go, on tags (through release.yml, which builds through build.yml itself)
 # and on a manual run (workflow_dispatch). The condition is repeated in the four places that use it, because a matrix cannot read
 # workflow env.
@@ -377,7 +377,7 @@ jobs:
           ZP_GUARD_BENCH_JS="$RUNNER_TEMP/guard-js.json" go -C gw test -count=1 -timeout 10m -v \
             -run 'TestGuardBench|TestBenchCorpusNeverOverruns|TestOneBudgetPerCall|TestLegitimateBodiesUnderLoad' ./guard/
 
-  # The release package of each of the six targets (P6 Decision 13): build.yml builds both binaries, packs them, checks
+  # The release package of each of the five targets (P6 Decision 13): build.yml builds both binaries, packs them, checks
   # the macOS signatures and smoke-tests the unpacked package (and the Go front) on a native runner of the target's OS
   # and CPU, and uploads pkg-<name> and sum-<name>. Full-scope runs only (see the header). A job that calls a reusable
   # workflow takes no runs-on or steps (the runners are in build.yml). release.yml runs this workflow with skip-build,
