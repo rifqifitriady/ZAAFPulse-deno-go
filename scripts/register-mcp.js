@@ -412,27 +412,45 @@ function run(
   const e = env || (home == null ? process.env : {});
   const all = clients(home, { env: e, platform });
   const o = { remove, dryRun, platform, exec, log, which: which || ((cmd) => findOnPath(cmd, e, platform)) };
+  // "registered": every client whose config already holds our entry (user scope), written again for this install,
+  // as the installers do after an upgrade (a v1 entry starts <prefix>/app/mcp.js, which the upgrade moves away). The
+  // data folder and the config overrides the old entry named are kept, unless --data names another folder.
+  const held = new Map();
+  if (target === 'registered')
+    for (const x of require('../lib/mcp-registrations').ourEntries({ home, env: e, platform }))
+      if (x.scope === 'user' && !held.has(x.id)) held.set(x.id, x.entry);
   const ids =
     target === 'all'
       ? Object.keys(all)
-      : target === 'windsurf' && detected(all['windsurf-legacy'], o.which)
-        ? ['windsurf', 'windsurf-legacy']
-        : [target];
-  const want = mcpCommand({ env: e, data });
+      : target === 'registered'
+        ? [...held.keys()]
+        : target === 'windsurf' && detected(all['windsurf-legacy'], o.which)
+          ? ['windsurf', 'windsurf-legacy']
+          : [target];
+  if (target === 'registered' && !ids.length) log('No AI client holds a ZAAFPulse entry: nothing to register again.');
+  let base = null;
+  const wantFor = (id) => {
+    const old = held.get(id);
+    if (!old) return (base ||= mcpCommand({ env: e, data }));
+    const keep = Object.fromEntries(
+      ['ACC_CONFIG', 'ACC_CACHE_DIR'].filter((k) => old.env[k]).map((k) => [k, old.env[k]]),
+    );
+    return mcpCommand({ env: { ...e, ...keep }, data: data || old.env.ZAAFPULSE_DATA || undefined });
+  };
   const skipped = [];
   const failed = [];
   for (const id of ids) {
     const c = all[id];
-    if (!c) throw new Error(`unknown client "${id}" (use ${Object.keys(all).join(', ')} or all)`);
+    if (!c) throw new Error(`unknown client "${id}" (use ${Object.keys(all).join(', ')}, all or registered)`);
     // "all" only touches clients that are installed here, so it never creates config folders for apps you lack.
     if (target === 'all' && !detected(c, o.which)) {
       skipped.push(c.name);
       continue;
     }
     try {
-      RUNNERS[c.kind](c, want, o);
+      RUNNERS[c.kind](c, wantFor(id), o);
     } catch (err) {
-      if (target !== 'all') throw err;
+      if (target !== 'all' && target !== 'registered') throw err;
       failed.push(`${c.name}: ${err.message}`);
     }
   }
@@ -465,8 +483,9 @@ if (require.main === module) {
   if (!target || args.includes('--help')) {
     console.error(
       `usage: npm run mcp:register -- <${Object.keys(clients()).join('|')}|all> [--remove] [--dry-run] [--data DIR]\n` +
-        '  all       every client found on this machine\n' +
-        '  --data    the data folder the client should use (default: ZAAFPULSE_DATA or the usual folder)',
+        '  all         every client found on this machine\n' +
+        '  registered  every client that already holds a ZAAFPulse entry (after an upgrade or a move)\n' +
+        '  --data      the data folder the client should use (default: ZAAFPULSE_DATA or the usual folder)',
     );
     process.exit(args.includes('--help') ? 0 : 2);
   }

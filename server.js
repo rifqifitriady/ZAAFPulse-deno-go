@@ -318,9 +318,25 @@ const EGRESS_GRANT = (() => {
     outsideNet,
   };
 })();
+// agents.json's list for the lock-down's gate condition (a remote agent is the agents class's destination), or undefined
+// while it cannot be read (before the gateway exists, or a read that failed): then a configured agent is assumed.
+function lockdownAgents() {
+  try {
+    return gateway.agents.list();
+  } catch {
+    return undefined;
+  }
+}
 function egressLockNow() {
-  return clientLock(EGRESS_GRANT, () =>
-    require('./lib/permissions').lockdownState({ config: rawConfig(), env: process.env, gate: readEgressGate() }).inForce,
+  return clientLock(
+    EGRESS_GRANT,
+    () =>
+      require('./lib/permissions').lockdownState({
+        config: rawConfig(),
+        env: process.env,
+        gate: readEgressGate(),
+        agents: lockdownAgents(),
+      }).inForce,
   );
 }
 function applyEgress() {
@@ -349,13 +365,16 @@ function applyEgress() {
 // value is kept for 5 minutes, so the minute loop below does not ask the OS secret store each time.
 const ALLOW_SECRET_TTL_MS = 5 * 60 * 1000;
 const allowSecrets = new Map();
-function allowSecret(ref, field) {
-  const k = JSON.stringify(ref);
+// `pick` (lib/egress-allow.js, a Google service account's token_uri) reduces the value before it is kept, so the JSON
+// with its private key is never held here (P7 review).
+function allowSecret(ref, field, pick) {
+  const k = JSON.stringify(ref) + (pick ? ' picked' : '');
   const hit = allowSecrets.get(k);
   if (hit && Date.now() - hit.at < ALLOW_SECRET_TTL_MS) return hit.value;
   let value = null;
   try {
     value = gwSecrets.resolve(ref, field);
+    if (pick) value = pick(value);
   } catch {
     // Not resolvable now: nothing on the list, and not kept (final review M8), so the next look tries again.
     return null;
@@ -391,7 +410,7 @@ const egressStatus = createEgressStatus({
       notes: eg.notes,
       allow: egressAllowNow(cfg),
       allowList: ec.allowList,
-      lockdown: lockdownNow(perms.lockdownState({ config: cfg, env: process.env, gate }), {
+      lockdown: lockdownNow(perms.lockdownState({ config: cfg, env: process.env, gate, agents: lockdownAgents() }), {
         ...perms.describe(),
         outsideNet: EGRESS_GRANT.outsideNet,
       }),
@@ -739,6 +758,11 @@ const gateway = createGateway({
   budgetGuard,
   audit: (e) => govRecord(e), // key changes, run approvals and cancels
   onKeysChange: () => front && front.push(), // the gateway in front enforces keys too (P4b)
+  // A remote agent added, moved or removed changes the egress allow-list (P5 Decision 13): pushed at once, so an
+  // enforcing allow-list (the default since v2.0.0) does not refuse a new agent until the minute loop.
+  onAgentsChange: () => {
+    if (front && pushedAllow !== null && JSON.stringify(egressAllowNow()) !== pushedAllow) front.push();
+  },
 });
 
 // One rate-limit window across the engines (P4f D16): a request this server admits under a key goes to the gateway in

@@ -51,6 +51,9 @@ a reply (`hello`) and `"re"` on the reply (`hello.ok`, `hello.refused`).
 | `error` | gw → cp | `code`, `message` (a protocol problem, before the gateway exits 3) |
 | `ratelimit.take` | both | `keyId`, `at` (P4f: one request admitted under a key's window; a control message, not stored) |
 | `ratelimit.window` | cp → gw | `windows[{keyId, at[]}]` (P4f: the last minute's takes per key, before `budget.snapshot`) |
+| `provider.note` | both | `providerId`, `status`, `at`, `headers` (P4h: one provider answer an engine read, for the other's cooldowns and quota readings; a control message, not stored) |
+| `route.take` | both | `name`, `at` (P4h: one round-robin rotation an engine took on a route; a control message, not stored) |
+| `route.state` | cp → gw | `rr[{name, n}]`, `cooldown[{providerId, until, strikes, reason}]` (P4h: the rotation counters and live cooldowns a new session starts with, after `ratelimit.window` and before `budget.snapshot`) |
 | `egress.event` | gw → cp | `ts`, `purpose`, `method`, `scheme`, `host`, `port`, `status?`, `outcome`, `error?`, `bytesOut`, `bytesIn`, `ms`, `via` (`proxy`, `tunnel`, `engine`, `check`; P5: one outbound connection) |
 
 Budget rule: no snapshot, or `now - at > 5000`: the call passes and its usage record carries `budget: "unchecked"`,
@@ -84,6 +87,22 @@ starting with `fatal: `.
   its usage line took; on start, before `hello`, a call that never got its line gets one (status 599, `error` "the
   gateway stopped before the call ended", cost 0), so a crash leaves exactly one line per call.
 
+## Routes (added in v1 by P4h, three new types)
+
+The two engines share the routing state of `router/<name>` calls, whichever engine answers (P4h Decision 3):
+
+- `provider.note` (both directions): one provider answer an engine read, its `status`, the observer's clock `at` and
+  the headers the cooldown and quota logic reads (the rate-limit names and `retry-after`, lower case, values joined with
+  `", "`). The other engine applies it to its cooldowns; the control plane also takes its quota readings from it.
+- `route.take` (both directions): one round-robin rotation an engine took on route `name`; the other applies it with its
+  own target count.
+- `route.state` (control plane to gateway): when a session starts, after `ratelimit.window` and before
+  `budget.snapshot`, the rotation counters (`rr`) and the cooldowns still running (`cooldown`, `until` in ms since the
+  epoch).
+
+All three are control messages, never stored in the outbox. `provider.note` and `route.take` go to the gateway only
+once its handshake is done: the `route.state` sent at the `hello` holds everything up to then.
+
 ## Egress (added in v1 by P5, one new type and two optional fields)
 
 - `egress.event` (gateway to control plane, an outbox event with its durable `seq`, as `usage.report`): one outbound
@@ -99,4 +118,5 @@ starting with `fatal: `.
 - `ready.egress` `{ port }`: the egress endpoint's port on 127.0.0.1, when it listens.
 - `config.push.egress` `{ allow[{host, port?}], allowList, classes? }`: the endpoint's allow-list (`host` a name, an
   address or `*.suffix`; no `port` is any port), `allowList` `report` (record `would-refuse`, make the connection) or
-  `enforce` (refuse it), and, informational, each caller class's switch (`direct`, `check` or `go`).
+  `enforce` (refuse it), and, informational, each caller class's switch (`direct`, `check` or `go`). The control plane
+  always sends `allowList`: `enforce` unless `config.json` says `"allowList": "report"` (the default since v2.0.0).

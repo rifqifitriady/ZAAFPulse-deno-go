@@ -96,6 +96,23 @@ function Start-ZaafService([string]$launcher) {
     if ($LASTEXITCODE -ne 0) { Warn 'Not started in the background; start it yourself with: zaafpulse start' }
   } catch { Warn "Not started in the background ($($_.Exception.Message)); start it yourself with: zaafpulse start" }
 }
+# The AI clients' MCP entries, through v2's zaafpulse.exe (install.sh reregister): an entry an earlier install
+# registered starts that install's own files (v1's node.exe and app\mcp.js, or v2's bin\zaafpulse.exe), which an
+# upgrade or a rollback moves away. `register-mcp registered` writes again every client that holds an entry, and no
+# other. A failure only warns. With -System (install.sh as root) the entries belong to the users who registered them,
+# so each of them is told what to run instead.
+function Register-Again([string]$launcher) {
+  if (-not $launcher) { return }
+  if ($System) {
+    Warn 'AI clients registered for the earlier install start files it moved: each user who registered one runs: zaafpulse register-mcp registered'
+    return
+  }
+  Say 'Registering the AI clients that had ZAAFPulse again'
+  try {
+    & $launcher register-mcp registered | Out-Host
+    if ($LASTEXITCODE -ne 0) { Warn 'Could not register the AI clients again; run: zaafpulse register-mcp registered' }
+  } catch { Warn "Could not register the AI clients again ($($_.Exception.Message)); run: zaafpulse register-mcp registered" }
+}
 # v1's app\ and node\ are the installers' only when v1's app\bin\zaafpulse.js is there.
 function Test-V1([string]$dir) { Test-Path -LiteralPath (Join-Path $dir 'app\bin\zaafpulse.js') }
 # Move the folders app and node, and the files of bin\, from one generation folder to another. A folder already in
@@ -198,6 +215,9 @@ if ($Rollback) {
   Remove-Item -LiteralPath $RollbackDir -Recurse -Force
   $env:Path = "$BinDir;$env:Path"
   Start-ZaafService (Get-Launcher)
+  # The AI clients' entries start the install that was just moved to rollforward\.
+  if (Test-Path -LiteralPath $Exe) { Register-Again $Exe }
+  else { Warn "AI clients registered by v2 start files now in $RollforwardDir`: register them again with the restored version (zaafpulse register-mcp <client>)" }
   Say "Rolled back: ZAAFPulse $old is active again. The install it replaced is in $RollforwardDir."
   return
 }
@@ -382,6 +402,8 @@ if ($serverMode) {
 
 # ---- background launcher (written by `zaafpulse service install`) and Start menu shortcut ----
 Start-ZaafService $Exe
+# ---- the AI clients' MCP entries: an upgrade moved the files the earlier install's entries start ----
+if ($oldKind -and -not $same) { Register-Again $Exe }
 $p = if ($Port) { $Port } else { 4777 }
 # The shortcut runs `zaafpulse open`, which signs the browser in with a fresh one-time code, so it still works
 # after the 30-day local sign-in cookie expires (a link to the URL would land on the sign-in page). It points at

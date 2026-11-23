@@ -406,3 +406,66 @@ test('a re-run at the installed version keeps the saved rollback and replaces on
   noService(ctx);
   noService(fresh);
 });
+
+// P7: an earlier install's AI client entries start its own files (v1's node and app/mcp.js), which the upgrade moves
+// into rollback/. The installer writes again, through the new zaafpulse, every client that holds an entry
+// (`register-mcp registered`), after an upgrade and after a rollback to a v2 generation; a rollback to v1 says what
+// to run. A fresh install and a re-run at the same version register nothing.
+const registers = (ctx, who = 'v2') =>
+  calls(ctx)
+    .split('\n')
+    .filter((l) => l === `${who} register-mcp registered`).length;
+
+test(
+  'the AI clients are registered again after an upgrade, never on a fresh install or a re-run',
+  { skip: SKIP },
+  () => {
+    const ctx = setup();
+    fakeV1(ctx);
+    const r = install(ctx);
+    ok(r);
+    assert.equal(registers(ctx), 1, calls(ctx));
+    assert.match(r.stdout, /Registering the AI clients that had ZAAFPulse again/);
+    ok(install(ctx)); // the same version again
+    assert.equal(registers(ctx), 1, 'a re-run registers nothing');
+    const fresh = setup();
+    ok(install(fresh));
+    assert.equal(registers(fresh), 0, 'nothing was registered before a fresh install');
+    // v2 → v2: the entries start <prefix>/bin/zaafpulse, written again (idempotent).
+    const two = setup();
+    ok(install(withVersion(two, '2.0.0')));
+    ok(install(two));
+    assert.equal(registers(two), 1);
+    noService(ctx);
+  },
+);
+
+test('after --rollback: a v2 generation registers the clients again; v1 is told to', { skip: SKIP }, () => {
+  const two = setup();
+  ok(install(withVersion(two, '2.0.0')));
+  ok(install(two));
+  const r2 = run(two, ['--rollback', '--no-service']);
+  ok(r2);
+  assert.equal(registers(two), 2, calls(two));
+  const one = setup();
+  fakeV1(one);
+  ok(install(one));
+  const r1 = run(one, ['--rollback', '--no-service']);
+  ok(r1);
+  assert.match(r1.stderr, /register them again with the restored version \(zaafpulse register-mcp <client>\)/);
+  assert.equal(registers(one, 'v1'), 0, 'v1 is not asked: it may not know "registered"');
+  noService(one);
+});
+
+test('a failing re-registration only warns: the install stands', { skip: SKIP }, () => {
+  const failing = `#!/bin/sh
+echo "v2 $*" >> "$ZP_FAKE_LOG"
+case "$1" in version) echo 2.0.0-test ;; register-mcp) exit 3 ;; *) echo "args: $*" ;; esac
+`;
+  const ctx = setup({ bin: failing });
+  fakeV1(ctx);
+  const r = install(ctx);
+  ok(r);
+  assert.match(r.stderr, /Could not register the AI clients again; run: zaafpulse register-mcp registered/);
+  assert.ok(fs.existsSync(path.join(ctx.prefix, 'bin', 'zaafpulse')));
+});

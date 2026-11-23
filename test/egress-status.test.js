@@ -64,7 +64,7 @@ test('the body: last 50 newest first, 24 h counts per class, the allow-list mode
     'last',
     'counts24h',
   ]);
-  assert.equal(b.allowList, 'report', 'anything but enforce reports');
+  assert.equal(b.allowList, 'enforce', 'anything but report enforces (the default since v2.0.0)');
   assert.equal(b.allowCount, 2);
   assert.equal(b.last.length, 50);
   assert.equal(b.last[0].purpose, 'brain', 'newest first');

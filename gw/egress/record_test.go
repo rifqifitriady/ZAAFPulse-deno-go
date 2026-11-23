@@ -102,7 +102,8 @@ func (timeoutErr) Temporary() bool { return true }
 
 // TestRecordingTransportPolicy: the engine's own calls are checked against the allow-list (spec Decision 13): enforce
 // refuses before anything is sent (record "refused", a *RefusedError naming EGRESS_REFUSED), report records
-// "would-refuse" and the call goes on; a listed host and a nil policy pass with one record.
+// "would-refuse" and the call goes on; a listed host and a nil policy pass with one record. The target is named
+// offlist.example (every dial goes to the local test server), since a loopback target is never checked.
 func TestRecordingTransportPolicy(t *testing.T) {
 	var hits atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,18 +113,19 @@ func TestRecordingTransportPolicy(t *testing.T) {
 	defer ts.Close()
 	rec := newRecorder()
 	var pol *Policy
-	client := &http.Client{Transport: RecordingTransport(&http.Transport{}, "gateway",
+	client := &http.Client{Transport: RecordingTransport(toServer(ts), "gateway",
 		func() *Policy { return pol }, rec.add)}
 	port, _ := strconv.Atoi(portOf(t, ts.URL))
+	target := "http://offlist.example:" + strconv.Itoa(port)
 
 	pol = &Policy{Mode: ModeEnforce, Allow: []Rule{{Host: "api.example.com"}}}
-	_, err := client.Post(ts.URL+"/v1", "application/json", strings.NewReader(`{}`))
+	_, err := client.Post(target+"/v1", "application/json", strings.NewReader(`{}`))
 	var re *RefusedError
 	if err == nil || !errors.As(err, &re) || !strings.Contains(err.Error(), "EGRESS_REFUSED") ||
 		re.EgressCode() != CodeRefused || re.Port != port {
 		t.Fatalf("enforce: err %v", err)
 	}
-	if r := rec.wait(t, 1)[0]; r.Outcome != OutcomeRefused || r.Error != CodeRefused || r.Host != "127.0.0.1" ||
+	if r := rec.wait(t, 1)[0]; r.Outcome != OutcomeRefused || r.Error != CodeRefused || r.Host != "offlist.example" ||
 		r.Port != port || r.Via != ViaEngine || r.Status != 0 {
 		t.Fatalf("enforce record %+v", r)
 	}
@@ -132,7 +134,7 @@ func TestRecordingTransportPolicy(t *testing.T) {
 	}
 
 	pol = &Policy{Mode: ModeReport, Allow: []Rule{{Host: "api.example.com"}}}
-	resp, err := client.Get(ts.URL)
+	resp, err := client.Get(target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,10 +144,10 @@ func TestRecordingTransportPolicy(t *testing.T) {
 		t.Fatalf("report records %+v", rs)
 	}
 
-	for name, p := range map[string]*Policy{"listed": {Mode: ModeEnforce, Allow: []Rule{{Host: "127.0.0.1"}}},
+	for name, p := range map[string]*Policy{"listed": {Mode: ModeEnforce, Allow: []Rule{{Host: "offlist.example"}}},
 		"nil": nil} {
 		pol = p
-		resp, err := client.Get(ts.URL)
+		resp, err := client.Get(target)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -157,6 +159,46 @@ func TestRecordingTransportPolicy(t *testing.T) {
 	}
 	if n := hits.Load(); n != 3 {
 		t.Fatalf("hits %d", n)
+	}
+}
+
+// toServer is a transport whose every dial reaches ts, whatever host the URL names.
+func toServer(ts *httptest.Server) *http.Transport {
+	addr := ts.Listener.Addr().String()
+	return &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}}
+}
+
+// TestRecordingTransportLoopbackNotChecked (P7): a provider on this machine (Ollama, LM Studio, a local proxy) is
+// called by the engine whatever the allow-list says, in enforce mode too, and recorded as any call: the allow-list
+// leaves loopback hosts out (lib/egress-allow.js), as the control plane always calls them direct. Exactly the hosts
+// the lock-down grants: localhost, 127.0.0.1, ::1 and 127.0.0.1 IPv4-mapped; the rest of 127/8 is checked.
+func TestRecordingTransportLoopbackNotChecked(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer ts.Close()
+	rec := newRecorder()
+	pol := &Policy{Mode: ModeEnforce, Allow: []Rule{{Host: "api.example.com"}}}
+	client := &http.Client{Transport: RecordingTransport(toServer(ts), "gateway",
+		func() *Policy { return pol }, rec.add)}
+	port := portOf(t, ts.URL)
+	for _, h := range []string{"127.0.0.1", "localhost", "LOCALHOST.", "[::1]", "[::ffff:127.0.0.1]"} {
+		resp, err := client.Get("http://" + h + ":" + port + "/v1/models")
+		if err != nil {
+			t.Fatalf("%s: %v", h, err)
+		}
+		readAll(t, resp)
+		if r := rec.wait(t, 1)[0]; r.Outcome != OutcomeOK || r.Status != 200 {
+			t.Fatalf("%s: record %+v", h, r)
+		}
+		rec.none(t, 20*time.Millisecond)
+	}
+	_, err := client.Get("http://127.0.0.2:" + port + "/")
+	var re *RefusedError
+	if !errors.As(err, &re) {
+		t.Fatalf("127.0.0.2 is not exempt: err %v", err)
 	}
 }
 
