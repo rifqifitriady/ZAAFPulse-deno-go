@@ -7,7 +7,15 @@ const fs = require('fs');
 const path = require('path');
 
 const MIN = [1, 27, 4];
-const ci = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
+const WF = path.join(__dirname, '..', '.github', 'workflows');
+const ci = fs.readFileSync(path.join(WF, 'ci.yml'), 'utf8');
+// P6: build-deno moved into build.yml (called by ci.yml and release.yml), so the pins are counted over every workflow.
+const all = fs
+  .readdirSync(WF)
+  .filter((f) => f.endsWith('.yml'))
+  .sort()
+  .map((f) => fs.readFileSync(path.join(WF, f), 'utf8'))
+  .join('\n');
 
 const atLeast = (v, min) => {
   const p = v.split('.').map(Number);
@@ -15,8 +23,8 @@ const atLeast = (v, min) => {
   return true;
 };
 
-test('every setup-go in ci.yml pins one Go release, go1.27.4 or later', () => {
-  const pins = [...ci.matchAll(/go-version:\s*'([^']+)'/g)].map((m) => m[1]);
+test('every setup-go in the workflows pins one Go release, go1.27.4 or later', () => {
+  const pins = [...all.matchAll(/go-version:\s*'([^']+)'/g)].map((m) => m[1]);
   assert.ok(pins.length >= 7, `${pins.length} go-version pins`);
   assert.equal(new Set(pins).size, 1, `one release everywhere: ${[...new Set(pins)].join(', ')}`);
   assert.ok(atLeast(pins[0], MIN), `${pins[0]} is older than ${MIN.join('.')} (GO-2026-6859)`);
