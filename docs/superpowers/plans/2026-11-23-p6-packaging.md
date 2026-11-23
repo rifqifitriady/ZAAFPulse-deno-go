@@ -503,3 +503,16 @@ profile edit, server mode and the closing summary.
   replaced install can be brought back by hand. `--source` and `--version main` stop with a message (v2 installs release
   packages only). `--help` prints the header comment up to the first non-comment line, so it needs no line numbers;
   piped into `sh` it prints nothing. shellcheck is not installed here; the test also passes with `SHELL_UNDER_TEST=/bin/dash`.
+- **Task 7, what a Windows generation holds:** `install.ps1` moves every file of `bin\` it knows (`zaafpulse.exe`,
+  `zaafpulse-gw.exe`, `zaafpulse.cmd`, `zaafpulse-open.vbs`, `LICENSE`) plus `app` and `node` into `rollback\`, for v1
+  and v2 alike, so a v2 → v2 rollback also gets its Start menu opener back. The user `PATH` holds the bin folder once,
+  spelled exactly as `$BinDir` (the string the installer runs the binary by): an entry that differs only in letter case
+  or a trailing `\` is replaced in place, since Deno's PATH match is case-sensitive. The unpacked `.exe` files get
+  `Unblock-File` (the Windows side of clearing `com.apple.quarantine`). `-Uninstall` and `-Rollback` honour
+  `-NoService`, as in `install.sh`. Not run here (no PowerShell on this machine); the first run is the dry run's
+  install-test (Task 10).
+- **Task 7, for the docs (Task 11):** on Windows the v1.1.x installer run after v2 writes `zaafpulse.cmd` into the same
+  `bin\` that holds `zaafpulse.exe`, and `.EXE` comes before `.CMD` in `PATHEXT`, so the leftover `zaafpulse.exe` is not
+  inert there: the docs must say to delete `bin\zaafpulse.exe` and `bin\zaafpulse-gw.exe` after that second way of
+  rolling back (Decision 11). `install.ps1` itself treats a v1 `app\` as the current install in that case and stops its
+  service through `zaafpulse.cmd`.
