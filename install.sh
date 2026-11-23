@@ -60,8 +60,14 @@ else
   ROOT_INSTALL=0; PREFIX="${ZAAFPULSE_PREFIX:-$HOME/.local/share/zaafpulse}"; BIN_DIR="$HOME/.local/bin"
 fi
 LAUNCHER="$BIN_DIR/zaafpulse"
-# The launcher wrapper holds the prefix in double quotes.
-case "$PREFIX" in *'"'*|*'$'*|*'`'*|*'\'*) die "the install folder may not contain \", \$, \` or \\: $PREFIX" ;; esac
+# The launcher wrapper holds the prefix in double quotes. Checked as given (before any folder is made), and again on
+# the physical path, which a symlink may change.
+check_prefix() {
+  case "$PREFIX" in *'"'*|*'$'*|*'`'*|*'\'*) die "the install folder may not contain \", \$, \` or \\: $PREFIX" ;; esac
+}
+check_prefix
+# The physical path: Deno matches the gateway's folder on PATH against the binary's own path.
+resolve_prefix() { PREFIX="$(CDPATH= cd -- "$PREFIX" && pwd -P)"; check_prefix; }
 
 # The service, through a given launcher: the old one before it is replaced, the restored one after a rollback.
 service_stop() {
@@ -70,16 +76,26 @@ service_stop() {
   fi
 }
 service_start() {
-  if [ "$SERVICE" = 1 ]; then
+  if [ "$SERVICE" = 1 ] && [ -x "$1" ]; then
     if [ "$ROOT_INSTALL" = 1 ]; then "$1" service install --system || warn "Service not installed; start it yourself with: zaafpulse start"
     else "$1" service install || warn "Service not installed; start it yourself with: zaafpulse start"; fi
   fi
 }
-# Move $1/<d> to $2/<d> for each folder d that exists.
+# Move $1/<d> to $2/<d> for each folder d that exists in $1 and not yet in $2.
 move_dirs() {
   for d in bin app node; do
-    if [ -e "$1/$d" ]; then mv "$1/$d" "$2/$d"; fi
+    if [ -e "$1/$d" ] && [ ! -e "$2/$d" ]; then mv "$1/$d" "$2/$d"; fi
   done
+}
+# The v2 zaafpulse command: the install folder first on PATH, so the binary may start its gateway.
+write_launcher() {
+  mkdir -p "$BIN_DIR"
+  cat > "$LAUNCHER" <<EOF
+#!/bin/sh
+PATH="$PREFIX/bin:\$PATH"; export PATH
+exec "$PREFIX/bin/zaafpulse" "\$@"
+EOF
+  chmod 755 "$LAUNCHER"
 }
 
 if [ "$UNINSTALL" = 1 ]; then
@@ -100,14 +116,23 @@ if [ "$UNINSTALL" = 1 ]; then
 fi
 
 if [ "$ROLLBACK" = 1 ]; then
+  [ -f "$PREFIX/rollback/VERSION" ] || die "nothing to roll back to: $PREFIX/rollback holds no saved install"
+  resolve_prefix
   RB="$PREFIX/rollback"; RF="$PREFIX/rollforward"
-  [ -f "$RB/launcher" ] || die "nothing to roll back to: $RB holds no saved install"
   service_stop "$LAUNCHER"
   rm -rf "$RF"; mkdir -p "$RF"
   move_dirs "$PREFIX" "$RF"
   if [ -f "$LAUNCHER" ]; then cp "$LAUNCHER" "$RF/launcher"; fi
   move_dirs "$RB" "$PREFIX"
-  mkdir -p "$BIN_DIR"; cp "$RB/launcher" "$LAUNCHER"; chmod 755 "$LAUNCHER"
+  if [ -f "$RB/launcher" ]; then
+    mkdir -p "$BIN_DIR"; cp "$RB/launcher" "$LAUNCHER"; chmod 755 "$LAUNCHER"
+  elif [ -f "$PREFIX/bin/zaafpulse" ]; then
+    # It was installed without a launcher (removed by hand): a v2 generation gets a fresh one.
+    write_launcher
+  else
+    rm -f "$LAUNCHER"
+    warn "No zaafpulse command was saved with this install; run it with: \"$PREFIX/node/bin/node\" \"$PREFIX/app/bin/zaafpulse.js\""
+  fi
   OLD="$(head -n1 "$RB/VERSION" 2>/dev/null || true)"
   rm -rf "$RB"
   service_start "$LAUNCHER"
@@ -134,6 +159,7 @@ if [ -n "$ARCHIVE" ]; then
   if [ -n "$SUMS" ]; then cp "$SUMS" "$TMP/SHA256SUMS.txt" || die "cannot read $SUMS"
   else warn "$NAME is not checksum-verified (local archive)"; fi
 else
+  have curl || have wget || die "curl or wget is required"
   if [ -z "$VERSION" ]; then
     VERSION="$(fetch_text "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1 || true)"
     [ -n "$VERSION" ] || die "could not find the latest release on GitHub; try again, or name one with --version vX.Y.Z"
@@ -166,11 +192,30 @@ for f in zaafpulse zaafpulse-gw; do
   if [ "$PLAT" = darwin ]; then xattr -d com.apple.quarantine "$SRC/$f" 2>/dev/null || true; fi
 done
 
-# The physical path: Deno matches the gateway's folder on PATH against the binary's own path.
-mkdir -p "$PREFIX"; PREFIX="$(cd "$PREFIX" && pwd -P)"
+# Before anything is changed, the new binary must run on this system.
+NEW_PREFIX=0; [ -d "$PREFIX" ] || NEW_PREFIX=1
+mkdir -p "$PREFIX"; resolve_prefix
 rm -rf "$PREFIX/bin.new"; mkdir "$PREFIX/bin.new"
 cp "$SRC/zaafpulse" "$SRC/zaafpulse-gw" "$PREFIX/bin.new/"
 if [ -f "$SRC/LICENSE" ]; then cp "$SRC/LICENSE" "$PREFIX/bin.new/"; fi
+NEWV="$("$PREFIX/bin.new/zaafpulse" version 2>/dev/null)" || {
+  rm -rf "$PREFIX/bin.new"; if [ "$NEW_PREFIX" = 1 ]; then rmdir "$PREFIX" 2>/dev/null || true; fi
+  die "the new zaafpulse does not run on this system; nothing was changed"
+}
+say "New version runs: $(printf '%s\n' "$NEWV" | head -n1)"
+
+# An upgrade cut off while it saved the old install leaves rollback.new. With its VERSION written and no install left
+# in place, it is the whole old install: finish the move and keep it as the rollback. Otherwise put back what it holds.
+if [ -d "$PREFIX/rollback.new" ]; then
+  if [ -f "$PREFIX/rollback.new/VERSION" ] && [ ! -f "$PREFIX/app/bin/zaafpulse.js" ] && [ ! -f "$PREFIX/bin/zaafpulse" ]; then
+    move_dirs "$PREFIX" "$PREFIX/rollback.new"
+    rm -rf "$PREFIX/rollback"; mv "$PREFIX/rollback.new" "$PREFIX/rollback"
+    warn "An earlier upgrade was cut off; the install it saved is in $PREFIX/rollback."
+  else
+    move_dirs "$PREFIX/rollback.new" "$PREFIX"
+    rm -rf "$PREFIX/rollback.new"
+  fi
+fi
 
 # ---- the current install: v1 (app/, run by node) or v2 (bin/) ----
 OLD_KIND=""; OLD_VERSION=""
@@ -187,24 +232,21 @@ if [ -n "$OLD_KIND" ]; then
   # Stop the old service through the old launcher, before it is replaced.
   service_stop "$LAUNCHER"
   # One generation for --rollback: the folders it ran from, and its launcher.
+  # VERSION first: a rollback.new with it is known to hold the old install (see above).
   rm -rf "$PREFIX/rollback.new"; mkdir "$PREFIX/rollback.new"
-  move_dirs "$PREFIX" "$PREFIX/rollback.new"
-  if [ -f "$LAUNCHER" ]; then cp "$LAUNCHER" "$PREFIX/rollback.new/launcher"; fi
   printf '%s\n' "$OLD_TAG" > "$PREFIX/rollback.new/VERSION"
+  if [ -f "$LAUNCHER" ]; then cp "$LAUNCHER" "$PREFIX/rollback.new/launcher"; fi
+  move_dirs "$PREFIX" "$PREFIX/rollback.new"
   rm -rf "$PREFIX/rollback"; mv "$PREFIX/rollback.new" "$PREFIX/rollback"
   say "The $OLD_KIND install ($OLD_TAG) was saved in $PREFIX/rollback: --rollback brings it back."
 fi
 rm -rf "$PREFIX/bin"; mv "$PREFIX/bin.new" "$PREFIX/bin"
+# A rollback's leftover: this install replaces it.
+rm -rf "$PREFIX/rollforward"
 if [ "$ROOT_INSTALL" = 1 ]; then chmod -R a+rX "$PREFIX"; fi
 
-# ---- the zaafpulse command: the install folder first on PATH, so the binary may start its gateway ----
-mkdir -p "$BIN_DIR"
-cat > "$LAUNCHER" <<EOF
-#!/bin/sh
-PATH="$PREFIX/bin:\$PATH"; export PATH
-exec "$PREFIX/bin/zaafpulse" "\$@"
-EOF
-chmod 755 "$LAUNCHER"
+# ---- the zaafpulse command ----
+write_launcher
 say "Command installed: $LAUNCHER"
 if [ "$ROOT_INSTALL" = 0 ] && [ "$MODIFY_PATH" = 1 ]; then
   case ":$PATH:" in *":$BIN_DIR:"*) ;; *)

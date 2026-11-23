@@ -28,7 +28,10 @@ echo "v2 $*" >> "$ZP_FAKE_LOG"
 case "$1" in version) echo 2.0.0-test ;; path) echo "$PATH" ;; *) echo "args: $*" ;; esac
 `;
 const FAKE_GW = '#!/bin/sh\necho "gw $*" >> "$ZP_FAKE_LOG"\n';
-const V1_LAUNCHER = '#!/bin/sh\necho "v1 $*" >> "$ZP_FAKE_LOG"\necho v1-launcher\n';
+// A v1 node that logs its argv, so a v1 launcher's service call shows in the log too.
+const FAKE_NODE = '#!/bin/sh\necho "v1 $*" >> "$ZP_FAKE_LOG"\n';
+// The launcher the v1.1.0 installer wrote.
+const v1Launcher = (prefix) => `#!/bin/sh\nexec "${prefix}/node/bin/node" "${prefix}/app/bin/zaafpulse.js" "\$@"\n`;
 
 const ROOTS = [];
 test.after(() => {
@@ -37,7 +40,7 @@ test.after(() => {
 // SHELL_UNDER_TEST runs the installer with another POSIX shell (dash, busybox sh …).
 const SH = process.env.SHELL_UNDER_TEST || 'sh';
 
-function setup() {
+function setup({ bin = FAKE_BIN } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-install-'));
   ROOTS.push(root);
   const home = path.join(root, 'home');
@@ -46,7 +49,7 @@ function setup() {
   const name = `zaafpulse-2.0.0-test-${PLAT}-${NARCH}`;
   const stage = path.join(root, 'stage', name);
   fs.mkdirSync(stage, { recursive: true });
-  fs.writeFileSync(path.join(stage, 'zaafpulse'), FAKE_BIN, { mode: 0o755 });
+  fs.writeFileSync(path.join(stage, 'zaafpulse'), bin, { mode: 0o755 });
   fs.writeFileSync(path.join(stage, 'zaafpulse-gw'), FAKE_GW, { mode: 0o755 });
   fs.writeFileSync(path.join(stage, 'LICENSE'), 'MIT\n');
   const archive = path.join(root, `${name}.tar.gz`);
@@ -94,9 +97,9 @@ function fakeV1(ctx) {
     '{\n  "name": "zaafpulse",\n  "version": "1.1.0"\n}\n',
   );
   fs.mkdirSync(path.join(ctx.prefix, 'node', 'bin'), { recursive: true });
-  fs.writeFileSync(path.join(ctx.prefix, 'node', 'bin', 'node'), '', { mode: 0o755 });
+  fs.writeFileSync(path.join(ctx.prefix, 'node', 'bin', 'node'), FAKE_NODE, { mode: 0o755 });
   fs.mkdirSync(path.dirname(ctx.launcher), { recursive: true });
-  fs.writeFileSync(ctx.launcher, V1_LAUNCHER, { mode: 0o755 });
+  fs.writeFileSync(ctx.launcher, v1Launcher(ctx.prefix), { mode: 0o755 });
 }
 
 test('install.sh parses (sh -n)', { skip: SKIP }, () => {
@@ -172,15 +175,15 @@ test(
     assert.equal(fs.readFileSync(path.join(rb, 'VERSION'), 'utf8'), 'v1.1.0\n');
     assert.ok(fs.existsSync(path.join(rb, 'app', 'bin', 'zaafpulse.js')));
     assert.ok(fs.existsSync(path.join(rb, 'node', 'bin', 'node')));
-    assert.equal(fs.readFileSync(path.join(rb, 'launcher'), 'utf8'), V1_LAUNCHER);
+    assert.equal(fs.readFileSync(path.join(rb, 'launcher'), 'utf8'), v1Launcher(ctx.prefix));
     assert.ok(!fs.existsSync(path.join(ctx.prefix, 'app')));
     assert.ok(fs.existsSync(path.join(ctx.prefix, 'bin', 'zaafpulse')));
-    assert.notEqual(fs.readFileSync(ctx.launcher, 'utf8'), V1_LAUNCHER);
+    assert.notEqual(fs.readFileSync(ctx.launcher, 'utf8'), v1Launcher(ctx.prefix));
 
     const r = run(ctx, ['--rollback', '--no-service']);
     ok(r);
     assert.match(r.stdout, /v1\.1\.0 is active again/);
-    assert.equal(fs.readFileSync(ctx.launcher, 'utf8'), V1_LAUNCHER);
+    assert.equal(fs.readFileSync(ctx.launcher, 'utf8'), v1Launcher(ctx.prefix));
     assert.ok(fs.existsSync(path.join(ctx.prefix, 'app', 'bin', 'zaafpulse.js')));
     assert.ok(fs.existsSync(path.join(ctx.prefix, 'node', 'bin', 'node')));
     assert.ok(!fs.existsSync(path.join(ctx.prefix, 'bin')));
@@ -230,3 +233,62 @@ test('--uninstall removes bin, rollback, rollforward and the launcher, and keeps
   assert.ok(!fs.existsSync(ctx.launcher));
   noService(ctx);
 });
+
+test('a new zaafpulse that does not run changes nothing: the old install stays as it was', { skip: SKIP }, () => {
+  const ctx = setup({ bin: '#!/bin/sh\necho "broken $*" >> "$ZP_FAKE_LOG"\nexit 1\n' });
+  fakeV1(ctx);
+  const before = { prefix: tree(ctx.prefix), launcher: fs.readFileSync(ctx.launcher, 'utf8') };
+  const r = install(ctx);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /does not run on this system; nothing was changed/);
+  assert.deepEqual({ prefix: tree(ctx.prefix), launcher: fs.readFileSync(ctx.launcher, 'utf8') }, before);
+  assert.equal(calls(ctx), 'broken version\n');
+  // A clean install that fails leaves no folder behind.
+  const fresh = setup({ bin: '#!/bin/sh\nexit 1\n' });
+  assert.notEqual(install(fresh).status, 0);
+  assert.ok(!fs.existsSync(fresh.prefix));
+  assert.ok(!fs.existsSync(fresh.launcher));
+});
+
+test('an upgrade cut off while saving the old install: its rollback.new becomes the rollback', { skip: SKIP }, () => {
+  const ctx = setup();
+  fakeV1(ctx);
+  // As the installer leaves it after the move into rollback.new and before the rename.
+  const rbNew = path.join(ctx.prefix, 'rollback.new');
+  fs.mkdirSync(rbNew);
+  fs.writeFileSync(path.join(rbNew, 'VERSION'), 'v1.1.0\n');
+  fs.copyFileSync(ctx.launcher, path.join(rbNew, 'launcher'));
+  fs.renameSync(path.join(ctx.prefix, 'app'), path.join(rbNew, 'app'));
+  ok(install(ctx));
+  const rb = path.join(ctx.prefix, 'rollback');
+  assert.ok(!fs.existsSync(rbNew));
+  assert.equal(fs.readFileSync(path.join(rb, 'VERSION'), 'utf8'), 'v1.1.0\n');
+  assert.ok(fs.existsSync(path.join(rb, 'app', 'bin', 'zaafpulse.js')));
+  assert.ok(fs.existsSync(path.join(rb, 'node', 'bin', 'node')), 'the folder not yet moved joins it');
+  ok(run(ctx, ['--rollback', '--no-service']));
+  assert.equal(fs.readFileSync(ctx.launcher, 'utf8'), v1Launcher(ctx.prefix));
+  assert.ok(fs.existsSync(path.join(ctx.prefix, 'app', 'bin', 'zaafpulse.js')));
+  noService(ctx);
+});
+
+test(
+  '--rollback to a v2 install saved without a launcher writes a fresh one; a later install drops rollforward/',
+  {
+    skip: SKIP,
+  },
+  () => {
+    const ctx = setup();
+    ok(install(ctx));
+    fs.rmSync(ctx.launcher);
+    ok(install(ctx));
+    const rb = path.join(ctx.prefix, 'rollback');
+    assert.deepEqual(fs.readdirSync(rb).sort(), ['VERSION', 'bin']);
+    ok(run(ctx, ['--rollback', '--no-service']));
+    const bin = path.join(real(ctx.prefix), 'bin');
+    assert.ok(fs.readFileSync(ctx.launcher, 'utf8').includes(`exec "${bin}/zaafpulse" "$@"`));
+    assert.ok(fs.existsSync(path.join(ctx.prefix, 'rollforward')));
+    ok(install(ctx));
+    assert.deepEqual(fs.readdirSync(ctx.prefix).sort(), ['bin', 'rollback']);
+    noService(ctx);
+  },
+);
