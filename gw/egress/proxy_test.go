@@ -142,7 +142,8 @@ func TestForwardHeadersBodyAndRecord(t *testing.T) {
 	if r != want {
 		t.Fatalf("record %+v\nwant   %+v", r, want)
 	}
-	if r.TS < time.Now().Add(-time.Minute).UnixMilli() || r.MS <= 0 {
+	// MS may be 0 on Windows, whose clock is coarse; never negative.
+	if r.TS < time.Now().Add(-time.Minute).UnixMilli() || r.MS < 0 {
 		t.Errorf("ts %d ms %v", r.TS, r.MS)
 	}
 	j, _ := json.Marshal(r)
@@ -248,6 +249,9 @@ func redirector(t *testing.T) *httptest.Server {
 			w.Header().Set("X-Body", string(b))
 			w.Header().Set("X-Content-Type", r.Header.Get("Content-Type"))
 			w.Header().Set("X-Auth", r.Header.Get("Authorization"))
+			w.Header().Set("X-Cookie", r.Header.Get("Cookie"))
+			w.Header().Set("X-Proxy-Auth", r.Header.Get("Proxy-Authorization"))
+			w.Header().Set("X-Key", r.Header.Get("X-Api-Key"))
 			_, _ = io.WriteString(w, "final")
 			return
 		}
@@ -369,6 +373,45 @@ func TestAuthorizationDroppedCrossOriginOnly(t *testing.T) {
 	}
 }
 
+// P7 review L3: a cross-origin hop drops the credential headers undici's fetch drops (Authorization, Cookie,
+// Proxy-Authorization); a same-origin hop keeps them. A custom key header is kept, as fetch keeps it (callers that send
+// one use fetchSameOrigin).
+func TestCredentialHeadersDroppedCrossOrigin(t *testing.T) {
+	a, b := redirector(t), redirector(t)
+	defer a.Close()
+	defer b.Close()
+	_, base, _ := startEgress(t, allowAll)
+	h := map[string]string{"Authorization": "Bearer k", "Cookie": "session=s", "X-Api-Key": "kept"}
+	for _, status := range []int{301, 302, 303, 307, 308} {
+		same := send(t, base, "GET", fmt.Sprintf("%s/r/%d/2", a.URL, status), nil, h)
+		readAll(t, same)
+		if same.Header.Get("X-Auth") != "Bearer k" || same.Header.Get("X-Cookie") != "session=s" ||
+			same.Header.Get("X-Key") != "kept" {
+			t.Errorf("%d same origin: auth %q cookie %q key %q", status, same.Header.Get("X-Auth"),
+				same.Header.Get("X-Cookie"), same.Header.Get("X-Key"))
+		}
+		cross := send(t, base, "GET", fmt.Sprintf("%s/r/%d/1?to=%s", a.URL, status, b.URL), nil, h)
+		readAll(t, cross)
+		if cross.Header.Get("X-Auth") != "" || cross.Header.Get("X-Cookie") != "" ||
+			cross.Header.Get("X-Proxy-Auth") != "" || cross.Header.Get("X-Key") != "kept" {
+			t.Errorf("%d cross origin: auth %q cookie %q proxy-auth %q key %q", status, cross.Header.Get("X-Auth"),
+				cross.Header.Get("X-Cookie"), cross.Header.Get("X-Proxy-Auth"), cross.Header.Get("X-Key"))
+		}
+	}
+	// Once dropped, a credential stays dropped when a later hop comes back to the first origin.
+	c := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, a.URL+"/final", http.StatusFound)
+	}))
+	defer c.Close()
+	back := send(t, base, "GET", a.URL+"/r/302/1?to="+c.URL, nil, h)
+	if body := readAll(t, back); body != "final" || back.Header.Get("X-ZP-Egress-URL") != a.URL+"/final" {
+		t.Fatalf("back to the first origin: %q %q", body, back.Header.Get("X-ZP-Egress-URL"))
+	}
+	if back.Header.Get("X-Cookie") != "" || back.Header.Get("X-Auth") != "" {
+		t.Errorf("back to the first origin: auth %q cookie %q", back.Header.Get("X-Auth"), back.Header.Get("X-Cookie"))
+	}
+}
+
 func TestRedirectLimit(t *testing.T) {
 	ts := redirector(t)
 	defer ts.Close()
@@ -451,7 +494,9 @@ func TestConnectTimeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer ts.Close()
 	s, base, rec := startEgress(t, allowAll)
-	s.connectTimeout = time.Nanosecond // the limit is over before the connect starts
+	// A limit already in the past: context.WithTimeout expires it at once, on every OS. (1 ns was not enough on
+	// Windows, whose coarse clock let the loopback connect finish before the limit was seen as over.)
+	s.connectTimeout = -time.Second
 	expectError(t, send(t, base, "GET", ts.URL+"/", nil, nil), 502, "ETIMEDOUT")
 	if r := rec.wait(t, 1)[0]; r.Error != "ETIMEDOUT" {
 		t.Fatalf("record %+v", r)

@@ -167,7 +167,10 @@ test('the same calls direct and through the gateway reach the fake and the calle
   const bin = stubBin(t);
   if (!bin) return;
   const fake = await startFake();
-  const root = tmpDir(t, 'egress-diff');
+  // node:test runs after-hooks in the order they were added: the gateway must stop before tmpDir removes the outbox
+  // whose lock it holds (Windows refuses to delete an open file), so its stop goes through tmpDir's own list.
+  const stops = [];
+  const root = tmpDir(t, 'egress-diff', stops);
   const stores = openLocalStores({ root });
   const ingest = createIngest({ ...stores.sinks, marks: recoverMarks(stores.files) });
   const frontToken = crypto.randomBytes(32).toString('hex');
@@ -199,7 +202,7 @@ test('the same calls direct and through the gateway reach the fake and the calle
       );
     },
   });
-  t.after(async () => {
+  stops.push(async () => {
     egress.configure(null);
     await sup.stop(2000);
     assert.equal(port, null, 'the supervisor clears the egress port when the gateway exits');
@@ -283,7 +286,8 @@ test('the same calls direct and through the gateway reach the fake and the calle
 test('a gateway without the egress section names no port, and the client stays direct', async (t) => {
   const bin = stubBin(t);
   if (!bin) return;
-  const root = tmpDir(t, 'egress-diff-none');
+  const stops = [];
+  const root = tmpDir(t, 'egress-diff-none', stops); // the gateway stops before the folder goes (Windows)
   const stores = openLocalStores({ root });
   const ingest = createIngest({ ...stores.sinks, marks: recoverMarks(stores.files) });
   const calls = [];
@@ -302,7 +306,7 @@ test('a gateway without the egress section names no port, and the client stays d
     onReady: () => (readyCalled = true),
     onEgress: (p) => calls.push(p),
   });
-  t.after(() => sup.stop(2000));
+  stops.push(() => sup.stop(2000));
   sup.start();
   await waitFor(() => readyCalled, 20000, 'the gateway ready');
   assert.deepEqual(calls, [null]);

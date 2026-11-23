@@ -146,7 +146,8 @@ of AI meets a law or a standard.
 **Runtime permissions.** Under Deno ZAAFPulse runs with the permission set of its entry point in `deno.json`
 (`server`, `cli`, `mcp-stdio`): read all files, write only the data folder, the temp folder, the skill folders and the
 AI clients' config folders (computed at each `deno run` launch; the single-file build writes anywhere for now), every
-host except the cloud metadata addresses `169.254.169.254` and `metadata.google.internal`, every environment
+host except the cloud metadata addresses (`169.254.169.254`, `metadata.google.internal`, `[fd00:ec2::254]`,
+`169.254.170.2`, `100.100.100.200`; the gateway's egress path refuses the same), every environment
 variable (so a secret reference to any variable keeps working), a fixed list of programs and of system values. The
 evidence names what is unrestricted, what is all but denied and what is allow-listed; the reason for each entry is in
 `lib/permissions.js`. On Linux, Deno refuses every read under `/proc` unless the process holds all permissions (no

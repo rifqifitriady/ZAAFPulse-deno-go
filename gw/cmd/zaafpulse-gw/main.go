@@ -173,6 +173,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// checked against the egress endpoint's allow-list (Decision 13; none without an egress section); the wrapper goes
 	// on before engine.New, whose token sources copy the client.
 	g.upstream = engine.NewUpstream(os.Getenv)
+	refuseMetadataOn(g.upstream.Transport())
 	g.upstream.WrapTransport(func(rt http.RoundTripper) http.RoundTripper {
 		return egress.RecordingTransport(rt, "gateway", g.egressPolicy, g.recordEgress)
 	})

@@ -66,7 +66,7 @@ test('usage: stored strictly with its mark, then the budget report once', (t) =>
     traceStore: null,
     traceDir: path.join(dir, 'traces'),
   });
-  const ingest = createIngest({ ...sinks, log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...sinks, log: () => {} });
   assert.equal(ingest.handle(usageMsg(1), STREAM), true);
   const lines = fs.readFileSync(path.join(dir, 'gateway-usage.jsonl'), 'utf8').trim().split('\n');
   assert.equal(lines.length, 1);
@@ -86,7 +86,7 @@ test('P4b entry 1: a Go engine line counts in the gateway spend, the recent list
     traceStore: null,
     traceDir: path.join(dir, 'traces'),
   });
-  const ingest = createIngest({ ...sinks, log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...sinks, log: () => {} });
   const ts = Date.now();
   const msg = { ...usageMsg(1), body: { record: { ...usageMsg(1).body.record, ts } } };
   assert.equal(ingest.handle(msg, STREAM), true);
@@ -111,11 +111,11 @@ test('a write that fails is not marked: governance null, an unwritable usage log
     traceStore: null,
     traceDir: path.join(dir, 'traces'),
   });
-  const ingest = createIngest({ ...sinks, log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...sinks, log: () => {} });
   assert.throws(() => ingest.handle(usageMsg(1), STREAM));
   const gov = { type: 'audit.event', seq: 1, body: { log: 'governance', event: { action: 'key.update' } } };
   assert.throws(
-    () => createIngest({ ...sinks, log: () => {} }).handle(gov, STREAM),
+    () => createIngest({ testRawGovernance: true, ...sinks, log: () => {} }).handle(gov, STREAM),
     /governance audit could not write/,
   );
   const span = {
@@ -139,7 +139,7 @@ test('a write that fails is not marked: governance null, an unwritable usage log
   };
   // P4f D9: with no trace store a span is skipped, as the recorder drops it, and marked: never a store failure (which
   // would restart the gateway and fail again on the replay). The strict writer itself still refuses.
-  const spans = createIngest({ ...sinks, log: () => {} });
+  const spans = createIngest({ testRawGovernance: true, ...sinks, log: () => {} });
   assert.equal(spans.handle(span, STREAM), true);
   assert.equal(spans.mark(STREAM), 1);
   assert.throws(() => sinks.writeSpans([span.body.span]), /trace store is off/);
@@ -174,11 +174,11 @@ test('egress.event: stored strictly in the egress log with its mark; no egress l
       via: 'proxy',
     },
   };
-  const off = createIngest({ ...serverSinks(base), log: () => {} });
+  const off = createIngest({ testRawGovernance: true, ...serverSinks(base), log: () => {} });
   assert.throws(() => off.handle(msg, STREAM), /egress log is off/);
   assert.equal(off.mark(STREAM), 0);
   const egressLog = createEgressLog({ dir });
-  const ingest = createIngest({ ...serverSinks({ ...base, egressLog }), log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...serverSinks({ ...base, egressLog }), log: () => {} });
   assert.equal(ingest.handle(msg, STREAM), true);
   const lines = fs.readFileSync(path.join(dir, 'egress.jsonl'), 'utf8').trim().split('\n');
   assert.equal(lines.length, 1);
@@ -191,6 +191,7 @@ test('egress.event: stored strictly in the egress log with its mark; no egress l
   fs.rmdirSync(path.join(dir, 'egress.jsonl'));
   const seen = [];
   const hooked = createIngest({
+    testRawGovernance: true,
     ...serverSinks({ ...base, egressLog, afterEgress: (e) => (seen.push(e), assert.fail('the gate broke')) }),
     log: () => {},
   });
@@ -198,6 +199,7 @@ test('egress.event: stored strictly in the egress log with its mark; no egress l
   assert.equal(hooked.mark(STREAM), 3);
   assert.deepEqual(seen, [{ ...msg.body, ipc: { stream: STREAM, seq: 3 } }]);
   const failing = createIngest({
+    testRawGovernance: true,
     ...serverSinks({ ...base, egressLog, afterEgress: (e) => seen.push(e) }),
     log: () => {},
   });
