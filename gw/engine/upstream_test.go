@@ -233,7 +233,9 @@ func TestUpstreamEgressRefused(t *testing.T) {
 		return egress.RecordingTransport(rt, "gateway", func() *egress.Policy { return pol },
 			func(r egress.Record) { recs = append(recs, r) })
 	})
-	res := up.Call(context.Background(), planTo(srv.URL+"/v1/chat/completions"))
+	// An off-list name: a loopback provider is never checked (P7), and a refused call is never dialled.
+	off := strings.Replace(srv.URL, "127.0.0.1", "offlist.example", 1)
+	res := up.Call(context.Background(), planTo(off+"/v1/chat/completions"))
 	if res.Why != "EGRESS_REFUSED" || res.Status != 0 {
 		t.Fatalf("%+v", res)
 	}
