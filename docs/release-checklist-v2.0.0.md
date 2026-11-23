@@ -76,7 +76,9 @@ Background and the undo commands: [docs/release-hardening.md](release-hardening.
 
 ## 4. Recommended: one dry run on `main` (needs the owner's OK under the CI policy)
 
-The install tests of `install.ps1` and the Windows install paths have never run in CI. (The macOS launchd path has no
+The install tests of `install.ps1` and the Windows install paths had never run in CI before the v2.0.0 dry runs (they
+now pass the clean install, the service, doctor, the gateway in front, the uninstall and M12; the Windows upgrade from
+v1.1.0 is skipped, see step 10). (The macOS launchd path has no
 release install test at all: no macOS package ships, so it stays unverified.) A dry
 run builds and install-tests exactly what the tag would, publishes nothing, attests nothing and creates no tag; a
 failure there costs nothing, while a failure after the tag leaves `v2.0.0` pinned to that commit (step 7).
@@ -213,11 +215,15 @@ curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/download/
 zaafpulse register-mcp <client>                     # v1's command, for each AI client you use
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell):** only on a machine that already has a v1.x install made earlier. v1.1.0's own Windows
+installer cannot install v1.1.0 from GitHub (it stops at its checksum step in PowerShell 7 and in Windows PowerShell
+5.1, and at its Node.js check in 5.1 with `node` on PATH; the release notes, "Windows and v1.1.0"), so a clean
+machine cannot get a v1.1.0 to upgrade from, and the release install test skips this part on Windows
+(`scripts/install-test.ps1 -UpgradeLeg` turns it back on). Upgrading and `-Rollback` on Windows stay unverified
+unless this step runs on such a machine.
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/v1.1.0/install.ps1))) -Version v1.1.0
-# open the dashboard once, then:
+# On a machine with an existing v1.x install; open the dashboard once, then:
 & ([scriptblock]::Create((irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/download/v2.0.0/install.ps1))) -Version v2.0.0
 zaafpulse doctor
 Get-Content $env:LOCALAPPDATA\ZAAFPulse\rollback\VERSION     # v1.1.0
