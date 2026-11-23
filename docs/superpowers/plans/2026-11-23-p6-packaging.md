@@ -490,3 +490,16 @@ profile edit, server mode and the closing summary.
   `ZAAFPULSE_AUTH=none` and a HOME that holds no logs.
 - **Task 4, the schema count:** the smoke's doctor check expected `v1, 20 schemas`; the tree has 21 since P5
   (`egress.event`), so the first pass already failed. It now counts `ipc/v1/*.schema.json` in the source folder.
+- **Task 6, the physical prefix:** `install.sh` resolves the prefix with `pwd -P` before it writes the launcher. Deno
+  compares the gateway's folder found on `PATH` with the path the binary was started by, as typed: on macOS a prefix
+  under `/tmp` (a link to `/private/tmp`) started through `/private/tmp/...` reads "not allowed" in `doctor`. With one
+  physical path in both the `PATH` entry and the `exec` line, the local proof reads "found, allowed".
+- **Task 6, `--uninstall` keeps a data folder inside the prefix:** v1 ran `rm -rf $PREFIX`, but on Linux the user's data
+  folder is `~/.local/share/zaafpulse/data`, inside the default prefix. The v2 uninstall removes only what the installers
+  put there (`app`, `node`, `bin`, `bin.new`, `rollback`, `rollback.new`, `rollforward`, and the v1 `app.new`/`app.old`)
+  and then the prefix if it is empty. `--purge` is unchanged. `--uninstall` and `--rollback` also honour `--no-service`
+  (v1's uninstall always ran `service uninstall`), so the tests can run them without a service command.
+- **Task 6, small additions:** `--rollback` also copies the launcher it replaces to `rollforward/launcher`, so the
+  replaced install can be brought back by hand. `--source` and `--version main` stop with a message (v2 installs release
+  packages only). `--help` prints the header comment up to the first non-comment line, so it needs no line numbers;
+  piped into `sh` it prints nothing. shellcheck is not installed here; the test also passes with `SHELL_UNDER_TEST=/bin/dash`.
