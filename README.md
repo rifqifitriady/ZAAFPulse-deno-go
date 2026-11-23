@@ -921,8 +921,10 @@ The stdio MCP server (`mcp.js`) does not export spans; calls through the gateway
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/architecture-light.svg">
-  <img alt="Local logs, second-brain sources and integrations are collected, cached, aggregated and served on 127.0.0.1; apps and code tools reach every model and the agents through the Agent Gateway" src="docs/assets/architecture-dark.svg" width="100%">
+  <img alt="ZAAFPulse v2: the Go gateway zaafpulse-gw holds the main port 4777 and answers the route classes switched to go; other calls are forwarded to the Deno control plane zaafpulse on an internal port. The two talk over IPC v1 on stdin and stdout: config, secrets and budgets go in, records come out to the only writer of the usage log, cost ledger and audit chain. Outbound calls of the egress classes on go leave through the gateway's egress endpoint and are recorded; the rest leave directly" src="docs/assets/architecture-dark.svg" width="100%">
 </picture>
+
+The diagram shows v2 with the gateway in front (`gateway.engine` `"front"`). By default there is no Go process: the control plane holds port 4777 itself and answers every call, as in v1.1 ([The gateway process](#the-gateway-process-v2)). Inside the control plane the pipeline is unchanged: the sources below are read, cached, aggregated and served.
 
 | Source | Read from | Gives |
 |---|---|---|
