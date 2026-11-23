@@ -255,10 +255,14 @@ contract suite is green on Go and the shadow diff is 0 for 3 days.
 | S10 | Google service-account JWT (`createSign` RSA-SHA256) and other provider auth | Live provider smoke tests (owner keys, manual): **wired in P4g** (2026-11-21, `docs/migration/2026-11-21-p4g-results.md`) for OAuth2 client_credentials and Google service accounts behind the `provider-auth` switch, proven by fixtures and contract cases; refresh-token providers stay on js; the live smoke tests are owed (manual, listed there) |
 
 **Exit (gate G3):**
-- every gateway route is on `go`;
+- every gateway route class is on `go` on the live machine;
 - shadow diff is 0;
 - M3 and M4 are met;
-- the JS hot path is deleted.
+- the JS gateway answers only what the Go engine hands back, the paths with no Go engine (`/v1/models`, `/a2a`, skills,
+  agents), the fallback when the gateway cannot run, and the rollbacks. **Reworded on 2026-11-23** (owner decision,
+  §11.9): the JS hot path is not deleted at G3 or in v2.0.0, because deleting it would remove two of the three
+  rollbacks and break the traffic the Go engine hands off. Its deletion is a separate program after G3
+  (the p7-remove-node design).
 
 Prerequisites of G3 (owner decisions 2026-11-17, P4d spec Decisions 28–29):
 - the token saver (`lib/gateway/rtk.js`) is ported to Go in a slice of its own, proven by fixtures from the JS; until
@@ -439,3 +443,9 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    `gateway.engine` is `"front"` and all twelve egress classes are on `go` and have met their gate. A class with nothing
    configured to call counts as met (the p7-defaults design, Decision B); `routers`,
    `public` and, with price sync on, `pricing` always need their own evidence (runbook §2).
+
+9. **The JS gateway stays in v2.0.0 (2026-11-23).** Gate G3 no longer requires deleting the JS hot path; see the
+   reworded exit above. Node stays a source runtime for v2.0.0 with its CI, the Docker image stays on Node 24, front mode
+   is not the default for new installs, the macOS autostart scripts stay, and every contract-suite mode stays. Source:
+   the p7-remove-node design and
+   `docs/migration/2026-11-23-p7-remove-node-results.md`.
