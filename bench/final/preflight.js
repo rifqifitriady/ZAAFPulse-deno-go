@@ -234,7 +234,10 @@ async function runPreflight(deps) {
   const before = deps.snapshot();
   await deps.sleep(3000);
   const after = deps.snapshot();
+  // This runner's tree and the chain that started it (the shell, `deno task`, a terminal): none of them is "another".
   const own = procs.treeOf(after, [deps.selfPid]);
+  const parent = new Map(after.map((p) => [p.pid, p.ppid]));
+  for (let pid = parent.get(deps.selfPid); pid && !own.has(pid); pid = parent.get(pid)) own.add(pid);
   const live = [];
   const liveTree = new Set();
   const cpu = procs.cpuBetween(before, after, 3);
