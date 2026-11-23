@@ -95,7 +95,13 @@ test('gwStatus and gwRefusal: missing, found but not allowed, and allowed', (t) 
   fs.writeFileSync(bin, '');
   const refused = gwStatus({ path: bin, deno: no });
   assert.deepEqual(refused, { path: bin, found: true, allowed: false });
-  assert.equal(gwRefusal(refused), REFUSED);
+  assert.equal(gwRefusal(refused, { singleFile: true }), REFUSED);
+  assert.equal(
+    gwRefusal(refused, { singleFile: false }),
+    'zaafpulse-gw is not allowed to run: it was built after ZAAFPulse started; restart ZAAFPulse so its path is granted',
+    'a deno run launch',
+  );
+  assert.equal(gwRefusal(missing, { singleFile: true }), `zaafpulse-gw not found at ${bin}`);
   const ok = gwStatus({ path: bin, deno: null });
   assert.deepEqual(ok, { path: bin, found: true, allowed: true });
   assert.equal(gwRefusal(ok), null);
@@ -213,12 +219,15 @@ test('P6 Decision 4: each supervisor is asked to check the binary first; the ref
   const f = await frontWithFakes(t, {
     gwStatus: (p) => (seen.push(p), { path: p, found: true, allowed: false }),
   });
-  assert.equal(f.sups[0].opts.precheck(), REFUSED);
+  // From source the deno run text, in a single-file build the PATH one: gwRefusal picks by the running build.
+  const want = gwRefusal({ path: '/no/such/gateway', found: true, allowed: false });
+  assert.match(want, /not allowed to run/);
+  assert.equal(f.sups[0].opts.precheck(), want);
   assert.deepEqual(seen, ['/no/such/gateway']);
   // The supervisor's fatal path (onFailed with kind fatal) is the fallback, carrying that reason.
   f.sups[0].opts.onFailed(f.sups[0].opts.precheck(), { kind: 'fatal' });
   await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
-  assert.equal(f.front.status().reason, REFUSED);
+  assert.equal(f.front.status().reason, want);
   assert.equal(f.front.status().restartNeeded, false, 'a save of the gateway section tries again');
 });
 

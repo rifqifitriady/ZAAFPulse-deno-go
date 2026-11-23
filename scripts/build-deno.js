@@ -84,6 +84,16 @@ const GO_ENV = [
   'TMP',
   'SystemRoot',
   'APPDATA',
+  // A proxy and the module download settings, for a go that must fetch through them (go.mod has no requirements
+  // today, but the toolchain may still be fetched); XDG_CACHE_HOME is where go puts its build cache on Linux.
+  'HTTPS_PROXY',
+  'HTTP_PROXY',
+  'NO_PROXY',
+  'GOPROXY',
+  'GOPRIVATE',
+  'GONOSUMDB',
+  'GOSUMDB',
+  'XDG_CACHE_HOME',
 ];
 
 function hostTarget(platform = process.platform, arch = process.arch) {
@@ -298,6 +308,18 @@ function compile(src, target, out) {
   }
 }
 
+// A tar.gz packed on Windows loses the execute bit: the tar of a Windows runner's bash (MSYS) does not keep a mode NTFS
+// cannot hold, so the ELF and Mach-O binaries inside would not run once unpacked. Those packages are built on macOS
+// or Linux; a Windows host packs only the win-* zips (written here, with their modes).
+function checkPackHost(targets, platform = process.platform) {
+  if (platform !== 'win32') return;
+  const bad = targets.filter((t) => !archiveName('0', t).endsWith('.zip'));
+  if (bad.length)
+    throw new Error(
+      `--package on Windows can build only win-* packages: a tar.gz made here loses the execute bit of its binaries (${bad.join(', ')}); build those on macOS or Linux`,
+    );
+}
+
 // One target's archive (P6 Decisions 1-3): stage both binaries and LICENSE in dist/.pkg/<folder>/, pack, clean up.
 function pack(src, version, target) {
   const file = archiveName(version, target);
@@ -334,6 +356,7 @@ function pack(src, version, target) {
 
 function main(argv) {
   const { targets, allowDirty, package: pkg } = parseArgs(argv);
+  if (pkg) checkPackHost(targets);
   const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
   fs.mkdirSync(DIST, { recursive: true });
   const src = source(allowDirty);
@@ -371,6 +394,7 @@ if (require.main === module) {
     TARGETS,
     GO_TARGETS,
     GO_ENV,
+    checkPackHost,
     hostTarget,
     outName,
     archiveName,
