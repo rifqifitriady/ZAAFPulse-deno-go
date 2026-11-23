@@ -1,5 +1,6 @@
-# (Since 2026-11-23 the regular CI leaves darwin-x64 out: ci.yml passes skip-darwin-x64. A release build keeps all six.)
-# Builds and smoke-tests the release package of each of the six targets on a native runner of its own OS and CPU (P6
+# (Since 2026-11-23 darwin-x64 is out of both the regular CI and the release: ci.yml and release.yml pass
+# skip-darwin-x64, and a release has five targets. darwin-x64 stays here, built only when a caller leaves the input off.)
+# Builds and smoke-tests the release package of each target on a native runner of its own OS and CPU (P6
 # Decision 13). Called by ci.yml (job build-deno, full scope only) and by release.yml (job build); it has no trigger of
 # its own (workflow_call only), and a calling job takes no runs-on: the runners are set here.
 # Each job:
@@ -22,14 +23,14 @@ on:
   workflow_call:
     inputs:
       skip-darwin-x64:
-        description: Leave the darwin-x64 package out (ci.yml sets it; release.yml never does, and it needs all six)
+        description: Leave the darwin-x64 package out (ci.yml and release.yml set it; a release has five targets)
         type: boolean
         default: false
 permissions:
   contents: read
 jobs:
-  # The targets to build. All six unless skip-darwin-x64 is set (the owner asked on 2026-11-23 for no darwin-x64 build or
-  # test in the regular CI for now; a release build always has all six, because release.yml expects six archives).
+  # The targets to build. All six unless skip-darwin-x64 is set. The owner decided on 2026-11-23 for no darwin-x64 build
+  # or test in the regular CI, and five release targets without darwin-x64 (release.yml expects five archives).
   plan:
     name: plan
     runs-on: ubuntu-latest

@@ -111,15 +111,17 @@ A clone fetched before the tag moved still has `v1.0.3` at `1306279`. To align i
 
 ## The v2 repository: `rifqifitriady/ZAAFPulse-deno-go`
 
-v2 is released from `rifqifitriady/ZAAFPulse-deno-go`, which has neither setting today. Checked on 2026-11-23 (read-only):
+v2 is released from `rifqifitriady/ZAAFPulse-deno-go`, which has neither setting today. Checked on 2026-11-23 (read-only, checked again while v2.0.0 was prepared):
 
 | Check | Command | Result |
 |---|---|---|
+| Repository | `gh api repos/rifqifitriady/ZAAFPulse-deno-go --jq '{visibility, default_branch}'` | `{"default_branch":"main","visibility":"public"}` |
 | Rulesets | `gh api repos/rifqifitriady/ZAAFPulse-deno-go/rulesets` | `[]` (none) |
 | Immutable releases | `gh api repos/rifqifitriady/ZAAFPulse-deno-go/immutable-releases` | `{"enabled":false,"enforced_by_owner":false}` |
 | Tags | `gh api repos/rifqifitriady/ZAAFPulse-deno-go/tags --jq length` | `0` |
+| Releases | `gh api repos/rifqifitriady/ZAAFPulse-deno-go/releases --jq length` | `0` |
 
-Both settings are to be applied by the owner **before the first `v*` tag is pushed**, so that the first v2 release is immutable and its tag can never move. They have not been applied; run these once, with admin rights on the repository:
+Both settings are to be applied by the owner **before the first `v*` tag is pushed**, so that the first v2 release is immutable and its tag can never move. A published v2.0.0 can then never be changed (its files, its tag), only its title and notes; the order of steps is in [docs/release-checklist-v2.0.0.md](release-checklist-v2.0.0.md). They have not been applied; run these once, with admin rights on the repository:
 
 ```bash
 gh api --method POST repos/rifqifitriady/ZAAFPulse-deno-go/rulesets --input - <<'JSON'
