@@ -365,13 +365,16 @@ function applyEgress() {
 // value is kept for 5 minutes, so the minute loop below does not ask the OS secret store each time.
 const ALLOW_SECRET_TTL_MS = 5 * 60 * 1000;
 const allowSecrets = new Map();
-function allowSecret(ref, field) {
-  const k = JSON.stringify(ref);
+// `pick` (lib/egress-allow.js, a Google service account's token_uri) reduces the value before it is kept, so the JSON
+// with its private key is never held here (P7 review).
+function allowSecret(ref, field, pick) {
+  const k = JSON.stringify(ref) + (pick ? ' picked' : '');
   const hit = allowSecrets.get(k);
   if (hit && Date.now() - hit.at < ALLOW_SECRET_TTL_MS) return hit.value;
   let value = null;
   try {
     value = gwSecrets.resolve(ref, field);
+    if (pick) value = pick(value);
   } catch {
     // Not resolvable now: nothing on the list, and not kept (final review M8), so the next look tries again.
     return null;

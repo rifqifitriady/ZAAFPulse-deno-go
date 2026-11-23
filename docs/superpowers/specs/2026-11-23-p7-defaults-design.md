@@ -44,13 +44,13 @@ counts as configured (`lib/egress-allow.js quietClasses`):
 
 | Class | Configured when |
 |---|---|
-| `gateway` | an enabled provider has a non-loopback base URL, or signs in with OAuth2 or a Google service account (remote token endpoint) |
+| `gateway` | a provider (enabled or not: the Providers page tests one before it is on) has a non-loopback base URL, or signs in with OAuth2 or a Google service account (remote token endpoint) |
 | `connectors` | an enabled Dynatrace, Arize, n8n, HTTP, router or OpenRouter integration has a non-loopback URL (its defaults as the connectors apply them) |
 | `mcp` | an enabled upstream MCP integration, or a Heybrain brain source, has a non-loopback URL |
 | `routers` | always: the OpenRouter page calls `openrouter.ai` with no setting |
 | `pricing` | price sync is on (the default; off only with `pricingSync.enabled: false`) |
 | `evals` | `ZAAFPULSE_OLLAMA_URL` or `ZAAFPULSE_LMSTUDIO_URL` names a non-loopback host |
-| `agents` | an enabled agent in `agents.json` has a non-loopback `remoteUrl`; also when `agents.json` could not be read |
+| `agents` | an agent in `agents.json` (enabled or not: a collaboration run may name a disabled one) has a non-loopback `remoteUrl`; also when `agents.json` could not be read |
 | `notify` | a monitor webhook URL is set (a secret reference; present is enough, it is not resolved) |
 | `brain` | an enabled brain source other than Heybrain is a hosted app (Notion, Roam, Mem, Reflect, Pinecone), has a non-loopback URL, or is pgvector with a stored connection secret |
 | `public` | always: a user can ingest any URL at any time; its destinations are never in the configuration |

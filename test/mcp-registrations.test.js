@@ -63,6 +63,12 @@ test('brokenRegistrations names each client whose entry is gone, from user and p
   const got = brokenRegistrations({ home, env: {} });
   assert.deepEqual(got.map((b) => b.client).sort(), ['Claude Code', 'Codex CLI', 'Cursor']);
   for (const b of got) assert.deepEqual(b.paths, [old.command, old.args[0]], b.client);
+  // The Claude Code entry is a project's own: register-mcp registered does not write it, so doctor says so.
+  assert.deepEqual(got.map((b) => [b.client, b.scope]).sort(), [
+    ['Claude Code', 'project'],
+    ['Codex CLI', 'user'],
+    ['Cursor', 'user'],
+  ]);
   // Not ours: never named, even when its program is gone.
   assert.ok(!JSON.stringify(got).includes('"/x"'));
   assert.deepEqual(
