@@ -24,7 +24,8 @@ const isWin = process.platform === 'win32';
 
 function tmp(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-egress-disc-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // Windows releases an exited child's handles a moment later: retry as test/ipc-stub.js tmpDir does.
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   return dir;
 }
 const ST = { port: 4321, token: 'derived', engines: { connectors: 'go' }, lockdown: false };

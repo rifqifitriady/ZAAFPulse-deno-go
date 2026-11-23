@@ -11,6 +11,12 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const KEEP = ['PATH', 'SystemRoot', 'SYSTEMROOT', 'PATHEXT', 'TEMP', 'TMP', 'windir', 'ComSpec'];
 
+// The IPC v1 schemas the binary must carry: every ipc/v1/*.schema.json of this tree (the envelope and one per message
+// type), counted, never written down, so a new message type (P5's egress.event) cannot leave the check behind.
+const SCHEMA_COUNT = fs.readdirSync(path.join(ROOT, 'ipc', 'v1')).filter((f) => f.endsWith('.schema.json')).length;
+/** Whether `<binary> doctor`'s text says it read every schema. @param {string} doctor */
+const doctorHasSchemas = (doctor) => new RegExp(`Gateway IPC\\s+v1, ${SCHEMA_COUNT} schemas`).test(doctor);
+
 const freePort = () =>
   new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -67,7 +73,7 @@ async function smoke(binary) {
     const doctor = execFileSync(bin, ['doctor'], { env, encoding: 'utf8', timeout: 60000 });
     if (!/\(single-file build\)/.test(doctor) || !/Deno\s+\d/.test(doctor)) throw new Error(`doctor:\n${doctor}`);
     // The binary carries the IPC v1 schemas (P4a E5).
-    if (!/Gateway IPC\s+v1, 20 schemas/.test(doctor)) throw new Error(`doctor: no IPC schemas:\n${doctor}`);
+    if (!doctorHasSchemas(doctor)) throw new Error(`doctor: not all ${SCHEMA_COUNT} IPC schemas:\n${doctor}`);
     out.ok = true;
   } catch (err) {
     out.error = String(err.message || err).slice(0, 2000);
@@ -82,7 +88,10 @@ async function smoke(binary) {
   return out;
 }
 
-smoke(process.argv[2]).then((r) => {
-  console.log(JSON.stringify(r));
-  process.exit(r.ok ? 0 : 1);
-});
+if (require.main === module)
+  smoke(process.argv[2]).then((r) => {
+    console.log(JSON.stringify(r));
+    process.exit(r.ok ? 0 : 1);
+  });
+
+module.exports = { SCHEMA_COUNT, doctorHasSchemas };

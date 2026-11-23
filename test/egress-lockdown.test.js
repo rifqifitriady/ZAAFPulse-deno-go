@@ -93,7 +93,10 @@ test('a locked-down launch cannot connect out directly; loopback and the gateway
   if (!bin) return;
   const fake = http.createServer((req, res) => res.end(`fake ${req.url}`));
   await new Promise((r) => fake.listen(0, '127.0.0.1', r));
-  const root = tmpDir(t, 'egress-lockdown');
+  // node:test runs after-hooks in the order they were added: the gateway must stop before tmpDir removes the outbox
+  // whose lock it holds (Windows refuses to delete an open file), so its stop goes through tmpDir's own list.
+  const stops = [];
+  const root = tmpDir(t, 'egress-lockdown', stops);
   const stores = openLocalStores({ root });
   const ingest = createIngest({ ...stores.sinks, marks: recoverMarks(stores.files) });
   const frontToken = crypto.randomBytes(32).toString('hex');
@@ -112,7 +115,7 @@ test('a locked-down launch cannot connect out directly; loopback and the gateway
     log: () => {},
     onEgress: (p) => (port = p),
   });
-  t.after(async () => {
+  stops.push(async () => {
     await sup.stop(2000);
     fake.closeAllConnections();
     await new Promise((r) => fake.close(r));
