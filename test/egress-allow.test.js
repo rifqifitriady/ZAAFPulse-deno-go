@@ -146,3 +146,28 @@ test('OTLP from the environment when config does not turn it off; the public cla
   );
   assert.deepEqual(allowList({ egress: { classes: { public: 'go' } } }), allowList({}));
 });
+
+test('a Google service account whose JSON names another token_uri puts that host on the list too', () => {
+  const vx = {
+    id: 'vx',
+    preset: 'vertex',
+    baseUrl: 'https://aiplatform.googleapis.com/v1',
+    apiKey: { keychain: 'acc.gw-vx' },
+    auth: { type: 'google-sa' },
+  };
+  const hosts = (secret) =>
+    allowList(
+      { gateway: { providers: [vx] } },
+      { resolveSecret: (ref) => (ref.keychain === 'acc.gw-vx' ? secret : null) },
+    ).map((r) => `${r.host}:${r.port}`);
+  const base = ['aiplatform.googleapis.com:443', 'oauth2.googleapis.com:443', 'openrouter.ai:443'];
+  assert.deepEqual(hosts(JSON.stringify({ token_uri: 'https://sts.example-sa.com:8443/token' })), [
+    'aiplatform.googleapis.com:443',
+    'oauth2.googleapis.com:443',
+    'openrouter.ai:443',
+    'sts.example-sa.com:8443',
+  ]);
+  assert.deepEqual(hosts(JSON.stringify({ token_uri: 'https://oauth2.googleapis.com/token' })), base);
+  for (const s of ['not json', JSON.stringify({}), JSON.stringify({ token_uri: 5 }), null])
+    assert.deepEqual(hosts(s), base);
+});

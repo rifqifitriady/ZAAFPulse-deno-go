@@ -739,6 +739,11 @@ const gateway = createGateway({
   budgetGuard,
   audit: (e) => govRecord(e), // key changes, run approvals and cancels
   onKeysChange: () => front && front.push(), // the gateway in front enforces keys too (P4b)
+  // A remote agent added, moved or removed changes the egress allow-list (P5 Decision 13): pushed at once, so an
+  // enforcing allow-list (the default since v2.0.0) does not refuse a new agent until the minute loop.
+  onAgentsChange: () => {
+    if (front && pushedAllow !== null && JSON.stringify(egressAllowNow()) !== pushedAllow) front.push();
+  },
 });
 
 // One rate-limit window across the engines (P4f D16): a request this server admits under a key goes to the gateway in

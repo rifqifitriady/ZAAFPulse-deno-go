@@ -73,10 +73,15 @@ test('status: the egress classes after their gate (P5 Decision 11); no endpoint 
   assert.equal(eg.mode, 'js');
   assert.equal(eg.port, null);
   assert.equal(eg.engines.gateway, 'check');
-  assert.equal(eg.allowList, 'report');
+  assert.equal(eg.allowList, 'enforce'); // the default since v2.0.0
   assert.ok(eg.allow.some((r) => r.host === 'openrouter.ai' && r.port === 443));
   assert.equal(eg.allowCount, eg.allow.length);
-  assert.deepEqual(eg.lockdown, { asked: false, inForce: false, why: 'egress.lockdown is off' });
+  // Asked by default since v2.0.0, not in force in js mode.
+  assert.deepEqual(eg.lockdown, {
+    asked: true,
+    inForce: false,
+    why: 'gateway.engine is not "front": no gateway holds the egress endpoint',
+  });
   assert.deepEqual(eg.last, []);
   assert.deepEqual(eg.counts24h, { perClass: {}, total: 0, refused: 0, wouldRefuse: 0 });
   const ctl = await (await fetch(`${s.base}/api/governance/controls`, { signal: AbortSignal.timeout(10000) })).json();

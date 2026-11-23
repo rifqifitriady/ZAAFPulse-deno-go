@@ -634,12 +634,13 @@ call goes direct and Go records whether its allow-list would let it pass) and `"
 class's checks have been clean for 1 day and 20 calls (`"gateDays"`, `"gateMinChecks"`). Every call through Go, and
 every provider call the Go process makes itself, is recorded in `.data/egress.jsonl` (host, port, purpose, status,
 bytes, time; never a path or a header). The allow-list is built from `config.json` (providers, integrations, brain
-sources, webhooks, the OTLP endpoint, …): `"allowList": "report"` (the default) records a host off the list and lets it
-pass, `"enforce"` refuses it. The cloud metadata addresses are refused on every path, whatever the list says. Calls to
+sources, webhooks, the OTLP endpoint, …): `"allowList": "enforce"` (the default since v2.0.0) refuses a host off the
+list, `"report"` records it and lets it pass. It only acts on calls that go through Go, so with every class `"direct"`
+it refuses nothing. The cloud metadata addresses are refused on every path, whatever the list says. Calls to
 `localhost`, `127.0.0.1` and `[::1]` always go direct.
 
-`"egress": { "lockdown": true }` makes every outbound call leave through Go: only when `gateway.engine` is `"front"`
-and all twelve classes are on `"go"` and have met their gate. While the Go process is not running such calls fail
+`"egress": { "lockdown": true }` (the default since v2.0.0) makes every outbound call leave through Go: only when
+`gateway.engine` is `"front"` and all twelve classes are on `"go"` and have met their gate. While the Go process is not running such calls fail
 with `EGRESS_UNAVAILABLE` instead of going direct. Started by `deno run` (a service installed from source), the
 server's own network permission is also narrowed to loopback; the single-file build keeps the permission it was built
 with and applies the lock-down in the egress client only. To turn it off, set `"lockdown": false` and restart, or start

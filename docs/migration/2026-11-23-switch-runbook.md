@@ -6,7 +6,9 @@ here was checked against the code at `282abfc` (`migrate/deno-go`, P6 merged); w
 the end.
 
 Nothing here moves on its own. Every engine switch defaults to `js` and every egress class to `direct`; a v2 install
-behaves as v1.1 until the steps below are taken.
+behaves as v1.1 until the steps below are taken. The egress allow-list enforces and the lock-down is asked for by
+default (since v2.0.0), but neither acts while every class is `direct`: no call passes the allow-list, and the
+lock-down's conditions (section 6) do not hold.
 
 ## 1. The switches
 
@@ -55,7 +57,7 @@ its allow-list would have said), `go` (it leaves through the gateway's egress en
 until then it runs as `check`). The twelve classes: `gateway`, `connectors`, `mcp`, `routers`, `pricing`, `evals`,
 `agents`, `notify`, `brain`, `public`, `otel`, `runtimes` (what each covers: [docs/governance.md, Network egress
 settings](../governance.md#network-egress-settings)). Prerequisite: front mode. Related: `egress.allowList`
-(`report` | `enforce`) and `egress.lockdown` (`false` | `true`).
+(`enforce`, the default, | `report`) and `egress.lockdown` (`true`, the default, | `false`).
 
 ## 2. The rule for moving a class
 
@@ -162,9 +164,13 @@ then set `"egress": { "classes": { ..., "<class>": "go" } }`. It is picked up wi
 4. `gateway`: last. These are the server's own provider calls and token fetches, which are few once the route classes
    are on go.
 
-**Step 4. The allow-list.** When `GET /api/egress` shows no `would-refuse` in the last days, set
-`"egress": { "allowList": "enforce" }`. A host off the list is then refused with `EGRESS_REFUSED` and recorded
-`refused` (an `egress.refused` entry in the audit chain). Picked up at the next push; restart to be sure.
+**Step 4. The allow-list.** It enforces by default: from step 3 on, a call of a class on go to a host off the list is
+refused with `EGRESS_REFUSED` and recorded `refused` (an `egress.refused` entry in the audit chain). The gate of step 3
+already asks for checks without a `would-refuse`, so a class meets it only when its hosts are on the list. To watch
+before refusing, set `"egress": { "allowList": "report" }` first and remove it when `GET /api/egress` shows no
+`would-refuse` in the last days. Picked up at the next push; restart to be sure. What the list cannot know (a redirect
+to another host, an intranet page ingested with `ZAAFPULSE_ALLOW_PRIVATE_URLS=1`):
+[docs/governance.md, Network egress settings](../governance.md#network-egress-settings).
 
 **Step 5. The lock-down.** See section 6.
 
@@ -222,10 +228,10 @@ The way out is in section 5. `ZAAFPULSE_EGRESS_LOCKDOWN=0` turns it off for a la
 installed from source when given to `zaafpulse service install`; the service file does not carry the variable, so for
 the installed binary use `"lockdown": false`.
 
-Owner decision of 2026-11-23: at the v2.0.0 cut-over `egress.allowList: "enforce"` and `egress.lockdown: true` become
-the defaults. That change is not made yet (a remaining P7 task). Once it is, an install with no `egress` section asks
-for the lock-down, but it comes into force only when the conditions above hold; with every class `direct` by default,
-it does not.
+Owner decision of 2026-11-23: since v2.0.0 `egress.allowList: "enforce"` and `egress.lockdown: true` are the
+defaults (`lib/egress.js` `EGRESS_DEFAULTS`). An install with no `egress` section asks for the lock-down, but it comes
+into force only when the conditions above hold; with every class `direct` by default, it does not. To keep the
+behaviour before v2.0.0, write `"allowList": "report"` and `"lockdown": false`.
 
 ## 7. What was not verified
 

@@ -199,7 +199,7 @@ test('P5: onEgress follows the current gateway; every push carries an egress sec
   const seen = [];
   const f = await frontWithFakes(t, { token: 'tok', onEgress: (e) => seen.push(e) });
   const body = f.sups[0].opts.sources.config();
-  assert.deepEqual(body.egress, { allow: [], allowList: 'report' }, 'the default section when the body has none');
+  assert.deepEqual(body.egress, { allow: [], allowList: 'enforce' }, 'the default section when the body has none');
   f.sups[0].opts.onEgress(5001);
   assert.deepEqual(seen, [{ port: 5001, token: 'tok' }]);
   assert.equal(f.front.egressPort, 5001);
