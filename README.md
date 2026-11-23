@@ -640,7 +640,8 @@ it refuses nothing. The cloud metadata addresses are refused on every path, what
 `localhost`, `127.0.0.1` and `[::1]` always go direct.
 
 `"egress": { "lockdown": true }` (the default since v2.0.0) makes every outbound call leave through Go: only when
-`gateway.engine` is `"front"` and all twelve classes are on `"go"` and have met their gate. While the Go process is not running such calls fail
+`gateway.engine` is `"front"` and all twelve classes are on `"go"` and have met their gate (a class with nothing
+configured to call counts as met). While the Go process is not running such calls fail
 with `EGRESS_UNAVAILABLE` instead of going direct. Started by `deno run` (a service installed from source), the
 server's own network permission is also narrowed to loopback; the single-file build keeps the permission it was built
 with and applies the lock-down in the egress client only. To turn it off, set `"lockdown": false` and restart, or start

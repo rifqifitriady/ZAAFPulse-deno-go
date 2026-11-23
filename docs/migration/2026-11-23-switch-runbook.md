@@ -77,9 +77,11 @@ Two consequences:
 
 - Gate G3 asks for every gateway route on `go`. A class with no traffic on the live machine needs traffic to move
   (a few test calls through a key are enough for the count, but the day still has to pass).
-- The lock-down needs **all twelve** egress classes to have met their gate (section 6). On a machine with no remote
-  A2A agents, no monitor webhook, no OTLP export or no remote model server, those classes get no checks, so the lock-down
-  cannot come into force under the default rule.
+- The lock-down needs **all twelve** egress classes asked for `go` and past their gate (section 6). A class with
+  nothing configured to call (no remote A2A agent, no monitor webhook, no OTLP export, no remote model server, …) gets
+  no checks, so it counts as met for the lock-down (and only for it; the class itself stays on `check` with its note).
+  `routers`, `public` and, with price sync on, `pricing` always need their own checks: about ten days for `pricing`,
+  20 URL ingests for `public`.
 
 ## 3. What to watch
 
@@ -207,7 +209,8 @@ place, with the same data folder ([docs/install.md, Rolling back](../install.md#
 - `ZAAFPULSE_EGRESS_LOCKDOWN` is not `0`;
 - `gateway.engine` is `"front"`;
 - all twelve egress classes are set to `go` and each has met its gate (`.data/egress-gate.json` has a `passedAt` for
-  each), unless both `egress.gateDays` and `egress.gateMinChecks` are 0;
+  each), unless both `egress.gateDays` and `egress.gateMinChecks` are 0; a class with nothing configured to call counts
+  as met (`GET /api/egress` names it under `lockdown.quiet`), and loses that as soon as it gets a destination;
 - the listen host (`ZAAFPULSE_HOST` or `HOST`) is an address, not a name.
 
 The gateway route classes do **not** have to be on go for the lock-down; with the `gateway` egress class on go, the

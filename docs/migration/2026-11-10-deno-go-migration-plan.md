@@ -436,5 +436,6 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
    and `egress.lockdown: true` become the defaults. Both can still be switched off in `config.json`
    (`"allowList": "report"`, `"lockdown": false`), and the lock-down also with `ZAAFPULSE_EGRESS_LOCKDOWN=0`. The change
    itself was made on `migrate/p7-defaults` (§5, P7). A default `lockdown: true` is asked but not in force until
-   `gateway.engine` is `"front"` and all twelve egress classes are on `go` and have met their gate, and a class with no
-   traffic never meets the default gate (runbook §2).
+   `gateway.engine` is `"front"` and all twelve egress classes are on `go` and have met their gate. A class with nothing
+   configured to call counts as met (the p7-defaults design, Decision B); `routers`,
+   `public` and, with price sync on, `pricing` always need their own evidence (runbook §2).
