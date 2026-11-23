@@ -34,6 +34,7 @@ const (
 // Upstream calls providers.
 type Upstream struct {
 	client  *http.Client
+	base    *http.Transport // the client's own transport, under any wrapper (WrapTransport); nil in the shadow's replay
 	timeout time.Duration
 	// onAnswer hears every provider answer once its headers are in (after the redirects; both answers of a 401 replay),
 	// as providers.js request() calls noteResponse (P4h Decision 3); nil: nobody.
@@ -75,6 +76,7 @@ func NewUpstream(getenv func(string) string) *Upstream {
 		ForceAttemptHTTP2:  true,
 	}
 	return &Upstream{
+		base: tr,
 		client: &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},
@@ -95,6 +97,23 @@ func (u *Upstream) Client() *http.Client {
 		return nil
 	}
 	return u.client
+}
+
+// Transport is the provider client's own transport (proxy environment, trusted roots, connect limit), under any wrapper
+// WrapTransport put on it: the gateway's egress endpoint copies its settings (P5 Decision 1). Nil for an upstream not
+// built by NewUpstream.
+func (u *Upstream) Transport() *http.Transport {
+	if u == nil {
+		return nil
+	}
+	return u.base
+}
+
+// WrapTransport puts wrap around the provider client's round trips: the gateway's recording RoundTripper (P5 Decision 9,
+// every provider call and token fetch recorded as an egress.event). Call it before New: the engine's token sources copy
+// the client (gw/provauth), and they must copy the wrapped one.
+func (u *Upstream) WrapTransport(wrap func(http.RoundTripper) http.RoundTripper) {
+	u.client.Transport = wrap(u.client.Transport)
 }
 
 // Start sends the plan's request and returns the provider's answer once its headers are in, its body unread, or Why the
@@ -237,6 +256,12 @@ func ErrorCode(err error) string {
 	var rf replayFailure
 	if errors.As(err, &rf) {
 		return string(rf)
+	}
+	// A call the gateway's egress allow-list refused (gw/egress RecordingTransport, P5 Decision 13): named by its code,
+	// EGRESS_REFUSED, as a proxied fetch's err.cause.code names it. Matched by method: gw/engine does not import gw/egress.
+	var eg interface{ EgressCode() string }
+	if errors.As(err, &eg) {
+		return eg.EgressCode()
 	}
 	// Winsock codes (Windows) by the names Node gives them there (re-review N4); no Unix errno is this large.
 	var errno syscall.Errno

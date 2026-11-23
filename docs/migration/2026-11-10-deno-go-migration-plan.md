@@ -104,6 +104,8 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 | M8 | Platforms | 6/6 (Node SEA) | 6/6 built and smoke-tested in CI, including `windows-11-arm` |
 | M9 | Deno permissions | n/a | write = data dir only; net = localhost only; env = allow-list; run = documented allow-list |
 | M10 | Egress coverage | n/a | 100% of outbound connections pass the Go proxy. A test proves Deno has no outbound net permission. |
+
+P5 (2026-11-22, `docs/migration/2026-11-22-p5-results.md`): M10 met for every inventory row once its class is on go; the denial test runs on Node and Deno. M9's net part met for the server's `deno run` launch under `egress.lockdown`; the single-file build and the stdio MCP server are owner questions for P6. Owed at the final quiet-machine step: M3 for a call through the egress endpoint (a `connectors` call on go against direct, local fake), not quiet-confirmed.
 | M11 | Runtime dependencies | 0 | Deno 0 npm/jsr runtime imports; Go stdlib only, with any exception approved in §9 |
 | M12 | Data compatibility | v1.1.x `.data`, `config.json` | v2 opens a v1.1 data dir unchanged; rollback to v1.1.x leaves it readable |
 | M13 | Soak | n/a | ~~7 days on the owner's live dashboard~~ dropped (§11.7): the owner tests v2 in the browser instead |
@@ -279,7 +281,13 @@ like any client.
 - The allow-list is built from config, and every egress is audited (host, purpose, bytes, outcome).
 - Narrow Deno `--allow-net` to localhost.
 - New Compliance control: "Network egress is mediated and logged".
-- **Exit:** M9 and M10 are met, and the test proves a direct outbound connect from Deno is denied.
+- **Exit:** M9 and M10 are met, and the test proves a direct outbound connect from Deno is denied: **met on
+  `migrate/p5-egress`** (2026-11-22, `docs/migration/2026-11-22-p5-results.md`). Every outbound caller class of the
+  inventory (E1–E14) goes through `lib/egress.js` behind its own switch (`direct`, `check`, `go`, gated by the owner's
+  rule) and the Go engine's own calls are recorded; `test/egress-lockdown.test.js` proves that under the locked-down
+  `deno run` line a direct fetch or connect to an outside host is refused by Deno before any packet. The net part of
+  M9 holds for the server's `deno run` launch with `egress.lockdown`; the single-file binary (Q1) and the stdio MCP
+  server (Q2) are owner questions for P6, and the defaults (`enforce`, `lockdown: true`) for P7 (Q3).
 
 ### P6 — Packaging and release (1–2 weeks)
 

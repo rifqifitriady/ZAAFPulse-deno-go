@@ -590,3 +590,135 @@ test('spanBatch: a batch is written once it holds 500 spans, without waiting for
   ingest.flushSpans();
   assert.deepEqual(writes, [500, 1]);
 });
+
+// P5 Decision 10: egress.event, stored in .data/egress.jsonl as the other events (store, mark, acknowledge); a refused
+// one also gets a governance entry.
+const egressMsg = (seq, over = {}) => ({
+  v: 1,
+  type: 'egress.event',
+  seq,
+  ts: 0,
+  body: {
+    ts: 1767225700000 + seq,
+    purpose: 'connectors',
+    method: 'GET',
+    scheme: 'https',
+    host: 'api.example.com',
+    port: 443,
+    status: 200,
+    outcome: 'ok',
+    bytesOut: 0,
+    bytesIn: 10,
+    ms: 2,
+    via: 'proxy',
+    ...over,
+  },
+});
+
+test('egress.event: stored with its ipc mark; a resend at or below the mark is skipped', () => {
+  const { calls, sinks } = recording();
+  const egress = [];
+  const ingest = createIngest({ ...sinks, recordEgress: (e) => egress.push(e), log: () => {} });
+  assert.equal(ingest.handle(msgOf(1), S), true);
+  assert.equal(ingest.handle(egressMsg(2), S), true);
+  assert.equal(ingest.handle(egressMsg(3, { outcome: 'would-refuse' }), S), true);
+  assert.deepEqual(egress[0], { ...egressMsg(2).body, ipc: { stream: S, seq: 2 } });
+  assert.equal(ingest.mark(S), 3);
+  assert.equal(ingest.handle(egressMsg(3), S), false, 'at the mark: a duplicate');
+  assert.equal(ingest.handle(egressMsg(2), S), false, 'below the mark: a duplicate');
+  assert.equal(egress.length, 2);
+  assert.equal(calls.governance.length, 0, 'no governance entry for ok or would-refuse');
+});
+
+test('egress.event refused: a governance entry, then the egress line', () => {
+  const { calls, sinks } = recording();
+  const order = [];
+  const ingest = createIngest({
+    ...sinks,
+    recordGovernance: (e) => (order.push('governance'), calls.governance.push(e), e),
+    recordEgress: () => order.push('egress'),
+    log: () => {},
+  });
+  for (const outcome of ['ok', 'error', 'would-refuse', 'checked'])
+    ingest.handle(egressMsg(ingest.mark(S) + 1, { outcome }), S);
+  assert.equal(calls.governance.length, 0, 'only refused');
+  ingest.handle(egressMsg(5, { outcome: 'refused', error: 'EGRESS_REFUSED', host: 'evil.example', port: 8443 }), S);
+  assert.deepEqual(calls.governance, [
+    {
+      action: 'egress.refused',
+      target: { type: 'host', name: 'evil.example:8443' },
+      outcome: 'refused',
+      actor: { via: 'gateway' },
+    },
+  ]);
+  assert.deepEqual(order.slice(-2), ['governance', 'egress']);
+  assert.equal(ingest.mark(S), 5);
+  // An IPv6 host is bracketed, as a URL authority writes it.
+  ingest.handle(egressMsg(6, { outcome: 'refused', error: 'EGRESS_REFUSED', host: '2001:db8::1', port: 443 }), S);
+  assert.equal(calls.governance[1].target.name, '[2001:db8::1]:443');
+});
+
+test('egress.event refused: a governance entry that cannot be written is a store failure (no egress line)', () => {
+  const { sinks } = recording();
+  const egress = [];
+  const ingest = createIngest({
+    ...sinks,
+    recordGovernance: () => null,
+    recordEgress: (e) => egress.push(e),
+    log: () => {},
+  });
+  assert.throws(() => ingest.handle(egressMsg(1, { outcome: 'refused' }), S), /egress\.refused entry/);
+  assert.equal(ingest.mark(S), 0, 'not marked, not acknowledged');
+  assert.equal(egress.length, 0);
+});
+
+test('egress.event without an egress log wired is a store failure, not a silent drop', () => {
+  const { sinks } = recording();
+  const ingest = createIngest({ ...sinks, log: () => {} });
+  assert.throws(() => ingest.handle(egressMsg(1), S), /no egress log/);
+  assert.equal(ingest.mark(S), 0);
+});
+
+test('an egress.event store that fails is not marked and not acknowledged; the resend stores it once', (t) => {
+  const root = tmpDir(t, 'strict-egress');
+  const stores = openLocalStores({ root });
+  const logged = [];
+  const ingest = createIngest({ ...stores.sinks, log: (l) => logged.push(l) });
+  for (let s = 1; s <= 3; s++) ingest.handle(msgOf(s), S);
+  const backup = `${root}-backup`;
+  fs.cpSync(root, backup, { recursive: true });
+  t.after(() => fs.rmSync(backup, { recursive: true, force: true }));
+  fs.mkdirSync(stores.files.egressFile, { recursive: true }); // appending to a folder fails
+  assert.throws(() => ingest.handle(egressMsg(4), S));
+  assert.throws(() => ingest.handle(egressMsg(4), S), 'the same failure again');
+  assert.equal(ingest.mark(S), 3, 'not marked');
+  assert.equal(logged.length, 1, `logged once per cause: ${logged.join(' | ')}`);
+  assert.match(logged[0], /egress\.event/);
+  assert.throws(() => ingest.handle(egressMsg(5), S), /before seq/, 'a later event waits for the unstored one');
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.cpSync(backup, root, { recursive: true });
+  const again = openLocalStores({ root });
+  const resumed = createIngest({ ...again.sinks, marks: recoverMarks(again.files), log: () => {} });
+  assert.equal(resumed.mark(S), 3);
+  assert.equal(resumed.handle(egressMsg(4), S), true);
+  assert.equal(resumed.handle(egressMsg(4), S), false);
+  const lines = readJsonl(again.files.egressFile);
+  assert.equal(lines.length, 1, 'stored once');
+  assert.deepEqual(lines[0].ipc, { stream: S, seq: 4 });
+  assert.equal(recoverMarks(again.files).get(S), 4, 'the mark is in the egress line');
+});
+
+test('local stores: a refused egress.event is in the governance chain and in egress.jsonl', (t) => {
+  const root = tmpDir(t, 'egress-gov');
+  const stores = openLocalStores({ root });
+  const ingest = createIngest({ ...stores.sinks, log: () => {} });
+  ingest.handle(egressMsg(1), S);
+  ingest.handle(egressMsg(2, { outcome: 'refused', error: 'EGRESS_REFUSED', status: undefined }), S);
+  assert.equal(readJsonl(stores.files.egressFile).length, 2);
+  const gov = governanceEntries(stores.files.governanceDir).filter((e) => e.action.startsWith('egress.'));
+  assert.equal(gov.length, 1);
+  assert.equal(gov[0].action, 'egress.refused');
+  assert.deepEqual(gov[0].target, { type: 'host', name: 'api.example.com:443' });
+  assert.equal(gov[0].outcome, 'refused');
+  assert.deepEqual(gov[0].actor, { via: 'gateway' });
+});

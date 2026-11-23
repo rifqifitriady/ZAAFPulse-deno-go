@@ -226,6 +226,28 @@
           }
         }
       }
+    },
+    "egress": {
+      "description": "P5: the egress endpoint's allow-list (report: record would-refuse; enforce: refuse) and, informational, each caller class's switch",
+      "type": "object",
+      "required": ["allow", "allowList"],
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["host"],
+            "additionalProperties": false,
+            "properties": {
+              "host": { "type": "string", "minLength": 1 },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          }
+        },
+        "allowList": { "type": "string", "enum": ["report", "enforce"] },
+        "classes": { "type": "object", "additionalProperties": { "type": "string", "enum": ["direct", "check", "go"] } }
+      }
     }
   }
 }

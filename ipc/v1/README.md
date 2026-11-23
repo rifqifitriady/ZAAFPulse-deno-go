@@ -18,7 +18,7 @@ The contract between the Deno control plane and the Go gateway (`zaafpulse-gw`).
 `{"v": 1, "type": "<name>", "seq": <int>, "ts": <epoch ms>, "body": {...}}`, plus `"id"` on a request that expects
 a reply (`hello`) and `"re"` on the reply (`hello.ok`, `hello.refused`).
 
-- `seq`, gateway → control plane: events (`usage.report`, `audit.event`, `trace.span`) carry the durable outbox
+- `seq`, gateway → control plane: events (`usage.report`, `audit.event`, `trace.span`, `egress.event`) carry the durable outbox
   sequence of the stream named in `hello`, starting at 1 and kept across restarts; control messages (`hello`,
   `ready`, `health`, `error`) count per connection from 1. Control plane → gateway: per connection from 1.
 - Money is `integer` nano-USD (1e-9 USD): `usage.report` `record.cost` and every `config.push` price.
@@ -43,7 +43,7 @@ a reply (`hello`) and `"re"` on the reply (`hello.ok`, `hello.refused`).
 | `budget.snapshot` | cp → gw | `at`, `budgets` (BudgetView), `keyCenter` |
 | `shutdown` | cp → gw | `graceMs` |
 | `ack` | cp → gw | `stream`, `upTo` |
-| `ready` | gw → cp | `gen` |
+| `ready` | gw → cp | `gen`, `egress?` (P5: `{port}`) |
 | `health` | gw → cp | `inflight`, `outboxDepth`, `uptimeMs`, `gen`, `snapshotAgeMs` |
 | `usage.report` | gw → cp | `record` (UsageRecord, `cost` in Money), `budget?: "unchecked"` |
 | `audit.event` | gw → cp | `log: "governance"` + AuditEvent, or `log: "mcp"` + the MCP audit entry |
@@ -51,6 +51,7 @@ a reply (`hello`) and `"re"` on the reply (`hello.ok`, `hello.refused`).
 | `error` | gw → cp | `code`, `message` (a protocol problem, before the gateway exits 3) |
 | `ratelimit.take` | both | `keyId`, `at` (P4f: one request admitted under a key's window; a control message, not stored) |
 | `ratelimit.window` | cp → gw | `windows[{keyId, at[]}]` (P4f: the last minute's takes per key, before `budget.snapshot`) |
+| `egress.event` | gw → cp | `ts`, `purpose`, `method`, `scheme`, `host`, `port`, `status?`, `outcome`, `error?`, `bytesOut`, `bytesIn`, `ms`, `via` (`proxy`, `tunnel`, `engine`, `check`; P5: one outbound connection) |
 
 Budget rule: no snapshot, or `now - at > 5000`: the call passes and its usage record carries `budget: "unchecked"`,
 except that a blocking budget in scope that the snapshot shows as `exceeded` is always refused (402
@@ -82,3 +83,20 @@ starting with `fatal: `.
 - The gateway keeps `calls.journal` next to its outbox segments (not a message): each served call's start and the seq
   its usage line took; on start, before `hello`, a call that never got its line gets one (status 599, `error` "the
   gateway stopped before the call ended", cost 0), so a crash leaves exactly one line per call.
+
+## Egress (added in v1 by P5, one new type and two optional fields)
+
+- `egress.event` (gateway to control plane, an outbox event with its durable `seq`, as `usage.report`): one outbound
+  connection the gateway made or refused, through its egress endpoint (`via` `proxy` for a forwarded request,
+  `tunnel` for a `CONNECT`) or by the engine itself (`via` `engine`: provider calls and token fetches); `via` `check` is a `/check` verdict
+  (`checked` or `would-refuse`, nothing connected), the only records the control plane's egress gate counts. `scheme` is
+  `http`, `https` or `tcp` (a tunnel); `outcome` is `ok` (an answer came, whatever its `status`), `error` (`error`
+  holds the failure code), `refused` (the allow-list, enforced), `would-refuse` (the allow-list, reported) or
+  `checked`. `bytesOut` and `bytesIn` are body bytes, decoded. No path, query or header is recorded. The control plane
+  stores it in `.data/egress.jsonl` (store, mark, acknowledge, as the other events); a `refused` one also gets a
+  governance entry (`action` `egress.refused`, `target` `{type: "host", name: "<host>:<port>"}`, `outcome`
+  `refused`, `actor` `{via: "gateway"}`).
+- `ready.egress` `{ port }`: the egress endpoint's port on 127.0.0.1, when it listens.
+- `config.push.egress` `{ allow[{host, port?}], allowList, classes? }`: the endpoint's allow-list (`host` a name, an
+  address or `*.suffix`; no `port` is any port), `allowList` `report` (record `would-refuse`, make the connection) or
+  `enforce` (refuse it), and, informational, each caller class's switch (`direct`, `check` or `go`).

@@ -610,6 +610,28 @@ off). `"shadow": ["chat-stream"]` compares the streams the server answers, from 
 same 20-call, 1-day rule applies to `chat-stream` on its own. `"chat-stream": "js"` (the default) puts streams back on
 the server. The Go process runs with a soft memory limit of 64 MiB (`"memLimitMB"`, 0 for none).
 
+**Network egress through Go.** In front mode the Go process also offers an egress endpoint on `127.0.0.1` (a random
+port, a per-start token) through which the server's own outbound calls can leave: provider calls of the server's
+gateway, connectors, upstream MCP servers, routers, price sync, evals, remote agents, monitor webhooks, second-brain
+apps and vector stores (Postgres through a tunnel), URL ingest (public addresses only, checked when Go connects),
+OpenTelemetry export and model servers on another machine. Each caller class has a switch in `config.json`,
+`"egress": { "classes": { "connectors": "go" } }`: `"direct"` (the default, as before), `"check"` (the call goes direct
+and Go records whether its allow-list would let it pass) and `"go"`, which takes effect once the class's checks have
+been clean for 1 day and 20 calls (`"gateDays"`, `"gateMinChecks"`). Every call through Go, and every provider call the
+Go process makes itself, is recorded in `.data/egress.jsonl` (host, port, purpose, status, bytes, time; never a path or
+a header). The allow-list is built from `config.json` (providers, integrations, brain sources, webhooks, the OTLP
+endpoint, …): `"allowList": "report"` (the default) records a host off the list and lets it pass, `"enforce"` refuses
+it. Calls to `localhost`, `127.0.0.1` and `[::1]` always go direct.
+
+`"egress": { "lockdown": true }` narrows the server's own network permission to loopback when it is started by
+`deno run` (the service from source): only when `gateway.engine` is `"front"` and every class is on `"go"` and has met
+its gate. Every outbound call then has to leave through Go; while the Go process is not running such calls fail with
+`EGRESS_UNAVAILABLE` instead of going direct. To turn it off, set `"lockdown": false` and restart, or start with
+`ZAAFPULSE_EGRESS_LOCKDOWN=0`; a service computes its launch line when it is installed, so run
+`zaafpulse service install` again after a change. The single-file build keeps the network permission it was built with
+and applies the lock-down in the egress client only. Programs ZAAFPulse starts (Claude Code, Codex, model servers) are
+outside both.
+
 ### Run it on login (macOS, from source)
 
 ```bash
@@ -1164,8 +1186,9 @@ Everything is editable in **Settings** and saved to `config.json`:
 | Gateway guardrails (`gateway.guardrails`) | secrets `redact`, personal data `off`, prompt injection `log`, scope `external` ([docs/guardrails.md](docs/guardrails.md)) |
 | Audit log retention (`governance.audit.retentionMonths`) | 12 months, from 6 to 120 ([docs/governance.md](docs/governance.md#retention)) |
 | AI inventory reviews (`governance.inventory`) | none; set on **Governance → Inventory** ([docs/governance.md](docs/governance.md#reviews)) |
+| Network egress (`egress`) | every class `direct`, allow-list `report`, lock-down off; set in `config.json` only (see **Network egress through Go** above) |
 
-Environment variables: `PORT` / `ZAAFPULSE_PORT` (default `4777`), `ZAAFPULSE_HOST`, `ZAAFPULSE_DATA`, `ZAAFPULSE_AUTH` (`local` by default on 127.0.0.1, `1` for password, `none` to turn sign-in off), `ZAAFPULSE_INDEX_WORKERS` (worker threads for the first index; `0` turns them off), `ZAAFPULSE_CONTENT` (`off` hides transcript text in the Trace explorer, and eval explanations; in server mode it is off unless `on`), `ZAAFPULSE_OLLAMA_URL` and `ZAAFPULSE_LMSTUDIO_URL` (move the local judge servers; for tests and unusual setups, see [docs/evals.md](docs/evals.md)), `ZAAFPULSE_CLAUDE_BIN` (the Claude Code CLI for the [Claude Code judge](docs/evals.md#claude-code), when it is not found on its own), the server-mode settings in [docs/install.md](docs/install.md), the standard `OTEL_*` variables ([docs/otel.md](docs/otel.md)), and `DEMO=1` for synthetic data. Demo mode never writes `config.json`, the Keychain or your coding tools, and fetches nothing: model calls are answered by a scripted model inside the process, and gateway data lives in a temporary folder. It uses the cached price list if one exists.
+Environment variables: `PORT` / `ZAAFPULSE_PORT` (default `4777`), `ZAAFPULSE_HOST`, `ZAAFPULSE_DATA`, `ZAAFPULSE_AUTH` (`local` by default on 127.0.0.1, `1` for password, `none` to turn sign-in off), `ZAAFPULSE_INDEX_WORKERS` (worker threads for the first index; `0` turns them off), `ZAAFPULSE_CONTENT` (`off` hides transcript text in the Trace explorer, and eval explanations; in server mode it is off unless `on`), `ZAAFPULSE_OLLAMA_URL` and `ZAAFPULSE_LMSTUDIO_URL` (move the local judge servers; for tests and unusual setups, see [docs/evals.md](docs/evals.md)), `ZAAFPULSE_CLAUDE_BIN` (the Claude Code CLI for the [Claude Code judge](docs/evals.md#claude-code), when it is not found on its own), `ZAAFPULSE_EGRESS_LOCKDOWN=0` (start without the egress lock-down, see [Network egress through Go](#the-gateway-process-v2-line-in-progress)), the server-mode settings in [docs/install.md](docs/install.md), the standard `OTEL_*` variables ([docs/otel.md](docs/otel.md)), and `DEMO=1` for synthetic data. Demo mode never writes `config.json`, the Keychain or your coding tools, and fetches nothing: model calls are answered by a scripted model inside the process, and gateway data lives in a temporary folder. It uses the cached price list if one exists.
 </details>
 
 ## Contributing
