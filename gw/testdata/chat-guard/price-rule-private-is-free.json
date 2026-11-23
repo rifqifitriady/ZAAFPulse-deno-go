@@ -151,7 +151,7 @@
         },
         "egress": {
           "allow": [],
-          "allowList": "report",
+          "allowList": "enforce",
           "classes": {
             "gateway": "direct",
             "connectors": "direct",
