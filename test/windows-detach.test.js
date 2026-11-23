@@ -95,7 +95,9 @@ test('install-test.ps1: every program runs through Invoke-Bounded with a timeout
   const src = code(read('scripts/install-test.ps1'));
   // The installers: no `& $InstallerHost ... | Out-Host`.
   assert.doesNotMatch(src, /&\s*\$InstallerHost/);
-  assert.match(src, /Invoke-Bounded \$what \$seconds \$InstallerHost/);
+  assert.doesNotMatch(src, /&\s*\$hostExe/);
+  assert.match(src, /Invoke-Bounded \$what \$seconds \$hostExe /);
+  assert.match(src, /\[string\]\$hostExe = \$InstallerHost\)/);
   // The only native call made with & is taskkill on a timeout; the rest of & runs script blocks.
   for (const m of src.matchAll(/&\s+([\w.$]+)/g)) assert.ok(['taskkill.exe', '$cond', '$body'].includes(m[1]), m[0]);
   // Invoke-Bounded: output to files, a progress line, the timeout kills the tree and throws.
@@ -190,3 +192,131 @@ test(
     assert.equal(r.stdout.trim(), '-File D:\\a\\b.ps1 "a b" "" "C:\\x y\\\\" "a\\"b" C:\\p\\');
   },
 );
+
+// Second v2.0.0 dry run (run 45181932316): the hang was gone, and three failures showed. A powershell.exe started from
+// pwsh through Start-Process kept pwsh's module folders (Get-FileHash "not recognized"); GetFolderPath('Programs')
+// was '' in a temp profile without a Start menu folder; v1.1.0's installer cannot run in Windows PowerShell 5.1 with
+// Node on PATH.
+const platform = require('../lib/platform');
+
+test('windowsPowerShellModulePath: drops PowerShell 7 folders, keeps the rest in order, adds 5.1 system folder', () => {
+  const pwshDll = new Set(['C:\\Program Files\\PowerShell\\7\\pwsh.dll']);
+  const got = platform.windowsPowerShellModulePath(
+    [
+      'C:\\Users\\u\\Documents\\PowerShell\\Modules',
+      'C:\\Program Files\\PowerShell\\Modules\\',
+      'C:\\Program Files\\PowerShell\\7\\Modules',
+      'C:\\Users\\u\\Documents\\WindowsPowerShell\\Modules',
+      'C:\\Program Files\\WindowsPowerShell\\Modules',
+      '',
+      'c:\\program files\\windowspowershell\\modules\\',
+      'C:\\Modules',
+    ].join(';'),
+    { systemRoot: 'C:\\Windows', exists: (f) => pwshDll.has(f) },
+  );
+  assert.equal(
+    got,
+    [
+      'C:\\Users\\u\\Documents\\WindowsPowerShell\\Modules',
+      'C:\\Program Files\\WindowsPowerShell\\Modules',
+      'C:\\Modules',
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
+    ].join(';'),
+  );
+  // A clean 5.1 path stays as it is.
+  const clean =
+    'C:\\Users\\u\\Documents\\WindowsPowerShell\\Modules;C:\\Program Files\\WindowsPowerShell\\Modules;C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\Modules';
+  assert.equal(platform.windowsPowerShellModulePath(clean, { systemRoot: 'C:\\WINDOWS', exists: () => false }), clean);
+});
+
+test('lib/platform.js: on Windows the process module path is fixed once, for every powershell.exe it starts', () => {
+  assert.match(
+    read('lib/platform.js'),
+    /if \(OS === 'windows' && process\.env\.PSModulePath\) \{\s+const fixed = windowsPowerShellModulePath\(process\.env\.PSModulePath\);\s+if \(fixed !== process\.env\.PSModulePath\) process\.env\.PSModulePath = fixed;\s+\}/,
+  );
+});
+
+test('install.ps1: no script-module cmdlet on the critical path, 5.1 module path, a Start menu folder or a warning', () => {
+  const src = code(read('install.ps1'));
+  // The checksum and the unpack with .NET alone.
+  assert.doesNotMatch(src, /\bGet-FileHash\b|\bExpand-Archive\b/);
+  assert.match(src, /function Get-Sha256\b[\s\S]*?\[Security\.Cryptography\.SHA256\]::Create\(\)/);
+  assert.match(src, /if \(\(Get-Sha256 \$pkg\) -ne \$want\)/);
+  assert.match(src, /\[IO\.Compression\.ZipFile\]::ExtractToDirectory\(\$pkg, \$x\)/);
+  // In Windows PowerShell its own module path first thing; in pwsh the launcher gets 5.1's, and pwsh's comes back.
+  assert.match(
+    src,
+    /\nif \(\$PSVersionTable\.PSEdition -ne 'Core' -and \$env:PSModulePath\) \{ \$env:PSModulePath = Get-WinPSModulePath \$env:PSModulePath \}/,
+  );
+  const svc = src.match(/function Invoke-Service\b[\s\S]*?\n\}/)[0];
+  assert.match(svc, /PSEdition -eq 'Core'[^\n]*\$env:PSModulePath = Get-WinPSModulePath \$saved/);
+  assert.match(svc, /try \{ \$p = Start-Process [^\n]*\}\s+finally \{ \$env:PSModulePath = \$saved \}/);
+  // GetFolderPath('Programs') only in Get-ProgramsDir, which falls back to APPDATA; every use is guarded.
+  assert.equal((src.match(/GetFolderPath\('Programs'\)/g) || []).length, 1);
+  assert.match(
+    src,
+    /function Get-ProgramsDir\b[\s\S]*?Join-Path \$env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs'/,
+  );
+  const uses = src.match(/\$programs = Get-ProgramsDir\s+if \(\$programs\) \{/g) || [];
+  assert.equal(uses.length, 2, 'the uninstall and the install both check the folder');
+  assert.match(src, /New-Item -ItemType Directory -Force -Path \$programs/);
+  assert.match(src, /\} else \{ Warn 'No Start menu folder[^\n]*shortcut was skipped/);
+});
+
+test('install-test.ps1: 5.1 installers get 5.1 module path, v1.1.0 runs in pwsh, the temp profile has a Start menu', () => {
+  const src = code(read('scripts/install-test.ps1'));
+  assert.match(src, /Join-Path \$env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\Startup'/);
+  const inst = src.match(/function Invoke-Installer\b[\s\S]*?\n\}/)[0];
+  assert.match(inst, /-ieq 'powershell\.exe'\) \{ \$set\.PSModulePath = Get-WinPSModulePath \$env:PSModulePath \}/);
+  assert.match(inst, /Invoke-Bounded \$what \$seconds \$hostExe \([^\n]*\) \$set/);
+  const bounded = src.match(/function Invoke-Bounded\b[\s\S]*?\n\}/)[0];
+  assert.match(bounded, /try \{ \$p = Start-Process @sp \}\s+finally \{ foreach \(\$k in \$saved\.Keys\)/);
+  assert.match(src, /\$V1Host = if \(\$PSVersionTable\.PSEdition -eq 'Core'\) \{ \(Get-Process -Id \$PID\)\.Path \}/);
+  assert.match(src, /Invoke-Installer \$v1 @\('-NoService', '-Version', \$V1Tag\) 600 \$V1Host/);
+  // v2's installers still run in -InstallerHost (Windows PowerShell 5.1 by default).
+  for (const m of src.matchAll(/Invoke-Installer \(Join-Path \$RepoRoot 'install\.ps1'\)[^\n]*/g))
+    assert.doesNotMatch(m[0], /V1Host/, m[0]);
+});
+
+// Runs functions taken from a script (by its AST) and then `body`, in pwsh.
+function runPs(file, names, body, env = {}) {
+  const script = [
+    '$e = $null; $t = $null',
+    '$ast = [System.Management.Automation.Language.Parser]::ParseFile($env:ZP_PS_FILE, [ref]$t, [ref]$e)',
+    `foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in @(${names.map((n) => `'${n}'`).join(', ')}) }, $true)) { . ([scriptblock]::Create($f.Extent.Text)) }`,
+    body,
+  ].join('; ');
+  return spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env, ZP_PS_FILE: path.join(ROOT, file) },
+  });
+}
+
+test('Get-WinPSModulePath in both scripts matches lib/platform.js', { skip: !pwsh && 'pwsh is not installed' }, () => {
+  const value = [
+    'C:\\Users\\u\\Documents\\PowerShell\\Modules',
+    'C:\\Program Files\\PowerShell\\Modules\\',
+    'C:\\Users\\u\\Documents\\WindowsPowerShell\\Modules',
+    '',
+    'C:\\Program Files\\WindowsPowerShell\\Modules',
+    'c:\\program files\\windowspowershell\\modules\\',
+    'D:\\Tools\\Modules',
+  ].join(';');
+  // No SystemRoot (pwsh on macOS and Linux joins with /), no pwsh.dll: the folder rules only.
+  const want = platform.windowsPowerShellModulePath(value, { systemRoot: '', exists: () => false });
+  for (const f of ['install.ps1', 'scripts/install-test.ps1']) {
+    const r = runPs(f, ['Get-WinPSModulePath'], '$env:SystemRoot = $null; Get-WinPSModulePath $env:ZP_VALUE', {
+      ZP_VALUE: value,
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), want, f);
+  }
+});
+
+test('install.ps1 Get-Sha256 is the file SHA-256', { skip: !pwsh && 'pwsh is not installed' }, () => {
+  const file = path.join(ROOT, 'install.ps1');
+  const want = require('crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const r = runPs('install.ps1', ['Get-Sha256'], 'Get-Sha256 $env:ZP_PS_FILE');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), want);
+});
