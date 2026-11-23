@@ -41,7 +41,9 @@ import (
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
-const version = "0.4.0-front"
+// version is the gateway's version, sent in hello.gwVersion and printed by -version. The release build sets it with
+// -ldflags "-X main.version=<v>" (scripts/build-deno.js, P6 Decision 2); a plain go build leaves "dev".
+var version = "dev"
 
 // prepareGuard compiles the guardrail patterns (replaceable in tests).
 var prepareGuard = guard.Prepare
@@ -101,8 +103,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Int64Var(&o.staleMs, "stale-ms", ipc.StaleAfterMs, "test only: age at which a budget snapshot is stale, in ms")
 	fs.BoolVar(&o.healthOnSnapshot, "health-on-snapshot", false, "test only: send health after every budget snapshot")
 	fs.Int64Var(&o.memLimitMB, "mem-limit-mb", 0, "the Go runtime's soft memory limit in MiB (0: none)")
+	showVersion := fs.Bool("version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return exitWith(logger, ipc.ExitRefused, "bad command line: %v", err)
+	}
+	// -version answers before anything else: no stdin read, no config, no outbox.
+	if *showVersion {
+		if _, err := fmt.Fprintln(stdout, version); err != nil {
+			return ipc.ExitDamaged
+		}
+		return 0
 	}
 	// The guard's patterns compile off the start path (P4e Decision 12); a first guarded call waits on the same Once,
 	// outside its own budget.

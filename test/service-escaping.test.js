@@ -64,3 +64,35 @@ test('vbsText: a line break in an environment value cannot end the string and st
     /line break/,
   );
 });
+
+test('Windows stop/running: the server is found by its command line, bare or quoted as vbsText writes it', () => {
+  // PowerShell -match is case-insensitive; .NET and JS read these patterns alike.
+  const server = new RegExp(service.WIN_SERVER_RE, 'i');
+  const start = new RegExp(service.WIN_START_RE, 'i');
+  const isServer = (line) => server.test(line) && start.test(line);
+  const exe = 'C:\\Users\\A\\AppData\\Local\\ZAAFPulse\\bin\\zaafpulse.exe';
+  const v1 = [
+    'C:\\Users\\A\\AppData\\Local\\ZAAFPulse\\node\\node.exe',
+    'C:\\Users\\A\\AppData\\Local\\ZAAFPulse\\app\\bin\\zaafpulse.js',
+  ];
+  // The command lines the launcher starts: cmd.exe /c runs `"<exe>" "start"`.
+  for (const cmd of [
+    [exe, 'start'],
+    [...v1, 'start'],
+  ]) {
+    const run = service.vbsText(cmd, {}, 'C:\\Z\\logs\\server.log').match(/cmd\.exe \/c """"(.*?)"" >> /)[1];
+    const line = `"${run.replace(/""/g, '"')}"`;
+    assert.ok(line.endsWith('"start"'), line);
+    assert.ok(isServer(line), line);
+  }
+  assert.ok(isServer(`${exe} start`));
+  assert.ok(isServer('zaafpulse start --port 4790'));
+  for (const line of [
+    `"${exe}" service uninstall`,
+    `"${exe}" service restart`,
+    `"${exe}" status`,
+    'C:\\Z\\bin\\zaafpulse-gw.exe -addr 127.0.0.1:0',
+    'notepad.exe start',
+  ])
+    assert.ok(!isServer(line), line);
+});

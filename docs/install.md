@@ -1,45 +1,68 @@
 # Installing ZAAFPulse
 
-ZAAFPulse runs on these systems:
+ZAAFPulse v2 runs on these systems:
 
-- **macOS** 12 or newer
-- **Linux**: Ubuntu, Debian, RHEL 8/9, Rocky, AlmaLinux, Fedora, Amazon Linux, SUSE and Alpine, on x64, arm64, ppc64le or s390x
+- **macOS** 12 or newer, on Apple silicon or Intel
+- **Linux** with glibc: Ubuntu, Debian, RHEL 8/9, Rocky, AlmaLinux, Fedora, Amazon Linux and SUSE, on x64 or arm64
 - **Windows** 10/11, on x64 or arm64
 
-It needs Node.js 18 or newer and no npm packages. The installers bring their own Node.js when the system has none.
+A release is two programs, `zaafpulse` (the dashboard, a Deno binary) and `zaafpulse-gw` (the Go gateway), packed in one archive per system. They need nothing else: no Node.js, no Deno, no npm packages. The installers download no Node.js any more.
 
-## Pick a way
-
-| You want | Do this |
-|---|---|
-| It on your laptop | `curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.sh \| sh` (macOS/Linux) or `irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.ps1 \| iex` (Windows PowerShell) |
-| A shared server | `curl -fsSL …/install.sh \| sudo sh -s -- --server` |
-| Containers | `docker compose up -d` with [compose.yaml](../compose.yaml) |
-| One file, no installer | a `zaafpulse-<version>-<os>-<cpu>` binary from [Releases](https://github.com/rifqifitriady/ZAAFPulse/releases) |
-| To hack on it | `git clone …`, then `npm start` |
-
-## The installers
-
-### macOS and Linux: `install.sh`
+**Only v1.x runs on** Alpine and other musl Linux, armv7l, ppc64le, s390x and 32-bit Windows. There is no v2 build for them, and the v2 installers stop there and print the v1.x command. Use the v1.x installer from [rifqifitriady/ZAAFPulse](https://github.com/rifqifitriady/ZAAFPulse):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.sh | sh
 ```
 
+## Pick a way
+
+| You want | Do this |
+|---|---|
+| It on your laptop | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` (macOS/Linux) or `irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 \| iex` (Windows PowerShell) |
+| A shared server | `curl -fsSL …/install.sh \| sudo sh -s -- --server` |
+| Containers | `docker compose up -d` with [compose.yaml](../compose.yaml) |
+| No installer | a `zaafpulse-<version>-<os>-<cpu>` archive from [Releases](https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases), unpacked ([Release packages](#release-packages)) |
+| To hack on it | `git clone …`, then `npm start` |
+
+## The installers
+
+Both installers are release files themselves, so the `releases/latest/download/` address always gets the installer of the latest release, and `releases/download/vX.Y.Z/` the one of that release.
+
+### macOS and Linux: `install.sh`
+
+```bash
+curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh | sh
+```
+
 The installer:
 
-1. Uses your `node` if it is 18 or newer. Otherwise it downloads the official Node.js 24 LTS for your OS and CPU from nodejs.org and checks it against the published SHA-256 sums.
-2. Downloads the latest ZAAFPulse release (or `main` when there is none) and keeps only the app files.
-3. Adds the `zaafpulse` command.
-4. Starts ZAAFPulse in the background, and again at every login or boot.
+1. Picks the package for your OS and CPU (`darwin` or `linux`, `x64` or `arm64`), and stops on a system that only v1.x supports.
+2. Downloads it with `SHA256SUMS.txt` from the latest release (or the one named with `--version`) and checks it. A mismatch, or a package missing from `SHA256SUMS.txt`, installs nothing.
+3. Unpacks it, clears the macOS quarantine flag on both programs, and runs the new `zaafpulse version`. When that fails it stops with "nothing was changed".
+4. Keeps an earlier install (v1.x or v2) for `--rollback`, see [Upgrading from v1.x](#upgrading-from-v1x).
+5. Puts both programs in the install folder and adds the `zaafpulse` command.
+6. Starts ZAAFPulse in the background, and again at every login or boot.
+7. Prints a summary: the dashboard address, the commands, and the rollback and uninstall lines.
 
 | | As your user | As root (`sudo`) on Linux |
 |---|---|---|
-| App | `~/.local/share/zaafpulse/app` | `/opt/zaafpulse/app` |
-| Node.js (if downloaded) | `~/.local/share/zaafpulse/node` | `/opt/zaafpulse/node` |
+| Programs | `~/.local/share/zaafpulse/bin/zaafpulse` and `zaafpulse-gw` | `/opt/zaafpulse/bin` |
 | Command | `~/.local/bin/zaafpulse` (added to PATH in your shell profile) | `/usr/local/bin/zaafpulse` |
+| Earlier install, kept for `--rollback` | `~/.local/share/zaafpulse/rollback` | `/opt/zaafpulse/rollback` |
 | Data | macOS: `~/Library/Application Support/ZAAFPulse`; Linux: `~/.local/share/zaafpulse/data` | `/var/lib/zaafpulse` (owned by the `zaafpulse` system user) |
 | Background | macOS: LaunchAgent `com.zaaf.aipulse.server`; Linux: systemd user service `zaafpulse` | systemd service `zaafpulse`, running as the `zaafpulse` user with `ProtectSystem`, `ProtectHome` and `NoNewPrivileges` |
+
+The `zaafpulse` command is a two-line wrapper:
+
+```sh
+#!/bin/sh
+PATH="/home/you/.local/share/zaafpulse/bin:$PATH"; export PATH
+exec "/home/you/.local/share/zaafpulse/bin/zaafpulse" "$@"
+```
+
+It puts the install folder first on `PATH` because Deno allows the dashboard to start `zaafpulse-gw` by name, and finds that name through `PATH` when it starts. `zaafpulse service install` writes the same folder first into the service's `PATH`.
+
+`ZAAFPULSE_PREFIX` moves the install folder of a user install (`ZAAFPULSE_PREFIX=/opt/zp sh install.sh`). The installer writes the folder as its physical path, with links resolved (`/tmp` becomes `/private/tmp` on macOS), because Deno compares the folder on `PATH` with the path the binary was started by. The folder may not contain `"`, `$`, `` ` `` or `\`.
 
 The options go after `sh -s --`:
 
@@ -47,13 +70,19 @@ The options go after `sh -s --`:
 |---|---|
 | `--server` | Listen on all interfaces (`0.0.0.0`) and ask for the admin password |
 | `--host ADDR` / `--port N` | Listen on a specific address and port (default `127.0.0.1:4777`) |
-| `--version v1.2.0` | A specific release, or `main` |
-| `--source DIR` | Install from a local copy (offline, or to test changes) |
-| `--no-service` | Do not start it in the background |
+| `--version vX.Y.Z` | A specific release. v2 installs releases only: `--version main` is gone |
+| `--archive FILE` [`--sums FILE`] | Install a package you already have (offline, CI). Without `--sums` it warns that the package is not checksum-verified |
+| `--verify-attestation` | Also check the package's attestation with `gh attestation verify`. Stops when `gh` is missing or the check fails |
+| `--rollback` | Go back to the install this one replaced ([Rolling back](#rolling-back)) |
+| `--no-service` | Do not start it in the background, and leave a running service alone |
 | `--no-modify-path` | Leave your shell profile alone |
 | `--uninstall [--purge]` | Remove it; `--purge` also deletes the data |
 
-On Alpine (musl), install Node.js first with `apk add nodejs`.
+An install made as root (`sudo sh`, the systemd system service) must be upgraded and uninstalled as root too: run without `sudo`, the installer works on your user install in your home folder and leaves the system one, and its service, as they are.
+
+`--source DIR` is gone: a source tree needs Deno and Go to build. Build a package with `deno task build --package` and install it with `--archive`.
+
+`--uninstall` stops the service and removes the command and only the folders the installers put in the install folder (`bin`, `rollback`, `rollforward`, and v1's `app` and `node`), then the install folder itself when it is empty. On Linux the data folder `~/.local/share/zaafpulse/data` sits inside the default install folder, so the data is kept. `--purge` deletes the data too.
 
 On Linux the user service keeps running after you log out only with lingering enabled. The installer tries to enable it; if that fails, run `sudo loginctl enable-linger $USER`.
 
@@ -64,19 +93,21 @@ Machines without systemd (some containers, WSL1) get the command but no service.
 In PowerShell (no administrator needed):
 
 ```powershell
-irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.ps1 | iex
+irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 | iex
 ```
 
 With options:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.ps1))) -Server -Port 4777
+& ([scriptblock]::Create((irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1))) -Server -Port 4777
 ```
+
+It works like `install.sh`: it picks the `win-x64` or `win-arm64` package, checks it against `SHA256SUMS.txt`, runs `Unblock-File` on both `.exe` files (a browser download marks them as from the internet), runs the new `zaafpulse.exe version` before it changes anything, keeps an earlier install for `-Rollback`, and prints a summary.
 
 Where things go:
 
-- The app goes in `%LOCALAPPDATA%\ZAAFPulse\app`, and a downloaded Node.js in `%LOCALAPPDATA%\ZAAFPulse\node`.
-- The `zaafpulse` command is added to your user PATH.
+- `zaafpulse.exe` and `zaafpulse-gw.exe` go in `%LOCALAPPDATA%\ZAAFPulse\bin`, and an earlier install in `%LOCALAPPDATA%\ZAAFPulse\rollback`.
+- That `bin` folder is added to your user PATH, once and spelled exactly as the installer runs the binary (Deno's PATH match is case-sensitive). This is what lets `zaafpulse.exe` start `zaafpulse-gw.exe`.
 - Data lives in `%APPDATA%\ZAAFPulse`.
 
 How it runs:
@@ -85,34 +116,154 @@ How it runs:
 - A Start menu shortcut runs `zaafpulse open`, so the dashboard opens signed in.
 - `-System` (from an elevated PowerShell) runs it instead as a Task Scheduler task at boot, as SYSTEM, for a server that has no logged-on user.
 
-Other options: `-HostAddress`, `-Version`, `-Source`, `-NoService`, `-Uninstall [-Purge]`.
+Other options, as in `install.sh`: `-HostAddress`, `-Version vX.Y.Z`, `-Archive FILE [-Sums FILE]`, `-VerifyAttestation`, `-Rollback`, `-NoService`, `-Uninstall [-Purge]`. `-Source` is gone.
 
-## Single-file executables
+An install made with `-System` must also be given `-System` on upgrades and with `-Uninstall` (from an elevated PowerShell): without it the installer stops and installs the Startup entry, not the scheduled task, so the task keeps running and an upgrade adds a Startup entry next to it. `-Uninstall` without `-System` warns when the `ZAAFPulse` scheduled task is still there; remove it from an elevated prompt with `schtasks /Delete /TN ZAAFPulse /F`.
 
-Each [release](https://github.com/rifqifitriady/ZAAFPulse/releases) has one file per platform, with `SHA256SUMS.txt`:
+Before it moves an earlier install, the installer stops its service through that install's own command, then ends what still runs from `%LOCALAPPDATA%\ZAAFPulse` (a running `.exe` cannot be moved), waiting up to 10 seconds. With `-NoService` it leaves the service and running processes alone.
+
+`-Uninstall` removes the programs, the saved installs, the PATH entry and the Start menu shortcut, and keeps the data in `%APPDATA%\ZAAFPulse`. `-Purge` deletes that folder and `%LOCALAPPDATA%\ZAAFPulse` too.
+
+## Upgrading from v1.x
+
+Run the v2 installer, with the same options you installed with (`sudo` and `--server` for a server):
+
+```bash
+curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh | sh
+```
+
+```powershell
+irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 | iex
+```
+
+The installer:
+
+1. Finds the current install: v1.x has `<prefix>/app` (and `<prefix>/node` when it downloaded Node.js); v2 has `<prefix>/bin/zaafpulse`.
+2. Stops its service through the old `zaafpulse` command, before that command is replaced.
+3. Moves it into `<prefix>/rollback`: v1's `app`, `node` and command, or v2's `bin` and command. `<prefix>/rollback/VERSION` holds the old version (`v1.1.0`, or `unknown`). One install is kept; an earlier saved one is replaced.
+4. Installs v2 and its service through the new command.
+
+`<prefix>` is `~/.local/share/zaafpulse`, `/opt/zaafpulse` as root, and `%LOCALAPPDATA%\ZAAFPulse` on Windows.
+
+The data folder is never touched: settings, keys, history, budgets and the audit log carry over, and v1.1.0 can still read the folder after v2 has used it. Upgrading from an earlier v2 works the same way.
+
+An upgrade cut off half way (power loss, Ctrl-C) leaves `<prefix>/rollback.new`. The next run of the installer finishes the move or puts the old install back, whichever applies.
+
+## Rolling back
+
+There are two ways back to the install the upgrade replaced.
+
+**1. `--rollback`** (`-Rollback` on Windows):
+
+```bash
+curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh | sh -s -- --rollback
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1))) -Rollback
+```
+
+It stops the v2 service, moves the current install into `<prefix>/rollforward`, puts `<prefix>/rollback` back in place (with its `zaafpulse` command), reinstalls the service through that command and says which version is active. When nothing is saved it says "nothing to roll back to" and changes nothing. One rollback is possible: `<prefix>/rollback` is removed by it. The next install removes `rollforward`; running the v2 installer again is the way forward.
+
+**2. The v1.1.x installer**, from [rifqifitriady/ZAAFPulse](https://github.com/rifqifitriady/ZAAFPulse). It does not stop a running v2 service, so stop it first:
+
+```bash
+zaafpulse service uninstall
+curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/v1.1.0/install.sh | sh -s -- --version v1.1.0
+rm -rf ~/.local/share/zaafpulse/bin      # the v2 programs; /opt/zaafpulse/bin as root
+```
+
+```powershell
+zaafpulse service uninstall
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/v1.1.0/install.ps1))) -Version v1.1.0
+Remove-Item "$env:LOCALAPPDATA\ZAAFPulse\bin\zaafpulse.exe", "$env:LOCALAPPDATA\ZAAFPulse\bin\zaafpulse-gw.exe"
+```
+
+The v1.1.x installer writes its own `app` folder and `zaafpulse` command, so on macOS and Linux the leftover `bin` folder is inert; delete it anyway. **On Windows the two `.exe` files must be deleted:** the v1 installer puts `zaafpulse.cmd` into the same `bin` folder, and Windows runs `zaafpulse.exe` before `zaafpulse.cmd` (`.EXE` comes first in `PATHEXT`), so `zaafpulse` would still start v2. If the v2 installer runs later, it treats the v1 `app` as the current install.
+
+## Release packages
+
+Each [release](https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases) has one archive per platform, the two installers and `SHA256SUMS.txt`:
 
 | File | For |
 |---|---|
-| `zaafpulse-<v>-darwin-arm64` / `-darwin-x64` | macOS on Apple silicon or Intel |
-| `zaafpulse-<v>-linux-x64` / `-linux-arm64` | Linux on glibc (not Alpine) |
-| `zaafpulse-<v>-win-x64.exe` / `-win-arm64.exe` | Windows 10/11 |
+| `zaafpulse-<v>-darwin-arm64.tar.gz` / `-darwin-x64.tar.gz` | macOS on Apple silicon or Intel |
+| `zaafpulse-<v>-linux-x64.tar.gz` / `-linux-arm64.tar.gz` | Linux on glibc (not Alpine) |
+| `zaafpulse-<v>-win-x64.zip` / `-win-arm64.zip` | Windows 10/11 |
+| `install.sh`, `install.ps1` | The installers of this release |
+| `SHA256SUMS.txt` | The SHA-256 of every other file |
+
+Each archive holds one folder, `zaafpulse-<v>-<os>-<cpu>/`, with `zaafpulse` (`zaafpulse.exe`), `zaafpulse-gw` (`zaafpulse-gw.exe`) and `LICENSE`. There are no loose binaries.
+
+`zaafpulse` contains the Deno runtime and the app, and serves the app from inside itself: nothing is unpacked. It is the whole dashboard: `zaafpulse start`, `mcp`, `doctor` and `service install` are subcommands of the one file. `zaafpulse service install` points launchd, systemd or the Startup folder at the binary itself, with the data folder as the service's working folder, and puts the binary's folder first in the service's `PATH` when `zaafpulse-gw` sits next to it. `zaafpulse doctor` prints `Deno <version>`, `(single-file build)` and a line `Gateway (zaafpulse-gw): <path> — found, allowed, <version>`.
+
+### Running from an unpacked archive
 
 ```bash
-chmod +x zaafpulse-1.0.0-linux-x64
-./zaafpulse-1.0.0-linux-x64                      # http://localhost:4777
-./zaafpulse-1.0.0-linux-x64 service install      # run in the background and at startup
+tar -xzf zaafpulse-2.0.0-linux-x64.tar.gz
+cd zaafpulse-2.0.0-linux-x64
+D="$(pwd -P)"
+PATH="$D:$PATH" "$D/zaafpulse"                       # http://localhost:4777
+PATH="$D:$PATH" "$D/zaafpulse" service install       # run in the background and at startup
 ```
 
-The file contains the Deno runtime and the app, and serves the app from inside itself: nothing is unpacked. All `zaafpulse` commands work the same way.
+```powershell
+Expand-Archive zaafpulse-2.0.0-win-x64.zip .
+$d = (Resolve-Path .\zaafpulse-2.0.0-win-x64).Path
+$env:Path = "$d;$env:Path"
+& "$d\zaafpulse.exe"
+```
 
-The binaries are not notarized or code-signed:
+The folder goes first on `PATH`, spelled as the binary is started: Deno allows `zaafpulse` to start `zaafpulse-gw` only when that name is found there, in that folder, first. The installer's `zaafpulse` command does this for you. Without it, everything works except the gateway in front (`gateway.engine` `"front"`): the dashboard falls back to its built-in gateway with the reason "zaafpulse-gw is next to zaafpulse but not allowed to run: put its folder first on PATH (the installer's zaafpulse command does)", and `zaafpulse doctor` shows "not allowed".
 
-- **macOS:** a browser download is quarantined. Run `xattr -d com.apple.quarantine zaafpulse-*` once, or download with `curl`.
-- **Windows:** SmartScreen asks once; choose *More info → Run anyway*.
+To build packages yourself: `deno task build --package` builds this machine's package (it needs Go on `PATH`), and `--target x86_64-unknown-linux-gnu` or `--all` builds others. On Windows `--package` builds only the `win-*` packages.
 
-To build them yourself: `deno task build` builds this machine's target, `deno task build --target x86_64-unknown-linux-gnu` or `--all` builds others (Deno cross-compiles every target from any OS).
+## Unsigned binaries: first start and verifying a download
 
-The binaries are Deno binaries (`deno compile`), and each is the whole program: `zaafpulse start`, `mcp`, `doctor` and `service install` are subcommands of the one file. `zaafpulse service install` points launchd, systemd or the Startup folder at the binary itself, with the data folder as the service's working folder (a binary's app folder exists only inside it). `zaafpulse doctor` prints `Deno <version>` and `(single-file build)`.
+The macOS binaries are ad-hoc signed, not notarized; the Windows binaries are not signed. Your system may stop them the first time when they come from a browser. Their integrity comes from `SHA256SUMS.txt` and from the build attestations.
+
+- **macOS Gatekeeper:** a browser download is quarantined, and macOS refuses to open it. In the unpacked folder, run once:
+
+  ```bash
+  xattr -d com.apple.quarantine zaafpulse zaafpulse-gw
+  ```
+
+  Or try to start `zaafpulse`, then open **System Settings → Privacy & Security**, choose **Open Anyway** next to the message about it, and confirm; do the same for `zaafpulse-gw`. The installer's `curl` download is not quarantined, and the installer clears the flag of a package given with `--archive`, so an install needs neither.
+- **Windows SmartScreen:** on the first start of each `.exe` from a browser download, choose **More info → Run anyway**: once for `zaafpulse.exe`, once for `zaafpulse-gw.exe`. The installer's download is not marked, and it runs `Unblock-File` on a package given with `-Archive`.
+
+**Check the checksum.** Download `SHA256SUMS.txt` next to the archive, then in that folder:
+
+```bash
+shasum -a 256 -c --ignore-missing SHA256SUMS.txt      # macOS
+sha256sum -c --ignore-missing SHA256SUMS.txt          # Linux
+```
+
+Each file you have prints `OK`. In PowerShell, compare the hash with the archive's line in `SHA256SUMS.txt` (case does not matter):
+
+```powershell
+(Get-FileHash zaafpulse-2.0.0-win-x64.zip -Algorithm SHA256).Hash
+Select-String zaafpulse-2.0.0-win-x64.zip SHA256SUMS.txt
+```
+
+The checksum comes from the same GitHub release, so it protects against damaged or altered downloads, not against a compromised GitHub account.
+
+**Check the attestation.** Every archive, both binaries inside each, `install.sh`, `install.ps1` and `SHA256SUMS.txt` have a build-provenance attestation (Sigstore), signed as made by this repository's release workflow from a version tag. With the [GitHub CLI](https://cli.github.com):
+
+```bash
+gh attestation verify zaafpulse-2.0.0-linux-x64.tar.gz --repo rifqifitriady/ZAAFPulse-deno-go
+```
+
+A pass prints `✓ Verification succeeded!` and names the workflow and the tag it ran on:
+
+```text
+- Attestation #1
+  - Build repo:..... rifqifitriady/ZAAFPulse-deno-go
+  - Build workflow:. .github/workflows/release.yml@refs/tags/v2.0.0
+  - Signer repo:.... rifqifitriady/ZAAFPulse-deno-go
+  - Signer workflow: .github/workflows/release.yml@refs/tags/v2.0.0
+```
+
+Check that the tag is the version you downloaded. A file uploaded by hand, even with a stolen token, has no valid attestation, and the check fails. `install.sh --verify-attestation` (`install.ps1 -VerifyAttestation`) runs this check before it installs.
 
 ## Docker
 
@@ -122,7 +273,7 @@ echo "ZAAFPULSE_MASTER_KEY=$(openssl rand -base64 32)" >> .env
 docker compose up -d
 ```
 
-The image is `node:24-alpine` with only the app files. It runs as the unprivileged `node` user and has a healthcheck.
+The image is `node:24-alpine` with only the app files: it stays on Node for now, because an Alpine image has no glibc for the v2 binaries. It runs as the unprivileged `node` user and has a healthcheck.
 
 - **Data:** everything lives in the `/data` volume, including the encrypted secret file.
 - **`ZAAFPULSE_MASTER_KEY`:** encrypts provider and integration keys. Without it, a key file is created in the volume.
@@ -214,17 +365,14 @@ ZAAFPulse listens on `127.0.0.1` unless told otherwise. Any other address, or a 
 - **URL ingestion:** URLs given to the RAG service cannot reach this machine, private networks or cloud metadata, including through redirects or a second DNS answer. Pages are capped at 5 MB. For an on-premises intranet, set `ZAAFPULSE_ALLOW_PRIVATE_URLS=1`.
 - **Files are private.** Everything ZAAFPulse creates in its data folder is readable only by its own account.
 - **Installer integrity:**
-  - The installers verify each release's source package against `SHA256SUMS.txt`.
-  - They stop when it cannot be verified; only v1.0.0 predates the checksums.
-  - They never fall back to the development branch unless you ask (`--version main`).
-  - The checksum comes from the same GitHub release, so it protects against damaged or altered downloads, not against a compromised GitHub account.
-  - From 1.0.3 every release file also has a build-provenance attestation (Sigstore), signed as made by this repository's release workflow from a specific commit. Check one with `gh attestation verify zaafpulse-1.0.3-linux-x64 --repo rifqifitriady/ZAAFPulse`. A file uploaded by hand, even with a stolen token, has no valid attestation.
-- **Verify a download yourself:**
-  - Checksum: `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` on macOS, `sha256sum -c SHA256SUMS.txt --ignore-missing` on Linux, or `(Get-FileHash zaafpulse-<v>-win-x64.exe).Hash` on Windows, compared with its line in `SHA256SUMS.txt`.
-  - Origin: `gh attestation verify <file> --repo rifqifitriady/ZAAFPulse` shows the workflow and commit that built it.
-  - Releases published after immutable releases are switched on also pass `gh release verify v<v> --repo rifqifitriady/ZAAFPulse` and `gh release verify-asset v<v> <file> --repo rifqifitriady/ZAAFPulse`. The files and tag of such a release cannot be changed after publication.
+  - The installers verify the release package against `SHA256SUMS.txt`, and install nothing when it does not match or is not listed.
+  - They install releases only; there is no development-branch install in v2.
+  - They run the new `zaafpulse version` before they change anything, and keep the install they replace for `--rollback`.
+  - `--verify-attestation` (`-VerifyAttestation`) also checks the package's attestation with `gh`.
+- **Verify a download yourself:** checksums and attestations, step by step, are in [Unsigned binaries: first start and verifying a download](#unsigned-binaries-first-start-and-verifying-a-download).
+  - Once immutable releases are on for this repository ([docs/release-hardening.md](release-hardening.md)), its releases also pass `gh release verify v<v> --repo rifqifitriady/ZAAFPulse-deno-go` and `gh release verify-asset v<v> <file> --repo rifqifitriady/ZAAFPulse-deno-go`. The files and tag of such a release cannot be changed after publication.
   - Version tags are never moved. A fix ships as a new version.
-- **Single-file executables check themselves** (releases after 1.0.3). Each binary carries the SHA-256 of every app file inside it. On every start it checks the unpacked copy in the cache folder against those hashes. A file that was changed, removed or added is restored from the binary before anything runs, and the binary stops with an error when that is not possible.
+- **Single-file executables serve the app from inside themselves.** `zaafpulse` reads its app files from within the binary; nothing is unpacked to a cache folder where it could be changed. What protects the app is the binary itself: check it against `SHA256SUMS.txt` and its attestation (the installers check the checksum, and the attestation with `--verify-attestation`).
 
 ### HTTPS
 

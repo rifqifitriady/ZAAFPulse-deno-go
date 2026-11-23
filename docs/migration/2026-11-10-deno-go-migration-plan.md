@@ -105,7 +105,7 @@ Deno run of the same harness, for information: bench/results/2026-11-10-deno-MBA
 | M9 | Deno permissions | n/a | write = data dir only; net = localhost only; env = allow-list; run = documented allow-list |
 | M10 | Egress coverage | n/a | 100% of outbound connections pass the Go proxy. A test proves Deno has no outbound net permission. |
 
-P5 (2026-11-22, `docs/migration/2026-11-22-p5-results.md`): M10 met for every inventory row once its class is on go; the denial test runs on Node and Deno. M9's net part met for the server's `deno run` launch under `egress.lockdown`; the single-file build and the stdio MCP server are owner questions for P6. Owed at the final quiet-machine step: M3 for a call through the egress endpoint (a `connectors` call on go against direct, local fake), not quiet-confirmed.
+P5 (2026-11-22, `docs/migration/2026-11-22-p5-results.md`): M10 met for every inventory row once its class is on go; the denial test runs on Node and Deno. M9's net part met for the server's `deno run` launch under `egress.lockdown`; the single-file build and the stdio MCP server are owner questions for P6. Owed at the final quiet-machine step: M3 for a call through the egress endpoint (a `connectors` call on go against direct, local fake), not quiet-confirmed. P6 (Decisions 15–16, pending owner): the binary gets no narrow net grant baked in (client-enforced), and the stdio MCP server's grant is not narrowed.
 | M11 | Runtime dependencies | 0 | Deno 0 npm/jsr runtime imports; Go stdlib only, with any exception approved in §9 |
 | M12 | Data compatibility | v1.1.x `.data`, `config.json` | v2 opens a v1.1 data dir unchanged; rollback to v1.1.x leaves it readable |
 | M13 | Soak | n/a | ~~7 days on the owner's live dashboard~~ dropped (§11.7): the owner tests v2 in the browser instead |
@@ -301,6 +301,11 @@ like any client.
 - **Exit:**
   - M6 and M8 are met;
   - a clean install and an upgrade from v1.1.0 pass on all 6 targets, from the public release (no token, §11.5).
+  - **State on `migrate/p6-packaging`** (2026-11-23, `docs/migration/2026-11-23-p6-results.md`): M6 met on all six
+    targets (archives of both binaries, 34–40 MB against v1.1.0's 84–128 MB); M8 5/6 green in the release dry run
+    `45101126221`, the sixth (darwin-x64, an unsigned gateway) fixed and verified locally, with a second dry run
+    pending the owner's OK; M12 met locally (`scripts/upgrade-check.js`, v1.1.0 → v2 → v1.1.0). The public-release
+    leg is manual and owner-gated, after the first tag (P7).
 
 ### P7 — Hardening and cut-over (1–2 weeks)
 
