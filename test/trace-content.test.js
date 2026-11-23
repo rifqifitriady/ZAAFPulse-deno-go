@@ -328,7 +328,7 @@ test('the newer "Full output saved to:" marker is followed from a main transcrip
   const c = createContent({ roots: [L.root] });
   assert.equal((await c.read(L.put(L.main, markerB(L.own)))).text, 'main body');
   // CRLF line endings after the path do not become part of it
-  assert.equal((await c.read(L.put(L.main, markerB(L.own).replace('\n', '\r\n')))).text, 'main body');
+  assert.equal((await c.read(L.put(L.main, markerB(L.own).replace(/\n/g, '\r\n')))).text, 'main body');
 });
 
 test('a subagent transcript reads saved outputs from the parent session tool-results (both wordings)', async () => {
