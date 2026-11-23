@@ -78,6 +78,8 @@ The options go after `sh -s --`:
 | `--no-modify-path` | Leave your shell profile alone |
 | `--uninstall [--purge]` | Remove it; `--purge` also deletes the data |
 
+An install made as root (`sudo sh`, the systemd system service) must be upgraded and uninstalled as root too: run without `sudo`, the installer works on your user install in your home folder and leaves the system one, and its service, as they are.
+
 `--source DIR` is gone: a source tree needs Deno and Go to build. Build a package with `deno task build --package` and install it with `--archive`.
 
 `--uninstall` stops the service and removes the command and only the folders the installers put in the install folder (`bin`, `rollback`, `rollforward`, and v1's `app` and `node`), then the install folder itself when it is empty. On Linux the data folder `~/.local/share/zaafpulse/data` sits inside the default install folder, so the data is kept. `--purge` deletes the data too.
@@ -115,6 +117,8 @@ How it runs:
 - `-System` (from an elevated PowerShell) runs it instead as a Task Scheduler task at boot, as SYSTEM, for a server that has no logged-on user.
 
 Other options, as in `install.sh`: `-HostAddress`, `-Version vX.Y.Z`, `-Archive FILE [-Sums FILE]`, `-VerifyAttestation`, `-Rollback`, `-NoService`, `-Uninstall [-Purge]`. `-Source` is gone.
+
+An install made with `-System` must also be given `-System` on upgrades and with `-Uninstall` (from an elevated PowerShell): without it the installer stops and installs the Startup entry, not the scheduled task, so the task keeps running and an upgrade adds a Startup entry next to it. `-Uninstall` without `-System` warns when the `ZAAFPulse` scheduled task is still there; remove it from an elevated prompt with `schtasks /Delete /TN ZAAFPulse /F`.
 
 Before it moves an earlier install, the installer stops its service through that install's own command, then ends what still runs from `%LOCALAPPDATA%\ZAAFPulse` (a running `.exe` cannot be moved), waiting up to 10 seconds. With `-NoService` it leaves the service and running processes alone.
 
@@ -368,7 +372,7 @@ ZAAFPulse listens on `127.0.0.1` unless told otherwise. Any other address, or a 
 - **Verify a download yourself:** checksums and attestations, step by step, are in [Unsigned binaries: first start and verifying a download](#unsigned-binaries-first-start-and-verifying-a-download).
   - Once immutable releases are on for this repository ([docs/release-hardening.md](release-hardening.md)), its releases also pass `gh release verify v<v> --repo rifqifitriady/ZAAFPulse-deno-go` and `gh release verify-asset v<v> <file> --repo rifqifitriady/ZAAFPulse-deno-go`. The files and tag of such a release cannot be changed after publication.
   - Version tags are never moved. A fix ships as a new version.
-- **Single-file executables check themselves** (releases after 1.0.3). Each binary carries the SHA-256 of every app file inside it. On every start it checks the unpacked copy in the cache folder against those hashes. A file that was changed, removed or added is restored from the binary before anything runs, and the binary stops with an error when that is not possible.
+- **Single-file executables serve the app from inside themselves.** `zaafpulse` reads its app files from within the binary; nothing is unpacked to a cache folder where it could be changed. What protects the app is the binary itself: check it against `SHA256SUMS.txt` and its attestation (the installers check the checksum, and the attestation with `--verify-attestation`).
 
 ### HTTPS
 
