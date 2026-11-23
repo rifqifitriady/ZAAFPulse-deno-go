@@ -449,9 +449,10 @@ const { ownerEntry, commandHash } = require('../lib/runtimes/registry');
 const PAYLOAD = 'C:\\x" & CreateObject("WScript.Shell").Run("calc") & "';
 const approve = (data, runtimes) => {
   fs.writeFileSync(path.join(data, 'config.json'), JSON.stringify({ localRuntimes: runtimes }));
-  fs.mkdirSync(path.join(data, 'runtimes'), { recursive: true });
+  // Where the server keeps the approvals (<data folder>/.data/runtimes/approved.json, server.js runtimeDir).
+  fs.mkdirSync(path.join(data, '.data', 'runtimes'), { recursive: true });
   const ok = Object.fromEntries(runtimes.map((r) => [r.id, commandHash(ownerEntry(r, new Set()))]));
-  fs.writeFileSync(path.join(data, 'runtimes', 'approved.json'), JSON.stringify(ok));
+  fs.writeFileSync(path.join(data, '.data', 'runtimes', 'approved.json'), JSON.stringify(ok));
 };
 const listing = (dir) => fs.readdirSync(dir, { recursive: true }).sort();
 const startLaunch = (dataDir, env = {}) =>
@@ -553,7 +554,7 @@ test('runScope: only the owner runtimes approved as they are now; a Windows path
   const other = { id: 'other', command: ['/opt/other/server'], port: 9001 };
   approve(data, [legit]);
   const config = { localRuntimes: [legit, other] };
-  const approvals = JSON.parse(fs.readFileSync(path.join(data, 'runtimes', 'approved.json'), 'utf8'));
+  const approvals = JSON.parse(fs.readFileSync(path.join(data, '.data', 'runtimes', 'approved.json'), 'utf8'));
   const r = permissions.runScope({ set: 'server', config, approvals, env: {} });
   assert.ok(r.includes('C:\\Program Files\\My Server\\srv.exe'));
   assert.ok(!r.includes('/opt/other/server'), 'not approved');
@@ -568,6 +569,14 @@ test('runScope: only the owner runtimes approved as they are now; a Windows path
   );
   const run = startLaunch(data);
   assert.ok(run.args.some((a) => a.startsWith('--allow-run=') && !a.includes('CreateObject')));
+});
+
+test('selfCommand grants an approved owner runtime from where the server keeps the approvals', () => {
+  const data = tmp();
+  const mine = { id: 'mine', command: ['/opt/my-server/srv', '--port', '9000'], port: 9000 };
+  approve(data, [mine]);
+  const run = startLaunch(data).args.find((a) => a.startsWith('--allow-run='));
+  assert.ok(run.split('=')[1].split(',').includes('/opt/my-server/srv'), run);
 });
 
 test('kill: pid and signal are checked before anything is sent', () => {
