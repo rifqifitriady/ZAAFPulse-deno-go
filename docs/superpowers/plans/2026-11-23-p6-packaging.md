@@ -564,3 +564,15 @@ profile edit, server mode and the closing summary.
   itself runs in the step's `pwsh`. A Windows server is stopped with `taskkill /T /F` (no console to signal). Run here:
   `install-test.sh --no-service-test` on darwin-arm64 (clean install and upgrade PASS; M12 not run here, it is Task 8's
   script); `install-test.ps1` is not parsed or run here (no PowerShell on this machine).
+
+### Task 11 and Task 12 (lead)
+
+- Spec Decision 11's second way to roll back (the v1.1.x installer) needs a stop first: the v1.1.0 `install.ps1` stops
+  a running copy only through `zaafpulse.cmd`, which a v2 install has removed, and the v1.1.0 `install.sh` has no stop
+  step. `docs/install.md` tells the user to run `zaafpulse service uninstall` (v2) before that way, on every OS.
+- The dry run (`45101126221`, at `294d696`) failed `build (darwin-x64)` at `codesign --verify`: the Go linker ad-hoc
+  signs darwin/arm64 only, so the darwin/amd64 gateway was unsigned. `scripts/build-deno.js` now signs every darwin
+  gateway with `codesign --force --sign -` on a macOS host (another host warns), and the build task may run `codesign`
+  (`56c1dc0`, verified locally with `codesign --verify --strict` on a darwin-x64 package). The five other builds and
+  their smoke tests passed; `install-test` and `assemble` were skipped because a build failed. A second dispatch, to
+  get the install tests, needs the owner's OK (the policy allows one).
