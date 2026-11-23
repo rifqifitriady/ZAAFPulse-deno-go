@@ -47,7 +47,10 @@ A run takes about 3 minutes (at most 5). Knobs, all optional: `ZP_BENCH_REQUESTS
 (`50,200,500`), `ZP_BENCH_SECONDS` (10), `ZP_BENCH_DELAY_MS` (20), `ZP_BENCH_CHUNKS` (20), `ZP_BENCH_INTERVAL_MS` (25),
 `ZP_BENCH_STARTS` (5), `ZP_BENCH_OUT` (`bench/results`), `ZP_BENCH_HOST` (the host name), `ZP_BENCH_TOOL_RESULT` (0;
 a byte count gives each gateway call a tool call and a tool result of that size, so the token saver works on every call;
-the file name gains `-tool<bytes>`). A result is only comparable
+the file name gains `-tool<bytes>`), `ZP_BENCH_TRACING` (on; `off` turns the local trace store off: `-notrace`),
+`ZP_BENCH_OTLP` (off; `on` turns OTLP export (JSON) on, to the mock's `/v1/traces`, P4f D21: `-otlp`; the run fails
+when no export reached the mock), `ZP_BENCH_ROUTE` (none; `round-robin` or `fallback`: the gateway calls name
+`router/bench` over two providers at the mock, P4h: `-route-<strategy>`). A result is only comparable
 with one taken with the same knobs; the file records them under `config`.
 
 ## The Go gateway (P4c: metric M4, and M3 again)
@@ -84,3 +87,8 @@ streams. `node bench/compare.js --baseline <file>` prints the rows the program p
 same way (the file is named `<date>-binary-<host>.json`; the contract harness runs the binary with `start`). Keep the
 Mac awake and on power: on battery it falls into dark wake during a run, which stalls or resets requests (seen on
 2026-11-11); `caffeinate -dims node bench/run.js` keeps it awake.
+
+## The final benchmarks
+
+`deno task bench:final` (or `node scripts/final-bench.js`) runs every owed scenario of the migration in one session,
+after a preflight of the machine, and writes `bench/results/<date>-final/`: see `docs/migration/final-benchmarks.md`.

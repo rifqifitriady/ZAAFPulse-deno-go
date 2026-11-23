@@ -10,7 +10,9 @@
 // ZP_BENCH_FORMAT [openai; anthropic: the gateway calls go to /v1/messages in the Anthropic format, translated to the
 // mock's OpenAI chat (P4d), the direct calls stay chat]; ZP_BENCH_TOOL_RESULT [0; <bytes>: each gateway call carries a
 // tool call and a tool result of about that many bytes, so the token saver works on every call (rtk spec D20); the
-// direct calls stay without one].
+// direct calls stay without one]; ZP_BENCH_TRACING [on; off: the local trace store off]; ZP_BENCH_OTLP [off; on: OTLP
+// export (JSON) to the mock's /v1/traces, P4f D21]; ZP_BENCH_ROUTE [none; round-robin or fallback: the gateway calls
+// name router/bench over two providers at the mock, P4h].
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -18,29 +20,38 @@ const { spawn, spawnSync } = require('child_process');
 const { startServer, clientFor, SEED_CONFIG } = require('../test/contract/harness');
 
 const ROOT = path.join(__dirname, '..');
-const num = (name, def) => {
-  const v = Number(process.env[name]);
-  return Number.isFinite(v) && v > 0 ? v : def;
-};
-const CFG = {
-  runtime: process.env.ZP_RUNTIME || 'node',
-  requests: num('ZP_BENCH_REQUESTS', 2000),
-  levels: (process.env.ZP_BENCH_LEVELS || '50,200,500')
-    .split(',')
-    .map(Number)
-    .filter((n) => n > 0),
-  seconds: num('ZP_BENCH_SECONDS', 10),
-  delayMs: num('ZP_BENCH_DELAY_MS', 20),
-  chunks: num('ZP_BENCH_CHUNKS', 20),
-  intervalMs: num('ZP_BENCH_INTERVAL_MS', 25),
-  starts: num('ZP_BENCH_STARTS', 5),
-  // P4c: the bench provider's tier (private: the go engine may serve it until P4e) and the engine mode (ZP_ENGINE).
-  tier: process.env.ZP_BENCH_TIER === 'private' ? 'private' : 'external',
-  engine: process.env.ZP_ENGINE || 'js',
-  // P4d: the client format of the gateway calls (the translated path when anthropic).
-  format: process.env.ZP_BENCH_FORMAT === 'anthropic' ? 'anthropic' : 'openai',
-  toolResult: num('ZP_BENCH_TOOL_RESULT', 0),
-};
+// The run's knobs from an environment (exported for test/bench-knobs.test.js).
+function configFromEnv(env) {
+  const num = (name, def) => {
+    const v = Number(env[name]);
+    return Number.isFinite(v) && v > 0 ? v : def;
+  };
+  return {
+    runtime: env.ZP_RUNTIME || 'node',
+    requests: num('ZP_BENCH_REQUESTS', 2000),
+    levels: (env.ZP_BENCH_LEVELS || '50,200,500')
+      .split(',')
+      .map(Number)
+      .filter((n) => n > 0),
+    seconds: num('ZP_BENCH_SECONDS', 10),
+    delayMs: num('ZP_BENCH_DELAY_MS', 20),
+    chunks: num('ZP_BENCH_CHUNKS', 20),
+    intervalMs: num('ZP_BENCH_INTERVAL_MS', 25),
+    starts: num('ZP_BENCH_STARTS', 5),
+    // P4c: the bench provider's tier (private: the go engine may serve it until P4e) and the engine mode (ZP_ENGINE).
+    tier: env.ZP_BENCH_TIER === 'private' ? 'private' : 'external',
+    engine: env.ZP_ENGINE || 'js',
+    // P4d: the client format of the gateway calls (the translated path when anthropic).
+    format: env.ZP_BENCH_FORMAT === 'anthropic' ? 'anthropic' : 'openai',
+    toolResult: num('ZP_BENCH_TOOL_RESULT', 0),
+    // P4f: the local trace store off (the gateway then emits no spans); OTLP export on, to the mock's /v1/traces (D21).
+    tracing: env.ZP_BENCH_TRACING !== 'off',
+    otlp: env.ZP_BENCH_OTLP === 'on',
+    // P4h: the gateway calls name a route over two providers at the mock (fallback or round-robin).
+    route: ['round-robin', 'fallback'].includes(env.ZP_BENCH_ROUTE) ? env.ZP_BENCH_ROUTE : null,
+  };
+}
+const CFG = configFromEnv(process.env);
 const KEYS = 25; // the stream workers spread over these keys, so no key reaches its rate limit
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const underDeno = !!(process.versions && process.versions.deno);
@@ -118,6 +129,39 @@ function startMockProcess() {
   });
 }
 
+// The providers (and route) the gateway calls reach, all at the mock; c is the harness client (admin API).
+async function seedBench(c, mockUrl, cfg) {
+  const provider = (id) => ({
+    action: 'save',
+    id,
+    preset: 'custom',
+    baseUrl: mockUrl,
+    tier: cfg.tier,
+    approved: true,
+    models: ['bench-1'],
+  });
+  await c.admin('providers', provider('bench'));
+  if (!cfg.route) return;
+  await c.admin('providers', provider('bench2'));
+  await c.admin('routes', {
+    action: 'save',
+    name: 'router/bench',
+    targets: ['bench/bench-1', 'bench2/bench-1'],
+    strategy: cfg.route,
+  });
+}
+// The model the gateway calls name: the route when there is one.
+const gatewayModel = (cfg) => (cfg.route ? 'router/bench' : 'bench/bench-1');
+// config.json of the measured server: the seed, with tracing off or OTLP export (JSON) to the mock when asked.
+function serverConfig(cfg, mockBase, seed) {
+  if (cfg.tracing && !cfg.otlp) return seed;
+  return {
+    ...seed,
+    ...(cfg.tracing ? {} : { tracing: { enabled: false } }),
+    ...(cfg.otlp ? { otel: { enabled: true, endpoint: mockBase, protocol: 'http/json' } } : {}),
+  };
+}
+
 // One whole request; resolves with its time in ms, or throws on a non-200 or after 30 s.
 async function timed(url, headers, body) {
   const t0 = performance.now();
@@ -190,21 +234,9 @@ async function main() {
       await s.stop();
     }
     mock = await startMockProcess();
-    // ZP_BENCH_TRACING=off: the local trace store off (P4f: the gateway then emits no spans), to measure their cost.
-    server = await startServer({
-      runtime: CFG.runtime,
-      ...(process.env.ZP_BENCH_TRACING === 'off' ? { config: { ...SEED_CONFIG, tracing: { enabled: false } } } : {}),
-    });
+    server = await startServer({ runtime: CFG.runtime, config: serverConfig(CFG, mock.url.replace(/\/v1$/, ''), SEED_CONFIG) });
     const c = clientFor(server.base);
-    await c.admin('providers', {
-      action: 'save',
-      id: 'bench',
-      preset: 'custom',
-      baseUrl: mock.url,
-      tier: CFG.tier,
-      approved: true,
-      models: ['bench-1'],
-    });
+    await seedBench(c, mock.url, CFG);
     const keys = [];
     for (let i = 0; i < KEYS; i++) keys.push((await c.newKey({ scopes: ['llm'], name: `bench-${i}` })).secret);
     // The gateway's own process (P4c: M4 is the gateway's RSS), from the supervisor's status.
@@ -216,9 +248,16 @@ async function main() {
     }
     // Which engine called the mock since the last look (and reset); a go run fails when the server answered any.
     const mockBase = mock.url.replace(/\/v1$/, '');
+    // Every read of the mock's counts resets them; the OTLP exports it received are summed over the run.
+    let otlpExports = 0;
+    const readStats = async () => {
+      const s = await (await fetch(`${mockBase}/_stats`)).json();
+      otlpExports += s.otlp || 0;
+      return s;
+    };
     let reuseLimit = 0;
     const servedBy = async (what) => {
-      const s = await (await fetch(`${mockBase}/_stats`)).json();
+      const s = await readStats();
       if (CFG.engine === 'go' && s.js > 0)
         throw new Error(`the go engine handed ${s.js} calls to the server (${what})`);
       // Connection reuse (P4c): a gateway that opened a connection per call would churn the provider (handshakes,
@@ -238,7 +277,7 @@ async function main() {
     const gwUrl = `${server.base}${anthropic ? '/v1/messages' : '/v1/chat/completions'}`;
     const directUrl = `${mock.url}/chat/completions`;
     const gwBody = (extra) =>
-      JSON.stringify({ model: 'bench/bench-1', ...(anthropic ? { max_tokens: 256 } : {}), ...extra });
+      JSON.stringify({ model: gatewayModel(CFG), ...(anthropic ? { max_tokens: 256 } : {}), ...extra });
     // ZP_BENCH_TOOL_RESULT: a log the token saver shortens, after the tool call that asked for it, in the call's format.
     const log = CFG.toolResult
       ? '2026-11-17T10:00:00Z INFO step done\n'.repeat(Math.ceil(CFG.toolResult / 36)).slice(0, CFG.toolResult)
@@ -269,7 +308,7 @@ async function main() {
       await timed(gwUrl, gwHeaders(0), whole);
       await timed(directUrl, json, wholeDirect);
     } // warm-up, not counted
-    await (await fetch(`${mockBase}/_stats`)).json(); // reset: the warm-up's direct calls count as js
+    await readStats(); // reset: the warm-up's direct calls count as js
     const gw = [];
     const direct = [];
     const diff = [];
@@ -289,7 +328,7 @@ async function main() {
       diff.push(a - b);
     }
     // The direct calls are js too: the go engine's share is checked on the gateway steps only.
-    const nsCounts = await (await fetch(`${mockBase}/_stats`)).json();
+    const nsCounts = await readStats();
     const nonStream = { gateway: stats(gw), direct: stats(direct), overhead: stats(diff), servedBy: nsCounts };
     if (CFG.engine === 'go' && nsCounts.go < CFG.requests)
       throw new Error(`the go engine answered ${nsCounts.go} of ${CFG.requests} non-streaming calls`);
@@ -322,7 +361,7 @@ async function main() {
       if (sampler) clearInterval(sampler);
       const stepServed = await servedBy(`${level} streams`);
       const d = await streamStep(level, { url: directUrl, headers: () => json, body: streamDirect });
-      await (await fetch(`${mockBase}/_stats`)).json(); // the direct step's calls: reset
+      await readStats(); // the direct step's calls: reset
       streams.push({
         level,
         seconds: CFG.seconds,
@@ -333,6 +372,16 @@ async function main() {
         ttfbOverheadP95:
           g.ttfbP95 === null || d.ttfbP95 === null ? null : Math.round((g.ttfbP95 - d.ttfbP95) * 100) / 100,
       });
+    }
+
+    // OTLP export on: the exporter sends in batches; the run counts only once at least one reached the mock.
+    if (CFG.otlp) {
+      const until = Date.now() + 15000;
+      while (otlpExports === 0 && Date.now() < until) {
+        await sleep(500);
+        await readStats();
+      }
+      if (otlpExports === 0) throw new Error('OTLP export was on, but no export reached the mock within 15 s');
     }
 
     const day = new Date();
@@ -360,6 +409,7 @@ async function main() {
       peakRssMB,
       gatewayIdleRssMB,
       gatewayPeakRssMB,
+      otlpExports: CFG.otlp ? otlpExports : null,
       durationS: Math.round((Date.now() - t0) / 1000),
     };
     const dir = process.env.ZP_BENCH_OUT || path.join(__dirname, 'results');
@@ -367,7 +417,10 @@ async function main() {
     const variant =
       (CFG.engine !== 'js' || CFG.tier !== 'external' ? `-${CFG.engine}-${CFG.tier}` : '') +
       (CFG.format === 'anthropic' ? '-anthropic' : '') +
-      (CFG.toolResult ? `-tool${CFG.toolResult}` : '');
+      (CFG.toolResult ? `-tool${CFG.toolResult}` : '') +
+      (CFG.route ? `-route-${CFG.route}` : '') +
+      (CFG.tracing ? '' : '-notrace') +
+      (CFG.otlp ? '-otlp' : '');
     const file = path.join(dir, `${date}-${CFG.runtime}${variant}-${result.host.name}.json`);
     fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}\n`);
     console.log(`wrote ${path.relative(process.cwd(), file)} in ${result.durationS} s`);
@@ -387,7 +440,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err && err.code === 'EMFILE' ? 'too many open files: run `ulimit -n 8192` first' : err);
-  process.exitCode = 1;
-});
+module.exports = { configFromEnv, seedBench, serverConfig, gatewayModel };
+
+if (require.main === module)
+  main().catch((err) => {
+    console.error(err && err.code === 'EMFILE' ? 'too many open files: run `ulimit -n 8192` first' : err);
+    process.exitCode = 1;
+  });
