@@ -1,0 +1,4 @@
+[{"ProcessId":0,"ParentProcessId":0,"Name":"System Idle Process","CommandLine":null,"KernelModeTime":10000000,"UserModeTime":0},
+ {"ProcessId":4120,"ParentProcessId":900,"Name":"chrome.exe","CommandLine":"\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"","KernelModeTime":20000000,"UserModeTime":30000000},
+ {"ProcessId":5000,"ParentProcessId":900,"Name":"fm.exe","CommandLine":"\"C:\\Games\\Football Manager 2026\\fm.exe\"","KernelModeTime":0,"UserModeTime":5000000},
+ {"ProcessId":6000,"ParentProcessId":900,"Name":"node.exe","CommandLine":"node scripts\\final-bench.js","KernelModeTime":1000000,"UserModeTime":1000000}]

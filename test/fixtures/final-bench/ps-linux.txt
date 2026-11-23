@@ -1,0 +1,6 @@
+      1       0 00:00:09 /sbin/init splash
+    812       1 1-02:03:04 /usr/lib/xorg/Xorg :0
+   1500       1 00:10:00 /opt/google/chrome/chrome --type=browser
+   2000       1 00:00:01 node scripts/final-bench.js
+   2100    2000 00:00:00 systemd-inhibit --what=idle:sleep --who=zaafpulse-final-bench --why=benchmark tail --pid=2000 -f /dev/null
+not a line
