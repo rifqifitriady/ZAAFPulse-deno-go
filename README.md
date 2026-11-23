@@ -1134,7 +1134,8 @@ install.sh, install.ps1 one-command installers for macOS/Linux and Windows
 Dockerfile, compose.yaml container image for servers
 .github/workflows/     ci.yml (the full suite on Linux, macOS and Windows), build.yml (the six packages), release.yml
                        (packages, checksums, attestations)
-test/                  108 node:test suites with fake HTTP and MCP servers
+test/                  263 node:test files (test/*.test.js) with fake HTTP and MCP servers, run on Node and Deno, and
+                       the contract suite (test/contract/, 16 files) that runs against both gateway engines
 test/fixtures/         the labelled synthetic signal corpus (signals/) and cost fixtures (cost/)
 config.example.json    every integration type with placeholder references
 docs/install.md        installers, sign-in, server mode, Docker, single-file binaries, verifying a download
