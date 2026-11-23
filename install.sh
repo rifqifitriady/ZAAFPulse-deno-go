@@ -267,7 +267,13 @@ elif [ -f "$PREFIX/bin/zaafpulse" ]; then
 fi
 case "$OLD_VERSION" in [0-9]*.[0-9]*) OLD_TAG="v$OLD_VERSION" ;; *) OLD_TAG=unknown ;; esac
 
-if [ -n "$OLD_KIND" ]; then
+# A re-run at the version already installed replaces only bin/: the saved rollback stays the install before it.
+SAME=0
+if [ "$OLD_KIND" = v2 ] && [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" = "$(printf '%s\n' "$NEWV" | head -n1)" ]; then SAME=1; fi
+if [ "$SAME" = 1 ]; then
+  service_stop "$LAUNCHER"
+  say "Reinstalling $OLD_TAG; the saved rollback (if any) is kept."
+elif [ -n "$OLD_KIND" ]; then
   # Stop the old service through the old launcher, before it is replaced.
   service_stop "$LAUNCHER"
   # One generation for --rollback: the folders it ran from, and its launcher.
@@ -329,7 +335,7 @@ else
   echo "    Dashboard:  http://localhost:$P"
 fi
 echo "    Commands:   zaafpulse status | doctor | open | service restart | help"
-if [ -n "$OLD_KIND" ]; then
+if [ -f "$PREFIX/rollback/VERSION" ]; then
   echo "    Roll back:  curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | sh -s -- --rollback"
 fi
 echo "    Uninstall:  curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | sh -s -- --uninstall"

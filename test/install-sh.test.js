@@ -22,11 +22,13 @@ const SKIP =
 const PLAT = process.platform === 'darwin' ? 'darwin' : 'linux';
 const NARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
 
-// The fake zaafpulse: `version` prints 2.0.0-test, `path` prints $PATH, anything else its args; every call is logged.
-const FAKE_BIN = `#!/bin/sh
+// The fake zaafpulse: `version` prints its version (2.0.0-test), `path` prints $PATH, anything else its args; every
+// call is logged.
+const fakeBin = (version) => `#!/bin/sh
 echo "v2 $*" >> "$ZP_FAKE_LOG"
-case "$1" in version) echo 2.0.0-test ;; path) echo "$PATH" ;; *) echo "args: $*" ;; esac
+case "$1" in version) echo ${version} ;; path) echo "$PATH" ;; *) echo "args: $*" ;; esac
 `;
+const FAKE_BIN = fakeBin('2.0.0-test');
 const FAKE_GW = '#!/bin/sh\necho "gw $*" >> "$ZP_FAKE_LOG"\n';
 // A v1 node that logs its argv, so a v1 launcher's service call shows in the log too.
 const FAKE_NODE = '#!/bin/sh\necho "v1 $*" >> "$ZP_FAKE_LOG"\n';
@@ -61,6 +63,23 @@ function setup({ bin = FAKE_BIN } = {}) {
   const log = path.join(root, 'calls.log');
   const launcher = path.join(home, '.local', 'bin', 'zaafpulse');
   return { root, home, prefix, archive, sums, log, launcher, hex };
+}
+
+// Another package in the same test folder, whose zaafpulse reports another version.
+function withVersion(ctx, version) {
+  const name = `zaafpulse-${version}-${PLAT}-${NARCH}`;
+  const stageRoot = path.join(ctx.root, `stage-${version}`);
+  const stage = path.join(stageRoot, name);
+  fs.mkdirSync(stage, { recursive: true });
+  fs.writeFileSync(path.join(stage, 'zaafpulse'), fakeBin(version), { mode: 0o755 });
+  fs.writeFileSync(path.join(stage, 'zaafpulse-gw'), FAKE_GW, { mode: 0o755 });
+  const archive = path.join(ctx.root, `${name}.tar.gz`);
+  const t = spawnSync('tar', ['-czf', archive, '-C', stageRoot, name]);
+  assert.equal(t.status, 0, String(t.stderr));
+  const hex = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
+  const sums = path.join(ctx.root, `SHA256SUMS-${version}.txt`);
+  fs.writeFileSync(sums, `${hex}  ${path.basename(archive)}\n`);
+  return { ...ctx, archive, sums, hex };
 }
 
 function run(ctx, args, { stdin } = {}) {
@@ -206,14 +225,15 @@ test('--rollback with nothing saved fails and changes nothing', { skip: SKIP }, 
 
 test('upgrade v2 → v2 keeps one generation: the bin/ it replaced and its launcher', { skip: SKIP }, () => {
   const ctx = setup();
-  ok(install(ctx));
+  ok(install(withVersion(ctx, '2.0.0')));
+  ok(install(withVersion(ctx, '2.0.1')));
   const first = fs.readFileSync(ctx.launcher, 'utf8');
-  ok(install(ctx));
   ok(install(ctx));
   const rb = path.join(ctx.prefix, 'rollback');
   assert.deepEqual(fs.readdirSync(rb).sort(), ['VERSION', 'bin', 'launcher']);
-  assert.equal(fs.readFileSync(path.join(rb, 'VERSION'), 'utf8'), 'v2.0.0-test\n');
+  assert.equal(fs.readFileSync(path.join(rb, 'VERSION'), 'utf8'), 'v2.0.1\n');
   assert.equal(fs.readFileSync(path.join(rb, 'launcher'), 'utf8'), first);
+  assert.match(fs.readFileSync(path.join(rb, 'bin', 'zaafpulse'), 'utf8'), /echo 2\.0\.1/);
   assert.deepEqual(fs.readdirSync(ctx.prefix).sort(), ['bin', 'rollback']);
   noService(ctx);
 });
@@ -278,7 +298,7 @@ test(
   },
   () => {
     const ctx = setup();
-    ok(install(ctx));
+    ok(install(withVersion(ctx, '2.0.0')));
     fs.rmSync(ctx.launcher);
     ok(install(ctx));
     const rb = path.join(ctx.prefix, 'rollback');
@@ -344,7 +364,7 @@ test(
   { skip: SKIP },
   () => {
     const ctx = setup();
-    ok(install(ctx));
+    ok(install(withVersion(ctx, '2.0.0')));
     fs.mkdirSync(path.join(ctx.prefix, 'app'));
     fs.writeFileSync(path.join(ctx.prefix, 'app', 'theirs.txt'), 'x\n');
     fs.mkdirSync(path.join(ctx.prefix, 'node'));
@@ -360,3 +380,26 @@ test(
     noService(ctx);
   },
 );
+
+test('a re-run at the installed version keeps the saved rollback and replaces only bin/', { skip: SKIP }, () => {
+  const ctx = setup();
+  fakeV1(ctx);
+  ok(install(ctx));
+  const rb = path.join(ctx.prefix, 'rollback');
+  const saved = tree(rb);
+  fs.writeFileSync(path.join(ctx.prefix, 'bin', 'zaafpulse-gw'), 'stale\n');
+  const r = install(ctx);
+  ok(r);
+  assert.match(r.stdout, /saved rollback \(if any\) is kept/);
+  assert.deepEqual(tree(rb), saved);
+  assert.equal(fs.readFileSync(path.join(rb, 'VERSION'), 'utf8'), 'v1.1.0\n');
+  assert.ok(fs.existsSync(path.join(rb, 'app', 'bin', 'zaafpulse.js')));
+  assert.equal(fs.readFileSync(path.join(ctx.prefix, 'bin', 'zaafpulse-gw'), 'utf8'), FAKE_GW);
+  // A clean install re-run makes no rollback at all.
+  const fresh = setup();
+  ok(install(fresh));
+  ok(install(fresh));
+  assert.ok(!fs.existsSync(path.join(fresh.prefix, 'rollback')));
+  noService(ctx);
+  noService(fresh);
+});
