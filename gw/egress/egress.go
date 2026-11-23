@@ -216,13 +216,16 @@ func (e privateError) Error() string {
 	return e.addr + " is a private or local address; it is not reached for a public URL"
 }
 
-// dial opens a connection within the connect limit: the name resolved by s.lookup, each address tried in turn; in
-// public mode a private address is refused before the connect (the dialer's Control hook), so every address a name
+// dial opens a connection within the connect limit: the name resolved by s.lookup, each address tried in turn; a cloud
+// metadata name or address is refused in every mode (P7 review M1); in public mode a private address is refused before the connect (the dialer's Control hook), so every address a name
 // resolves to, on every redirect hop, is checked at the moment it is used (no DNS rebinding).
 func (s *Server) dial(ctx context.Context, network, addr string, public bool) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
+	}
+	if IsMetadataHost(host) { // a metadata name is never resolved (P7 review M1)
+		return nil, &net.OpError{Op: "dial", Net: network, Err: metadataError{addr: host}}
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.connectTimeout)
 	defer cancel()
@@ -238,7 +241,14 @@ func (s *Server) dial(ctx context.Context, network, addr string, public bool) (n
 			return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
 		}
 	}
-	d := net.Dialer{KeepAlive: 30 * time.Second}
+	// Every mode refuses the cloud metadata service (P7 review M1): every address a name resolves to is checked before
+	// the connect, and the Control hook checks the address actually dialled.
+	for _, ip := range ips {
+		if IsMetadata(ip) {
+			return nil, &net.OpError{Op: "dial", Net: network, Err: metadataError{addr: ip.String()}}
+		}
+	}
+	d := net.Dialer{KeepAlive: 30 * time.Second, Control: RefuseMetadata}
 	if public {
 		// As lib/net.js assertPublic: a name with any private address is refused, not only the address dialled.
 		for _, ip := range ips {
@@ -263,7 +273,11 @@ func (s *Server) dial(ctx context.Context, network, addr string, public bool) (n
 }
 
 // refusePrivate is the public-mode dialer's Control hook: it runs after the address is chosen and before the connect.
-func refusePrivate(_, address string, _ syscall.RawConn) error {
+// A metadata address is named as such (RefuseMetadata).
+func refusePrivate(network, address string, c syscall.RawConn) error {
+	if err := RefuseMetadata(network, address, c); err != nil {
+		return err
+	}
 	host, _, err := net.SplitHostPort(address)
 	if err != nil || IsPrivate(net.ParseIP(host)) {
 		return privateError{addr: host}

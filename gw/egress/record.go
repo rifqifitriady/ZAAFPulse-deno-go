@@ -89,6 +89,7 @@ func errorCode(err error) (code, message string) {
 	}
 	message = err.Error()
 	var priv privateError
+	var meta metadataError
 	var dns *net.DNSError
 	var cv *tls.CertificateVerificationError
 	var ua x509.UnknownAuthorityError
@@ -97,6 +98,8 @@ func errorCode(err error) (code, message string) {
 	var errno syscall.Errno
 	var ne net.Error
 	switch {
+	case errors.As(err, &meta):
+		return CodePrivate, meta.Error()
 	case errors.As(err, &priv):
 		return CodePrivate, priv.Error()
 	case errors.As(err, &dns):
@@ -176,6 +179,16 @@ func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 	rec := Record{TS: start.UnixMilli(), Purpose: t.purpose, Method: method, Scheme: req.URL.Scheme, Host: host,
 		Port: port, Via: ViaEngine}
+	if IsMetadataHost(host) {
+		// The cloud metadata service, whatever the policy (P7 review M1); a name that resolves to it is refused by the
+		// provider client's dialer (RefuseMetadata, set by the gateway).
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
+		rec.Outcome, rec.Error, rec.MS = OutcomeRefused, CodePrivate, ms(start)
+		t.emit(rec)
+		return nil, metadataError{addr: host}
+	}
 	if t.policy != nil {
 		if pol := t.policy(); pol != nil && !pol.Allows(host, port) {
 			if pol.Mode == ModeEnforce {
@@ -211,7 +224,9 @@ func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error
 	if err != nil {
 		rec.Outcome = OutcomeError
 		rec.Error, _ = errorCode(err)
-		if req.Context().Err() != nil {
+		if isMetadataErr(err) {
+			rec.Outcome = OutcomeRefused
+		} else if req.Context().Err() != nil {
 			rec.Error = CodeAborted
 		}
 		rec.BytesOut = out.Load()

@@ -149,11 +149,14 @@ func finalURL(u *url.URL) string {
 	return c.String()
 }
 
-// verdict checks one hop before it is sent: in public mode an address literal that is private is refused (names are
+// verdict checks one hop before it is sent: the cloud metadata service is refused first, in every mode; in public mode an address literal that is private is refused (names are
 // checked at connect) and the allow-list does not apply (any public address, Decision 13); otherwise the allow-list:
 // a miss is refused in enforce mode and recorded "would-refuse" in report mode. A non-empty code refuses the hop.
 func (s *Server) verdict(c *call, u *url.URL, rec Record) (code string, outcome string) {
 	host, port := target(u)
+	if IsMetadataHost(host) {
+		return CodePrivate, OutcomeRefused // every mode, whatever the allow-list lists (P7 review M1)
+	}
 	if c.public {
 		if ip := net.ParseIP(host); ip != nil && IsPrivate(ip) {
 			return CodePrivate, OutcomeError
@@ -176,6 +179,9 @@ func (s *Server) verdict(c *call, u *url.URL, rec Record) (code string, outcome 
 func refusal(code string, u *url.URL) string {
 	host, port := target(u)
 	hp := net.JoinHostPort(host, strconv.Itoa(port))
+	if IsMetadataHost(host) {
+		return metadataError{addr: hp}.Error()
+	}
 	if code == CodePrivate {
 		return hp + " is a private or local address; it is not reached for a public URL"
 	}
@@ -241,6 +247,12 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			code, message := errorCode(err)
 			rec.MS = ms(start)
+			if isMetadataErr(err) { // a name that resolved to the metadata service: refused, as a literal is
+				rec.Outcome, rec.Error = OutcomeRefused, code
+				s.emit(rec)
+				writeError(w, http.StatusBadGateway, code, message)
+				return
+			}
 			fail(rec, http.StatusBadGateway, code, message)
 			return
 		}
@@ -404,7 +416,9 @@ func (s *Server) check(w http.ResponseWriter, r *http.Request) {
 	rec := s.newRecord(c.purpose, method, c.url, ViaCheck, s.now())
 	host, port := target(c.url)
 	code := ""
-	if c.public {
+	if IsMetadataHost(host) {
+		code = CodePrivate // every mode (P7 review M1)
+	} else if c.public {
 		if ip := net.ParseIP(host); ip != nil && IsPrivate(ip) {
 			code = CodePrivate
 		}
