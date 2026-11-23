@@ -249,6 +249,7 @@ async function runScenario(def, { smoke, runtime, prep, tmp, echo = false }) {
               '--allow-net=127.0.0.1',
               `--allow-run=${prep.binary.bin}`,
               '--allow-env=PATH,SystemRoot,SYSTEMROOT,PATHEXT,TEMP,TMP,windir,ComSpec',
+              '--ignore-env',
               script,
               ...args,
             ],
