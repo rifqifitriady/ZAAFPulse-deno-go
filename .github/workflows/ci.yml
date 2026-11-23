@@ -15,7 +15,8 @@
 # The guard-bench job times the Go guard against its P4e targets and against the JS guard on the same runner.
 # The go job (P3) vets, format-checks and tests the Go gateway module (gw/) against the shared fixtures in ipc/v1, on
 # the test job's OS matrix. The Node and Deno jobs set up the same Go, so the cross-language IPC tests build the stub
-# (gw/cmd/zaafpulse-gw) and never skip; the Deno job builds it once up front (ZP_GW_BIN). Go is pinned to 1.27.3.
+# (gw/cmd/zaafpulse-gw) and never skip; the Deno job builds it once up front (ZP_GW_BIN). Go is pinned to 1.27.4
+# (go1.27.3 carries GO-2026-6859, P7 review L4).
 # Scope, to keep a private repo inside its Actions minutes (macOS minutes bill at 10x, Windows at 2x): a push to a work
 # branch (migrate/<anything> other than migrate/deno-go) runs the Ubuntu jobs only (Node suite, Deno suite,
 # Go, typecheck). The full matrix (four OS for Node, ubuntu and macOS for Deno, the six build-deno targets) runs on pull
@@ -57,7 +58,7 @@ jobs:
           package-manager-cache: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           cache: false
       # No npm install: the app and its tests have no runtime dependencies.
       - name: Test suite
@@ -102,7 +103,7 @@ jobs:
           node-version: 24.21.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           cache: false
       # The cross-language IPC tests use this build of the gateway stub instead of building it themselves.
       - name: Build the gateway stub
@@ -194,7 +195,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           cache: false
       - name: gofmt
         shell: bash
@@ -227,7 +228,7 @@ jobs:
           package-manager-cache: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           cache: false
       - if: matrix.runtime == 'deno'
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
@@ -270,7 +271,7 @@ jobs:
           package-manager-cache: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           cache: false
       - name: The three M4 runs (js, front, go), private tier
         shell: bash
@@ -355,7 +356,7 @@ jobs:
           package-manager-cache: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           cache: false
       - name: Time the JS guard
         run: node scripts/bench-guard.js --json "$RUNNER_TEMP/guard-js.json"
@@ -414,7 +415,7 @@ jobs:
           echo "| ${{ matrix.name }} | $(cat "$RUNNER_TEMP/smoke.json") |" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           cache: false
       # The Go gateway built natively, started in front of server.js (deno run, "server" set) and stopped with it.
       - name: Smoke test of the Go front on this runner

@@ -18,7 +18,7 @@
     "server": {
       "read": true,
       "write": true,
-      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal"] },
+      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal", "[fd00:ec2::254]", "169.254.170.2", "100.100.100.200"] },
       "env": true,
       "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
       "run": [
@@ -33,7 +33,7 @@
     "cli": {
       "read": true,
       "write": true,
-      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal"] },
+      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal", "[fd00:ec2::254]", "169.254.170.2", "100.100.100.200"] },
       "env": true,
       "sys": ["homedir", "uid", "gid", "userInfo", "hostname", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask", "osRelease"],
       "run": [
@@ -48,10 +48,10 @@
     "mcp-stdio": {
       "read": true,
       "write": true,
-      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal"] },
+      "net": { "allow": true, "deny": ["169.254.169.254", "metadata.google.internal", "[fd00:ec2::254]", "169.254.170.2", "100.100.100.200"] },
       "env": true,
       "sys": ["homedir", "uid", "gid", "userInfo", "systemMemoryInfo", "osUptime", "loadavg", "cpus", "umask"],
-      "run": ["ps", "lsof", "vm_stat", "powershell.exe", "which", "where", "security", "secret-tool", "kill", "tasklist"]
+      "run": ["ps", "lsof", "vm_stat", "powershell.exe", "which", "where", "security", "secret-tool"]
     }
   }
 }

@@ -7,13 +7,26 @@ package main
 // shutdown after the front, or at once when the control plane is gone.
 
 import (
+	"net"
 	"net/http"
 	"slices"
 	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/egress"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/engine"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
+
+// refuseMetadataOn gives the engine's provider client a dialer that refuses the cloud metadata service before the
+// connect (P7 review M1): a provider or token URL whose name resolves to it is never reached. The endpoint copies the
+// transport and replaces the dialer with its own, which refuses the same.
+func refuseMetadataOn(tr *http.Transport) {
+	if tr == nil {
+		return
+	}
+	d := &net.Dialer{Timeout: engine.ConnectTimeout, KeepAlive: 30 * time.Second, Control: egress.RefuseMetadata}
+	tr.DialContext = d.DialContext
+}
 
 // policyOf is the endpoint's allow-list from a config.push egress section.
 func policyOf(c *ipc.EgressConfig) egress.Policy {
