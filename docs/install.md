@@ -1,14 +1,15 @@
 # Installing ZAAFPulse
 
-ZAAFPulse v2 runs on these systems:
+The ZAAFPulse v2.0.0 packages run on these systems:
 
-- **macOS** 12 or newer, on Apple silicon
 - **Linux** with glibc: Ubuntu, Debian, RHEL 8/9, Rocky, AlmaLinux, Fedora, Amazon Linux and SUSE, on x64 or arm64
 - **Windows** 10/11, on x64 or arm64
 
 A release is two programs, `zaafpulse` (the dashboard, a Deno binary) and `zaafpulse-gw` (the Go gateway), packed in one archive per system. They need nothing else: no Node.js, no Deno, no npm packages. The installers download no Node.js any more.
 
-**Only v1.x runs on** Macs with an Intel CPU, Alpine and other musl Linux, armv7l, ppc64le, s390x and 32-bit Windows. There is no v2 build for them (a v2 release has five targets, without `darwin-x64`), and the v2 installers stop there and print the v1.x command. A Terminal under Rosetta on Apple silicon also reports an Intel CPU; `install.sh` tells the two apart and installs the arm64 build there. Use the v1.x installer from [rifqifitriady/ZAAFPulse](https://github.com/rifqifitriady/ZAAFPulse):
+**macOS has no v2 package in v2.0.0**, on Apple silicon or Intel: a release has four targets (`linux-x64`, `linux-arm64`, `win-x64`, `win-arm64`). `install.sh` stops on any Mac before it changes anything and prints the v1.x command; `--rollback` and `--uninstall` still work there. On a Mac, v2 runs only from source (`git clone`, then `npm start`; Node 18+ or Deno 2.9, and Go 1.27 to build the gateway, as in the README's "From source") or from a package you build yourself and start unpacked ([Running from an unpacked archive](#running-from-an-unpacked-archive)); the installer does not install it, and no release test covers it.
+
+**Only v1.x runs on** macOS (as a package), Alpine and other musl Linux, armv7l, ppc64le, s390x and 32-bit Windows. There is no v2 package for them, and the v2 installers stop there and print the v1.x command. Use the v1.x installer from [rifqifitriady/ZAAFPulse](https://github.com/rifqifitriady/ZAAFPulse):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.sh | sh
@@ -18,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/instal
 
 | You want | Do this |
 |---|---|
-| It on your laptop | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` (macOS/Linux) or `irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 \| iex` (Windows PowerShell) |
+| It on your laptop | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` (Linux) or `irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 \| iex` (Windows PowerShell) |
 | A shared server | `curl -fsSL …/install.sh \| sudo sh -s -- --server` |
 | Containers | `docker compose up -d` with [compose.yaml](../compose.yaml) |
 | No installer | a `zaafpulse-<version>-<os>-<cpu>` archive from [Releases](https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases), unpacked ([Release packages](#release-packages)) |
@@ -28,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/instal
 
 Both installers are release files themselves, so the `releases/latest/download/` address always gets the installer of the latest release, and `releases/download/vX.Y.Z/` the one of that release.
 
-### macOS and Linux: `install.sh`
+### Linux: `install.sh`
 
 ```bash
 curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh | sh
@@ -36,7 +37,7 @@ curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/do
 
 The installer:
 
-1. Picks the package for your OS and CPU (`darwin-arm64`, `linux-x64` or `linux-arm64`), and stops on a system that only v1.x supports, an Intel Mac included.
+1. Picks the package for your CPU (`linux-x64` or `linux-arm64`), and stops on any Mac and on a system that only v1.x supports.
 2. Downloads it with `SHA256SUMS.txt` from the latest release (or the one named with `--version`) and checks it. A mismatch, or a package missing from `SHA256SUMS.txt`, installs nothing.
 3. Unpacks it, clears the macOS quarantine flag on both programs, and runs the new `zaafpulse version`. When that fails it stops with "nothing was changed".
 4. Keeps an earlier install (v1.x or v2) for `--rollback`, see [Upgrading from v1.x](#upgrading-from-v1x).
@@ -80,7 +81,7 @@ The options go after `sh -s --`:
 
 An install made as root (`sudo sh`, the systemd system service) must be upgraded and uninstalled as root too: run without `sudo`, the installer works on your user install in your home folder and leaves the system one, and its service, as they are.
 
-`--source DIR` is gone: a source tree needs Deno and Go to build. Build a package with `deno task build --package` and install it with `--archive`.
+`--source DIR` is gone: a source tree needs Deno and Go to build. Build a package with `deno task build --package` and install it with `--archive` (on Linux; on a Mac the installer stops, so run the package unpacked).
 
 `--uninstall` stops the service and removes the command and only the folders the installers put in the install folder (`bin`, `rollback`, `rollforward`, and v1's `app` and `node`), then the install folder itself when it is empty. On Linux the data folder `~/.local/share/zaafpulse/data` sits inside the default install folder, so the data is kept. `--purge` deletes the data too.
 
@@ -126,7 +127,7 @@ Before it moves an earlier install, the installer stops its service through that
 
 ## Upgrading from v1.x
 
-Run the v2 installer, with the same options you installed with (`sudo` and `--server` for a server):
+Run the v2 installer, with the same options you installed with (`sudo` and `--server` for a server). On a Mac there is no v2.0.0 package to upgrade to: the installer stops and v1.x stays as it is.
 
 ```bash
 curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh | sh
@@ -195,7 +196,6 @@ Each [release](https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases) has 
 
 | File | For |
 |---|---|
-| `zaafpulse-<v>-darwin-arm64.tar.gz` | macOS on Apple silicon (there is no Intel Mac package: use v1.x) |
 | `zaafpulse-<v>-linux-x64.tar.gz` / `-linux-arm64.tar.gz` | Linux on glibc (not Alpine) |
 | `zaafpulse-<v>-win-x64.zip` / `-win-arm64.zip` | Windows 10/11 |
 | `install.sh`, `install.ps1` | The installers of this release |
@@ -224,19 +224,19 @@ $env:Path = "$d;$env:Path"
 
 The folder goes first on `PATH`, spelled as the binary is started: Deno allows `zaafpulse` to start `zaafpulse-gw` only when that name is found there, in that folder, first. The installer's `zaafpulse` command does this for you. Without it, everything works except the gateway in front (`gateway.engine` `"front"`): the dashboard falls back to its built-in gateway with the reason "zaafpulse-gw is next to zaafpulse but not allowed to run: put its folder first on PATH (the installer's zaafpulse command does)", and `zaafpulse doctor` shows "not allowed".
 
-To build packages yourself: `deno task build --package` builds this machine's package (it needs Go on `PATH`), and `--target x86_64-unknown-linux-gnu` or `--all` builds others. `--all` and `--target x86_64-apple-darwin` still build a `darwin-x64` package, which a release does not ship and nobody tests. On Windows `--package` builds only the `win-*` packages.
+To build packages yourself: `deno task build --package` builds this machine's package (it needs Go on `PATH`), and `--target x86_64-unknown-linux-gnu` or `--all` builds others. `--all`, `--target aarch64-apple-darwin` and `--target x86_64-apple-darwin` still build the macOS packages, which a release does not ship: the regular CI builds and smoke-tests `darwin-arm64`, and nothing tests `darwin-x64`. On Windows `--package` builds only the `win-*` packages.
 
 ## Unsigned binaries: first start and verifying a download
 
-The macOS binaries are ad-hoc signed, not notarized; the Windows binaries are not signed. Your system may stop them the first time when they come from a browser. Their integrity comes from `SHA256SUMS.txt` and from the build attestations.
+The Windows binaries are not signed. (v2.0.0 ships no macOS binaries; a macOS package you build yourself is ad-hoc signed, not notarized.) Your system may stop them the first time when they come from a browser. Their integrity comes from `SHA256SUMS.txt` and from the build attestations.
 
-- **macOS Gatekeeper:** a browser download is quarantined, and macOS refuses to open it. In the unpacked folder, run once:
+- **macOS Gatekeeper** (a macOS package you built and then copied through a browser download): a browser download is quarantined, and macOS refuses to open it. In the unpacked folder, run once:
 
   ```bash
   xattr -d com.apple.quarantine zaafpulse zaafpulse-gw
   ```
 
-  Or try to start `zaafpulse`, then open **System Settings → Privacy & Security**, choose **Open Anyway** next to the message about it, and confirm; do the same for `zaafpulse-gw`. The installer's `curl` download is not quarantined, and the installer clears the flag of a package given with `--archive`, so an install needs neither.
+  Or try to start `zaafpulse`, then open **System Settings → Privacy & Security**, choose **Open Anyway** next to the message about it, and confirm; do the same for `zaafpulse-gw`. A package built on the same Mac is not quarantined.
 - **Windows SmartScreen:** on the first start of each `.exe` from a browser download, choose **More info → Run anyway**: once for `zaafpulse.exe`, once for `zaafpulse-gw.exe`. The installer's download is not marked, and it runs `Unblock-File` on a package given with `-Archive`.
 
 **Check the checksum.** Download `SHA256SUMS.txt` next to the archive, then in that folder:

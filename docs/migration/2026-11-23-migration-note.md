@@ -27,9 +27,10 @@ upgrade and roll back is in [docs/install.md](../install.md), and what v2.0.0 ho
   `raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main`. The v1 installers do not move you to v2.
 - No Node.js is needed or downloaded. A release is one archive per platform holding both programs (34 to 40 MB, where
   the v1.1.0 download was 84 to 128 MB); there are no loose binaries.
-- No v2 build exists for Macs with an Intel CPU, Alpine and other musl Linux, armv7l, ppc64le, s390x or 32-bit
-  Windows: a release has five targets (darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64). The v2 installer
-  stops there and prints the v1.x command, which keeps working; an Intel Mac stays on v1.x.
+- **macOS has no v2 package in v2.0.0** (Apple silicon or Intel): a release has four targets (linux-x64,
+  linux-arm64, win-x64, win-arm64). On a Mac the v2 installer stops and prints the v1.x command, which keeps working:
+  a Mac stays on v1.x. Nor is there a v2 build for Alpine and other musl Linux, armv7l, ppc64le, s390x or 32-bit
+  Windows; the installer stops there the same way.
 - `--source` and `--version main` are gone from `install.sh`; v2 installs releases only.
 - `--uninstall` keeps your data (v1 deleted the Linux data folder inside the install folder); `--purge` deletes it.
 - The Docker image still runs on Node.js for now.

@@ -469,11 +469,11 @@ AI coding agents now run for hours, read thousands of files and call hundreds of
 
 ## Quick start
 
-ZAAFPulse v2 runs on **macOS on Apple silicon, Linux with glibc (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux, SUSE) on x64 or arm64, and Windows 10/11 on x64 or arm64**, on a laptop or a server. Intel Macs, Alpine and other musl Linux, armv7l, ppc64le, s390x and 32-bit Windows stay on [v1.x](https://github.com/rifqifitriady/ZAAFPulse): the v2 installer stops there and prints the v1.x command. Pick one of these:
+The ZAAFPulse v2.0.0 packages run on **Linux with glibc (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux, SUSE) and Windows 10/11, on x64 or arm64**, on a laptop or a server. **macOS has no v2 package in v2.0.0**: Macs (Apple silicon and Intel) stay on [v1.x](https://github.com/rifqifitriady/ZAAFPulse), as do Alpine and other musl Linux, armv7l, ppc64le, s390x and 32-bit Windows; the v2 installer stops there and prints the v1.x command. On a Mac, v2 runs only from source (below). Pick one of these:
 
 | | One command |
 |---|---|
-| **macOS (Apple silicon) / Linux** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` |
+| **Linux** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` |
 | **Windows 11** (PowerShell) | `irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 \| iex` |
 | **Linux server** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sudo sh -s -- --server` |
 | **Docker** | `docker compose up -d` (see [compose.yaml](compose.yaml)); mainly a gateway and server deployment, see [Docker](#docker) |
@@ -1132,7 +1132,7 @@ scripts/eval-signals.js precision and recall of the detectors on the labelled co
 scripts/bench-index.js indexer benchmark on seeded synthetic logs
 install.sh, install.ps1 one-command installers for macOS/Linux and Windows
 Dockerfile, compose.yaml container image for servers
-.github/workflows/     ci.yml (the full suite on Linux, macOS and Windows), build.yml (the five release packages), release.yml
+.github/workflows/     ci.yml (the full suite on Linux, macOS and Windows), build.yml (the release packages), release.yml
                        (packages, checksums, attestations)
 test/                  263 node:test files (test/*.test.js) with fake HTTP and MCP servers, run on Node and Deno, and
                        the contract suite (test/contract/, 16 files) that runs against both gateway engines
