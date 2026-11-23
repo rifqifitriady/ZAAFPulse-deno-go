@@ -469,3 +469,69 @@ case "$1" in version) echo 2.0.0-test ;; register-mcp) exit 3 ;; *) echo "args: 
   assert.match(r.stderr, /Could not register the AI clients again; run: zaafpulse register-mcp registered/);
   assert.ok(fs.existsSync(path.join(ctx.prefix, 'bin', 'zaafpulse')));
 });
+
+// The platform check, with uname (and sysctl, which reports Apple Silicon under Rosetta) faked on PATH. The release
+// has five targets (owner, 2026-11-23): no darwin-x64, so an Intel Mac is sent to the v1.x installer.
+function onPlatform(ctx, { s, m, arm64 = null }) {
+  const stub = path.join(ctx.root, 'stub');
+  fs.mkdirSync(stub, { recursive: true });
+  fs.writeFileSync(
+    path.join(stub, 'uname'),
+    `#!/bin/sh\ncase "$1" in -s) echo ${s} ;; -m) echo ${m} ;; *) echo ${s} ;; esac\n`,
+    { mode: 0o755 },
+  );
+  // No sysctl answer means the key is unknown (an Intel Mac): sysctl exits non-zero, as macOS does.
+  fs.writeFileSync(
+    path.join(stub, 'sysctl'),
+    arm64 === null
+      ? '#!/bin/sh\necho "sysctl: unknown oid" >&2\nexit 1\n'
+      : `#!/bin/sh\n[ "$1 $2" = "-n hw.optional.arm64" ] && { echo ${arm64}; exit 0; }\nexit 1\n`,
+    { mode: 0o755 },
+  );
+  const env = {
+    PATH: `${stub}:${process.env.PATH}`,
+    HOME: ctx.home,
+    ZAAFPULSE_PREFIX: ctx.prefix,
+    ZP_FAKE_LOG: ctx.log,
+  };
+  // A missing archive: a run that passes the platform check stops at "no such archive", having changed nothing.
+  const args = ['--archive', path.join(ctx.root, 'missing.tar.gz'), '--no-service', '--no-modify-path'];
+  return spawnSync(SH, [SCRIPT, ...args], { env, encoding: 'utf8' });
+}
+
+test('an Intel Mac stops before anything is changed and is pointed at the v1.x installer', { skip: SKIP }, () => {
+  for (const arm64 of [null, '0']) {
+    const ctx = setup();
+    const r = onPlatform(ctx, { s: 'Darwin', m: 'x86_64', arm64 });
+    assert.equal(r.status, 1, `${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /no v2 build for Intel Macs \(darwin-x64\)/);
+    assert.match(r.stderr, /raw\.githubusercontent\.com\/rifqifitriady\/ZAAFPulse\/main\/install\.sh/);
+    assert.ok(!r.stderr.includes('no such archive'), r.stderr);
+    assert.ok(!fs.existsSync(ctx.prefix), 'no install folder');
+    assert.ok(!fs.existsSync(ctx.launcher));
+    assert.equal(calls(ctx), '');
+  }
+});
+
+test('a Mac with Apple Silicon in a Rosetta shell (uname -m x86_64) takes the arm64 build', { skip: SKIP }, () => {
+  const ctx = setup();
+  const r = onPlatform(ctx, { s: 'Darwin', m: 'x86_64', arm64: '1' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /no such archive/, 'it got past the platform check');
+  assert.ok(!r.stderr.includes('Intel'), r.stderr);
+});
+
+test('Linux x86_64 and arm64 Macs pass the platform check; armv7l, ppc64le and s390x stop', { skip: SKIP }, () => {
+  for (const [s, m] of [
+    ['Linux', 'x86_64'],
+    ['Darwin', 'arm64'],
+  ]) {
+    const r = onPlatform(setup(), { s, m });
+    assert.match(r.stderr, /no such archive/, `${s} ${m}: ${r.stderr}`);
+  }
+  for (const m of ['armv7l', 'ppc64le', 's390x']) {
+    const r = onPlatform(setup(), { s: 'Linux', m });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, new RegExp(`no v2 build for linux-${m}; the v1.x installer still supports it`));
+  }
+});
