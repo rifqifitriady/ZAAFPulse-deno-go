@@ -98,7 +98,7 @@ test(`SIGKILL the gateway at random points, 20 runs (replay: ${REPLAY})`, async 
       const label = `${REPLAY}, run ${run}`;
       const root = tmpDir(t, `kill-gw-${run}`);
       const stores = openLocalStores({ root });
-      const ingest = createIngest(stores.sinks);
+      const ingest = createIngest({ ...stores.sinks, testRawGovernance: true });
       let stream = null;
       let kills = 0;
       const args = ['--outbox', stores.files.outboxDir, '--emit', String(ROUNDS), '--emit-every-ms', '1'];
