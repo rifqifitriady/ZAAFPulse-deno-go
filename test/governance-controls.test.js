@@ -54,6 +54,16 @@ const good = () => ({
     singleFile: true,
     grants: { read: 'scoped', write: 'scoped', net: 'scoped', env: 'scoped', run: 'scoped', sys: 'scoped' },
   },
+  egress: {
+    mode: 'front',
+    port: 50123,
+    engines: Object.fromEntries(require('../lib/egress').CLASSES.map((c) => [c, 'go'])),
+    allowList: 'enforce',
+    allowCount: 7,
+    lockdown: { asked: true, inForce: true, why: '' },
+    counts24h: { total: 40, refused: 2, wouldRefuse: 0 },
+    netGrant: 'scoped',
+  },
   inventory: {
     total: 4,
     reviewed: 4,
@@ -68,7 +78,7 @@ const good = () => ({
 const statusOf = (state) => Object.fromEntries(controls(state).map((c) => [c.id, c.status]));
 const one = (state, id) => controls(state).find((c) => c.id === id);
 
-test('the catalogue: nineteen controls in a fixed order, each with a link and at least one clause', () => {
+test('the catalogue: twenty controls in a fixed order, each with a link and at least one clause', () => {
   assert.deepEqual(
     CATALOGUE.map((c) => c.id),
     [
@@ -91,6 +101,7 @@ test('the catalogue: nineteen controls in a fixed order, each with a link and at
       'trace_retention',
       'inventory_coverage',
       'runtime_permissions',
+      'network_egress',
     ],
   );
   const ids = new Set(CLAUSES.map((c) => c.id));
@@ -467,6 +478,7 @@ test('off: everything switched off, degraded or broken; unknown: a part that can
   s.traces = { store: true, enabled: false, retentionDays: 14, maxBytes: 1 };
   s.inventory = { total: 3, reviewed: 0 };
   s.runtimePermissions = { runtime: 'node' };
+  s.egress = { mode: 'js' };
   s.usage = null;
   const st = statusOf(s);
   assert.equal(st.usage_log, 'unknown');
@@ -510,7 +522,7 @@ test('GET /api/governance/controls: the controls with the audit state and the in
   });
   assert.equal(r.status, 200);
   assert.deepEqual(Object.keys(r.body), ['generatedAt', 'notice', 'frameworks', 'clauses', 'controls']);
-  assert.equal(r.body.controls.length, 19);
+  assert.equal(r.body.controls.length, 20);
   const by = Object.fromEntries(r.body.controls.map((c) => [c.id, c]));
   assert.equal(by.audit_log.evidence[0], 'kept 24 months (at least 6)');
   assert.deepEqual(
@@ -595,4 +607,57 @@ test('usage.oldest: read when asked, so two rotations in one run move it to the 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('network egress: off in js mode, in place only with every condition, partial naming each one missing', () => {
+  const eg = (v) => ({ ...good(), egress: { ...good().egress, ...v } });
+  const outside =
+    "child processes (claude, codex, node, model servers …) are outside Deno's permissions and the egress proxy";
+  const off = one(eg({ mode: 'js' }), 'network_egress');
+  assert.equal(off.status, 'off');
+  assert.deepEqual(off.evidence, [
+    'js mode: no gateway runs, so every outbound call leaves directly and is not recorded',
+    outside,
+  ]);
+  const full = one(good(), 'network_egress');
+  assert.equal(full.status, 'in place');
+  assert.deepEqual(full.evidence, [
+    '12 of 12 caller classes on go',
+    'allow-list: enforce, 7 hosts',
+    'last 24 h: 40 records, 2 refused, 0 would be refused',
+    "lock-down in force: Deno's net grant is loopback only",
+    outside,
+  ]);
+  // Each condition alone lowers it to partial, and the evidence names it.
+  const cases = [
+    [
+      { engines: { ...good().egress.engines, brain: 'check', notify: 'direct', otel: 'direct' } },
+      /^on direct: notify, otel$/,
+    ],
+    [{ engines: { ...good().egress.engines, brain: 'check' } }, /^on check: brain$/],
+    [{ allowList: 'report' }, /^allow-list: report only, 7 hosts$/],
+    [
+      { lockdown: { asked: true, inForce: false, why: 'egress.lockdown is off' } },
+      /^lock-down not in force: egress\.lockdown is off$/,
+    ],
+    [{ lockdown: { asked: false, inForce: false } }, /^lock-down not in force: not asked$/],
+    [{ netGrant: 'all but denied' }, /^lock-down in force/],
+    [{ port: null }, /egress endpoint is not ready: calls on go leave directly meanwhile$/],
+    [
+      { allowList: 'report', counts24h: { total: 3, refused: 0, wouldRefuse: 1, truncated: true } },
+      /would be refused \(the newest 2 MB of the log only\)$/,
+    ],
+    [{ port: null, locked: true }, /not ready: outbound calls fail with EGRESS_UNAVAILABLE meanwhile/],
+    [{ engines: {} }, /^0 of 0 caller classes on go$/],
+  ];
+  for (const [v, re] of cases) {
+    const c = one(eg(v), 'network_egress');
+    assert.equal(c.status, 'partial', JSON.stringify(v));
+    assert.ok(
+      c.evidence.some((x) => re.test(x)),
+      `${JSON.stringify(v)}: ${c.evidence.join(' | ')}`,
+    );
+    assert.equal(c.evidence.at(-1), outside, 'the child-process note is always there');
+  }
+  assert.equal(one({ ...good(), egress: null }, 'network_egress').status, 'unknown');
 });

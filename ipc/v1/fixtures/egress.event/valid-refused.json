@@ -1,0 +1,1 @@
+{"v":1,"type":"egress.event","seq":52,"ts":1767225700011,"body":{"ts":1767225700010,"purpose":"notify","method":"POST","scheme":"https","host":"hooks.example.net","port":443,"outcome":"refused","error":"EGRESS_REFUSED","bytesOut":0,"bytesIn":0,"ms":0,"via":"proxy"}}

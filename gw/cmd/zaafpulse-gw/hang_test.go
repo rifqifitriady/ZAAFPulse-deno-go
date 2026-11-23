@@ -126,7 +126,9 @@ func TestCallsAnswerWhileTheControlPlaneHangs(t *testing.T) {
 		l := r.next(t, "usage.report")
 		m := seqRe.FindStringSubmatch(l)
 		seq, _ := strconv.ParseInt(m[1], 10, 64)
-		if last != 0 && seq != last+1 {
+		// In seq order, each once; the engine's egress.event records (P5 Decision 9, a provider call's own) take the seqs
+		// in between.
+		if last != 0 && seq <= last {
 			t.Fatalf("report seq %d after %d", seq, last)
 		}
 		last = seq
@@ -165,7 +167,9 @@ func TestHungControlPlaneBudgetsFailOpen(t *testing.T) {
 			t.Fatalf("report %d not marked: %s", i, l)
 		}
 		seq, _ := strconv.ParseInt(seqRe.FindStringSubmatch(l)[1], 10, 64)
-		if last != 0 && seq != last+1 {
+		// In seq order, each once; the engine's egress.event records (P5 Decision 9, a provider call's own) take the seqs
+		// in between.
+		if last != 0 && seq <= last {
 			t.Fatalf("report seq %d after %d", seq, last)
 		}
 		last = seq

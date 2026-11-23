@@ -155,6 +155,27 @@ const until = async (fn, ms = 5000) => {
   }
 };
 
+// P5: every push carries an egress section; each ready that names the endpoint's port reaches onEgress with the front
+// token, a gateway that is gone reaches it as null, and an older supervisor's gateway never does.
+test('P5: onEgress follows the current gateway; every push carries an egress section', async (t) => {
+  const seen = [];
+  const f = await frontWithFakes(t, { token: 'tok', onEgress: (e) => seen.push(e) });
+  const body = f.sups[0].opts.sources.config();
+  assert.deepEqual(body.egress, { allow: [], allowList: 'report' }, 'the default section when the body has none');
+  f.sups[0].opts.onEgress(5001);
+  assert.deepEqual(seen, [{ port: 5001, token: 'tok' }]);
+  assert.equal(f.front.egressPort, 5001);
+  assert.equal(f.front.status().egressPort, 5001);
+  f.sups[0].opts.onEgress(null);
+  f.sups[0].opts.onFailed('outbox in use', { kind: 'fatal' });
+  await until(() => f.front.mode === 'fallback' && f.mainServer.listening);
+  assert.equal(await f.front.reload(), true);
+  f.sups[0].opts.onEgress(6000); // the old supervisor
+  f.sups[1].opts.onEgress(5002);
+  assert.deepEqual(seen, [{ port: 5001, token: 'tok' }, null, { port: 5002, token: 'tok' }]);
+  assert.equal(f.front.egressPort, 5002);
+});
+
 test('I1: two reloads in fallback start front once; a stale supervisor cannot fall back over the new one', async (t) => {
   const f = await frontWithFakes(t);
   f.sups[0].opts.onFailed('outbox in use', { kind: 'fatal' });

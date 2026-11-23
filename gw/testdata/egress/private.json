@@ -1,0 +1,572 @@
+{
+  "fn": "isPrivateAddress",
+  "in": [
+    "0.0.0.0",
+    "0.255.255.255",
+    "1.0.0.0",
+    "1.1.1.1",
+    "9.255.255.255",
+    "10.0.0.0",
+    "10.0.0.1",
+    "10.255.255.255",
+    "11.0.0.0",
+    "100.63.255.255",
+    "100.64.0.0",
+    "100.100.100.100",
+    "100.127.255.255",
+    "100.128.0.0",
+    "126.255.255.255",
+    "127.0.0.0",
+    "127.0.0.1",
+    "127.0.0.2",
+    "127.255.255.255",
+    "128.0.0.0",
+    "169.253.255.255",
+    "169.254.0.0",
+    "169.254.169.254",
+    "169.254.255.255",
+    "169.255.0.0",
+    "172.15.255.255",
+    "172.16.0.0",
+    "172.20.1.1",
+    "172.31.255.255",
+    "172.32.0.0",
+    "191.255.255.255",
+    "192.0.0.0",
+    "192.0.2.1",
+    "192.0.255.255",
+    "192.1.0.0",
+    "192.167.255.255",
+    "192.168.0.0",
+    "192.168.1.1",
+    "192.168.255.255",
+    "192.169.0.0",
+    "198.17.255.255",
+    "198.18.0.0",
+    "198.19.255.255",
+    "198.20.0.0",
+    "223.255.255.255",
+    "224.0.0.0",
+    "239.255.255.255",
+    "240.0.0.0",
+    "255.255.255.255",
+    "8.8.8.8",
+    "93.184.216.34",
+    "203.0.113.7",
+    "::",
+    "::1",
+    "::2",
+    "::ffff:127.0.0.1",
+    "::ffff:10.1.2.3",
+    "::ffff:169.254.169.254",
+    "::ffff:192.168.0.1",
+    "::ffff:100.64.0.1",
+    "::ffff:8.8.8.8",
+    "::ffff:1.0.0.0",
+    "64:ff9b::",
+    "64:ff9b::808:808",
+    "64:ff9b::7f00:1",
+    "64:ff9a::1",
+    "64:ff9c::1",
+    "64:ff9b:1::",
+    "64:ff9b:1:ffff:ffff:ffff:ffff:ffff",
+    "64:ff9b:2::1",
+    "::102:304",
+    "::808:808",
+    "::7f00:1",
+    "::ffff",
+    "::1:0:0:0",
+    "0:0:0:1::",
+    "fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "fc00::",
+    "fc00::1",
+    "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "fe00::",
+    "fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "fe80::",
+    "fe80::1",
+    "febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "fec0::",
+    "fec0::1",
+    "fedc:ba98::1",
+    "feff::",
+    "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "ff00::",
+    "ff02::1",
+    "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "2001::",
+    "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+    "2001:0:ffff:ffff:ffff:ffff:ffff:ffff",
+    "2001:1::1",
+    "2002::",
+    "2002:a00:1::",
+    "2002:7f00:1::1",
+    "2002:a9fe:a9fe::",
+    "2002:c0a8:101::",
+    "2002:808:808::",
+    "2002:5db8:d822::1",
+    "2003::1",
+    "2001:4860:4860::8888",
+    "2606:4700::1111",
+    "2001:db8::1",
+    "",
+    "localhost",
+    "example.com",
+    "1.2.3",
+    "1.2.3.256"
+  ],
+  "out": [
+    {
+      "ip": "0.0.0.0",
+      "private": true
+    },
+    {
+      "ip": "0.255.255.255",
+      "private": true
+    },
+    {
+      "ip": "1.0.0.0",
+      "private": false
+    },
+    {
+      "ip": "1.1.1.1",
+      "private": false
+    },
+    {
+      "ip": "9.255.255.255",
+      "private": false
+    },
+    {
+      "ip": "10.0.0.0",
+      "private": true
+    },
+    {
+      "ip": "10.0.0.1",
+      "private": true
+    },
+    {
+      "ip": "10.255.255.255",
+      "private": true
+    },
+    {
+      "ip": "11.0.0.0",
+      "private": false
+    },
+    {
+      "ip": "100.63.255.255",
+      "private": false
+    },
+    {
+      "ip": "100.64.0.0",
+      "private": true
+    },
+    {
+      "ip": "100.100.100.100",
+      "private": true
+    },
+    {
+      "ip": "100.127.255.255",
+      "private": true
+    },
+    {
+      "ip": "100.128.0.0",
+      "private": false
+    },
+    {
+      "ip": "126.255.255.255",
+      "private": false
+    },
+    {
+      "ip": "127.0.0.0",
+      "private": true
+    },
+    {
+      "ip": "127.0.0.1",
+      "private": true
+    },
+    {
+      "ip": "127.0.0.2",
+      "private": true
+    },
+    {
+      "ip": "127.255.255.255",
+      "private": true
+    },
+    {
+      "ip": "128.0.0.0",
+      "private": false
+    },
+    {
+      "ip": "169.253.255.255",
+      "private": false
+    },
+    {
+      "ip": "169.254.0.0",
+      "private": true
+    },
+    {
+      "ip": "169.254.169.254",
+      "private": true
+    },
+    {
+      "ip": "169.254.255.255",
+      "private": true
+    },
+    {
+      "ip": "169.255.0.0",
+      "private": false
+    },
+    {
+      "ip": "172.15.255.255",
+      "private": false
+    },
+    {
+      "ip": "172.16.0.0",
+      "private": true
+    },
+    {
+      "ip": "172.20.1.1",
+      "private": true
+    },
+    {
+      "ip": "172.31.255.255",
+      "private": true
+    },
+    {
+      "ip": "172.32.0.0",
+      "private": false
+    },
+    {
+      "ip": "191.255.255.255",
+      "private": false
+    },
+    {
+      "ip": "192.0.0.0",
+      "private": true
+    },
+    {
+      "ip": "192.0.2.1",
+      "private": true
+    },
+    {
+      "ip": "192.0.255.255",
+      "private": true
+    },
+    {
+      "ip": "192.1.0.0",
+      "private": false
+    },
+    {
+      "ip": "192.167.255.255",
+      "private": false
+    },
+    {
+      "ip": "192.168.0.0",
+      "private": true
+    },
+    {
+      "ip": "192.168.1.1",
+      "private": true
+    },
+    {
+      "ip": "192.168.255.255",
+      "private": true
+    },
+    {
+      "ip": "192.169.0.0",
+      "private": false
+    },
+    {
+      "ip": "198.17.255.255",
+      "private": false
+    },
+    {
+      "ip": "198.18.0.0",
+      "private": true
+    },
+    {
+      "ip": "198.19.255.255",
+      "private": true
+    },
+    {
+      "ip": "198.20.0.0",
+      "private": false
+    },
+    {
+      "ip": "223.255.255.255",
+      "private": false
+    },
+    {
+      "ip": "224.0.0.0",
+      "private": true
+    },
+    {
+      "ip": "239.255.255.255",
+      "private": true
+    },
+    {
+      "ip": "240.0.0.0",
+      "private": true
+    },
+    {
+      "ip": "255.255.255.255",
+      "private": true
+    },
+    {
+      "ip": "8.8.8.8",
+      "private": false
+    },
+    {
+      "ip": "93.184.216.34",
+      "private": false
+    },
+    {
+      "ip": "203.0.113.7",
+      "private": false
+    },
+    {
+      "ip": "::",
+      "private": true
+    },
+    {
+      "ip": "::1",
+      "private": true
+    },
+    {
+      "ip": "::2",
+      "private": true
+    },
+    {
+      "ip": "::ffff:127.0.0.1",
+      "private": true
+    },
+    {
+      "ip": "::ffff:10.1.2.3",
+      "private": true
+    },
+    {
+      "ip": "::ffff:169.254.169.254",
+      "private": true
+    },
+    {
+      "ip": "::ffff:192.168.0.1",
+      "private": true
+    },
+    {
+      "ip": "::ffff:100.64.0.1",
+      "private": true
+    },
+    {
+      "ip": "::ffff:8.8.8.8",
+      "private": false
+    },
+    {
+      "ip": "::ffff:1.0.0.0",
+      "private": false
+    },
+    {
+      "ip": "64:ff9b::",
+      "private": true
+    },
+    {
+      "ip": "64:ff9b::808:808",
+      "private": true
+    },
+    {
+      "ip": "64:ff9b::7f00:1",
+      "private": true
+    },
+    {
+      "ip": "64:ff9a::1",
+      "private": false
+    },
+    {
+      "ip": "64:ff9c::1",
+      "private": false
+    },
+    {
+      "ip": "64:ff9b:1::",
+      "private": true
+    },
+    {
+      "ip": "64:ff9b:1:ffff:ffff:ffff:ffff:ffff",
+      "private": true
+    },
+    {
+      "ip": "64:ff9b:2::1",
+      "private": true
+    },
+    {
+      "ip": "::102:304",
+      "private": true
+    },
+    {
+      "ip": "::808:808",
+      "private": true
+    },
+    {
+      "ip": "::7f00:1",
+      "private": true
+    },
+    {
+      "ip": "::ffff",
+      "private": true
+    },
+    {
+      "ip": "::1:0:0:0",
+      "private": false
+    },
+    {
+      "ip": "0:0:0:1::",
+      "private": false
+    },
+    {
+      "ip": "fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+      "private": false
+    },
+    {
+      "ip": "fc00::",
+      "private": true
+    },
+    {
+      "ip": "fc00::1",
+      "private": true
+    },
+    {
+      "ip": "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+      "private": true
+    },
+    {
+      "ip": "fe00::",
+      "private": false
+    },
+    {
+      "ip": "fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+      "private": false
+    },
+    {
+      "ip": "fe80::",
+      "private": true
+    },
+    {
+      "ip": "fe80::1",
+      "private": true
+    },
+    {
+      "ip": "febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+      "private": true
+    },
+    {
+      "ip": "fec0::",
+      "private": true
+    },
+    {
+      "ip": "fec0::1",
+      "private": true
+    },
+    {
+      "ip": "fedc:ba98::1",
+      "private": true
+    },
+    {
+      "ip": "feff::",
+      "private": true
+    },
+    {
+      "ip": "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+      "private": true
+    },
+    {
+      "ip": "ff00::",
+      "private": true
+    },
+    {
+      "ip": "ff02::1",
+      "private": true
+    },
+    {
+      "ip": "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+      "private": true
+    },
+    {
+      "ip": "2001::",
+      "private": true
+    },
+    {
+      "ip": "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+      "private": true
+    },
+    {
+      "ip": "2001:0:ffff:ffff:ffff:ffff:ffff:ffff",
+      "private": true
+    },
+    {
+      "ip": "2001:1::1",
+      "private": false
+    },
+    {
+      "ip": "2002::",
+      "private": true
+    },
+    {
+      "ip": "2002:a00:1::",
+      "private": true
+    },
+    {
+      "ip": "2002:7f00:1::1",
+      "private": true
+    },
+    {
+      "ip": "2002:a9fe:a9fe::",
+      "private": true
+    },
+    {
+      "ip": "2002:c0a8:101::",
+      "private": true
+    },
+    {
+      "ip": "2002:808:808::",
+      "private": false
+    },
+    {
+      "ip": "2002:5db8:d822::1",
+      "private": false
+    },
+    {
+      "ip": "2003::1",
+      "private": false
+    },
+    {
+      "ip": "2001:4860:4860::8888",
+      "private": false
+    },
+    {
+      "ip": "2606:4700::1111",
+      "private": false
+    },
+    {
+      "ip": "2001:db8::1",
+      "private": false
+    },
+    {
+      "ip": "",
+      "private": true
+    },
+    {
+      "ip": "localhost",
+      "private": true
+    },
+    {
+      "ip": "example.com",
+      "private": true
+    },
+    {
+      "ip": "1.2.3",
+      "private": true
+    },
+    {
+      "ip": "1.2.3.256",
+      "private": true
+    }
+  ]
+}

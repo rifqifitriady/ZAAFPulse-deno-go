@@ -1,0 +1,1 @@
+{"v":1,"type":"egress.event","seq":55,"ts":1767225700041,"body":{"ts":1767225700040,"purpose":"connectors:dynatrace","method":"GET","scheme":"https","host":"abc123.live.dynatrace.example","port":443,"outcome":"checked","bytesOut":0,"bytesIn":0,"ms":0.1,"via":"check"}}

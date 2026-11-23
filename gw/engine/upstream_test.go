@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/egress"
 )
 
 func planTo(url string) *Plan {
@@ -175,5 +177,67 @@ func TestUpstreamStart(t *testing.T) {
 	case <-gone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("closing the body did not end the call")
+	}
+}
+
+type countingRT struct {
+	rt http.RoundTripper
+	n  int
+}
+
+func (c *countingRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.n++
+	return c.rt.RoundTrip(r)
+}
+
+// P5: WrapTransport puts a wrapper around every provider call (the gateway's recording RoundTripper), Transport stays the
+// unwrapped *http.Transport (the egress endpoint copies it), and the token sources' copy of the client keeps the wrapper.
+func TestUpstreamWrapTransport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+	up := NewUpstream(func(string) string { return "" })
+	base := up.Transport()
+	if base == nil || up.Client().Transport != base {
+		t.Fatalf("transport %v", base)
+	}
+	c := &countingRT{}
+	up.WrapTransport(func(rt http.RoundTripper) http.RoundTripper { c.rt = rt; return c })
+	if up.Transport() != base || c.rt != base {
+		t.Fatal("Transport is not the unwrapped one")
+	}
+	if res := up.Call(context.Background(), planTo(srv.URL)); res.Status != 200 || c.n != 1 {
+		t.Fatalf("%+v, %d round trips seen", res, c.n)
+	}
+	e := New(up, nil, t.Logf)
+	if e.Tokens().client.Transport != c {
+		t.Fatal("the token sources do not see the wrapped client")
+	}
+	if (&Upstream{}).Transport() != nil {
+		t.Fatal("an upstream not built by NewUpstream has no transport")
+	}
+}
+
+// A provider call the gateway's egress allow-list refuses (gw/egress RecordingTransport in enforce mode, P5 Decision
+// 13) is an ordinary failed call named EGRESS_REFUSED: nothing reaches the provider.
+func TestUpstreamEgressRefused(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a refused call reached the provider")
+	}))
+	defer srv.Close()
+	var recs []egress.Record
+	up := NewUpstream(func(string) string { return "" })
+	pol := &egress.Policy{Mode: egress.ModeEnforce, Allow: []egress.Rule{{Host: "api.example.com"}}}
+	up.WrapTransport(func(rt http.RoundTripper) http.RoundTripper {
+		return egress.RecordingTransport(rt, "gateway", func() *egress.Policy { return pol },
+			func(r egress.Record) { recs = append(recs, r) })
+	})
+	res := up.Call(context.Background(), planTo(srv.URL+"/v1/chat/completions"))
+	if res.Why != "EGRESS_REFUSED" || res.Status != 0 {
+		t.Fatalf("%+v", res)
+	}
+	if len(recs) != 1 || recs[0].Outcome != egress.OutcomeRefused || recs[0].Via != egress.ViaEngine {
+		t.Fatalf("records %+v", recs)
 	}
 }

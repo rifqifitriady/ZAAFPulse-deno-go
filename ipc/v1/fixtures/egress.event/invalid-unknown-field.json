@@ -1,0 +1,1 @@
+{"v":1,"type":"egress.event","seq":57,"ts":1767225700061,"body":{"ts":1767225700060,"purpose":"mcp","method":"GET","scheme":"https","host":"mcp.example.com","port":443,"outcome":"would-refuse","bytesOut":0,"bytesIn":10,"ms":3,"via":"proxy","path":"/v1/tools?key=x"}}
