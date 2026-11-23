@@ -302,6 +302,20 @@ const commands = {
       svc = err.message;
     }
     add('Service', svc, svc === 'running');
+    // P7 review L1: an AI client registered while the stdio MCP server still checked the dashboard's pid keeps a run
+    // grant with kill and tasklist; registering it again drops them (the endpoint now proves itself instead).
+    try {
+      const old = require('../lib/egress-discovery').oldRegistrations();
+      add(
+        'MCP clients',
+        old.length
+          ? `registered before the egress endpoint proof: ${old.join(', ')}; run \`zaafpulse register-mcp <client>\` again for each`
+          : 'no registration needs renewing',
+        old.length === 0,
+      );
+    } catch (err) {
+      add('MCP clients', `the registrations cannot be read: ${err.message}`, false);
+    }
     console.log(rows.join('\n'));
   },
   'register-mcp'() {

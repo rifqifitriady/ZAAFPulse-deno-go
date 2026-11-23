@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/egress"
+	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/engine"
 	"github.com/rifqifitriady/ZAAFPulse-deno-go/gw/ipc"
 )
 
@@ -256,4 +257,29 @@ func TestRecordEgressDropsAnInvalidRecord(t *testing.T) {
 	if n := strings.Count(buf.String(), "dropped"); n != 2 {
 		t.Fatalf("logged %d times:\n%s", n, buf.String())
 	}
+}
+
+// P7 review M1: the engine's provider client dials through egress.RefuseMetadata, so a provider or token URL whose
+// name resolves to the cloud metadata service is refused before the connect (the literal and the names are refused by
+// egress.RecordingTransport before that). The dialer is called directly: no packet is sent.
+func TestUpstreamDialerRefusesMetadata(t *testing.T) {
+	tr := engine.NewUpstream(func(string) string { return "" }).Transport()
+	refuseMetadataOn(tr)
+	for _, addr := range []string{"169.254.169.254:80", "[fd00:ec2::254]:443", "100.100.100.200:80",
+		"169.254.170.2:80", "[::ffff:169.254.169.254]:80"} {
+		_, err := tr.DialContext(t.Context(), "tcp", addr)
+		if err == nil || !strings.Contains(err.Error(), "metadata") {
+			t.Errorf("%s: %v", addr, err)
+		}
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	c, err := tr.DialContext(t.Context(), "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("loopback: %v", err)
+	}
+	_ = c.Close()
 }

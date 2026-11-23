@@ -27,6 +27,12 @@ func (s *Server) tunnel(w http.ResponseWriter, r *http.Request) {
 	start := s.now()
 	rec := Record{TS: start.UnixMilli(), Purpose: purpose, Method: http.MethodConnect, Scheme: "tcp", Host: host,
 		Port: port, Via: ViaTunnel}
+	if IsMetadataHost(host) { // every mode, whatever the allow-list lists (P7 review M1)
+		rec.Outcome, rec.Error = OutcomeRefused, CodePrivate
+		s.emit(rec)
+		writeError(w, http.StatusBadGateway, CodePrivate, metadataError{addr: net.JoinHostPort(host, ps)}.Error())
+		return
+	}
 	if pol := s.policy.Load(); !pol.Allows(host, port) {
 		if pol.Mode == ModeEnforce {
 			rec.Outcome, rec.Error = OutcomeRefused, CodeRefused
@@ -43,6 +49,9 @@ func (s *Server) tunnel(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		code, message := errorCode(err)
 		rec.Outcome, rec.Error, rec.MS = OutcomeError, code, ms(start)
+		if isMetadataErr(err) {
+			rec.Outcome = OutcomeRefused
+		}
 		s.emit(rec)
 		writeError(w, http.StatusBadGateway, code, message)
 		return

@@ -60,7 +60,7 @@ function recording() {
 
 test('each event goes to its writer with an ipc mark; cost back to USD; a resend is skipped', () => {
   const { calls, sinks } = recording();
-  const ingest = createIngest({ ...sinks, now: () => 42 });
+  const ingest = createIngest({ testRawGovernance: true, ...sinks, now: () => 42 });
   for (let seq = 1; seq <= 6; seq++) assert.equal(ingest.handle(msgOf(seq), S), true);
   assert.equal(calls.usage.length, 2);
   assert.equal(calls.usage[0].cost, 0.0015);
@@ -82,6 +82,7 @@ test('each event goes to its writer with an ipc mark; cost back to USD; a resend
 test('a writer that throws leaves the mark where it was, so the event is not acknowledged', () => {
   const { sinks } = recording();
   const ingest = createIngest({
+    testRawGovernance: true,
     ...sinks,
     recordUsage: () => {
       throw new Error('disk full');
@@ -112,7 +113,7 @@ for (const [sink, block] of Object.entries(BLOCKERS)) {
     const root = tmpDir(t, 'strict');
     const stores = openLocalStores({ root });
     const logged = [];
-    const ingest = createIngest({ ...stores.sinks, log: (l) => logged.push(l) });
+    const ingest = createIngest({ testRawGovernance: true, ...stores.sinks, log: (l) => logged.push(l) });
     // The events before this one are stored first, so the failing event is the next one in seq order.
     const seq = SEQ_OF[sink];
     for (let s = 1; s < seq; s++) ingest.handle(msgOf(s), S);
@@ -131,7 +132,12 @@ for (const [sink, block] of Object.entries(BLOCKERS)) {
     fs.rmSync(root, { recursive: true, force: true });
     fs.cpSync(backup, root, { recursive: true });
     const again = openLocalStores({ root });
-    const resumed = createIngest({ ...again.sinks, marks: recoverMarks(again.files), log: () => {} });
+    const resumed = createIngest({
+      testRawGovernance: true,
+      ...again.sinks,
+      marks: recoverMarks(again.files),
+      log: () => {},
+    });
     assert.equal(resumed.mark(S), seq - 1);
     assert.equal(resumed.handle(msgOf(seq), S), true);
     assert.equal(resumed.mark(S), seq);
@@ -152,6 +158,7 @@ test('a post-store hook that throws neither undoes nor skips the mark; the event
   const { calls, sinks } = recording();
   const logged = [];
   const ingest = createIngest({
+    testRawGovernance: true,
     ...sinks,
     recordUsage: (e) => (calls.usage.push(e), e),
     afterUsage: () => {
@@ -180,7 +187,7 @@ test('local stores: the budget report runs after the usage line is stored and ma
       throw new Error('budget report failed');
     },
   });
-  const ingest = createIngest({ ...stores.sinks, log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...stores.sinks, log: () => {} });
   assert.equal(ingest.handle(msgOf(1), S), true);
   assert.deepEqual(seen, [1]);
   assert.equal(ingest.mark(S), 1);
@@ -206,7 +213,7 @@ test('trace index failure after a completed append: the span is in the newest se
   const root = tmpDir(t, 'trace-index');
   const stores = openLocalStores({ root });
   const logged = [];
-  const ingest = createIngest({ ...stores.sinks, log: (l) => logged.push(l) });
+  const ingest = createIngest({ testRawGovernance: true, ...stores.sinks, log: (l) => logged.push(l) });
   ingest.handle(msgOf(1), S);
   ingest.handle(msgOf(2), S);
   failNextRead(t);
@@ -235,6 +242,7 @@ test('writeSpans throws and the span is not in the newest segment: a store failu
   const logged = [];
   let fail = false;
   const ingest = createIngest({
+    testRawGovernance: true,
     ...stores.sinks,
     writeSpans: (list) => {
       if (fail) throw Object.assign(new Error('EIO: injected'), { code: 'EIO' });
@@ -282,7 +290,7 @@ test('product trace recorder: an index failure after the append counts the spans
 
 test('an audit.event with an unknown log is refused, not stored in the MCP log', () => {
   const { calls, sinks } = recording();
-  const ingest = createIngest({ ...sinks, log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...sinks, log: () => {} });
   const m = msgOf(2);
   assert.throws(() => ingest.handle({ ...m, body: { ...m.body, log: 'other' } }, S), /unknown log/);
   assert.equal(calls.mcp.length + calls.governance.length, 0);
@@ -292,7 +300,7 @@ test('an audit.event with an unknown log is refused, not stored in the MCP log',
 test('a seq gap after a mark fails the event (not stored, not acknowledged); any first seq is accepted', () => {
   const { calls, sinks } = recording();
   const logged = [];
-  const ingest = createIngest({ ...sinks, log: (l) => logged.push(l) });
+  const ingest = createIngest({ testRawGovernance: true, ...sinks, log: (l) => logged.push(l) });
   assert.equal(ingest.handle(msgOf(5), S), true, 'mark 0: the first seq may be anything (a replay from Acked+1)');
   assert.throws(() => ingest.handle(msgOf(7), S), /seq 7 of .* after seq 5/);
   assert.throws(() => ingest.handle(msgOf(7), S), /after seq 5/, 'again');
@@ -305,14 +313,14 @@ test('a seq gap after a mark fails the event (not stored, not acknowledged); any
   assert.equal(ingest.handle(msgOf(6), S), true, 'the replay, in order');
   assert.equal(ingest.handle(msgOf(7), S), true);
   assert.equal(ingest.mark(S), 7);
-  const resumed = createIngest({ ...sinks, marks: new Map([[S, 7]]), log: () => {} });
+  const resumed = createIngest({ testRawGovernance: true, ...sinks, marks: new Map([[S, 7]]), log: () => {} });
   assert.throws(() => resumed.handle(msgOf(9), S), /after seq 7/, 'a recovered mark counts too');
 });
 
 test('seed: a mark recovered lower than the outbox start is raised, so the next event is stored, not a gap', () => {
   const { calls, sinks } = recording();
   // The stores' tails held only an older mark (2) of the stream; the gateway acknowledged up to 5 (hello outboxFrom 6).
-  const ingest = createIngest({ ...sinks, marks: new Map([[S, 2]]), log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...sinks, marks: new Map([[S, 2]]), log: () => {} });
   ingest.seed(S, 5);
   assert.equal(ingest.mark(S), 5);
   assert.equal(ingest.handle(msgOf(6), S), true, 'stored, not refused as a gap');
@@ -344,7 +352,7 @@ test('marks: the highest seq per stream from the stores, rotated usage log inclu
   const root = tmpDir(t, 'marks');
   const stores = openLocalStores({ root });
   const other = 'a'.repeat(32);
-  const ingest = createIngest(stores.sinks);
+  const ingest = createIngest({ ...stores.sinks, testRawGovernance: true });
   for (let seq = 1; seq <= 9; seq++) ingest.handle(msgOf(seq), S);
   ingest.handle(msgOf(1), other);
   fs.renameSync(stores.files.usageFile, `${stores.files.usageFile}.1`);
@@ -382,7 +390,7 @@ test('the gateway restarts without acks: everything is resent and stored once (s
   if (!bin) return;
   const root = tmpDir(t, 'resend');
   const stores = openLocalStores({ root });
-  const ingest = createIngest(stores.sinks);
+  const ingest = createIngest({ ...stores.sinks, testRawGovernance: true });
   const first = await emitAll(t, bin, root, ingest, { stores });
   first.kill(); // no ack was sent
   await first.exited;
@@ -419,12 +427,12 @@ test('the control plane restarts: marks from the stores make the resend a no-op 
   if (!bin) return;
   const root = tmpDir(t, 'cp-restart');
   const stores = openLocalStores({ root });
-  const first = await emitAll(t, bin, root, createIngest(stores.sinks), { stores });
+  const first = await emitAll(t, bin, root, createIngest({ ...stores.sinks, testRawGovernance: true }), { stores });
   first.kill();
   await first.exited;
   // A new control plane: new stores and a new ingest, its marks read from the files.
   const stores2 = openLocalStores({ root });
-  const ingest2 = createIngest({ ...stores2.sinks, marks: recoverMarks(stores2.files) });
+  const ingest2 = createIngest({ testRawGovernance: true, ...stores2.sinks, marks: recoverMarks(stores2.files) });
   assert.equal(ingest2.mark(first.stream), TOTAL);
   const again = startSession({
     bin,
@@ -463,7 +471,7 @@ test('stored through the IPC equals the same events recorded in process (stub)',
   const remote = tmpDir(t, 'over-ipc');
   const budgetIpc = [];
   const b = openLocalStores({ root: remote, onUsage: (e) => budgetIpc.push(e) });
-  const s = await emitAll(t, bin, remote, createIngest(b.sinks), { stores: b });
+  const s = await emitAll(t, bin, remote, createIngest({ ...b.sinks, testRawGovernance: true }), { stores: b });
   await s.shutdown(2000);
 
   const strip = (list) => list.map((e) => without(e, 'ipc', 'budget'));
@@ -503,6 +511,7 @@ test('a trace.span while the store is off is skipped, marked and acknowledged, a
   const exported = [];
   let storeOn = false;
   const ingest = createIngest({
+    testRawGovernance: true,
     ...noSinks,
     writeSpans: (list) => written.push(...list),
     spanStoreOn: () => storeOn,
@@ -531,6 +540,7 @@ test('a trace.span while the store is off is skipped, marked and acknowledged, a
 test('an export hook that throws neither fails the event nor stops the next one (P4f D9)', () => {
   const lines = [];
   const ingest = createIngest({
+    testRawGovernance: true,
     ...noSinks,
     writeSpans: () => {},
     afterSpan: () => {
@@ -552,6 +562,7 @@ test('spanBatch: spans are written together at flushSpans, then exported; a fail
   const lines = [];
   let fail = false;
   const ingest = createIngest({
+    testRawGovernance: true,
     ...noSinks,
     spanBatch: true,
     writeSpans: (list) => {
@@ -580,6 +591,7 @@ test('spanBatch: spans are written together at flushSpans, then exported; a fail
 test('spanBatch: a batch is written once it holds 500 spans, without waiting for the ack (P4f D25)', () => {
   const writes = [];
   const ingest = createIngest({
+    testRawGovernance: true,
     ...noSinks,
     spanBatch: true,
     writeSpans: (list) => writes.push(list.length),
@@ -618,7 +630,12 @@ const egressMsg = (seq, over = {}) => ({
 test('egress.event: stored with its ipc mark; a resend at or below the mark is skipped', () => {
   const { calls, sinks } = recording();
   const egress = [];
-  const ingest = createIngest({ ...sinks, recordEgress: (e) => egress.push(e), log: () => {} });
+  const ingest = createIngest({
+    testRawGovernance: true,
+    ...sinks,
+    recordEgress: (e) => egress.push(e),
+    log: () => {},
+  });
   assert.equal(ingest.handle(msgOf(1), S), true);
   assert.equal(ingest.handle(egressMsg(2), S), true);
   assert.equal(ingest.handle(egressMsg(3, { outcome: 'would-refuse' }), S), true);
@@ -634,6 +651,7 @@ test('egress.event refused: a governance entry, then the egress line', () => {
   const { calls, sinks } = recording();
   const order = [];
   const ingest = createIngest({
+    testRawGovernance: true,
     ...sinks,
     recordGovernance: (e) => (order.push('governance'), calls.governance.push(e), e),
     recordEgress: () => order.push('egress'),
@@ -662,6 +680,7 @@ test('egress.event refused: a governance entry that cannot be written is a store
   const { sinks } = recording();
   const egress = [];
   const ingest = createIngest({
+    testRawGovernance: true,
     ...sinks,
     recordGovernance: () => null,
     recordEgress: (e) => egress.push(e),
@@ -674,7 +693,7 @@ test('egress.event refused: a governance entry that cannot be written is a store
 
 test('egress.event without an egress log wired is a store failure, not a silent drop', () => {
   const { sinks } = recording();
-  const ingest = createIngest({ ...sinks, log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...sinks, log: () => {} });
   assert.throws(() => ingest.handle(egressMsg(1), S), /no egress log/);
   assert.equal(ingest.mark(S), 0);
 });
@@ -683,7 +702,7 @@ test('an egress.event store that fails is not marked and not acknowledged; the r
   const root = tmpDir(t, 'strict-egress');
   const stores = openLocalStores({ root });
   const logged = [];
-  const ingest = createIngest({ ...stores.sinks, log: (l) => logged.push(l) });
+  const ingest = createIngest({ testRawGovernance: true, ...stores.sinks, log: (l) => logged.push(l) });
   for (let s = 1; s <= 3; s++) ingest.handle(msgOf(s), S);
   const backup = `${root}-backup`;
   fs.cpSync(root, backup, { recursive: true });
@@ -698,7 +717,12 @@ test('an egress.event store that fails is not marked and not acknowledged; the r
   fs.rmSync(root, { recursive: true, force: true });
   fs.cpSync(backup, root, { recursive: true });
   const again = openLocalStores({ root });
-  const resumed = createIngest({ ...again.sinks, marks: recoverMarks(again.files), log: () => {} });
+  const resumed = createIngest({
+    testRawGovernance: true,
+    ...again.sinks,
+    marks: recoverMarks(again.files),
+    log: () => {},
+  });
   assert.equal(resumed.mark(S), 3);
   assert.equal(resumed.handle(egressMsg(4), S), true);
   assert.equal(resumed.handle(egressMsg(4), S), false);
@@ -711,7 +735,7 @@ test('an egress.event store that fails is not marked and not acknowledged; the r
 test('local stores: a refused egress.event is in the governance chain and in egress.jsonl', (t) => {
   const root = tmpDir(t, 'egress-gov');
   const stores = openLocalStores({ root });
-  const ingest = createIngest({ ...stores.sinks, log: () => {} });
+  const ingest = createIngest({ testRawGovernance: true, ...stores.sinks, log: () => {} });
   ingest.handle(egressMsg(1), S);
   ingest.handle(egressMsg(2, { outcome: 'refused', error: 'EGRESS_REFUSED', status: undefined }), S);
   assert.equal(readJsonl(stores.files.egressFile).length, 2);
