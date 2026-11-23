@@ -98,6 +98,12 @@ Each check prints pass, warn or fail; a fail stops the run unless `--skip-prefli
 - **D11. Slow test.** The end-to-end smoke test runs only with `ZP_FINAL_BENCH_SMOKE=1` (the repo marks slow tests
   with an environment variable, as `ZAAFPULSE_PERF=1`).
 
+- **D12. The task lives in `package.json`.** `deno task bench:final` reads `package.json` scripts; `deno.json` holds
+  only the permission sets (`test/permissions.test.js` asserts it), as with `build` and `typecheck`. `npm run
+  bench:final:node` and `node scripts/final-bench.js` run it on Node. The Deno launch grants loopback net, the sys
+  readings it uses, run (it orchestrates go, git, tar, ps, the keep-awake tool and its bench children, each with its own
+  grant) and broad write (`--out` names any folder).
+
 ## Pending owner
 
 - Repeats 3 (about 2 h 15 min) against 1 (about 50 min); the runner prints its estimate before the confirmation.
