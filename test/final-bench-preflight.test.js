@@ -111,8 +111,8 @@ test('live dashboard, disk, open files, tools, gateway, keep-awake', () => {
   assert.equal(pf.checkDisk([{ dir: '/a', bytes: 3 * G }]).status, 'warn');
   assert.equal(pf.checkDisk([{ dir: '/a', bytes: 30 * G }]).status, 'pass');
   assert.equal(pf.checkDisk([{ dir: '/a', bytes: null }]).status, 'warn');
-  assert.equal(pf.checkFiles(Infinity, 'darwin').status, 'pass');
-  assert.equal(pf.checkFiles(4096, 'linux').status, 'fail');
+  assert.equal(pf.checkFiles(true, 'darwin').status, 'pass');
+  assert.equal(pf.checkFiles(false, 'linux').status, 'fail');
   assert.equal(pf.checkFiles(null, 'linux').status, 'warn');
   assert.equal(pf.checkFiles(null, 'win32').status, 'pass');
   assert.equal(pf.checkTools({ go: '1.27', deno: '2.9', node: '24' }).status, 'pass');
@@ -140,7 +140,7 @@ function quiet(over = {}) {
     freeBytes: () => 100 * 2 ** 30,
     dirs: ['/out', '/tmp'],
     heavy: [],
-    hardFiles: () => Infinity,
+    filesReach: () => true,
     versions: () => ({ go: '1.27.3', deno: '2.9.8', node: '24.16.0' }),
     gateway: { state: () => 'missing', build: () => ((built += 1), { ok: true, detail: 'built' }) },
     keepAwakeTool: () => 'caffeinate -dims',

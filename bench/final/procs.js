@@ -2,7 +2,11 @@
 // line and its cumulative CPU time, on macOS and Linux (`ps`) and on Windows (`Win32_Process` through PowerShell).
 // From two snapshots: the CPU each process used in between (percent of one core), the tree of a process, and the
 // stopping of a tree. The parsers are pure and tested with fixtures (test/final-bench-procs.test.js).
-const { spawnSync } = require('child_process');
+const childProcess = require('child_process');
+const { checkedCommand, noShell } = require('./spawnsafe');
+
+// ps, PowerShell and taskkill by name, without a shell (bench/final/spawnsafe.js).
+const spawnSync = (cmd, args, opts) => childProcess.spawnSync(checkedCommand(cmd), [...args], noShell(opts));
 
 // The POSIX command (args last: it may hold spaces). -ww: no truncation of the command line.
 const PS_ARGS = ['-A', '-ww', '-o', 'pid=,ppid=,time=,args='];

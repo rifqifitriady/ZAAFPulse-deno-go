@@ -7,7 +7,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
-const { spawnSync } = require('child_process');
+const childProcess = require('child_process');
+const { checkedCommand, noShell } = require('../bench/final/spawnsafe');
+
+// git by name, without a shell (bench/final/spawnsafe.js).
+const spawnSync = (cmd, args, opts) => childProcess.spawnSync(checkedCommand(cmd), [...args], noShell(opts));
 const { parseFlags, USAGE } = require('../bench/final/flags');
 const sc = require('../bench/final/scenarios');
 const pf = require('../bench/final/preflight');
