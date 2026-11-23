@@ -506,3 +506,80 @@ func TestSetToolsCallsTheToolEndpoint(t *testing.T) {
 type roundTripper func(*http.Request) (*http.Response, error)
 
 func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// flushSignal closes flushed after the first Flush of the answer to the client has returned: net/http has then written
+// the answer's headers and closed the request's own body.
+type flushSignal struct {
+	http.ResponseWriter
+	once    *sync.Once
+	flushed chan struct{}
+}
+
+func (f flushSignal) Flush() {
+	f.ResponseWriter.(http.Flusher).Flush()
+	f.once.Do(func() { close(f.flushed) })
+}
+
+func (f flushSignal) Unwrap() http.ResponseWriter { return f.ResponseWriter }
+
+// lateReadBody is the request's own body, but a read after its end waits until the answer was flushed: the proxy
+// transport's look past the body's last byte, scheduled late (a loaded machine, the Windows CI runners).
+type lateReadBody struct {
+	io.ReadCloser
+	flushed <-chan struct{}
+	ended   *bool
+}
+
+func (b lateReadBody) Read(p []byte) (int, error) {
+	if *b.ended {
+		select {
+		case <-b.flushed:
+		case <-time.After(5 * time.Second):
+		}
+	}
+	n, err := b.ReadCloser.Read(p)
+	if err == io.EOF {
+		*b.ended = true
+	}
+	return n, err
+}
+
+// A streamed answer is not cut when the proxy transport reads the request body once more after its last byte (to
+// find its end) only after net/http closed that body, which it does as the answer starts. That read failed ("http:
+// invalid Read on closed Body"), the transport closed the control plane's connection under the answer and the client's
+// stream ended after its first event: the random CI failure of the contract case "/v1/responses → native Responses
+// provider, stream" through the Go front (windows-11-arm, PR #22).
+func TestStreamOutlivesTheServersCloseOfTheRequestBody(t *testing.T) {
+	u := startUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if b, err := io.ReadAll(r.Body); err != nil || string(b) != `{"stream":true}` {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: 1\n\n")
+		w.(http.Flusher).Flush()
+		time.Sleep(200 * time.Millisecond) // the rest comes after the transport's late read
+		_, _ = io.WriteString(w, "data: 2\n\n")
+	})
+	s, err := Listen(Config{Host: "127.0.0.1", Upstream: u.port(), Token: token}, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner := s.srv.Handler
+	s.srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flushed := make(chan struct{})
+		r.Body = lateReadBody{r.Body, flushed, new(bool)}
+		inner.ServeHTTP(flushSignal{w, new(sync.Once), flushed}, r)
+	})
+	go func() { _ = s.Serve() }()
+	t.Cleanup(func() { _ = s.Close() })
+	resp, err := http.Post(frontURL(s)+"/v1/responses", "application/json", strings.NewReader(`{"stream":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil || string(b) != "data: 1\n\ndata: 2\n\n" {
+		t.Fatalf("the stream: %q, %v", b, err)
+	}
+}
