@@ -13,22 +13,20 @@ test('isSingleFile() is false when the tests run from source', () => {
   assert.equal(platform.isSingleFile(), false);
 });
 
-test('isSingleFile() reads Deno.build.standalone under Deno and node:sea under Node', () => {
+test('isSingleFile() reads Deno.build.standalone, and is false without Deno', () => {
   assert.equal(platform.isSingleFile({ deno: { build: { standalone: true } } }), true);
   assert.equal(platform.isSingleFile({ deno: { build: { standalone: false } } }), false);
-  assert.equal(platform.isSingleFile({ deno: null, sea: { isSea: () => true } }), true);
-  assert.equal(platform.isSingleFile({ deno: null, sea: { isSea: () => false } }), false);
-  assert.equal(
-    platform.isSingleFile({
-      deno: null,
-      sea: {
-        isSea: () => {
-          throw new Error('no node:sea');
-        },
-      },
-    }),
-    false,
-  );
+  assert.equal(platform.isSingleFile({ deno: { build: {} } }), false);
+  assert.equal(platform.isSingleFile({ deno: null }), false);
+});
+
+// The Node SEA build went away in P2 (P7 remove-node Decision 3): no single-file check asks node:sea any more, so a
+// Node run of this tree is never taken for a single-file build.
+test('no single-file check asks node:sea', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  for (const f of ['lib/platform.js', 'lib/front/bin.js'])
+    assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), /require\(['"]node:sea['"]\)/, f);
 });
 
 test('isSea() is gone: every caller asks isSingleFile()', () => {
