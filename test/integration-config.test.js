@@ -198,3 +198,18 @@ test('a failed integration write is logged with its error code only, and answere
   }
   assert.deepEqual(logged, ['config: the settings could not be saved (ENOENT)']);
 });
+
+test('a type named after an Object.prototype member is an unknown type, not a lookup that throws', () => {
+  const { entryAddresses, describe } = require('../lib/integration-config');
+  const r = secretResolver({ store: () => {} });
+  for (const type of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+    assert.match(buildEntry({ id: 'x', type, values: {} }, null, r).errors.at(-1), /^type: must be one of dynatrace,/);
+    assert.deepEqual(entryAddresses({ type }), { kind: `${type}:`, urls: [] });
+    const [entry] = describe({ x: { type } }).entries;
+    assert.equal(entry.editable, false, `${type}: shown as a hand-written entry`);
+    assert.deepEqual(entry.values, {});
+    // An edit of a hand-written entry of such a type is refused as a type change, not a crash.
+    const form = { id: 'x', type: 'router', values: { flavor: '9router' } };
+    assert.ok(Array.isArray(buildEntry(form, { type }, r).errors));
+  }
+});
