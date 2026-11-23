@@ -36,12 +36,9 @@ test('jsCommand and withFileLimit', () => {
   assert.equal(c.cmd, process.execPath);
   if (process.versions.deno) assert.deepEqual(c.args.slice(-3), ['-P=test', '/r/bench/run.js', '--x']);
   else assert.deepEqual(c.args, ['/r/bench/run.js', '--x']);
-  if (process.platform !== 'win32') {
-    const w = runner.withFileLimit({ cmd: 'node', args: ['a b.js'] });
-    assert.equal(w.cmd, 'sh');
-    assert.match(w.args[1], /ulimit -n 8192/);
-    assert.deepEqual(w.args.slice(2), ['node', 'a b.js']);
-  }
+  // No shell wrapper: the runtimes raise their own soft limit; the preflight proves the hard one.
+  const w = runner.withFileLimit({ cmd: 'node', args: ['a b.js'] });
+  assert.deepEqual(w, { cmd: 'node', args: ['a b.js'] });
 });
 
 test('lastJson: the last JSON object line of an output', () => {

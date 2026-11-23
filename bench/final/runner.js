@@ -4,13 +4,16 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const { spawn, spawnSync: rawSpawnSync } = require('child_process');
 const procs = require('./procs');
+const { checkedCommand, noShell } = require('./spawnsafe');
 const sc = require('./scenarios');
 
 const ROOT = path.join(__dirname, '..', '..');
 const underDeno = !!(process.versions && process.versions.deno);
 const IS_WIN = process.platform === 'win32';
+// spawnSync through the same allow-list, without a shell.
+const spawnSync = (cmd, args, opts) => rawSpawnSync(checkedCommand(cmd), [...args], noShell(opts));
 
 // Inherited variables a child must not see: they would point a bench at the owner's instance, change its knobs, turn
 // OTLP export on to a real collector, or send loopback calls through a proxy.
@@ -45,13 +48,13 @@ function jsCommand(script, args = [], root = ROOT) {
   return { cmd: process.execPath, args: ['run', '-q', '--no-prompt', `--config=${path.join(root, 'deno.json')}`, '-P=test', script, ...args] };
 }
 
-/** POSIX: raise the open-files limit first (500 streams need about 2,000), then exec the command. */
+/**
+ * The command as it is: no shell wrapper any more. Node, Deno and Go each raise their own open-files soft limit to the
+ * hard limit at start, and the preflight proves the hard limit reaches 8,192 (500 streams need about 2,000), so the
+ * former `sh -c 'ulimit -n …; exec "$0" "$@"'` wrapper bought nothing and put paths into a shell's arguments.
+ */
 function withFileLimit(c) {
-  if (IS_WIN) return c;
-  return {
-    cmd: 'sh',
-    args: ['-c', `ulimit -n ${8192} 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null; exec "$0" "$@"`, c.cmd, ...c.args],
-  };
+  return c;
 }
 
 /**
@@ -129,7 +132,8 @@ function runChild(c, { env, cwd = ROOT, timeoutMs = 600000, echo = false } = {})
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(c.cmd, c.args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      // No shell: an allow-listed name or this runtime, each argument its own element (bench/final/spawnsafe.js).
+      child = spawn(checkedCommand(c.cmd), [...c.args], noShell({ cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }));
     } catch (e) {
       resolve({ code: null, stdout: '', stderr: String(e.message || e), timedOut: false });
       return;

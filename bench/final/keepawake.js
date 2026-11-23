@@ -4,7 +4,11 @@
 //   Linux    systemd-inhibit --what=idle:sleep … tail --pid=<pid> -f /dev/null
 //   Windows  PowerShell holding SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
 //            until Wait-Process -Id <pid> returns
-const { spawn } = require('child_process');
+const childProcess = require('child_process');
+const { checkedCommand, noShell } = require('./spawnsafe');
+
+// By allow-listed name, without a shell (bench/final/spawnsafe.js).
+const spawn = (cmd, args, opts) => childProcess.spawn(checkedCommand(cmd), [...args], noShell(opts));
 
 /** The command for a platform, or null. @param {string} platform @param {number} pid */
 function keepAwakeCommand(platform, pid) {
