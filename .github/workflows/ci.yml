@@ -386,3 +386,5 @@ jobs:
     name: build-deno
     if: ${{ !inputs.skip-build && (github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) }}
     uses: ./.github/workflows/build.yml
+    with:
+      skip-darwin-x64: true # no darwin-x64 build or test in the regular CI for now (owner, 2026-11-23); release.yml keeps all six

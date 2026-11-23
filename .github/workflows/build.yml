@@ -1,3 +1,4 @@
+# (Since 2026-11-23 the regular CI leaves darwin-x64 out: ci.yml passes skip-darwin-x64. A release build keeps all six.)
 # Builds and smoke-tests the release package of each of the six targets on a native runner of its own OS and CPU (P6
 # Decision 13). Called by ci.yml (job build-deno, full scope only) and by release.yml (job build); it has no trigger of
 # its own (workflow_call only), and a calling job takes no runs-on: the runners are set here.
@@ -19,24 +20,47 @@
 name: Build
 on:
   workflow_call:
+    inputs:
+      skip-darwin-x64:
+        description: Leave the darwin-x64 package out (ci.yml sets it; release.yml never does, and it needs all six)
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
+  # The targets to build. All six unless skip-darwin-x64 is set (the owner asked on 2026-11-23 for no darwin-x64 build or
+  # test in the regular CI for now; a release build always has all six, because release.yml expects six archives).
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env:
+          SKIP_DARWIN_X64: ${{ inputs.skip-darwin-x64 }}
+        run: |
+          all='[
+            {"name":"linux-x64","runner":"ubuntu-latest","target":"x86_64-unknown-linux-gnu","v1":128322752},
+            {"name":"linux-arm64","runner":"ubuntu-24.04-arm","target":"aarch64-unknown-linux-gnu","v1":124652672},
+            {"name":"darwin-arm64","runner":"macos-latest","target":"aarch64-apple-darwin","v1":122888272},
+            {"name":"darwin-x64","runner":"macos-15-intel","target":"x86_64-apple-darwin","v1":126752320},
+            {"name":"win-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc","v1":95406080},
+            {"name":"win-arm64","runner":"windows-11-arm","target":"aarch64-pc-windows-msvc","v1":83707392}
+          ]'
+          if [ "$SKIP_DARWIN_X64" = true ]; then all="$(printf '%s' "$all" | jq -c 'map(select(.name != "darwin-x64"))')"; else all="$(printf '%s' "$all" | jq -c .)"; fi
+          echo "matrix={\"include\":$all}" >> "$GITHUB_OUTPUT"
+          echo "$all" | jq -r '.[].name' | sed 's/^/target: /'
   build:
     name: build (${{ matrix.name }})
+    needs: plan
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false # report every target
-      matrix:
-        # v1: the size in bytes of v1.1.0's release asset for this target (M6's reference; it never changes).
-        include:
-          - { name: linux-x64, runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, v1: 128322752 }
-          - { name: linux-arm64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, v1: 124652672 }
-          - { name: darwin-arm64, runner: macos-latest, target: aarch64-apple-darwin, v1: 122888272 }
-          - { name: darwin-x64, runner: macos-15-intel, target: x86_64-apple-darwin, v1: 126752320 }
-          - { name: win-x64, runner: windows-latest, target: x86_64-pc-windows-msvc, v1: 95406080 }
-          - { name: win-arm64, runner: windows-11-arm, target: aarch64-pc-windows-msvc, v1: 83707392 }
+      # v1 in each entry: the size in bytes of v1.1.0's release asset for this target (M6's reference; it never changes).
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       DENO_DIR: ${{ github.workspace }}/../deno-dir
       NO_COLOR: '1'
