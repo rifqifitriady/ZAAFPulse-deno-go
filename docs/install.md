@@ -142,6 +142,14 @@ The installer:
 2. Stops its service through the old `zaafpulse` command, before that command is replaced.
 3. Moves it into `<prefix>/rollback`: v1's `app`, `node` and command, or v2's `bin` and command. `<prefix>/rollback/VERSION` holds the old version (`v1.1.0`, or `unknown`). One install is kept; an earlier saved one is replaced.
 4. Installs v2 and its service through the new command.
+5. Registers again the AI clients that hold a ZAAFPulse MCP entry (`zaafpulse register-mcp registered`). An entry v1.x
+   registered starts `<prefix>/node/bin/node <prefix>/app/mcp.js` (`node.exe` and `app\mcp.js` on Windows), which
+   step 3 moved into `rollback`, so without this the client could no longer start ZAAFPulse's MCP server. Only clients
+   that already hold an entry are written (each config is backed up first), with the data folder the entry named. As
+   root (a system install) the entries belong to the users who registered them: the installer prints what each of them
+   runs instead. If it fails, the install still stands and the installer says so; `zaafpulse doctor` names every client
+   whose entry starts a program that no longer exists (**MCP entries**), and `zaafpulse register-mcp registered` fixes
+   them all.
 
 `<prefix>` is `~/.local/share/zaafpulse`, `/opt/zaafpulse` as root, and `%LOCALAPPDATA%\ZAAFPulse` on Windows.
 
@@ -163,7 +171,7 @@ curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/do
 & ([scriptblock]::Create((irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1))) -Rollback
 ```
 
-It stops the v2 service, moves the current install into `<prefix>/rollforward`, puts `<prefix>/rollback` back in place (with its `zaafpulse` command), reinstalls the service through that command and says which version is active. When nothing is saved it says "nothing to roll back to" and changes nothing. One rollback is possible: `<prefix>/rollback` is removed by it. The next install removes `rollforward`; running the v2 installer again is the way forward.
+It stops the v2 service, moves the current install into `<prefix>/rollforward`, puts `<prefix>/rollback` back in place (with its `zaafpulse` command), reinstalls the service through that command and says which version is active. The AI client entries the v2 install wrote start `<prefix>/bin/zaafpulse`, which is now in `rollforward`: back to a v2 version, the installer registers them again as after an upgrade; back to v1.x, it says so, and you register them again with v1's `zaafpulse register-mcp <client>`. When nothing is saved it says "nothing to roll back to" and changes nothing. One rollback is possible: `<prefix>/rollback` is removed by it. The next install removes `rollforward`; running the v2 installer again is the way forward.
 
 **2. The v1.1.x installer**, from [rifqifitriady/ZAAFPulse](https://github.com/rifqifitriady/ZAAFPulse). It does not stop a running v2 service, so stop it first:
 
@@ -474,7 +482,7 @@ Only absolute folders are used (`~` counts as your home folder). A relative valu
 
 ### The background service does not see your shell variables
 
-launchd, systemd and the Windows startup entry start ZAAFPulse without your shell profile. A `CLAUDE_CONFIG_DIR`, `ZAAFPULSE_CLAUDE_DIRS`, `CODEX_HOME` or `XDG_CONFIG_HOME` you export in `~/.zshrc` or `~/.bashrc` works for `zaafpulse start` in that terminal, but the service never sees it on its own, so the Overview stays empty.
+launchd, systemd and the Windows startup entry start ZAAFPulse without your shell profile. A `CLAUDE_CONFIG_DIR`, `ZAAFPULSE_CLAUDE_DIRS`, `CODEX_HOME` or `XDG_CONFIG_HOME` you export in `~/.zshrc` or `~/.bashrc` works for `zaafpulse start` in that terminal, but the service never sees it on its own, so the Overview stays empty. The same goes for `ZAAFPULSE_EGRESS_LOCKDOWN` (`0` keeps the egress lock-down off) and `ZAAFPULSE_GW_BIN` (the `zaafpulse-gw` to start in front mode).
 
 `zaafpulse service install` copies these variables, with the other settings it carries (port, data folder and so on), from the shell it runs in into the launchd plist, the systemd unit or the Windows launcher. So set them first, then install:
 

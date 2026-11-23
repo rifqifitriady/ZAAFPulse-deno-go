@@ -55,14 +55,24 @@ test('the launch line narrows net only when the lock-down is in force', () => {
   );
   // Each missing condition keeps the set's own net entry, and says why.
   const cases = [
-    [{ config: {}, gate: passedGate(), env }, /egress.lockdown is off/],
+    [{ config: lockedConfig({ lockdown: false }), gate: passedGate(), env }, /egress.lockdown is false/],
+    [{ config: {}, gate: passedGate(), env }, /not "front"/], // asked by default (v2.0.0), js mode
     [{ config: lockedConfig(), gate: passedGate(), env: { ...env, ZAAFPULSE_EGRESS_LOCKDOWN: '0' } }, /=0/],
     [{ config: { ...lockedConfig(), gateway: { engine: 'js' } }, gate: passedGate(), env }, /not "front"/],
     [
       { config: lockedConfig({ classes: { ...allGo(), otel: 'check' } }), gate: passedGate(), env },
       /not asked for go: otel/,
     ],
-    [{ config: lockedConfig(), gate: { ...passedGate(), brain: { passedAt: null } }, env }, /gate: brain/],
+    // A class with a configured destination and no pass (a class with nothing configured counts as clear:
+    // test/egress-quiet.test.js).
+    [
+      {
+        config: { ...lockedConfig(), brain: { sources: [{ id: 'n', type: 'notion' }] } },
+        gate: { ...passedGate(), brain: { passedAt: null } },
+        env,
+      },
+      /gate: brain/,
+    ],
   ];
   for (const [o, why] of cases) {
     assert.equal(netArg(cmd(o)), undefined);
@@ -127,7 +137,9 @@ test('a locked-down launch cannot connect out directly; loopback and the gateway
   const data = path.join(home, 'data');
   fs.mkdirSync(data, { recursive: true });
   fs.writeFileSync(path.join(data, 'config.json'), JSON.stringify(lockedConfig()));
-  fs.writeFileSync(path.join(data, 'egress-gate.json'), JSON.stringify(passedGate()));
+  // Where the server keeps the gate (P7: selfCommand read <data>/egress-gate.json before, which the server never wrote).
+  fs.mkdirSync(path.join(data, '.data'), { recursive: true });
+  fs.writeFileSync(path.join(data, '.data', 'egress-gate.json'), JSON.stringify(passedGate()));
   const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, ZAAFPULSE_DATA: data };
   const { args } = permissions.selfCommand({
     script: path.join('test', 'fixtures', 'egress', 'probe.js'),

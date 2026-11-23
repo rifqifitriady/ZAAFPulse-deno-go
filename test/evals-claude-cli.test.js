@@ -218,13 +218,22 @@ test('call: an error answer throws with a status and a short message, without pa
 });
 
 test('call: a slow CLI is stopped at the timeout, and SIGKILL follows a SIGTERM it ignores', async () => {
-  const t = rig('hang');
-  const started = Date.now();
-  await assert.rejects(judge(t, { timeoutMs: 300 }), (e) => e.status === 0 && /timed out/.test(e.message));
-  const [run] = t.runs();
+  // The timeout starts at spawn, and the fake records its pid only once it runs: a slow start (Windows CI, where a
+  // node child can take over 300 ms) is stopped before it records anything. So the timeout grows until a child that
+  // was really running is the one stopped; every attempt must still time out and end well within its bound.
+  let t;
+  let run;
+  for (const timeoutMs of [300, 1500, 5000]) {
+    t = rig('hang');
+    const started = Date.now();
+    await assert.rejects(judge(t, { timeoutMs }), (e) => e.status === 0 && /timed out/.test(e.message));
+    assert.ok(Date.now() - started < timeoutMs + 5000, `stopped within ${timeoutMs} ms and the grace period`);
+    [run] = t.runs();
+    if (run) break;
+  }
+  assert.ok(run, 'a running child was stopped by the timeout');
   assert.equal(alive(run.pid), false, 'the child is gone');
   assert.equal(fs.existsSync(run.cwd), false);
-  assert.ok(Date.now() - started < 5000);
 
   if (POSIX) {
     const s = rig('stubborn');

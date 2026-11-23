@@ -149,7 +149,8 @@ func (e *RefusedError) EgressCode() string { return CodeRefused }
 // GetBody, for a retry, is counted from zero).
 //
 // policy gives the allow-list each round trip is checked against (spec Decision 13: the engine's own calls are checked
-// too); nil, or a nil *Policy, checks nothing. A miss in enforce mode is refused: nothing is sent, the record is
+// too); nil, or a nil *Policy, checks nothing. A loopback host (IsLoopbackHost: a provider on this machine) is never
+// checked, as the control plane never lists it and always calls it direct (P7: enforce is the default). A miss in enforce mode is refused: nothing is sent, the record is
 // "refused" and the error a *RefusedError. A miss in report mode is recorded "would-refuse" and the call goes on (its
 // own record follows, as a proxied hop's).
 func RecordingTransport(rt http.RoundTripper, purpose string, policy func() *Policy,
@@ -189,7 +190,7 @@ func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error
 		t.emit(rec)
 		return nil, metadataError{addr: host}
 	}
-	if t.policy != nil {
+	if t.policy != nil && !IsLoopbackHost(host) {
 		if pol := t.policy(); pol != nil && !pol.Allows(host, port) {
 			if pol.Mode == ModeEnforce {
 				if req.Body != nil {

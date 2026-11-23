@@ -111,6 +111,18 @@ service_start() {
     else "$1" service install || warn "Service not installed; start it yourself with: zaafpulse start"; fi
   fi
 }
+# The AI clients' MCP entries, through a given launcher (v2's): an entry an earlier install registered starts that
+# install's own files (v1's node and app/mcp.js, or v2's bin/zaafpulse), which an upgrade or a rollback moves away.
+# `register-mcp registered` writes again every client that holds an entry, and no other. As root (a system install)
+# the entries belong to the users who registered them, so each of them is told what to run instead.
+reregister() {
+  if [ "$ROOT_INSTALL" = 1 ]; then
+    warn "AI clients registered for the earlier install start files it moved: each user who registered one runs: zaafpulse register-mcp registered"
+  elif [ -x "$1" ]; then
+    say "Registering the AI clients that had ZAAFPulse again"
+    "$1" register-mcp registered || warn "Could not register the AI clients again; run: zaafpulse register-mcp registered"
+  fi
+}
 # Move $1/<d> to $2/<d> for each folder d that exists in $1 and not yet in $2. From the install folder itself, app/ and
 # node/ move only with v1's marker (v1_here, or a third argument v1 when the marker has moved already), and bin/ only
 # after guard_bin.
@@ -173,6 +185,9 @@ if [ "$ROLLBACK" = 1 ]; then
   OLD="$(head -n1 "$RB/VERSION" 2>/dev/null || true)"
   rm -rf "$RB"
   service_start "$LAUNCHER"
+  # The AI clients' entries start the install that was just moved to rollforward/.
+  if [ -f "$PREFIX/bin/zaafpulse" ]; then reregister "$LAUNCHER"
+  else warn "AI clients registered by v2 start files now in $RF: register them again with the restored version (zaafpulse register-mcp <client>)"; fi
   say "Rolled back: ZAAFPulse ${OLD:-unknown} is active again. The install it replaced is in $RF."
   exit 0
 fi
@@ -321,6 +336,9 @@ fi
 
 # ---- background service ----
 service_start "$LAUNCHER"
+
+# ---- the AI clients' MCP entries: an upgrade moved the files the earlier install's entries start ----
+if [ -n "$OLD_KIND" ] && [ "$SAME" = 0 ]; then reregister "$LAUNCHER"; fi
 
 NEW_VERSION="$("$LAUNCHER" version 2>/dev/null | head -n1 || true)"
 P="${PORT:-4777}"
