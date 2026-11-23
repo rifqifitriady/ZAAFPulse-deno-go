@@ -460,9 +460,15 @@ test('configPush: the egress section (P5): the allow-list, its mode and each cla
     { host: 'bad-port.example.com' },
   ]);
   assert.equal(body.egress.allowList, 'enforce');
-  for (const mode of [undefined, 'report', 'ENFORCE', true]) {
+  // Only "report" reports; anything else is the default, enforce (v2.0.0, test/egress-defaults.test.js).
+  for (const [mode, want] of [
+    [undefined, 'enforce'],
+    ['report', 'report'],
+    ['ENFORCE', 'enforce'],
+    [true, 'enforce'],
+  ]) {
     const b = configPush({ gateway: {}, keys: [], pricing: {}, egress: { allowList: mode } });
-    assert.deepEqual([b.egress.allowList, b.egress.allow], ['report', []], String(mode));
+    assert.deepEqual([b.egress.allowList, b.egress.allow], [want, []], String(mode));
   }
   assert.equal(body.egress.classes.gateway, 'go');
   assert.equal(body.egress.classes.mcp, 'check');

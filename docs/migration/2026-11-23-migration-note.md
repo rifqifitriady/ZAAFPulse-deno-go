@@ -11,7 +11,9 @@ in [docs/install.md](../install.md); this note says what changes for you and wha
 - Your data folder, `config.json`, keys, history, budgets and audit log carry over unchanged, and v1.1.0 can still
   read the folder after v2 has used it.
 - Out of the box v2 behaves as v1.1: the Go gateway is not in front (`gateway.engine` is `"js"`), and every outbound
-  call leaves directly. The Go parts are opt-in, class by class.
+  call leaves directly. The Go parts are opt-in, class by class. The egress allow-list enforces and the network
+  lock-down is asked for by default, but both act only on calls that go through Go, so nothing changes until you move
+  a class ([docs/governance.md](../governance.md#network-egress-settings)).
 - After the upgrade, run `zaafpulse doctor` and register your AI clients' MCP entries again.
 
 ## What changes
@@ -134,6 +136,9 @@ None of these apply while `gateway.engine` is `"js"`, the default.
 
 - Requests ask for `gzip` only, and a gzip answer arrives decoded. The recorded byte counts are of the decoded body.
 - A gateway restart cuts the outbound calls in flight.
+- The allow-list enforces by default: a call to a host that no setting names (a redirect to another host, an intranet
+  page ingested with `ZAAFPULSE_ALLOW_PRIVATE_URLS=1`) is refused with `EGRESS_REFUSED` and recorded. `"egress": {
+  "allowList": "report" }` records it and lets it pass instead.
 - The cloud metadata addresses are refused whatever the allow-list says.
 - A redirect to another origin drops `Authorization`, `Cookie` and `Proxy-Authorization`.
 - Local model servers on another machine are probed over `https` too when their URL says so.

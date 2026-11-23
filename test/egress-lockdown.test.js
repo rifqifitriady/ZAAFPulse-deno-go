@@ -55,7 +55,8 @@ test('the launch line narrows net only when the lock-down is in force', () => {
   );
   // Each missing condition keeps the set's own net entry, and says why.
   const cases = [
-    [{ config: {}, gate: passedGate(), env }, /egress.lockdown is off/],
+    [{ config: lockedConfig({ lockdown: false }), gate: passedGate(), env }, /egress.lockdown is false/],
+    [{ config: {}, gate: passedGate(), env }, /not "front"/], // asked by default (v2.0.0), js mode
     [{ config: lockedConfig(), gate: passedGate(), env: { ...env, ZAAFPULSE_EGRESS_LOCKDOWN: '0' } }, /=0/],
     [{ config: { ...lockedConfig(), gateway: { engine: 'js' } }, gate: passedGate(), env }, /not "front"/],
     [

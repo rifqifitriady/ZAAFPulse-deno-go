@@ -166,11 +166,11 @@ gateway records what its allow-list would say) or `go`, after 1 clean day and 20
 `go` until a check disagrees). Every call through the gateway, and every provider call the gateway makes itself, is
 recorded in `.data/egress.jsonl` (time, purpose, method, host, port, status, outcome, bytes, duration; never a path, a
 query or a header); a call the allow-list refuses also gets an `egress.refused` entry in the audit chain. The
-allow-list is built from `config.json` (`egress.allowList`: `report`, the default, or `enforce`). `GET /api/egress`
-(owner) shows the classes, the allow-list, the lock-down and the last records. `egress.lockdown: true` narrows the
-server's Deno net grant to `127.0.0.1`, `localhost` and `[::1]` at a `deno run` launch once every class is on `go`
-and the gateway runs in front mode; turn it off with `"lockdown": false` and a restart (a service: install it again) or
-`ZAAFPULSE_EGRESS_LOCKDOWN=0`. The single-file build keeps the net grant it was built with and applies the lock-down
+allow-list is built from `config.json` (`egress.allowList`: `enforce`, the default since v2.0.0, or `report`).
+`GET /api/egress` (owner) shows the classes, the allow-list, the lock-down and the last records. `egress.lockdown`
+(asked by default since v2.0.0) narrows the server's Deno net grant to `127.0.0.1`, `localhost` and `[::1]` at a
+`deno run` launch once every class is on `go` and the gateway runs in front mode; turn it off with `"lockdown": false`
+and a restart (a service: install it again) or `ZAAFPULSE_EGRESS_LOCKDOWN=0`. The single-file build keeps the net grant it was built with and applies the lock-down
 in the egress client only. Programs ZAAFPulse starts (Claude Code, Codex, model servers) are outside Deno's
 permissions and outside the gateway. Every setting, the gate and the lock-down's conditions:
 [Network egress settings](#network-egress-settings); the gateway's own route switches:
@@ -206,16 +206,19 @@ and for OpenTelemetry settings that could not be used. The page and the exports 
 ### Network egress settings
 
 All in `config.json` under `egress`; there is no settings page for them. With no `egress` section every class is
-`direct`, the allow-list only reports and the lock-down is off, which is how ZAAFPulse behaved before the egress
-endpoint existed.
+`direct`, the allow-list enforces and the lock-down is asked for (the defaults since v2.0.0, owner decision of
+2026-11-23). Neither changes anything on its own: with every class `direct` no call goes through the gateway, so the
+allow-list has nothing to refuse, and the lock-down is not in force until its conditions below hold. Only the value
+`"report"` makes the allow-list report and only the JSON value `false` turns the lock-down off; any other value is the
+default. The rollback to the behaviour before v2.0.0 is `"allowList": "report"` and `"lockdown": false`.
 
 | Setting | Values | Default |
 |---|---|---|
 | `egress.classes.<class>` | `direct`, `check` or `go` (anything else is `direct`) | `direct` |
 | `egress.gateDays` | days without a disagreeing check before a class asked for `go` moves (0 lifts this part) | `1` |
 | `egress.gateMinChecks` | checked calls since the last disagreement before it moves (0 lifts this part; both 0 lift the gate) | `20` |
-| `egress.allowList` | `report` (a host off the list is recorded `would-refuse` and passes) or `enforce` (it is refused, `EGRESS_REFUSED`) | `report` |
-| `egress.lockdown` | `true` narrows the server's Deno net grant to loopback when the conditions below hold | `false` |
+| `egress.allowList` | `enforce` (a host off the list is refused, `EGRESS_REFUSED`) or `report` (it is recorded `would-refuse` and passes) | `enforce` (before v2.0.0: `report`) |
+| `egress.lockdown` | `true` narrows the server's Deno net grant to loopback when the conditions below hold; `false` never | `true` (before v2.0.0: `false`) |
 | `ZAAFPULSE_EGRESS_LOCKDOWN=0` | environment variable: no lock-down for this launch, whatever `config.json` says | not set |
 
 The classes and what each covers: `gateway` (the server's own provider calls and token fetches), `connectors`
@@ -240,6 +243,25 @@ and an exact port. There is no way to add a host by hand: a host belongs on the 
 calls it. The cloud metadata addresses and names (`169.254.169.254`, `metadata.google.internal` and the others listed
 under **Runtime permissions**) are refused on every path in every mode, the redirect hops included, and the allow-list
 cannot open them. A redirect to another origin drops `Authorization`, `Cookie` and `Proxy-Authorization`.
+
+The list is rebuilt and pushed when a source changes: a saved setting at once, a remote agent saved or removed at once,
+and a change the server does not see being saved (an environment variable, a secret changed in the OS store) within a
+minute (a resolved secret is kept for five minutes). A Google service account whose JSON names its own `token_uri`
+puts that host on the list too. What an enforcing list can still refuse, because no setting names the host:
+
+- a redirect to another host on a call that follows redirects (price sync, OTLP export, OmniRoute, remote agents,
+  monitor webhooks, the evals' model servers); the connectors, upstream MCP servers, brain apps and vector stores
+  follow only same-origin redirects themselves, and Roam's peer hosts (`*.roamresearch.com`, any port) and Pinecone's
+  index hosts (`*.pinecone.io`) are on the list by wildcard;
+- URL ingest with `ZAAFPULSE_ALLOW_PRIVATE_URLS=1` once `public` is on `go` (or the lock-down holds): that call leaves
+  without public mode, so it is matched against the list, and a page on an intranet host is refused;
+- a source changed without a save, in the minute before the list follows.
+
+Each such refusal is recorded `refused` with an `egress.refused` entry in the audit chain and shows on
+`GET /api/egress`; under `check` the same host shows as `would-refuse` before a class moves. None of this applies to a
+class on `direct` or `check`: those calls never pass the allow-list. The Go engine's own provider calls and token
+fetches (gateway route classes on `go`) are checked too; their hosts come from the same provider settings, and the
+engine follows no redirect.
 
 **The lock-down** applies only when all of these hold, else `GET /api/egress` and the control's evidence say which one
 does not:
