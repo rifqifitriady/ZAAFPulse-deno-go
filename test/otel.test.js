@@ -139,7 +139,12 @@ test('otel: OTLP/HTTP JSON shape: resource, scope, ids, nanosecond strings and a
     assert.equal(s.kind, 3);
     assert.equal(typeof s.startTimeUnixNano, 'string');
     assert.match(s.startTimeUnixNano, /^\d{19}$/);
-    assert.ok(BigInt(s.startTimeUnixNano) >= before - 5000000n);
+    // Epoch nanoseconds, near the wall clock. The span clock is performance.timeOrigin + performance.now()
+    // (lib/otel.js nowNs), which drifts from Date.now() as the process runs (measured over 5 ms on windows-11-arm CI),
+    // so the bound is a second: still proves epoch time, not a relative or millisecond value.
+    const after = BigInt(Date.now()) * 1000000n;
+    assert.ok(BigInt(s.startTimeUnixNano) >= before - 1000000000n, `${s.startTimeUnixNano} is near ${before}`);
+    assert.ok(BigInt(s.startTimeUnixNano) <= after + 1000000000n, `${s.startTimeUnixNano} is near ${after}`);
     assert.ok(BigInt(s.endTimeUnixNano) >= BigInt(s.startTimeUnixNano));
     const v = Object.fromEntries(s.attributes.map((a) => [a.key, a.value]));
     assert.deepEqual(v.s, { stringValue: 'text' });
