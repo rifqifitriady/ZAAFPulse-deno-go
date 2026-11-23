@@ -41,7 +41,8 @@
         "security", "secret-tool", "powershell.exe", "powershell", "osascript", "notify-send", "taskkill", "tasklist",
         "launchctl", "open", "xdg-open", "cmd", "claude", "codex", "node", "kill",
         "ollama", "lms", "llama-server", "local-ai", "brew",
-        "systemctl", "loginctl", "useradd", "chown", "schtasks", "wscript.exe", "explorer.exe"
+        "systemctl", "loginctl", "useradd", "chown", "schtasks", "wscript.exe", "explorer.exe",
+        "zaafpulse-gw"
       ]
     },
     // The stdio MCP server an AI client starts (mcp.js, `zaafpulse mcp`): no CLI, no runtime, no notification.

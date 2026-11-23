@@ -169,7 +169,8 @@ test('front mode: a missing gateway binary falls back to Deno at once', async (t
   assert.ok(s.startupMs < 15000, `the port answered after ${Math.round(s.startupMs)} ms`);
   const st = await status(s.base);
   assert.deepEqual([st.mode, st.state, st.restarts], ['fallback', 'failed', 0], JSON.stringify(st));
-  assert.match(st.reason, /could not be started/);
+  // P6 Decision 4: the binary is checked before the first start, and the reason names the path it looked at.
+  assert.equal(st.reason, `zaafpulse-gw not found at ${path.join(__dirname, 'no-such-gateway')}`);
 });
 
 // A gateway holding the outbox of the server's data folder before the server starts; the server's own gateway exits 5.

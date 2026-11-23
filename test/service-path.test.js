@@ -51,6 +51,35 @@ test('serviceEnv: the install-time PATH, absolute entries only, without unsafe c
   assert.equal(service.serviceEnv({}, { os: 'linux', system: true }).ZAAFPULSE_DATA, '/var/lib/zaafpulse');
 });
 
+test('servicePath: a single-file binary with zaafpulse-gw beside it puts its folder first (P6 Decision 4)', () => {
+  const gw = (dir) => (f) =>
+    f === path.posix.join(dir, 'zaafpulse-gw') || f === path.win32.join(dir, 'zaafpulse-gw.exe');
+  const bin = '/home/me/.local/share/zaafpulse/bin';
+  const opts = { singleFile: true, execPath: `${bin}/zaafpulse`, exists: gw(bin) };
+  const first = service.servicePath({ PATH: '/usr/bin:/bin' }, 'macos', opts).split(':');
+  assert.equal(first[0], bin, 'first');
+  assert.equal(first.filter((d) => d === bin).length, 1);
+  const kept = service.servicePath({ PATH: `/usr/bin:${bin}:/bin` }, 'linux', opts).split(':');
+  assert.equal(kept[0], bin, 'moved first, kept once');
+  assert.equal(kept.filter((d) => d === bin).length, 1);
+  // Left out: no gateway beside the binary, or not a single-file build.
+  for (const o of [
+    { ...opts, exists: () => false },
+    { ...opts, singleFile: false },
+  ])
+    assert.ok(!service.servicePath({ PATH: '/usr/bin' }, 'linux', o).split(':').includes(bin), JSON.stringify(o));
+  // A folder that would break a scope entry is never added.
+  for (const odd of ['/opt/a,b', '/opt/"q"', '/opt/x\ny']) {
+    const o = { singleFile: true, execPath: `${odd}/zaafpulse`, exists: () => true };
+    assert.ok(!service.servicePath({ PATH: '/usr/bin' }, 'linux', o).split(':').includes(odd), odd);
+  }
+  // Windows: first on a written PATH; nothing written when there was no PATH at install.
+  const wbin = 'C:\\Users\\me\\AppData\\Local\\ZAAFPulse\\bin';
+  const wopts = { singleFile: true, execPath: `${wbin}\\zaafpulse.exe`, exists: gw(wbin) };
+  assert.equal(service.servicePath({ PATH: 'C:\\Windows' }, 'windows', wopts), `${wbin};C:\\Windows`);
+  assert.equal(service.servicePath({}, 'windows', wopts), '');
+});
+
 test('the service files carry that PATH', () => {
   const env = service.serviceEnv({ PATH: '/home/me/.local/bin:/usr/bin' }, { os: 'macos' });
   assert.match(service.plist(['/x/deno'], env, '/l.log'), /<key>PATH<\/key><string>\/home\/me\/\.local\/bin:/);

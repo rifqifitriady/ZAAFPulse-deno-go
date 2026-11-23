@@ -460,6 +460,35 @@ test('doctor shows ignored folders with the reason and does not read them', () =
   fs.rmSync(home, { recursive: true, force: true });
 });
 
+// P6 Decision 4: doctor names the gateway it would start: the path, found or missing, allowed, and its -version.
+const doctorGw = 'doctor prints the gateway line: missing, then found, allowed and its version';
+test(doctorGw, { skip: process.platform === 'win32' && 'a sh script' }, () => {
+  const home = tmp('zp-roots-doc-');
+  const gw = j(home, 'gw', 'zaafpulse-gw');
+  const doctor = () =>
+    spawnSync(process.execPath, [j(ROOT, 'bin', 'zaafpulse.js'), 'doctor'], {
+      encoding: 'utf8',
+      timeout: 30000,
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        ZAAFPULSE_DATA: j(home, 'data'),
+        ZAAFPULSE_PORT: '9',
+        ZAAFPULSE_GW_BIN: gw,
+      },
+    });
+  let r = doctor();
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes(`Gateway (zaafpulse-gw) ${gw} — missing\n`), r.stdout);
+  fs.mkdirSync(path.dirname(gw), { recursive: true });
+  fs.writeFileSync(gw, '#!/bin/sh\n[ "$1" = -version ] && echo 9.9.9-test\n', { mode: 0o755 });
+  r = doctor();
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes(`Gateway (zaafpulse-gw) ${gw} — found, allowed, 9.9.9-test\n`), r.stdout);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
 test('docs: one CLAUDE_CONFIG_DIR folder, the list in ZAAFPULSE_CLAUDE_DIRS, and the explorer points at both', () => {
   const doc = (f) => fs.readFileSync(j(ROOT, f), 'utf8');
   const install = doc('docs/install.md');
