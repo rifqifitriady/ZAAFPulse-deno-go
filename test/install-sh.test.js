@@ -391,13 +391,16 @@ test('a re-run at the installed version keeps the saved rollback and replaces on
   const r = install(ctx);
   ok(r);
   assert.match(r.stdout, /saved rollback \(if any\) is kept/);
+  assert.match(r.stderr, /--no-service: the service of the earlier install \(if any\) was left running/);
   assert.deepEqual(tree(rb), saved);
   assert.equal(fs.readFileSync(path.join(rb, 'VERSION'), 'utf8'), 'v1.1.0\n');
   assert.ok(fs.existsSync(path.join(rb, 'app', 'bin', 'zaafpulse.js')));
   assert.equal(fs.readFileSync(path.join(ctx.prefix, 'bin', 'zaafpulse-gw'), 'utf8'), FAKE_GW);
   // A clean install re-run makes no rollback at all.
   const fresh = setup();
-  ok(install(fresh));
+  const first = install(fresh);
+  ok(first);
+  assert.ok(!first.stderr.includes('left running'), first.stderr);
   ok(install(fresh));
   assert.ok(!fs.existsSync(path.join(fresh.prefix, 'rollback')));
   noService(ctx);

@@ -339,3 +339,6 @@ if [ -f "$PREFIX/rollback/VERSION" ]; then
   echo "    Roll back:  curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | sh -s -- --rollback"
 fi
 echo "    Uninstall:  curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | sh -s -- --uninstall"
+if [ -n "$OLD_KIND" ] && [ "$SERVICE" = 0 ]; then
+  warn "--no-service: the service of the earlier install (if any) was left running, on the old version. Switch it with: zaafpulse service install"
+fi
