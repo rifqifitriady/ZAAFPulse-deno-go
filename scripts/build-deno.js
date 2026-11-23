@@ -15,11 +15,13 @@
 // With --package (P6 Decisions 1-3) each target also gets zaafpulse-gw, built from gw/ with go (found on PATH), and
 // the output is one archive per target instead: dist/zaafpulse-<version>-<name>.tar.gz (.zip for win-*), holding the
 // folder zaafpulse-<version>-<name>/ with zaafpulse[.exe], zaafpulse-gw[.exe] and LICENSE. SHA256SUMS.txt then lists
-// the archives. The zip is written by bsdtar (`tar -a`), so win-* packages are built on macOS or Windows.
+// the archives. The tar.gz is written by `tar -czf`; the zip is written here (writeZip), because the tar on a Windows
+// runner's bash is GNU tar, which cannot write a zip. So win-* packages build on any OS.
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 const ROOT = path.join(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
@@ -124,10 +126,100 @@ function gwEnv(target, env = process.env) {
   return { ...out, GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' };
 }
 
-// A zip is written with `tar -a`, which only bsdtar can do; GNU tar would write a tar file named .zip.
-function checkZipTar(versionText) {
-  if (!/bsdtar/.test(versionText))
-    throw new Error('zip packages need bsdtar (macOS or Windows); build win-* targets there');
+// CRC-32 (IEEE, the zip one) from a table, so it does not depend on zlib.crc32 (newer Node and Deno only).
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+// A fixed DOS time (1980-01-01 00:00), so the same files make the same zip.
+const DOS_TIME = 0;
+const DOS_DATE = (1 << 5) | 1;
+const ZIP_MAX = 0xffffffff;
+
+// Writes a plain zip (no zip64) of one folder: entries are [{ name, file, mode }], name relative to the folder, mode the
+// unix mode (0o755 keeps a file executable under unzip on unix; Windows ignores it). Files are deflated; the folder is
+// a stored entry of its own. A file or archive of 4 GiB or more is refused.
+function writeZip(out, folder, entries) {
+  const items = [{ name: `${folder}/`, data: Buffer.alloc(0), mode: 0o40755, dir: true }];
+  for (const e of entries) {
+    const data = fs.readFileSync(e.file);
+    if (data.length >= ZIP_MAX) throw new Error(`${e.name} is 4 GiB or more; the zip writer has no zip64`);
+    items.push({ name: `${folder}/${e.name}`, data, mode: 0o100000 | e.mode, dir: false });
+  }
+  const fd = fs.openSync(out, 'w');
+  try {
+    let offset = 0;
+    const write = (buf) => {
+      fs.writeSync(fd, buf);
+      offset += buf.length;
+    };
+    const central = [];
+    for (const it of items) {
+      const name = Buffer.from(it.name, 'utf8');
+      const method = it.dir ? 0 : 8;
+      const body = it.dir ? it.data : zlib.deflateRawSync(it.data, { level: 9 });
+      const crc = crc32(it.data);
+      if (offset + 30 + name.length + body.length >= ZIP_MAX)
+        throw new Error(`${out} would be 4 GiB or more; the zip writer has no zip64`);
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt16LE(20, 4); // version needed: 2.0 (deflate)
+      local.writeUInt16LE(0x0800, 6); // flags: the name is UTF-8
+      local.writeUInt16LE(method, 8);
+      local.writeUInt16LE(DOS_TIME, 10);
+      local.writeUInt16LE(DOS_DATE, 12);
+      local.writeUInt32LE(crc, 14);
+      local.writeUInt32LE(body.length, 18);
+      local.writeUInt32LE(it.data.length, 22);
+      local.writeUInt16LE(name.length, 26);
+      local.writeUInt16LE(0, 28);
+      const at = offset;
+      write(local);
+      write(name);
+      write(body);
+      const c = Buffer.alloc(46);
+      c.writeUInt32LE(0x02014b50, 0);
+      c.writeUInt16LE((3 << 8) | 20, 4); // made by: unix, so the high half of the external attributes is the mode
+      c.writeUInt16LE(20, 6);
+      c.writeUInt16LE(0x0800, 8);
+      c.writeUInt16LE(method, 10);
+      c.writeUInt16LE(DOS_TIME, 12);
+      c.writeUInt16LE(DOS_DATE, 14);
+      c.writeUInt32LE(crc, 16);
+      c.writeUInt32LE(body.length, 20);
+      c.writeUInt32LE(it.data.length, 24);
+      c.writeUInt16LE(name.length, 28);
+      // extra length, comment length, disk number start, internal attributes: all 0 (30..37)
+      c.writeUInt32LE(((it.mode << 16) | (it.dir ? 0x10 : 0)) >>> 0, 38);
+      c.writeUInt32LE(at, 42);
+      central.push(c, name);
+    }
+    const cdStart = offset;
+    for (const b of central) write(b);
+    const cdSize = offset - cdStart;
+    if (offset >= ZIP_MAX) throw new Error(`${out} would be 4 GiB or more; the zip writer has no zip64`);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(items.length, 8);
+    end.writeUInt16LE(items.length, 10);
+    end.writeUInt32LE(cdSize, 12);
+    end.writeUInt32LE(cdStart, 16);
+    write(end);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function compileArgs({ target, out, entry }) {
@@ -228,7 +320,12 @@ function pack(src, version, target) {
   const out = path.join(DIST, file);
   fs.rmSync(out, { force: true });
   // Relative names and cwd: GNU tar on Windows (Git Bash) reads `D:\...` as a host name.
-  if (zip) execFileSync('tar', ['-a', '-cf', path.join('..', file), folder], { cwd: pkgDir, stdio: 'inherit' });
+  if (zip)
+    writeZip(out, folder, [
+      { name: 'LICENSE', file: path.join(stage, 'LICENSE'), mode: 0o644 },
+      { name: `zaafpulse${exe}`, file: cp, mode: 0o755 },
+      { name: `zaafpulse-gw${exe}`, file: gw, mode: 0o755 },
+    ]);
   else execFileSync('tar', ['-czf', path.join('..', file), folder], { cwd: pkgDir, stdio: 'inherit' });
   console.log(`built dist/${file} (${mb(out)}; zaafpulse${exe} ${mb(cp)}, zaafpulse-gw${exe} ${mb(gw)})`);
   fs.rmSync(stage, { recursive: true, force: true });
@@ -238,9 +335,6 @@ function pack(src, version, target) {
 function main(argv) {
   const { targets, allowDirty, package: pkg } = parseArgs(argv);
   const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
-  // Before any compile: a zip without bsdtar would fail only after the long builds.
-  if (pkg && targets.some((t) => TARGETS[t].startsWith('win')))
-    checkZipTar(execFileSync('tar', ['--version'], { encoding: 'utf8' }));
   fs.mkdirSync(DIST, { recursive: true });
   const src = source(allowDirty);
   const sums = [];
@@ -282,7 +376,8 @@ if (require.main === module) {
     archiveName,
     gwBuildArgs,
     gwEnv,
-    checkZipTar,
+    crc32,
+    writeZip,
     compileArgs,
     parseArgs,
   };

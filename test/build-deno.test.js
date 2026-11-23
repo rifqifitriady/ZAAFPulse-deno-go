@@ -1,6 +1,12 @@
 // scripts/build-deno.js: what ships, the target names, and the compile command (P2 T6). Pure: compiles nothing.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const zlib = require('node:zlib');
 const build = require('../scripts/build-deno');
 
 test('the binary embeds the app, never the tests, docs or build scripts', () => {
@@ -108,10 +114,77 @@ test('package: the go child sees only the allowed names, plus the target and CGO
   assert.ok(script.includes('--allow-run=git,tar,deno,go ') && script.includes('--ignore-env'));
 });
 
-test('package: a zip needs bsdtar', () => {
-  assert.doesNotThrow(() => build.checkZipTar('bsdtar 3.5.3 - libarchive 3.7.4'));
-  assert.throws(
-    () => build.checkZipTar('tar (GNU tar) 1.35'),
-    /zip packages need bsdtar \(macOS or Windows\); build win-\* targets there/,
-  );
+// Reads a zip back in plain JS: the end record, the central directory, and each entry's local header and data.
+function readZip(buf) {
+  const end = buf.length - 22;
+  assert.equal(buf.readUInt32LE(end), 0x06054b50, 'end record');
+  const count = buf.readUInt16LE(end + 10);
+  let p = buf.readUInt32LE(end + 16);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    assert.equal(buf.readUInt32LE(p), 0x02014b50, 'central header');
+    const madeBy = buf.readUInt16LE(p + 4);
+    const method = buf.readUInt16LE(p + 10);
+    const crc = buf.readUInt32LE(p + 16);
+    const csize = buf.readUInt32LE(p + 20);
+    const usize = buf.readUInt32LE(p + 24);
+    const nlen = buf.readUInt16LE(p + 28);
+    const xlen = buf.readUInt16LE(p + 30);
+    const clen = buf.readUInt16LE(p + 32);
+    const attr = buf.readUInt32LE(p + 38);
+    const at = buf.readUInt32LE(p + 42);
+    const name = buf.toString('utf8', p + 46, p + 46 + nlen);
+    assert.equal(buf.readUInt32LE(at), 0x04034b50, 'local header');
+    const start = at + 30 + buf.readUInt16LE(at + 26) + buf.readUInt16LE(at + 28);
+    const raw = buf.subarray(start, start + csize);
+    const data = method === 8 ? zlib.inflateRawSync(raw) : Buffer.from(raw);
+    assert.equal(data.length, usize);
+    assert.equal(build.crc32(data), crc, `crc of ${name}`);
+    out.push({ name, madeBy, method, mode: attr >>> 16, data });
+    p += 46 + nlen + xlen + clen;
+  }
+  return out;
+}
+
+test('package: the zip is written in JS, readable, executable on unix, and the same every time', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip-test-'));
+  try {
+    const a = path.join(dir, 'a.exe');
+    const b = path.join(dir, 'LICENSE');
+    const big = Buffer.from('zaafpulse '.repeat(5000) + crypto.randomBytes(3000).toString('hex'));
+    fs.writeFileSync(a, big);
+    fs.writeFileSync(b, 'MIT\n');
+    const z1 = path.join(dir, 'one.zip');
+    const z2 = path.join(dir, 'two.zip');
+    const entries = [
+      { name: 'LICENSE', file: b, mode: 0o644 },
+      { name: 'a.exe', file: a, mode: 0o755 },
+    ];
+    build.writeZip(z1, 'pkg-1', entries);
+    build.writeZip(z2, 'pkg-1', entries);
+    const buf = fs.readFileSync(z1);
+    assert.ok(buf.equals(fs.readFileSync(z2)), 'reproducible');
+    const got = readZip(buf);
+    assert.deepEqual(
+      got.map((e) => [e.name, e.madeBy >> 8, e.mode.toString(8)]),
+      [
+        ['pkg-1/', 3, '40755'],
+        ['pkg-1/LICENSE', 3, '100644'],
+        ['pkg-1/a.exe', 3, '100755'],
+      ],
+    );
+    assert.ok(got[2].data.equals(big) && got[2].method === 8);
+    assert.equal(got[1].data.toString(), 'MIT\n');
+    const probe = spawnSync('unzip', ['-v'], { stdio: 'ignore' });
+    if (probe.error) return; // no unzip on PATH: the JS read-back above is the check
+    const t = spawnSync('unzip', ['-t', z1], { encoding: 'utf8' });
+    assert.equal(t.status, 0, t.stdout + t.stderr);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('package: crc32 is the zip CRC-32', () => {
+  assert.equal(build.crc32(Buffer.from('123456789')), 0xcbf43926);
+  assert.equal(build.crc32(Buffer.alloc(0)), 0);
 });
