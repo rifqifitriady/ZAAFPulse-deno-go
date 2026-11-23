@@ -1,13 +1,15 @@
 # Runs the whole test suite on Linux, macOS, Windows and Windows on Arm for every push and pull request to main and to
 # the migration branches (migrate/**, which includes migrate/deno-go). The release workflow calls it too
-# (workflow_call), so a tag is only built when the suite passes.
+# (workflow_call, with skip-build: true), so a tag is only published when the suite passes.
 # Actions are pinned by commit SHA (the comment names the release); Node and Deno are pinned to exact versions. The
-# single-file binaries embed Deno (the build-deno job), not Node. release.yml calls this workflow and pins no Node or
-# Deno of its own, so a version changes here only.
+# single-file binaries embed Deno (the build-deno job), not Node. The same versions are pinned in build.yml (Deno, Go)
+# and in release.yml's install-test (Node, which the v1.1.0 installer needs): change them together.
 # The deno job runs the same suite and the contract suite under the pinned Deno with the "test" permission set of
 # deno.json (never -A), and blocks like the Node job (P2 T4). The Node job keeps running until the cut-over (P7).
-# The build-deno job compiles and smoke-tests the six single-file binaries on native runners (P2 T6), and starts and
-# stops the Go gateway in front of the server on each of them (P4a T6, scripts/smoke-front.js).
+# The build-deno job calls build.yml (P6 Decision 13): the six release packages (zaafpulse and zaafpulse-gw in one
+# archive) are built, signature-checked on macOS and smoke-tested unpacked on native runners, with the gateway in front,
+# and the Go gateway is started in front of the server under deno run on each of them (P4a T6, scripts/smoke-front.js).
+# The input skip-build (workflow_call only, default false) skips it: release.yml calls build.yml itself.
 # The Node and Deno jobs also run the contract suite with the Go gateway in front (ZP_ENGINE=front, P4a T6).
 # The contract-go-engine job runs the contract suite with chat shadowed by, and served by, the go engine (P4b).
 # The m4-bench job (P4c) runs the gateway benchmark in its three modes on Ubuntu, on manual runs only.
@@ -19,8 +21,8 @@
 # Scope, to keep a private repo inside its Actions minutes (macOS minutes bill at 10x, Windows at 2x): a push to a work
 # branch (migrate/<anything> other than migrate/deno-go) runs the Ubuntu jobs only (Node suite, Deno suite,
 # Go, typecheck). The full matrix (four OS for Node, ubuntu and macOS for Deno, the six build-deno targets) runs on pull
-# requests, on pushes to main and migrate/deno-go, on tags (through release.yml) and on a manual run
-# (workflow_dispatch). The condition is repeated in the four places that use it, because a matrix cannot read
+# requests, on pushes to main and migrate/deno-go, on tags (through release.yml, which builds through build.yml itself)
+# and on a manual run (workflow_dispatch). The condition is repeated in the four places that use it, because a matrix cannot read
 # workflow env.
 name: CI
 on:
@@ -29,6 +31,11 @@ on:
   pull_request:
     branches: [main, 'migrate/**']
   workflow_call:
+    inputs:
+      skip-build:
+        description: Skip the build-deno job (release.yml builds the packages itself)
+        type: boolean
+        default: false
   workflow_dispatch:
 permissions:
   contents: read
@@ -366,74 +373,12 @@ jobs:
           ZP_GUARD_BENCH_JS="$RUNNER_TEMP/guard-js.json" go -C gw test -count=1 -timeout 10m -v \
             -run 'TestGuardBench|TestBenchCorpusNeverOverruns|TestOneBudgetPerCall|TestLegitimateBodiesUnderLoad' ./guard/
 
-  # Compiles the six single-file binaries with deno compile and the "cli" permission set (the binary's entry is the
-  # command line, so it holds the superset of the server set), and smoke-tests each one on a runner of its own OS and
-  # CPU (P2 T6): start in demo mode on a throwaway data folder, /login.html 200, /api/platform
-  # single-file on Deno, doctor. Full-scope runs only (see the header): pull requests, main, migrate/deno-go, tags and
-  # manual runs. The denort base binary of each target is cached (a download failed once in P1). Publishing is P6.
+  # The release package of each of the six targets (P6 Decision 13): build.yml builds both binaries, packs them, checks
+  # the macOS signatures and smoke-tests the unpacked package (and the Go front) on a native runner of the target's OS
+  # and CPU, and uploads pkg-<name> and sum-<name>. Full-scope runs only (see the header). A job that calls a reusable
+  # workflow takes no runs-on or steps (the runners are in build.yml). release.yml runs this workflow with skip-build,
+  # because it calls build.yml itself.
   build-deno:
-    name: build-deno (${{ matrix.name }})
-    if: ${{ (github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: linux-x64, runner: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { name: linux-arm64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
-          - { name: darwin-arm64, runner: macos-latest, target: aarch64-apple-darwin }
-          - { name: darwin-x64, runner: macos-15-intel, target: x86_64-apple-darwin }
-          - { name: win-x64, runner: windows-latest, target: x86_64-pc-windows-msvc }
-          - { name: win-arm64, runner: windows-11-arm, target: aarch64-pc-windows-msvc }
-    env:
-      DENO_DIR: ${{ github.workspace }}/../deno-dir
-      NO_COLOR: '1'
-    steps:
-      - run: git config --global core.autocrlf false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: 2.9.8
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ github.workspace }}/../deno-dir/dl
-          key: denort-2.9.8-${{ matrix.target }}
-      - name: Build
-        shell: bash
-        run: deno task build --target ${{ matrix.target }}
-      - name: Smoke test on this runner
-        shell: bash
-        run: |
-          B="$(cd dist && ls zaafpulse-*-${{ matrix.name }}*)"
-          deno run -q --no-prompt --allow-read --allow-write=dist --allow-net=127.0.0.1 --allow-run="dist/$B" \
-            --allow-env=PATH,SystemRoot,SYSTEMROOT,PATHEXT,TEMP,TMP,windir,ComSpec --ignore-env \
-            scripts/smoke-binary.js "dist/$B" | tee "$RUNNER_TEMP/smoke.json"
-          echo "| ${{ matrix.name }} | $(cat "$RUNNER_TEMP/smoke.json") |" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.27.3'
-          cache: false
-      # The Go gateway built natively, started in front of server.js (deno run, "server" set) and stopped with it.
-      - name: Smoke test of the Go front on this runner
-        shell: bash
-        env:
-          GOTOOLCHAIN: local
-        run: |
-          go -C gw build -o "$RUNNER_TEMP/gw/" ./cmd/zaafpulse-gw
-          GW="$(ls "$RUNNER_TEMP"/gw/zaafpulse-gw*)"
-          deno run -q --no-prompt -P=test scripts/smoke-front.js "$GW" | tee "$RUNNER_TEMP/smoke-front.json"
-          echo "| ${{ matrix.name }} (Go front) | $(cat "$RUNNER_TEMP/smoke-front.json") |" >> "$GITHUB_STEP_SUMMARY"
-      - run: mv dist/SHA256SUMS.txt dist/SHA256SUMS-${{ matrix.name }}.txt
-        shell: bash
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: zaafpulse-${{ matrix.name }}
-          path: dist/zaafpulse-*
-          if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sha256-${{ matrix.name }}
-          path: dist/SHA256SUMS-${{ matrix.name }}.txt
+    name: build-deno
+    if: ${{ !inputs.skip-build && (github.event_name != 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migrate/deno-go' || startsWith(github.ref, 'refs/tags/')) }}
+    uses: ./.github/workflows/build.yml
