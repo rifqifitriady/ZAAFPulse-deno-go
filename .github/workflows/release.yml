@@ -1,17 +1,220 @@
-# P2 state (publishing returns in P6): a version tag or a manual run calls ci.yml, which runs both test suites and the
-# build-deno job: the six Deno binaries are compiled, smoke-tested on native runners and kept as build artifacts with
-# their SHA-256 sums. Nothing is published and no GitHub release is created. Never move a published tag
-# (CONTRIBUTING.md).
+# Release (P6 Decision 13). Two ways in, and only one of them publishes:
+# - A version tag (v1.2.3, pushed): `version` checks the tag is v + package.json's version; `test` runs ci.yml with
+#   skip-build (the suites only); `build` runs build.yml (the six packages, built, signature-checked and smoke-tested on
+#   native runners); `install-test` installs each package on its own runner (scripts/install-test.sh / .ps1: a clean
+#   install, the upgrade from v1.1.0 and the rollback, and M12 on linux-x64 and win-x64, Decision 14); then `publish`
+#   assembles dist/ (the six archives, install.sh, install.ps1 and SHA256SUMS.txt over all of them), attests every one
+#   of those files and every binary inside the archives (Decision 8, actions/attest-build-provenance, the v1 pin), and
+#   runs `gh release create --verify-tag`, which never creates a tag: the tag must already exist.
+# - A manual run (workflow_dispatch, any branch or tag) is always a dry run: build, install-test and `assemble`, which
+#   makes the same dist/ and SHA256SUMS.txt and uploads them as the artifact release-dry-run. The suites run only when
+#   the input `tests` is true (default false: the owner's CI policy). A dispatch never publishes, never attests (an
+#   attestation is a public record) and never tags: `publish` runs only on a push of a v* tag.
+# Hardening: a read-only token everywhere except `publish`, the only job with contents: write, id-token: write and
+# attestations: write; actions pinned by commit SHA (the comment names the release); Node, Deno and Go pinned to exact
+# versions (ci.yml, build.yml, and Node here for the v1.1.0 installer); no stored git credentials.
+# Never move a published tag (CONTRIBUTING.md).
 name: Release
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tests:
+        description: Also run the test suites (ci.yml) in this dry run
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  test-and-build:
+  version:
+    name: tag matches package.json
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag matches package.json
+        run: |
+          V="$(jq -r .version package.json)"
+          [ "v$V" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME but package.json says $V"; exit 1; }
+
+  test:
+    name: test
+    if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || inputs.tests }}
     uses: ./.github/workflows/ci.yml
+    with:
+      skip-build: true
+
+  build:
+    name: build
+    uses: ./.github/workflows/build.yml
+
+  install-test:
+    name: install-test (${{ matrix.name }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, runner: ubuntu-latest }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm }
+          - { name: darwin-arm64, runner: macos-latest }
+          - { name: darwin-x64, runner: macos-15-intel }
+          - { name: win-x64, runner: windows-latest }
+          - { name: win-arm64, runner: windows-11-arm }
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The v1.1.0 installer runs ZAAFPulse on the Node it finds on PATH (18+); upgrade-check.js (M12) runs on it too.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pkg-${{ matrix.name }}
+          path: ${{ runner.temp }}/pkg
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sum-${{ matrix.name }}
+          path: ${{ runner.temp }}/pkg
+      # macOS: with the launchd service; Linux: --no-service and a background start (no user systemd session).
+      - name: Install test (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.name }}
+        run: |
+          A="$(ls "$RUNNER_TEMP"/pkg/zaafpulse-*-"$TARGET".tar.gz)"
+          sh scripts/install-test.sh --archive "$A" --sums "$RUNNER_TEMP/pkg/SHA256SUMS-$TARGET.txt" --name "$TARGET"
+      # The installers run in Windows PowerShell 5.1 (install-test.ps1 -InstallerHost defaults to powershell.exe).
+      - name: Install test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.name }}
+        run: |
+          $a = (Get-Item -Path (Join-Path $env:RUNNER_TEMP "pkg\zaafpulse-*-$env:TARGET.zip")).FullName
+          ./scripts/install-test.ps1 -Archive $a -Sums (Join-Path $env:RUNNER_TEMP "pkg\SHA256SUMS-$env:TARGET.txt") -Name $env:TARGET
+          exit $LASTEXITCODE
+
+  # The dry run's output: what publish would upload, with its SHA256SUMS.txt. Manual runs only.
+  assemble:
+    name: assemble (dry run)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: [build, install-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: pkg-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sum-*
+          path: sums
+          merge-multiple: true
+      # Same as in publish: six archives, each matching the sum its build wrote; then the installers; then one
+      # SHA256SUMS.txt (`<hex>  <name>`) over everything.
+      - name: Assemble dist/
+        run: |
+          n="$(find dist -maxdepth 1 -name 'zaafpulse-*' -type f | wc -l)"
+          [ "$n" -eq 6 ] || { echo "::error::expected 6 archives in dist/, found $n"; ls -la dist; exit 1; }
+          cat sums/SHA256SUMS-*.txt > "$RUNNER_TEMP/build-sums.txt"
+          (cd dist && sha256sum -c "$RUNNER_TEMP/build-sums.txt")
+          cp install.sh install.ps1 dist/
+          (cd dist && sha256sum zaafpulse-* install.sh install.ps1) > "$RUNNER_TEMP/SHA256SUMS.txt"
+          mv "$RUNNER_TEMP/SHA256SUMS.txt" dist/SHA256SUMS.txt
+          cat dist/SHA256SUMS.txt
+          { echo '### release-dry-run'; echo; echo '```'; cat dist/SHA256SUMS.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-dry-run
+          path: dist/
+          if-no-files-found: error
+
+  # The only job with write permissions, and the only one that publishes. A push of a v* tag only: a manual run never
+  # gets here, whatever ref it runs on.
+  publish:
+    name: publish
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    needs: [version, test, build, install-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: pkg-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sum-*
+          path: sums
+          merge-multiple: true
+      - name: Assemble dist/
+        run: |
+          n="$(find dist -maxdepth 1 -name 'zaafpulse-*' -type f | wc -l)"
+          [ "$n" -eq 6 ] || { echo "::error::expected 6 archives in dist/, found $n"; ls -la dist; exit 1; }
+          cat sums/SHA256SUMS-*.txt > "$RUNNER_TEMP/build-sums.txt"
+          (cd dist && sha256sum -c "$RUNNER_TEMP/build-sums.txt")
+          cp install.sh install.ps1 dist/
+          (cd dist && sha256sum zaafpulse-* install.sh install.ps1) > "$RUNNER_TEMP/SHA256SUMS.txt"
+          mv "$RUNNER_TEMP/SHA256SUMS.txt" dist/SHA256SUMS.txt
+          cat dist/SHA256SUMS.txt
+      # The binaries inside the archives, as attestation subjects only (not release assets), named per target so no two
+      # subjects share a name.
+      - name: Unpack the binaries for the attestation
+        run: |
+          mkdir -p dist/bin "$RUNNER_TEMP/x"
+          for a in dist/zaafpulse-*; do
+            b="$(basename "$a")"
+            case "$b" in
+              *.zip) t="${b%.zip}"; unzip -q "$a" -d "$RUNNER_TEMP/x"; exe=.exe ;;
+              *.tar.gz) t="${b%.tar.gz}"; tar -xzf "$a" -C "$RUNNER_TEMP/x"; exe= ;;
+              *) echo "::error::unexpected file $b"; exit 1 ;;
+            esac
+            cp "$RUNNER_TEMP/x/$t/zaafpulse$exe" "dist/bin/$t-zaafpulse$exe"
+            cp "$RUNNER_TEMP/x/$t/zaafpulse-gw$exe" "dist/bin/$t-zaafpulse-gw$exe"
+          done
+          ls -la dist/bin
+      # Build provenance (Sigstore): each file is signed as made by this workflow from this commit.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/zaafpulse-*
+            dist/install.sh
+            dist/install.ps1
+            dist/SHA256SUMS.txt
+            dist/bin/*
+      # gh uploads the files to a draft and publishes it afterwards, so with immutable releases on, the release is
+      # complete before it locks. --verify-tag: never create a tag here.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/zaafpulse-* dist/install.sh dist/install.ps1 dist/SHA256SUMS.txt
+          --repo "$GITHUB_REPOSITORY" --verify-tag --title "ZAAFPulse $GITHUB_REF_NAME" --generate-notes

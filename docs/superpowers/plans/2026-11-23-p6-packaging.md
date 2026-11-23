@@ -536,3 +536,31 @@ profile edit, server mode and the closing summary.
   (requests, errors 0, tokens and a cost above 0; the fake answers `gpt-4o-mini`, which has a list price), and the
   key, the provider and the budget are read back on the last v1 run. `test/upgrade-check.test.js` covers the argument
   parsing and the config compare only; the proof is the script run.
+- **Task 9, build.yml:** the archive is unpacked into `dist/pkg/` (not `$RUNNER_TEMP/pkg`), so the smoke test keeps the
+  relative `--allow-run` path and the `--allow-write=dist` scope it had; on Windows with `Expand-Archive` in a `pwsh`
+  step (bash's `tar` there is GNU tar, which cannot read a zip). One `smoke-binary.js <bin> --front <gw>` run does both
+  passes (the demo pass, then the front pass) and prints one line, so steps 4 and 5 are one step. `setup-go` moves
+  before the build, which runs `go`. The v1.1.0 sizes are a `v1` field of the matrix. An M6 FAIL is a `::warning` and
+  a FAIL cell in the step summary, not a failed job: M6 is judged on the dry run's table. YAML is checked with
+  actionlint v1.7.12 (`go install` into a scratch folder, not in `go.mod`); no PyYAML here, and shellcheck is not
+  installed, so actionlint's shell checks did not run.
+- **Task 10, release.yml:** `version`, `test` (on a tag) and `publish` also require `github.event_name == 'push'`, and
+  `assemble` requires `workflow_dispatch`: a manual run started on a tag ref has `github.ref` = `refs/tags/v…`, so
+  `startsWith(github.ref, 'refs/tags/v')` alone would let a dispatch reach `publish`. `build` has no `needs: test`
+  (they run side by side on a tag; `publish` needs both). The attestation's binary subjects are copied to
+  `dist/bin/<archive folder>-zaafpulse[-gw][.exe]`, so no two subjects share a name, and the release assets are named
+  explicitly (`dist/*` would include `dist/bin`). Both assembly steps first check six archives and each build's sum
+  (`sha256sum -c`).
+- **Task 10, the install tests:** the clean install ends with `--uninstall` (on macOS and Windows that removes the
+  service it installed), and the upgrade part starts from an empty prefix in the same temp HOME with its own data
+  folder. The marker is `userName` (`POST /api/config`, kept by v1 and v2). The upgrade part writes `gateway.engine`
+  `"front"` (with Node) after the first v1 run, so v2 is checked in front mode, ready, with the package version. The
+  package version is still `1.1.0`, the same as v1.1.0, so the test tells v1 from v2 by the command (v1's launcher runs
+  `app/bin/zaafpulse.js`; on Windows `zaafpulse.cmd` against `zaafpulse.exe`), not by `version`. `install-test.sh`
+  takes `--archive --sums --name` plus `--no-service-test` (the macOS service test refuses to run outside
+  `GITHUB_ACTIONS=true`), `--no-upgrade` and `--m12`/`--no-m12` (default: linux-x64 only). `install-test.ps1` runs only
+  under `GITHUB_ACTIONS=true` (install.ps1 always writes the user PATH and a Start menu shortcut) and runs the
+  installers in Windows PowerShell 5.1 (`-InstallerHost`, default `powershell.exe`), the host of `irm | iex`; the test
+  itself runs in the step's `pwsh`. A Windows server is stopped with `taskkill /T /F` (no console to signal). Run here:
+  `install-test.sh --no-service-test` on darwin-arm64 (clean install and upgrade PASS; M12 not run here, it is Task 8's
+  script); `install-test.ps1` is not parsed or run here (no PowerShell on this machine).
