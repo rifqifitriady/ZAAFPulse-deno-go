@@ -141,8 +141,8 @@ while it is on no class can move.
 `GET /api/gateway/status` has `lastDiffAt` `null` (or long ago), `compared` at 20 or more, and `cleanSince` more than a
 day ago; then set `"engines": { ..., "<class>": "go" }`. No restart is needed. If the rule is not met yet the class
 stays on js and `notes.<class>` says what is missing (`"12 of 20 …"`, `"… clean for 0.40 of 1 days"`); you can leave
-the `go` in place and it moves by itself once the rule is met. Once the note is gone, `engines.<class>` turns `"go"` at the
-next minute tick (measured: within 60 s). Then send a few calls of that class and watch the `"ipc"` count rise (for
+the `go` in place and it moves by itself once the rule is met. Once the note is gone, `engines.<class>` turns `"go"` at
+the next minute tick (measured: within 60 s). Then send a few calls of that class and watch the `"ipc"` count rise (for
 `messages-count`, `gemini-count` and a clean `mcp` call: `shadow.<class>.compared` stops rising instead, see section 3)
 and the chip stay green.
 
