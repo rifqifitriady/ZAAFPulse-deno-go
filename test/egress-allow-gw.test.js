@@ -29,7 +29,10 @@ test('the pushed allow-list: off the list is would-refuse in report and EGRESS_R
   if (!bin) return;
   const listed = await fake();
   const other = await fake();
-  const root = tmpDir(t, 'egress-allow-gw');
+  // node:test runs after-hooks in the order they were added: the gateway must stop before tmpDir removes the outbox
+  // whose lock it holds (Windows refuses to delete an open file), so its stop goes through tmpDir's own list.
+  const stops = [];
+  const root = tmpDir(t, 'egress-allow-gw', stops);
   const stores = openLocalStores({ root });
   const ingest = createIngest({ ...stores.sinks, marks: recoverMarks(stores.files) });
   const frontToken = crypto.randomBytes(32).toString('hex');
@@ -63,7 +66,7 @@ test('the pushed allow-list: off the list is would-refuse in report and EGRESS_R
       );
     },
   });
-  t.after(async () => {
+  stops.push(async () => {
     egress.configure(null);
     await sup.stop(2000);
     for (const s of [listed, other]) {
