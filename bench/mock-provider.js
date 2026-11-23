@@ -1,6 +1,7 @@
 // A mock OpenAI-compatible provider for the gateway benchmark (P0 T4). Node standard library only, so it runs unchanged
 // under Node and Deno. POST /v1/chat/completions answers after a fixed delay: whole, or as an SSE stream of `chunks`
-// chunks `intervalMs` apart with usage in the final chunk. GET /v1/models lists the one model. Nothing else.
+// chunks `intervalMs` apart with usage in the final chunk. GET /v1/models lists the one model. POST /v1/traces is an
+// OTLP sink that answers 200 and is counted apart (otlp). Nothing else.
 const http = require('http');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -9,7 +10,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function startMock({ delayMs = 20, chunks = 20, intervalMs = 25 } = {}) {
   // Which engine called (P4c): Go's client says Go-http-client/…, the JS gateway's fetch something else. GET /_stats
   // answers the counts and resets them.
-  const counts = { go: 0, js: 0, conns: 0 }; // conns: new TCP connections (reuse check)
+  const counts = { go: 0, js: 0, conns: 0, otlp: 0 }; // conns: new TCP connections (reuse check)
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => {
@@ -18,9 +19,15 @@ async function startMock({ delayMs = 20, chunks = 20, intervalMs = 25 } = {}) {
     req.on('end', async () => {
       if (req.method === 'GET' && req.url === '/_stats') {
         const out = { ...counts };
-        counts.go = counts.js = counts.conns = 0;
+        counts.go = counts.js = counts.conns = counts.otlp = 0;
         res.writeHead(200, { 'content-type': 'application/json' });
         return res.end(JSON.stringify(out));
+      }
+      // An OTLP sink (the final benchmarks' ZP_BENCH_OTLP): the server's trace export, never a gateway call.
+      if (req.method === 'POST' && req.url === '/v1/traces') {
+        counts.otlp++;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        return res.end('{}');
       }
       if (req.method === 'POST') counts[/^Go-http-client\//.test(req.headers['user-agent'] || '') ? 'go' : 'js']++;
       if (req.method === 'GET' && req.url === '/v1/models') {
