@@ -54,25 +54,57 @@ function Get-Launcher {
   if (Test-Path -LiteralPath $OldCmd) { return $OldCmd }
   return $null
 }
+# Stops the service through a launcher, then ends what still runs from this install (Stop-Leftovers). An old
+# launcher that no longer runs is only a warning.
 function Stop-ZaafService([string]$launcher) {
-  if ($NoService -or -not $launcher) { return }
-  $svcArgs = @('service', 'uninstall'); if ($System) { $svcArgs += '--system' }
-  & $launcher @svcArgs | Out-Host
-  if ($LASTEXITCODE -ne 0) { Warn "Could not stop the running service through $launcher (exit $LASTEXITCODE)" }
+  if ($NoService) { return }
+  if ($launcher) {
+    $svcArgs = @('service', 'uninstall'); if ($System) { $svcArgs += '--system' }
+    try {
+      & $launcher @svcArgs | Out-Host
+      if ($LASTEXITCODE -ne 0) { Warn "Could not stop the running service through $launcher (exit $LASTEXITCODE)" }
+    } catch { Warn "Could not stop the running service through $launcher`: $($_.Exception.Message)" }
+  }
+  Stop-Leftovers
+}
+# Ends the processes still running from this install, and no others: an executable under $Root, or v1's node running
+# $Root\app\bin\zaafpulse.js. Waits up to 10 s for them to exit, since a running .exe cannot be moved or deleted.
+function Stop-Leftovers {
+  $under = $Root.TrimEnd('\') + '\'
+  $v1Js = Join-Path $Root 'app\bin\zaafpulse.js'
+  $procs = @(Get-CimInstance Win32_Process | Where-Object {
+      $_.ProcessId -ne $PID -and (
+        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($under, [StringComparison]::OrdinalIgnoreCase)) -or
+        ($_.CommandLine -and $_.CommandLine.IndexOf($v1Js, [StringComparison]::OrdinalIgnoreCase) -ge 0))
+    })
+  if ($procs.Count -eq 0) { return }
+  foreach ($p in $procs) {
+    try { Invoke-CimMethod -InputObject $p -MethodName Terminate | Out-Null } catch { }
+  }
+  $ids = @($procs | ForEach-Object { $_.ProcessId })
+  $deadline = (Get-Date).AddSeconds(10)
+  while (Get-Process -Id $ids -ErrorAction SilentlyContinue) {
+    if ((Get-Date) -ge $deadline) { Warn "ZAAFPulse processes still running from $Root after 10 s (ids $($ids -join ', '))"; return }
+    Start-Sleep -Milliseconds 250
+  }
 }
 function Start-ZaafService([string]$launcher) {
   if ($NoService -or -not $launcher) { return }
   $svcArgs = @('service', 'install'); if ($System) { $svcArgs += '--system' }
-  & $launcher @svcArgs | Out-Host
-  if ($LASTEXITCODE -ne 0) { Warn 'Not started in the background; start it yourself with: zaafpulse start' }
+  try {
+    & $launcher @svcArgs | Out-Host
+    if ($LASTEXITCODE -ne 0) { Warn 'Not started in the background; start it yourself with: zaafpulse start' }
+  } catch { Warn "Not started in the background ($($_.Exception.Message)); start it yourself with: zaafpulse start" }
 }
-# Move the folders app and node, and the files of bin\, from one generation folder to another.
+# Move the folders app and node, and the files of bin\, from one generation folder to another. A folder already in
+# the destination stays (an interrupted move is finished, not nested).
 function Move-Generation([string]$from, [string]$to) {
   $fromBin = if ($from -eq $Root) { $BinDir } else { Join-Path $from 'bin' }
   $toBin = if ($to -eq $Root) { $BinDir } else { Join-Path $to 'bin' }
   foreach ($d in 'app', 'node') {
     $p = Join-Path $from $d
-    if (Test-Path -LiteralPath $p) { Move-Item -LiteralPath $p -Destination (Join-Path $to $d) }
+    $dest = Join-Path $to $d
+    if ((Test-Path -LiteralPath $p) -and -not (Test-Path -LiteralPath $dest)) { Move-Item -LiteralPath $p -Destination $dest }
   }
   foreach ($f in $BinFiles) {
     $p = Join-Path $fromBin $f
@@ -157,8 +189,10 @@ try {
   $sumsFile = Join-Path $tmp 'SHA256SUMS.txt'
   if ($Archive) {
     if (-not (Test-Path -LiteralPath $Archive -PathType Leaf)) { throw "No such archive: $Archive" }
-    $pkg = (Resolve-Path -LiteralPath $Archive).Path
-    $name = Split-Path -Leaf $pkg
+    $name = Split-Path -Leaf (Resolve-Path -LiteralPath $Archive).Path
+    # A copy: the checksum and the unpack read the same bytes, and Expand-Archive (5.1) needs a .zip name.
+    $pkg = Join-Path $tmp 'pkg.zip'
+    Copy-Item -LiteralPath $Archive -Destination $pkg
     if ($Sums) { Copy-Item -LiteralPath $Sums -Destination $sumsFile }
     else { Warn "$name is not checksum-verified (local archive)" }
   } else {
@@ -205,6 +239,7 @@ try {
   }
 
   # ---- stage the new binaries next to the install ----
+  $newRoot = -not (Test-Path -LiteralPath $Root)
   New-Item -ItemType Directory -Force -Path $Root | Out-Null
   $staged = Join-Path $Root 'bin.new'
   if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Recurse -Force }
@@ -213,8 +248,36 @@ try {
     $p = Join-Path $src.FullName $f
     if (Test-Path -LiteralPath $p) { Copy-Item -LiteralPath $p -Destination (Join-Path $staged $f) }
   }
+  # Before anything is changed, the new binary must run on this system.
+  $runs = $false
+  try {
+    $newOut = & (Join-Path $staged 'zaafpulse.exe') version
+    $runs = ($LASTEXITCODE -eq 0)
+  } catch { $runs = $false }
+  if (-not $runs) {
+    Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
+    if ($newRoot) { Remove-Item -LiteralPath $Root -Force -ErrorAction SilentlyContinue }
+    throw 'The new zaafpulse does not run on this system; nothing was changed'
+  }
+  Say "New version runs: $(@($newOut) | Select-Object -First 1)"
 } finally {
   Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# An upgrade cut off while it saved the old install leaves rollback.new. With its VERSION written and no install left
+# in place, it is the whole old install: finish the move and keep it as the rollback. Otherwise put back what it holds.
+$rbNew = Join-Path $Root 'rollback.new'
+if (Test-Path -LiteralPath $rbNew) {
+  $noInstall = -not (Test-Path -LiteralPath (Join-Path $Root 'app\bin\zaafpulse.js')) -and -not (Test-Path -LiteralPath $Exe)
+  if ((Test-Path -LiteralPath (Join-Path $rbNew 'VERSION')) -and $noInstall) {
+    Move-Generation $Root $rbNew
+    if (Test-Path -LiteralPath $RollbackDir) { Remove-Item -LiteralPath $RollbackDir -Recurse -Force }
+    Move-Item -LiteralPath $rbNew -Destination $RollbackDir
+    Warn "An earlier upgrade was cut off; the install it saved is in $RollbackDir."
+  } else {
+    Move-Generation $rbNew $Root
+    Remove-Item -LiteralPath $rbNew -Recurse -Force
+  }
 }
 
 # ---- the current install: v1 (app\, run by node) or v2 (bin\zaafpulse.exe) ----
@@ -237,13 +300,24 @@ if ($oldKind) {
   $oldLauncher = if ($oldKind -eq 'v1' -and (Test-Path -LiteralPath $OldCmd)) { $OldCmd } else { Get-Launcher }
   Stop-ZaafService $oldLauncher
   # One generation for -Rollback: v1's app, node and launcher, or v2's binaries, with the Start menu opener.
-  $rbNew = Join-Path $Root 'rollback.new'
-  if (Test-Path -LiteralPath $rbNew) { Remove-Item -LiteralPath $rbNew -Recurse -Force }
+  # VERSION first: a rollback.new with it is known to hold the old install (see above).
   New-Item -ItemType Directory -Path $rbNew | Out-Null
-  Move-Generation $Root $rbNew
   Set-Content -LiteralPath (Join-Path $rbNew 'VERSION') -Encoding ASCII -Value $oldTag
-  if (Test-Path -LiteralPath $RollbackDir) { Remove-Item -LiteralPath $RollbackDir -Recurse -Force }
-  Move-Item -LiteralPath $rbNew -Destination $RollbackDir
+  try {
+    Move-Generation $Root $rbNew
+    if (Test-Path -LiteralPath $RollbackDir) { Remove-Item -LiteralPath $RollbackDir -Recurse -Force }
+    Move-Item -LiteralPath $rbNew -Destination $RollbackDir
+  } catch {
+    $why = $_.Exception.Message
+    # Put back what was moved, and start the old install again.
+    try {
+      Move-Generation $rbNew $Root
+      Remove-Item -LiteralPath $rbNew -Recurse -Force
+    } catch { Warn "Could not put everything back from $rbNew`: $($_.Exception.Message)" }
+    Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
+    Start-ZaafService $oldLauncher
+    throw "Could not save the old install ($why); it was put back and nothing was installed"
+  }
   Say "The $oldKind install ($oldTag) was saved in $RollbackDir`: -Rollback brings it back."
 }
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
@@ -295,6 +369,8 @@ $lnk.Save()
 
 $newVersion = & $Exe version
 if ($LASTEXITCODE -ne 0) { throw "$Exe does not run (exit $LASTEXITCODE)" }
+# A rollback's leftover: this install replaces it.
+if (Test-Path -LiteralPath $RollforwardDir) { Remove-Item -LiteralPath $RollforwardDir -Recurse -Force }
 Write-Host ''
 Say "ZAAFPulse $(@($newVersion) | Select-Object -First 1) is installed."
 if ($serverMode) {
