@@ -70,19 +70,30 @@ jobs:
           go-version: '1.27.4'
           cache: false
       # No npm install: the app and its tests have no runtime dependencies.
+      # A hang must end in a named failure, not in a cancelled job, which keeps no log. --test-timeout fails a test or
+      # hook that runs over 3 min, by its name (the slowest take about 40 s, measured on all four OS); --test-force-exit
+      # then ends its file even when the test left a server or a timer behind, so the run finishes and lists it. A file
+      # that still never ends (a child it started holds its output) is named every 3 min by scripts/test-watch.js, and
+      # the step's own timeout, below the job's, stops it while the job, and so the log, carries on.
       - name: Test suite
         shell: bash
+        timeout-minutes: 12 # about 3.5 min normally (macOS, the slowest)
         run: |
           export ZAAFPULSE_DATA="$RUNNER_TEMP/zp-data" HOME="$RUNNER_TEMP/zp-home"
           mkdir -p "$ZAAFPULSE_DATA" "$HOME"
-          node --test test/*.test.js
+          node --test --test-timeout=180000 --test-force-exit \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=./scripts/test-watch.js --test-reporter-destination=stderr test/*.test.js
       # The gateway contract suite (test/contract/): server.js as a child process against a fake upstream, black-box.
+      # The script carries the same --test-timeout and --test-force-exit (package.json).
       - name: Gateway contract suite
         shell: bash
+        timeout-minutes: 4 # under 30 s normally
         run: npm run test:contract
       # The same suite with gateway.engine "front": the Go gateway, built from gw/, holds the port (P4a).
       - name: Gateway contract suite through the Go front
         shell: bash
+        timeout-minutes: 4 # about 1 min normally
         run: ZP_ENGINE=front npm run test:contract
       - run: node bin/zaafpulse.js doctor
   deno:
@@ -122,8 +133,11 @@ jobs:
           echo "ZP_GW_BIN=$RUNNER_TEMP/gw/zaafpulse-gw" >> "$GITHUB_ENV"
       # Installs exactly what deno.lock pins; fails when the lockfile is stale.
       - run: deno ci
+      # deno test has no per-test timeout: each step has its own, below the job's, so a hang fails the step and the
+      # upload at the end still runs. deno prints a test's name when it starts, so a cut-off log ends at the hung one.
       - name: Test suite under Deno
         shell: bash
+        timeout-minutes: 15 # about 6 min normally (macOS)
         run: |
           export ZAAFPULSE_DATA="$RUNNER_TEMP/zp-data" HOME="$RUNNER_TEMP/zp-home"
           mkdir -p "$ZAAFPULSE_DATA" "$HOME"
@@ -139,6 +153,7 @@ jobs:
       - name: Gateway contract suite on the Deno server
         if: ${{ !cancelled() }}
         shell: bash
+        timeout-minutes: 4 # under 30 s normally
         run: |
           set +e
           # The "test" set: read anywhere, write and run unscoped (symlinks and fakes, see deno.json), net to this
@@ -152,6 +167,7 @@ jobs:
       - name: Gateway contract suite on the Deno server through the Go front
         if: ${{ !cancelled() }}
         shell: bash
+        timeout-minutes: 4 # under 30 s normally
         run: |
           set +e
           ZP_ENGINE=front ZP_RUNTIME=deno deno test -q --no-check --no-prompt -P=test test/contract/ > "$RUNNER_TEMP/deno-contract-front.log" 2>&1
