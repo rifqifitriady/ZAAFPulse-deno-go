@@ -146,6 +146,15 @@ test('the version: package-lock.json records the version package.json sets (rele
   assert.equal(lock.packages[''].version, pkg.version);
 });
 
+test('the release notes of this version exist and list the five archives (release.yml publishes them)', () => {
+  const v = require('../package.json').version;
+  const notes = fs.readFileSync(path.join(__dirname, '..', 'docs', 'release-notes', `v${v}.md`), 'utf8');
+  for (const t of Object.values(build.TARGETS)) {
+    const a = `zaafpulse-${v}-${t}.${t.startsWith('win') ? 'zip' : 'tar.gz'}`;
+    assert.equal(notes.includes(a), build.RELEASE_TARGETS.includes(t), a);
+  }
+});
+
 test('package: the gateway build is trimmed, stripped and versioned, never -race (P6 Decision 2)', () => {
   const a = build.gwBuildArgs({ version: '2.0.0', out: '/o/zaafpulse-gw' });
   assert.equal(a[0], 'build');
