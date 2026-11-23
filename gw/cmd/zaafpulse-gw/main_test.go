@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -115,5 +117,38 @@ func TestMemLimitFlag(t *testing.T) {
 	if code, stderr := runGw(t, strings.NewReader(""), "--outbox", t.TempDir(), "--mem-limit-mb", "-5"); code != 2 ||
 		!strings.Contains(stderr, "mem-limit-mb") {
 		t.Fatalf("exit %d for a negative --mem-limit-mb: %s", code, stderr)
+	}
+}
+
+// -version prints the version and exits 0 before it reads stdin or needs an outbox; a plain build says "dev".
+func TestVersionFlagPrintsTheDefault(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-version"}, failingReader{}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	if got := stdout.String(); got != "dev\n" {
+		t.Fatalf("stdout %q", got)
+	}
+}
+
+// P6 Decision 2: the release build sets the version with -ldflags "-X main.version=<v>", and -version prints it.
+func TestVersionFlagPrintsTheBuildVersion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the gateway")
+	}
+	exe := filepath.Join(t.TempDir(), "zaafpulse-gw")
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	build := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-ldflags=-X main.version=9.9.9-test", "-o", exe, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	out, err := exec.Command(exe, "-version").Output()
+	if err != nil {
+		t.Fatalf("-version: %v", err)
+	}
+	if string(out) != "9.9.9-test\n" {
+		t.Fatalf("stdout %q", out)
 	}
 }
