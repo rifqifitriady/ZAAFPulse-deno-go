@@ -219,7 +219,7 @@ default. The rollback to the behaviour before v2.0.0 is `"allowList": "report"` 
 | `egress.gateMinChecks` | checked calls since the last disagreement before it moves (0 lifts this part; both 0 lift the gate) | `20` |
 | `egress.allowList` | `enforce` (a host off the list is refused, `EGRESS_REFUSED`) or `report` (it is recorded `would-refuse` and passes) | `enforce` (before v2.0.0: `report`) |
 | `egress.lockdown` | `true` narrows the server's Deno net grant to loopback when the conditions below hold; `false` never | `true` (before v2.0.0: `false`) |
-| `ZAAFPULSE_EGRESS_LOCKDOWN=0` | environment variable: no lock-down for this launch, whatever `config.json` says | not set |
+| `ZAAFPULSE_EGRESS_LOCKDOWN=0` | environment variable: no lock-down for this launch, whatever `config.json` says; `zaafpulse service install` carries it into the service file | not set |
 
 The classes and what each covers: `gateway` (the server's own provider calls and token fetches), `connectors`
 (Dynatrace, Arize, n8n, HTTP, the router connector, OpenRouter), `mcp` (upstream MCP servers), `routers` (OmniRoute,
@@ -280,9 +280,10 @@ narrowed in the single-file build". Only a `deno run` launch can show `in place`
 
 To leave the lock-down, set `"lockdown": false` and restart; a `deno run` service needs `zaafpulse service install`
 again, because its launch line holds the narrowed grant (the control's evidence says so while a narrowed grant
-outlives the setting). `ZAAFPULSE_EGRESS_LOCKDOWN=0` works for a launch from a shell and for
-`ZAAFPULSE_EGRESS_LOCKDOWN=0 zaafpulse service install` from source, which then writes an unnarrowed line; the service
-file does not carry the variable itself, so for an installed single-file service use the `config.json` setting.
+outlives the setting). `ZAAFPULSE_EGRESS_LOCKDOWN=0` works for a launch from a shell and for a service:
+`ZAAFPULSE_EGRESS_LOCKDOWN=0 zaafpulse service install` writes the variable into the launchd plist, the systemd unit or
+the Windows launcher (and, from source, an unnarrowed launch line), so the running service sees it too, the installed
+single-file build included. It stays there until the service is installed again without it.
 
 ### Gateway engine switches
 

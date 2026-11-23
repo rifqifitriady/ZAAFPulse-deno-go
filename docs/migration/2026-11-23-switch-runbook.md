@@ -225,8 +225,8 @@ What it does depends on how ZAAFPulse was started:
   lock-down on. Only this launch can show the control `in place`, and only with `allowList: "enforce"`.
 
 The way out is in section 5. `ZAAFPULSE_EGRESS_LOCKDOWN=0` turns it off for a launch from a shell, and for a service
-installed from source when given to `zaafpulse service install`; the service file does not carry the variable, so for
-the installed binary use `"lockdown": false`.
+when given to `zaafpulse service install`, which writes it into the service file (the installed binary included); it
+stays there until the service is installed again without it.
 
 Owner decision of 2026-11-23: since v2.0.0 `egress.allowList: "enforce"` and `egress.lockdown: true` are the
 defaults (`lib/egress.js` `EGRESS_DEFAULTS`). An install with no `egress` section asks for the lock-down, but it comes
