@@ -474,7 +474,7 @@ Only absolute folders are used (`~` counts as your home folder). A relative valu
 
 ### The background service does not see your shell variables
 
-launchd, systemd and the Windows startup entry start ZAAFPulse without your shell profile. A `CLAUDE_CONFIG_DIR`, `ZAAFPULSE_CLAUDE_DIRS`, `CODEX_HOME` or `XDG_CONFIG_HOME` you export in `~/.zshrc` or `~/.bashrc` works for `zaafpulse start` in that terminal, but the service never sees it on its own, so the Overview stays empty.
+launchd, systemd and the Windows startup entry start ZAAFPulse without your shell profile. A `CLAUDE_CONFIG_DIR`, `ZAAFPULSE_CLAUDE_DIRS`, `CODEX_HOME` or `XDG_CONFIG_HOME` you export in `~/.zshrc` or `~/.bashrc` works for `zaafpulse start` in that terminal, but the service never sees it on its own, so the Overview stays empty. The same goes for `ZAAFPULSE_EGRESS_LOCKDOWN` (`0` keeps the egress lock-down off) and `ZAAFPULSE_GW_BIN` (the `zaafpulse-gw` to start in front mode).
 
 `zaafpulse service install` copies these variables, with the other settings it carries (port, data folder and so on), from the shell it runs in into the launchd plist, the systemd unit or the Windows launcher. So set them first, then install:
 
