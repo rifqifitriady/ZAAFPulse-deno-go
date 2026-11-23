@@ -114,6 +114,28 @@ test('package: the go child sees only the allowed names, plus the target and CGO
   assert.ok(script.includes('--allow-run=git,tar,deno,go ') && script.includes('--ignore-env'));
 });
 
+test('package: a Windows host packs only the win-* zips; a tar.gz there would lose the execute bit', () => {
+  const all = Object.keys(build.TARGETS);
+  assert.throws(
+    () => build.checkPackHost(['x86_64-pc-windows-msvc', 'x86_64-unknown-linux-gnu'], 'win32'),
+    /--package on Windows can build only win-\* packages.*x86_64-unknown-linux-gnu.*build those on macOS or Linux/,
+  );
+  assert.throws(() => build.checkPackHost(['aarch64-apple-darwin'], 'win32'), /execute bit/);
+  build.checkPackHost(['x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'], 'win32');
+  for (const p of ['darwin', 'linux']) build.checkPackHost(all, p);
+  for (const k of [
+    'HTTPS_PROXY',
+    'HTTP_PROXY',
+    'NO_PROXY',
+    'GOPROXY',
+    'GOPRIVATE',
+    'GONOSUMDB',
+    'GOSUMDB',
+    'XDG_CACHE_HOME',
+  ])
+    assert.ok(build.GO_ENV.includes(k), k);
+});
+
 // Reads a zip back in plain JS: the end record, the central directory, and each entry's local header and data.
 function readZip(buf) {
   const end = buf.length - 22;
