@@ -743,6 +743,8 @@ test('the gateway chip (P6 Decision 6): the version, its health in the tooltip, 
   assert.equal(fb.tone, 'red');
   assert.ok(fb.title.includes(why.slice(0, 120)), fb.title);
   const el = { hidden: true, className: '', textContent: '', title: '' };
+  assert.equal(topoGatewayChip({ ...ready, gwVersion: 'dev' }).text, 'Gateway: Go (front) · ready · dev');
+  assert.equal(topoGatewayChip({ ...ready, gwVersion: null }).text, 'Gateway: Go (front) · ready');
   topoPaintGatewayChip(el, { ...ready, gwVersion: '<i>x</i>' });
   assert.equal(el.textContent, 'Gateway: Go (front) · ready · v<i>x</i>');
 });

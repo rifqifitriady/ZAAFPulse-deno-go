@@ -88,7 +88,9 @@ function topoGatewayChip(st) {
     };
   if (st.state === 'ready') {
     // P6 Decision 6: the version, amber when the health is late (it comes every second) or the versions differ.
-    const v = typeof st.gwVersion === 'string' && st.gwVersion ? ` · v${st.gwVersion}` : '';
+    // A build without a version (npm run gw:build) says "dev", not "vdev".
+    const gv = typeof st.gwVersion === 'string' ? st.gwVersion : '';
+    const v = gv === 'dev' ? ' · dev' : gv ? ` · v${gv}` : '';
     const stale = Number.isFinite(st.healthAgeMs) && st.healthAgeMs > 5000;
     const h = st.lastHealth && typeof st.lastHealth === 'object' ? st.lastHealth : {};
     const parts = [];
