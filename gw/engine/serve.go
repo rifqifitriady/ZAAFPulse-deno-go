@@ -304,12 +304,25 @@ func (e *Engine) Wait(d time.Duration) bool {
 
 // ReadRequest reads what the engine needs of r: at most MaxBody + 1 bytes of its body. The body r keeps is the whole
 // one again (what was read, then the rest), so a hand-off forwards it unchanged.
+//
+// A body read to its end is given again from buf alone, never from r's own body: net/http closes that body as the
+// handler's answer starts, and a hand-off's proxy transport reads its body once more after the last byte to find the
+// end. On the closed body that read failed ("invalid Read on closed Body"), the transport closed the control plane's
+// connection mid-answer and cut the client's stream (a shadowed stream was then filed as a client that left).
 func ReadRequest(r *http.Request, rawPath string) *Request {
 	buf, _ := io.ReadAll(io.LimitReader(r.Body, MaxBody+1))
+	body := io.Reader(bytes.NewReader(buf))
+	if len(buf) > MaxBody { // the rest is still on the wire; with a known length, nothing is read past its end
+		rest := io.Reader(r.Body)
+		if r.ContentLength > 0 {
+			rest = io.LimitReader(r.Body, r.ContentLength-int64(len(buf)))
+		}
+		body = io.MultiReader(body, rest)
+	}
 	r.Body = struct {
 		io.Reader
 		io.Closer
-	}{io.MultiReader(bytes.NewReader(buf), r.Body), r.Body}
+	}{body, r.Body}
 	q := ""
 	if i := len(rawPath); i < len(r.RequestURI) && r.RequestURI[i] == '?' {
 		q = r.RequestURI[i+1:]

@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -80,8 +81,11 @@ func TestShadowSlotReleasedWhenTheClientLeaves(t *testing.T) {
 		t.Fatalf("%d shadow slots still held after %d leaves", n, leaves)
 	}
 	resp := post(context.Background())
-	_, _ = io.ReadAll(resp.Body)
+	whole, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	if err != nil || !strings.HasSuffix(string(whole), "data: [DONE]\n\n") {
+		t.Fatalf("the whole stream was cut: %v after %q", err, whole)
+	}
 	select {
 	case l := <-lines:
 		if !strings.Contains(l, `"class":"chat-stream"`) || strings.Contains(l, "the client left") {
@@ -89,6 +93,44 @@ func TestShadowSlotReleasedWhenTheClientLeaves(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("a whole shadowed stream was not compared after the leaves")
+	}
+}
+
+// The flake of the test above (CI, Ubuntu): net/http closes a request's own body as the handler's answer starts, and a
+// hand-off's proxy transport reads the body once more after its last byte. That read on the body ReadRequest leaves must
+// be io.EOF: the closed body's error made the transport close the control plane's connection mid-answer, which cut the
+// whole stream and filed it as a client that left. Small and over-the-limit bodies.
+func TestReadRequestBodyOutlivesTheServersClose(t *testing.T) {
+	for _, n := range []int{len(streamBody), MaxBody + 10} {
+		errs := make(chan error, 1)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			own := r.Body
+			ReadRequest(r, "/v1/chat/completions")
+			got := make([]byte, n)
+			_, err := io.ReadFull(r.Body, got) // the transport: the body's length, then ...
+			if err == nil && string(got) != strings.Repeat("x", n) {
+				err = errors.New("not the body sent")
+			}
+			if err == nil {
+				_ = own.Close()                       // ... net/http closes the request's own body ...
+				_, err = r.Body.Read(make([]byte, 1)) // ... before the transport looks past the end
+				if err == nil {
+					err = errors.New("a byte past the end")
+				} else if err == io.EOF {
+					err = nil
+				}
+			}
+			errs <- err
+		}))
+		resp, err := srv.Client().Post(srv.URL, "application/json", strings.NewReader(strings.Repeat("x", n)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		srv.Close()
+		if err := <-errs; err != nil {
+			t.Fatalf("%d bytes: %v", n, err)
+		}
 	}
 }
 
