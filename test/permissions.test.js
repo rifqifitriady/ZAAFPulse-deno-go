@@ -12,6 +12,13 @@ const tmp = (p = 'zp-perm-') => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const sets = permissions.readSets();
 const list = (v) => (Array.isArray(v) ? v : v && Array.isArray(v.allow) ? v.allow : []);
 const PRODUCT = ['server', 'cli', 'mcp-stdio'];
+const METADATA_DENY = [
+  '169.254.169.254',
+  'metadata.google.internal',
+  '[fd00:ec2::254]',
+  '169.254.170.2',
+  '100.100.100.200',
+];
 
 test('deno.json has exactly the four sets, and nothing grants all', () => {
   assert.deepEqual(Object.keys(sets).sort(), ['cli', 'mcp-stdio', 'server', 'test']);
@@ -40,7 +47,8 @@ test('the broad entries are the same in every product set, each with a reason', 
     assert.equal(s.read, true, `${name}.read`);
     assert.equal(s.write, true, `${name}.write (narrowed at launch by writeScope)`);
     assert.equal(s.env, true, `${name}.env: every name (owner decision O1)`);
-    assert.deepEqual(s.net, { allow: true, deny: ['169.254.169.254', 'metadata.google.internal'] });
+    // The cloud metadata service (P7 review M1: the same addresses Go's egress path refuses, gw/egress/metadata.go).
+    assert.deepEqual(s.net, { allow: true, deny: METADATA_DENY });
     assert.ok(Array.isArray(s.run) && Array.isArray(s.sys), `${name}: run and sys are allow-lists`);
   }
   for (const k of ['read', 'write', 'net', 'env']) assert.ok(permissions.WHY.broad[k], `WHY.broad.${k}`);
@@ -286,6 +294,13 @@ test('net: everything but cloud metadata, which is refused loudly', { skip }, as
     probe('server', 'net', 'http://metadata.google.internal/', t).error,
     /Requires net access to "metadata\.google\.internal/,
   );
+  // P7 review M1: AWS IMDS over IPv6, the ECS task metadata endpoint and Alibaba Cloud's.
+  for (const [url, host] of [
+    ['http://[fd00:ec2::254]/latest/meta-data/', /Requires net access to "\[fd00:ec2::254\]/],
+    ['http://169.254.170.2/v2/credentials/x', /Requires net access to "169\.254\.170\.2/],
+    ['http://100.100.100.200/latest/meta-data/', /Requires net access to "100\.100\.100\.200/],
+  ])
+    for (const set of PRODUCT) assert.match(probe(set, 'net', url, t).error, host, `${set} ${url}`);
 });
 
 test('env: every name reads (owner decision O1), so a v1 secret reference resolves', { skip }, () => {
