@@ -57,9 +57,9 @@ const TARGETS = {
   'aarch64-pc-windows-msvc': 'win-arm64',
 };
 
-// The release names a release ships (owner, 2026-11-23): five, no darwin-x64. darwin-x64 stays in TARGETS, so it
-// builds on demand (--target x86_64-apple-darwin, --all), but release.yml neither builds nor publishes it.
-const RELEASE_TARGETS = ['linux-x64', 'linux-arm64', 'darwin-arm64', 'win-x64', 'win-arm64'];
+// The release names a release ships (owner, 2026-11-23, plan §11 decisions 10 and 11): four, no macOS. Both darwin
+// targets stay in TARGETS, so they build on demand (--target, --all), but release.yml neither builds nor publishes them.
+const RELEASE_TARGETS = ['linux-x64', 'linux-arm64', 'win-x64', 'win-arm64'];
 
 // Deno target triple -> the Go target the gateway is built for (P6 Decision 2).
 const GO_TARGETS = {
