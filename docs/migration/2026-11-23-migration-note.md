@@ -14,7 +14,8 @@ in [docs/install.md](../install.md); this note says what changes for you and wha
   call leaves directly. The Go parts are opt-in, class by class. The egress allow-list enforces and the network
   lock-down is asked for by default, but both act only on calls that go through Go, so nothing changes until you move
   a class ([docs/governance.md](../governance.md#network-egress-settings)).
-- After the upgrade, run `zaafpulse doctor` and register your AI clients' MCP entries again.
+- After the upgrade, run `zaafpulse doctor`. The installer registers your AI clients' MCP entries again; doctor's
+  **MCP entries** row says when one still starts a program that is gone.
 
 ## What changes
 
@@ -61,15 +62,18 @@ addresses refused is stricter than in v1.1, whichever way the call leaves. Among
 address.
 
 **MCP client entries.** Each AI client's ZAAFPulse entry names the program that runs the MCP server. An entry made by
-v1.1 names v1's Node.js and its `app/mcp.js`, which the upgrade moves into `rollback/`, so that client can no longer
-start ZAAFPulse's MCP server. `zaafpulse doctor` does not flag such an entry (its **MCP clients** row only names v2 entries
-made before the P7 security fixes). Register again after the upgrade:
+v1.1 names v1's Node.js and its `app/mcp.js`, which the upgrade moves into `rollback/`, so that client could no longer
+start ZAAFPulse's MCP server. The v2 installers therefore register again every client that holds an entry, and only
+those (`zaafpulse register-mcp registered`), keeping the data folder each entry named. A system install as root does not
+write the users' configs: it prints what each user runs. `zaafpulse doctor` has an **MCP entries** row that names every
+client whose entry starts a program or script that no longer exists. To do it by hand:
 
 ```sh
-zaafpulse register-mcp all        # or one client: claude, cursor, codex, ...
+zaafpulse register-mcp registered   # every client that holds an entry; or one client: claude, cursor, codex, ...
 ```
 
-The same applies after a rollback: register again with the version you rolled back to.
+After a rollback to v1.1, register again with v1's `zaafpulse register-mcp <client>`; after a rollback to another v2
+version the installer does it.
 
 ## What stays the same
 
@@ -89,8 +93,10 @@ The same applies after a rollback: register again with the version you rolled ba
      not first on `PATH`: start through the installer's `zaafpulse` command;
    - `Gateway IPC  v1, <n> schemas`;
    - `Server` answering and `Service` running;
-   - `MCP clients`: when it names clients, run `zaafpulse register-mcp <client>` for each.
-2. Register your AI clients again (above), even when `doctor` names none.
+   - `MCP clients`: when it names clients, run `zaafpulse register-mcp <client>` for each;
+   - `MCP entries`: `every entry starts a program that exists`; when it names clients, run
+     `zaafpulse register-mcp registered`.
+2. If the installer could not register your AI clients again (it says so), run `zaafpulse register-mcp registered`.
 3. Open the dashboard with `zaafpulse open` and check that the Overview shows your history.
 4. Governance → Compliance: expect the two new controls as described above.
 
@@ -99,7 +105,8 @@ The same applies after a rollback: register again with the version you rolled ba
 `install.sh --rollback` (`install.ps1 -Rollback` on Windows) stops v2 and puts the install it replaced back in place,
 on the same data folder. The v1.1.x installer works too, after `zaafpulse service uninstall`; on Windows also delete
 `zaafpulse.exe` and `zaafpulse-gw.exe` from `%LOCALAPPDATA%\ZAAFPulse\bin`, or `zaafpulse` keeps starting v2. Both ways,
-step by step: [docs/install.md, Rolling back](../install.md#rolling-back). Then register your AI clients again.
+step by step: [docs/install.md, Rolling back](../install.md#rolling-back). Then register your AI clients again with
+v1's `zaafpulse register-mcp <client>`.
 
 If you turned on the Go gateway and only want that off, you do not need to roll back: set `"gateway": { "engine":
 "js" }` and `"egress": { "lockdown": false }` in `config.json` and run `zaafpulse service restart`

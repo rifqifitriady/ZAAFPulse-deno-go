@@ -5,7 +5,7 @@
 //   zaafpulse service install|uninstall|status|restart [--system] [--host H] [--port P]
 //   zaafpulse eval --judge --session <id> [--source claude|codex] [--data DIR] [--json]   judge one session locally
 //   zaafpulse eval --dataset <slug> --model <provider/model> [--require id>=0.8] [--ci] [--json]   CI quality gate
-//   zaafpulse status | open | doctor | mcp | register-mcp <client|all> [--remove] | version
+//   zaafpulse status | open | doctor | mcp | register-mcp <client|all|registered> [--remove] | version
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -333,11 +333,25 @@ const commands = {
     } catch (err) {
       add('MCP clients', `the registrations cannot be read: ${err.message}`, false);
     }
+    // P7: an entry that starts a program or script that is gone (a v1.x entry after the v2 upgrade moved app/ into
+    // rollback/, or a v2 entry after a rollback): that client can no longer start ZAAFPulse's MCP server.
+    try {
+      const broken = require('../lib/mcp-registrations').brokenRegistrations();
+      add(
+        'MCP entries',
+        broken.length
+          ? `${broken.map((b) => `${b.client} starts ${b.paths.join(' and ')}, which no longer exists`).join('; ')}; run \`zaafpulse register-mcp registered\``
+          : 'every entry starts a program that exists',
+        broken.length === 0,
+      );
+    } catch (err) {
+      add('MCP entries', `the registrations cannot be read: ${err.message}`, false);
+    }
     console.log(rows.join('\n'));
   },
   'register-mcp'() {
     const target = positional[1];
-    if (!target) die(`usage: zaafpulse register-mcp <${mcpClients().join('|')}|all> [--remove]`, 2);
+    if (!target) die(`usage: zaafpulse register-mcp <${mcpClients().join('|')}|all|registered> [--remove]`, 2);
     try {
       require('../scripts/register-mcp').run(target, { remove: !!flag('remove') });
     } catch (err) {
@@ -408,8 +422,9 @@ const commands = {
                                     (--data DIR: the data folder)
   zaafpulse eval --dataset <slug> --model <provider/model> [--require <evaluator>>=<0..1>] [--ci] [--json]
                                     replay a dataset and gate on pass rates (--max-cost USD, --max-requests N)
-  zaafpulse register-mcp <client|all> [--remove]
-                                    clients: ${mcpClients().join(', ')}
+  zaafpulse register-mcp <client|all|registered> [--remove]
+                                    clients: ${mcpClients().join(', ')}; registered: every client that
+                                    already holds a ZAAFPulse entry, written again for this install
   zaafpulse mcp                     the stdio MCP server (what AI clients start)
   zaafpulse version`);
   },
