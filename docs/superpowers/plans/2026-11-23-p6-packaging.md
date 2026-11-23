@@ -467,4 +467,9 @@ profile edit, server mode and the closing summary.
 
 ## Plan deviations
 
-(none yet)
+- **Task 2, the zip (spec Decision 3):** the win-* zip is written in JS by `writeZip` in `scripts/build-deno.js`
+  (deflate from `node:zlib`, a table CRC-32, no zip64, files of 4 GiB or more refused, a fixed 1980-01-01 DOS time so
+  the archive is reproducible, unix mode 0755 on the `.exe` files), not with `tar -a -cf`. On the Windows runners the
+  build runs under bash, where `tar` is Git's GNU tar, which cannot write a zip, so the bsdtar check would have failed
+  every win-* package in CI. The bsdtar check is gone, and win-* packages now build on any OS. The tar.gz path is
+  unchanged (`tar -czf`).
