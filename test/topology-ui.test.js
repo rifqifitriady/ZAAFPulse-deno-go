@@ -715,27 +715,27 @@ test('the gateway chip (P6 Decision 6): the version, its health in the tooltip, 
     mode: 'front',
     state: 'ready',
     restarts: 1,
-    gwVersion: '1.1.0',
-    version: '1.1.0',
+    gwVersion: '2.0.0',
+    version: '2.0.0',
     versionMismatch: false,
     healthAgeMs: 800,
     lastHealth: health,
     lastFailure: { kind: 'store', message: 'disk full', at: 1 },
   };
   assert.deepEqual(topoGatewayChip(ready), {
-    text: 'Gateway: Go (front) · ready · v1.1.0',
+    text: 'Gateway: Go (front) · ready · v2.0.0',
     tone: 'green',
     title: 'Up 5 min, in flight 2, outbox 7, snapshot 400 ms old, restarts 1, last failure: disk full.',
   });
   const stale = topoGatewayChip({ ...ready, healthAgeMs: 7200 });
-  assert.equal(stale.text, 'Gateway: Go (front) · ready · v1.1.0 · stale');
+  assert.equal(stale.text, 'Gateway: Go (front) · ready · v2.0.0 · stale');
   assert.equal(stale.tone, 'amber');
   assert.match(stale.title, /No health for 7 s\.$/);
   assert.equal(topoGatewayChip({ ...ready, healthAgeMs: 5000 }).tone, 'green', 'up to 5 s is fresh');
   const differs = topoGatewayChip({ ...ready, gwVersion: '1.0.9', versionMismatch: true });
   assert.equal(differs.text, 'Gateway: Go (front) · ready · v1.0.9 · version differs');
   assert.equal(differs.tone, 'amber');
-  assert.match(differs.title, /The gateway is v1\.0\.9, ZAAFPulse v1\.1\.0\.$/);
+  assert.match(differs.title, /The gateway is v1\.0\.9, ZAAFPulse v2\.0\.0\.$/);
   // The fallback carries the Decision 4 reason, painted as text.
   const why =
     "zaafpulse-gw is next to zaafpulse but not allowed to run: put its folder first on PATH (the installer's zaafpulse command does)";

@@ -1,8 +1,8 @@
 # Upgrading from v1.1.x to v2
 
-Date: 2026-11-23. For users of ZAAFPulse v1.1.x who move to v2 from this repository's release. v2.0.0 is not released
-yet; this note describes the state of `migrate/deno-go` that will become it. How to install, upgrade and roll back is
-in [docs/install.md](../install.md); this note says what changes for you and what to check.
+Date: 2026-11-23. For users of ZAAFPulse v1.1.x who move to v2.0.0 from this repository's release. How to install,
+upgrade and roll back is in [docs/install.md](../install.md), and what v2.0.0 holds and what is still being verified in
+[its release notes](../release-notes/v2.0.0.md); this note says what changes for you and what to check.
 
 ## In short
 
@@ -27,8 +27,9 @@ in [docs/install.md](../install.md); this note says what changes for you and wha
   `raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main`. The v1 installers do not move you to v2.
 - No Node.js is needed or downloaded. A release is one archive per platform holding both programs (34 to 40 MB, where
   the v1.1.0 download was 84 to 128 MB); there are no loose binaries.
-- No v2 build exists for Alpine and other musl Linux, armv7l, ppc64le, s390x or 32-bit Windows. The v2 installer
-  stops there and prints the v1.x command.
+- No v2 build exists for Macs with an Intel CPU, Alpine and other musl Linux, armv7l, ppc64le, s390x or 32-bit
+  Windows: a release has five targets (darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64). The v2 installer
+  stops there and prints the v1.x command, which keeps working; an Intel Mac stays on v1.x.
 - `--source` and `--version main` are gone from `install.sh`; v2 installs releases only.
 - `--uninstall` keeps your data (v1 deleted the Linux data folder inside the install folder); `--purge` deletes it.
 - The Docker image still runs on Node.js for now.
