@@ -96,12 +96,22 @@ function Start-ZaafService([string]$launcher) {
     if ($LASTEXITCODE -ne 0) { Warn 'Not started in the background; start it yourself with: zaafpulse start' }
   } catch { Warn "Not started in the background ($($_.Exception.Message)); start it yourself with: zaafpulse start" }
 }
+# v1's app\ and node\ are the installers' only when v1's app\bin\zaafpulse.js is there.
+function Test-V1([string]$dir) { Test-Path -LiteralPath (Join-Path $dir 'app\bin\zaafpulse.js') }
 # Move the folders app and node, and the files of bin\, from one generation folder to another. A folder already in
-# the destination stays (an interrupted move is finished, not nested).
+# the destination stays (an interrupted move is finished, not nested). From $Root, app and node move only with v1's
+# marker, in $Root or (an interrupted move) already in $to.
 function Move-Generation([string]$from, [string]$to) {
   $fromBin = if ($from -eq $Root) { $BinDir } else { Join-Path $from 'bin' }
   $toBin = if ($to -eq $Root) { $BinDir } else { Join-Path $to 'bin' }
-  foreach ($d in 'app', 'node') {
+  $dirs = @('app', 'node')
+  if ($from -eq $Root -and -not (Test-V1 $Root) -and -not (Test-V1 $to)) {
+    $dirs = @()
+    foreach ($d in 'app', 'node') {
+      if (Test-Path -LiteralPath (Join-Path $Root $d)) { Warn "$(Join-Path $Root $d) was left alone: no ZAAFPulse v1 install is there" }
+    }
+  }
+  foreach ($d in $dirs) {
     $p = Join-Path $from $d
     $dest = Join-Path $to $d
     if ((Test-Path -LiteralPath $p) -and -not (Test-Path -LiteralPath $dest)) { Move-Item -LiteralPath $p -Destination $dest }
@@ -141,10 +151,19 @@ function Remove-UserPath {
 
 if ($Uninstall) {
   Stop-ZaafService (Get-Launcher)
-  foreach ($d in 'app', 'node', 'bin', 'bin.new', 'rollback', 'rollback.new', 'rollforward') {
+  # Only what the installers put there: v1's app and node with its marker, and bin\'s own files.
+  $dirs = @('bin.new', 'rollback', 'rollback.new', 'rollforward')
+  if (Test-V1 $Root) { $dirs += 'app', 'node' }
+  else { foreach ($d in 'app', 'node') { if (Test-Path -LiteralPath (Join-Path $Root $d)) { Warn "$(Join-Path $Root $d) was left alone: no ZAAFPulse v1 install is there" } } }
+  foreach ($d in $dirs) {
     $p = Join-Path $Root $d
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
   }
+  foreach ($f in $BinFiles) {
+    $p = Join-Path $BinDir $f
+    if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
+  }
+  if ((Test-Path -LiteralPath $BinDir) -and -not (Get-ChildItem -LiteralPath $BinDir -Force)) { Remove-Item -LiteralPath $BinDir -Force }
   Remove-UserPath
   foreach ($f in 'ZAAFPulse.lnk', 'ZAAFPulse.url') {
     $p = Join-Path ([Environment]::GetFolderPath('Programs')) $f

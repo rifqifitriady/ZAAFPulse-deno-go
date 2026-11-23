@@ -68,6 +68,36 @@ check_prefix() {
 check_prefix
 # The physical path: Deno matches the gateway's folder on PATH against the binary's own path.
 resolve_prefix() { PREFIX="$(CDPATH= cd -- "$PREFIX" && pwd -P)"; check_prefix; }
+# The physical path of a folder that may not exist yet: its nearest existing parent resolved, the rest appended.
+phys() {
+  if [ -d "$1" ]; then (CDPATH= cd -- "$1" && pwd -P)
+  else printf '%s/%s\n' "$(phys "$(dirname -- "$1")")" "$(basename -- "$1")"; fi
+}
+# $PREFIX/bin is replaced and removed whole, so it must be the installers' own: not the folder of the zaafpulse command
+# (ZAAFPULSE_PREFIX=$HOME/.local), and holding nothing but what an install puts there. Called on the resolved prefix.
+guard_bin() {
+  if [ "$PREFIX/bin" = "$(phys "$BIN_DIR")" ]; then
+    printf '\033[1;31mx\033[0m %s\n' "the install folder's bin ($PREFIX/bin) is the command folder $BIN_DIR; choose another ZAAFPULSE_PREFIX" >&2
+    return 1
+  fi
+  if [ -d "$PREFIX/bin" ]; then
+    for f in "$PREFIX/bin"/* "$PREFIX/bin"/.[!.]* "$PREFIX/bin"/..?*; do
+      [ -e "$f" ] || [ -L "$f" ] || continue
+      case "${f##*/}" in zaafpulse|zaafpulse-gw|LICENSE) ;; *)
+        printf '\033[1;31mx\033[0m %s\n' "$PREFIX/bin holds ${f##*/}, which no ZAAFPulse install puts there; it is not changed (move it, or choose another ZAAFPULSE_PREFIX)" >&2
+        return 1 ;;
+      esac
+    done
+  fi
+}
+# v1's app/ and node/ are the installers' only when v1's app/bin/zaafpulse.js is there: an install folder such as
+# /usr/local may hold other folders of those names.
+v1_here() { [ -f "$PREFIX/app/bin/zaafpulse.js" ]; }
+warn_foreign_v1() {
+  for d in app node; do
+    if [ -e "$PREFIX/$d" ]; then warn "$PREFIX/$d was left alone: no ZAAFPulse v1 install ($PREFIX/app/bin/zaafpulse.js) is there"; fi
+  done
+}
 
 # The service, through a given launcher: the old one before it is replaced, the restored one after a rollback.
 service_stop() {
@@ -81,9 +111,13 @@ service_start() {
     else "$1" service install || warn "Service not installed; start it yourself with: zaafpulse start"; fi
   fi
 }
-# Move $1/<d> to $2/<d> for each folder d that exists in $1 and not yet in $2.
+# Move $1/<d> to $2/<d> for each folder d that exists in $1 and not yet in $2. From the install folder itself, app/ and
+# node/ move only with v1's marker (v1_here, or a third argument v1 when the marker has moved already), and bin/ only
+# after guard_bin.
 move_dirs() {
+  _v1="${3:-}"; if v1_here; then _v1=v1; fi   # once: moving app/ takes the marker along
   for d in bin app node; do
+    if [ "$1" = "$PREFIX" ] && [ "$d" != bin ] && [ "$_v1" != v1 ]; then continue; fi
     if [ -e "$1/$d" ] && [ ! -e "$2/$d" ]; then mv "$1/$d" "$2/$d"; fi
   done
 }
@@ -99,9 +133,11 @@ EOF
 }
 
 if [ "$UNINSTALL" = 1 ]; then
+  if [ -d "$PREFIX" ]; then resolve_prefix; guard_bin || exit 1; fi
   service_stop "$LAUNCHER"
   # Only what the installers put there: on Linux the data folder sits inside the default prefix (…/zaafpulse/data).
-  for d in app app.new app.old node bin bin.new rollback rollback.new rollforward; do rm -rf "${PREFIX:?}/$d"; done
+  if v1_here; then rm -rf "${PREFIX:?}/app" "${PREFIX:?}/node"; else warn_foreign_v1; fi
+  for d in app.new app.old bin bin.new rollback rollback.new rollforward; do rm -rf "${PREFIX:?}/$d"; done
   rm -f "$LAUNCHER"; rmdir "$PREFIX" 2>/dev/null || true
   say "ZAAFPulse removed from $PREFIX."
   if [ "$PURGE" = 1 ]; then
@@ -118,6 +154,7 @@ fi
 if [ "$ROLLBACK" = 1 ]; then
   [ -f "$PREFIX/rollback/VERSION" ] || die "nothing to roll back to: $PREFIX/rollback holds no saved install"
   resolve_prefix
+  guard_bin || exit 1
   RB="$PREFIX/rollback"; RF="$PREFIX/rollforward"
   service_stop "$LAUNCHER"
   rm -rf "$RF"; mkdir -p "$RF"
@@ -195,6 +232,7 @@ done
 # Before anything is changed, the new binary must run on this system.
 NEW_PREFIX=0; [ -d "$PREFIX" ] || NEW_PREFIX=1
 mkdir -p "$PREFIX"; resolve_prefix
+guard_bin || { if [ "$NEW_PREFIX" = 1 ]; then rmdir "$PREFIX" 2>/dev/null || true; fi; die "nothing was changed"; }
 rm -rf "$PREFIX/bin.new"; mkdir "$PREFIX/bin.new"
 cp "$SRC/zaafpulse" "$SRC/zaafpulse-gw" "$PREFIX/bin.new/"
 if [ -f "$SRC/LICENSE" ]; then cp "$SRC/LICENSE" "$PREFIX/bin.new/"; fi
@@ -208,7 +246,8 @@ say "New version runs: $(printf '%s\n' "$NEWV" | head -n1)"
 # in place, it is the whole old install: finish the move and keep it as the rollback. Otherwise put back what it holds.
 if [ -d "$PREFIX/rollback.new" ]; then
   if [ -f "$PREFIX/rollback.new/VERSION" ] && [ ! -f "$PREFIX/app/bin/zaafpulse.js" ] && [ ! -f "$PREFIX/bin/zaafpulse" ]; then
-    move_dirs "$PREFIX" "$PREFIX/rollback.new"
+    if [ -f "$PREFIX/rollback.new/app/bin/zaafpulse.js" ]; then move_dirs "$PREFIX" "$PREFIX/rollback.new" v1
+    else move_dirs "$PREFIX" "$PREFIX/rollback.new"; fi
     rm -rf "$PREFIX/rollback"; mv "$PREFIX/rollback.new" "$PREFIX/rollback"
     warn "An earlier upgrade was cut off; the install it saved is in $PREFIX/rollback."
   else
@@ -237,6 +276,7 @@ if [ -n "$OLD_KIND" ]; then
   printf '%s\n' "$OLD_TAG" > "$PREFIX/rollback.new/VERSION"
   if [ -f "$LAUNCHER" ]; then cp "$LAUNCHER" "$PREFIX/rollback.new/launcher"; fi
   move_dirs "$PREFIX" "$PREFIX/rollback.new"
+  if [ "$OLD_KIND" = v2 ]; then warn_foreign_v1; fi
   rm -rf "$PREFIX/rollback"; mv "$PREFIX/rollback.new" "$PREFIX/rollback"
   say "The $OLD_KIND install ($OLD_TAG) was saved in $PREFIX/rollback: --rollback brings it back."
 fi
