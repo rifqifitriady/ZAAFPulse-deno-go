@@ -37,7 +37,10 @@ test('a followed redirect to the cloud metadata service is refused EGRESS_PRIVAT
   const bin = stubBin(t);
   if (!bin) return;
   const fake = await redirector();
-  const root = tmpDir(t, 'egress-metadata-gw');
+  // node:test runs after-hooks in the order they were added: the gateway must stop before tmpDir removes the outbox
+  // whose lock it holds (Windows refuses to delete an open file), so its stop goes through tmpDir's own list.
+  const stops = [];
+  const root = tmpDir(t, 'egress-metadata-gw', stops);
   const stores = openLocalStores({ root });
   const ingest = createIngest({ ...stores.sinks, marks: recoverMarks(stores.files) });
   const frontToken = crypto.randomBytes(32).toString('hex');
@@ -69,7 +72,7 @@ test('a followed redirect to the cloud metadata service is refused EGRESS_PRIVAT
       );
     },
   });
-  t.after(async () => {
+  stops.push(async () => {
     egress.configure(null);
     await sup.stop(2000);
     fake.closeAllConnections();
