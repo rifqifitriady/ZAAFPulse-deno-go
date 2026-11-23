@@ -170,6 +170,13 @@ if ($Uninstall) {
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
   }
   Say 'ZAAFPulse removed.'
+  # Without -System only the Startup entry is removed; the boot task of a -System install stays behind.
+  if (-not $System) {
+    $null = & schtasks.exe /Query /TN ZAAFPulse 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      Warn 'The scheduled task ZAAFPulse (a -System install) remains. Remove it from an elevated prompt with: schtasks /Delete /TN ZAAFPulse /F'
+    }
+  }
   if ($Purge) {
     foreach ($p in (Join-Path $env:APPDATA 'ZAAFPulse'), $Root) {
       if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
