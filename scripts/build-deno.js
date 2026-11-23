@@ -1,7 +1,7 @@
 // Builds the single-file ZAAFPulse executables with `deno compile` (P2 T6); replaces the Node SEA build.
 //   deno task build                                  this machine's target
 //   deno task build --target <triple> [--target …]   any of TARGETS
-//   deno task build --all                            all six (needs the denort base binaries, downloaded once)
+//   deno task build --all                            all six TARGETS, darwin-x64 too (needs the denort base binaries)
 //   --allow-dirty                                    build the working tree instead of the last commit (local tests)
 //   --package                                        also build the Go gateway and pack both binaries (P6 Decision 3)
 // What ships is exactly the committed files under INCLUDE: they are taken from `git archive HEAD` into dist/.work, so
@@ -56,6 +56,10 @@ const TARGETS = {
   'x86_64-pc-windows-msvc': 'win-x64',
   'aarch64-pc-windows-msvc': 'win-arm64',
 };
+
+// The release names a release ships (owner, 2026-11-23): five, no darwin-x64. darwin-x64 stays in TARGETS, so it
+// builds on demand (--target x86_64-apple-darwin, --all), but release.yml neither builds nor publishes it.
+const RELEASE_TARGETS = ['linux-x64', 'linux-arm64', 'darwin-arm64', 'win-x64', 'win-arm64'];
 
 // Deno target triple -> the Go target the gateway is built for (P6 Decision 2).
 const GO_TARGETS = {
@@ -406,6 +410,7 @@ if (require.main === module) {
     ARCHIVE,
     SCHEMAS,
     TARGETS,
+    RELEASE_TARGETS,
     GO_TARGETS,
     GO_ENV,
     checkPackHost,

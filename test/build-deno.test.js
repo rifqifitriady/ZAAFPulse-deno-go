@@ -33,7 +33,7 @@ test('the binary carries the 20 IPC v1 schemas lib/ipc/schema.js reads (P4a E5)'
   assert.deepEqual(build.SCHEMAS, ['envelope', ...TYPES].map((t) => `ipc/v1/${t}.schema.json`).sort());
 });
 
-test('the six targets keep the v1 release names', () => {
+test('the six buildable targets keep the v1 release names', () => {
   assert.deepEqual(Object.values(build.TARGETS).sort(), [
     'darwin-arm64',
     'darwin-x64',
@@ -48,6 +48,48 @@ test('the six targets keep the v1 release names', () => {
   assert.equal(build.hostTarget('darwin', 'arm64'), 'aarch64-apple-darwin');
   assert.equal(build.hostTarget('win32', 'x64'), 'x86_64-pc-windows-msvc');
   assert.equal(build.hostTarget('linux', 'arm64'), 'aarch64-unknown-linux-gnu');
+});
+
+// Owner, 2026-11-23: a release has five targets, no darwin-x64. darwin-x64 stays buildable (--target, --all), but
+// release.yml builds, install-tests and requires exactly these five.
+test('a release has five targets: no darwin-x64 (owner, 2026-11-23)', () => {
+  assert.deepEqual(build.RELEASE_TARGETS, ['linux-x64', 'linux-arm64', 'darwin-arm64', 'win-x64', 'win-arm64']);
+  for (const n of build.RELEASE_TARGETS) assert.ok(Object.values(build.TARGETS).includes(n), n);
+  assert.ok(Object.values(build.TARGETS).includes('darwin-x64'), 'darwin-x64 is still buildable on demand');
+});
+
+test('release.yml builds, install-tests and publishes the five release targets', () => {
+  const wf = path.join(__dirname, '..', '.github', 'workflows');
+  const rel = fs.readFileSync(path.join(wf, 'release.yml'), 'utf8');
+  const job = (name) => {
+    const m = rel.match(new RegExp(`\\n  ${name}:\\n([\\s\\S]*?)(?=\\n  [a-z-]+:\\n|$)`));
+    assert.ok(m, `job ${name}`);
+    return m[1];
+  };
+  // build: build.yml without darwin-x64.
+  assert.match(job('build'), /uses: \.\/\.github\/workflows\/build\.yml\n\s+with:\n\s+skip-darwin-x64: true\b/);
+  // install-test: one leg per release target, nothing else.
+  const legs = [...job('install-test').matchAll(/- \{ name: ([a-z0-9-]+), runner: /g)].map((m) => m[1]);
+  assert.deepEqual(legs, build.RELEASE_TARGETS);
+  // Both Assemble dist/ steps (the dry run and publish) require five archives.
+  for (const j of ['assemble', 'publish']) {
+    const body = job(j);
+    assert.match(body, /\[ "\$n" -eq 5 \]/, `${j} requires five archives`);
+    assert.ok(!/-eq 6\b/.test(body), `${j} still expects six`);
+  }
+  // The notes: docs/release-notes/<tag>.md, required (checked in version and again in publish), never generated.
+  assert.match(job('publish'), /--notes-file "\$RELEASE_NOTES"/);
+  assert.ok(!rel.includes('--generate-notes'));
+  for (const j of ['version', 'publish'])
+    assert.ok(job(j).includes('f="docs/release-notes/$GITHUB_REF_NAME.md"') && job(j).includes('[ -s "$f" ] ||'), j);
+  // build.yml's plan: the five once skip-darwin-x64 drops darwin-x64 (the M6 references stay for all six).
+  const plan = fs.readFileSync(path.join(wf, 'build.yml'), 'utf8');
+  const names = [...plan.matchAll(/\{"name":"([a-z0-9-]+)","runner"/g)].map((m) => m[1]);
+  assert.deepEqual(
+    names.filter((n) => n !== 'darwin-x64'),
+    build.RELEASE_TARGETS,
+  );
+  assert.match(plan, /map\(select\(\.name != "darwin-x64"\)\)/);
 });
 
 test('compile: quiet, never prompting, the cli set baked in (the entry is the command line, a superset of server), no -A', () => {
