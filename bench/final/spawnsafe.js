@@ -58,7 +58,14 @@ const noShell = (opts = {}) => ({ ...opts, shell: false, windowsVerbatimArgument
 function findExecutable(name, env = process.env) {
   if (!/^[A-Za-z0-9._-]+$/.test(name) || name.startsWith('.')) return null;
   const win = process.platform === 'win32';
-  const exts = win ? ['', ...String(env.PATHEXT || '.EXE;.CMD;.BAT').split(';').filter(Boolean)] : [''];
+  const exts = win
+    ? [
+        '',
+        ...String(env.PATHEXT || '.EXE;.CMD;.BAT')
+          .split(';')
+          .filter(Boolean),
+      ]
+    : [''];
   for (const dir of String(env.PATH || env.Path || '').split(path.delimiter)) {
     if (!dir || !path.isAbsolute(dir)) continue;
     for (const ext of exts) {
