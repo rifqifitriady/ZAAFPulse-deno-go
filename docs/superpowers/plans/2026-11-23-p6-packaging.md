@@ -527,3 +527,12 @@ profile edit, server mode and the closing summary.
   alone. `lib/service.js` finds a Windows server by PowerShell `-match` patterns (`WIN_SERVER_RE`, `WIN_START_RE`,
   exported for the test) that accept `start` bare or quoted, with `\x22` for the quote so none crosses the
   powershell.exe command line. `install.ps1` is still not parsed or run here (no PowerShell on this machine).
+- **Task 8, what each version writes:** v1 changes `userName` through `POST /api/config`; v2 changes the audit retention
+  through `POST /api/governance/settings` (`config.json` `governance.audit.retentionMonths`, a key v1 did not write).
+  A v2 change of a v1 key would make the "every v1 key unchanged" check fail by design. The data folder starts with a
+  `config.json` of `{ "pricingSync": { "enabled": false } }` so no run downloads the price list; it is one of the v1
+  keys compared. The spec's "sign-in setting" (Decision 12, step 2) is the `ZAAFPULSE_AUTH=none` every run uses: no
+  password is set, since the API steps need no sign-in. The v1 usage check reads `GET /api/gateway` `usage.totals`
+  (requests, errors 0, tokens and a cost above 0; the fake answers `gpt-4o-mini`, which has a list price), and the
+  key, the provider and the budget are read back on the last v1 run. `test/upgrade-check.test.js` covers the argument
+  parsing and the config compare only; the proof is the script run.
