@@ -292,3 +292,71 @@ test(
     noService(ctx);
   },
 );
+
+test(
+  'an install folder whose bin is the command folder (ZAAFPULSE_PREFIX=$HOME/.local) is refused',
+  { skip: SKIP },
+  () => {
+    const base = setup();
+    const ctx = { ...base, prefix: path.join(base.home, '.local') };
+    // The command folder exists with only a zaafpulse in it, so the bin check alone would let it through.
+    fs.mkdirSync(path.dirname(ctx.launcher), { recursive: true });
+    fs.writeFileSync(ctx.launcher, '#!/bin/sh\necho mine\n', { mode: 0o755 });
+    const before = tree(ctx.home);
+    const r = install(ctx);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /is the command folder/);
+    assert.deepEqual(tree(ctx.home), before);
+    // Nothing there yet: refused too, and no folder is left behind.
+    const fresh = setup();
+    const c2 = { ...fresh, prefix: path.join(fresh.home, '.local') };
+    assert.notEqual(install(c2).status, 0);
+    assert.ok(!fs.existsSync(c2.prefix));
+    assert.equal(calls(ctx) + calls(c2), '');
+  },
+);
+
+test(
+  'a file in <prefix>/bin that no install puts there makes install, --rollback and --uninstall refuse',
+  { skip: SKIP },
+  () => {
+    const ctx = setup();
+    fakeV1(ctx);
+    ok(install(ctx));
+    fs.writeFileSync(path.join(ctx.prefix, 'bin', 'other-tool'), 'not ours\n');
+    const before = { prefix: tree(ctx.prefix), launcher: fs.readFileSync(ctx.launcher, 'utf8') };
+    for (const args of [
+      ['--archive', ctx.archive, '--sums', ctx.sums, '--no-service', '--no-modify-path'],
+      ['--rollback', '--no-service'],
+      ['--uninstall', '--no-service'],
+    ]) {
+      const r = run(ctx, args);
+      assert.notEqual(r.status, 0, args.join(' '));
+      assert.match(r.stderr, /holds other-tool/);
+      assert.deepEqual({ prefix: tree(ctx.prefix), launcher: fs.readFileSync(ctx.launcher, 'utf8') }, before);
+    }
+    noService(ctx);
+  },
+);
+
+test(
+  "app/ and node/ without the v1 marker are not the installers': upgrade and --uninstall leave them",
+  { skip: SKIP },
+  () => {
+    const ctx = setup();
+    ok(install(ctx));
+    fs.mkdirSync(path.join(ctx.prefix, 'app'));
+    fs.writeFileSync(path.join(ctx.prefix, 'app', 'theirs.txt'), 'x\n');
+    fs.mkdirSync(path.join(ctx.prefix, 'node'));
+    const up = install(ctx);
+    ok(up);
+    assert.match(up.stderr, /app was left alone/);
+    assert.ok(!fs.existsSync(path.join(ctx.prefix, 'rollback', 'app')));
+    const r = run(ctx, ['--uninstall', '--no-service']);
+    ok(r);
+    assert.match(r.stderr, /app was left alone/);
+    assert.deepEqual(fs.readdirSync(ctx.prefix).sort(), ['app', 'node']);
+    assert.equal(fs.readFileSync(path.join(ctx.prefix, 'app', 'theirs.txt'), 'utf8'), 'x\n');
+    noService(ctx);
+  },
+);
