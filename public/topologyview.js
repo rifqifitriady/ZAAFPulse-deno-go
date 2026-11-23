@@ -65,6 +65,13 @@ function topoAgo(ms) {
   return `${Math.floor(s / 3600)} h ago`;
 }
 const topoNum = (n) => (n >= 1e6 ? `${topoR(n / 1e6)}M` : n >= 1000 ? `${topoR(n / 1000)}k` : String(Math.round(n)));
+// A duration: "42 s", "5 min", "3 h".
+function topoDur(ms) {
+  const s = Math.floor(Number(ms) / 1000);
+  if (s < 60) return `${Math.max(0, s)} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min`;
+  return `${Math.floor(s / 3600)} h`;
+}
 const topoMs = (ms) => (ms >= 1000 ? `${topoR(ms / 1000)} s` : `${Math.round(ms)} ms`);
 
 // The "Gateway: Go (front)" chip in the card's head (P4a D6), from GET /api/gateway/status: null (no chip) when the
@@ -79,8 +86,29 @@ function topoGatewayChip(st) {
         `The Go gateway failed${st.reason ? `: ${String(st.reason).slice(0, 200)}` : ''}. ZAAFPulse serves on its own.` +
         (st.restartNeeded ? ' Restart ZAAFPulse to try the gateway again.' : ''),
     };
-  if (st.state === 'ready')
-    return { text: 'Gateway: Go (front) · ready', tone: 'green', title: `Restarts: ${Number(st.restarts) || 0}` };
+  if (st.state === 'ready') {
+    // P6 Decision 6: the version, amber when the health is late (it comes every second) or the versions differ.
+    const v = typeof st.gwVersion === 'string' && st.gwVersion ? ` · v${st.gwVersion}` : '';
+    const stale = Number.isFinite(st.healthAgeMs) && st.healthAgeMs > 5000;
+    const h = st.lastHealth && typeof st.lastHealth === 'object' ? st.lastHealth : {};
+    const parts = [];
+    if (Number.isFinite(h.uptimeMs)) parts.push(`Up ${topoDur(h.uptimeMs)}`);
+    if (Number.isFinite(h.inflight)) parts.push(`in flight ${h.inflight}`);
+    if (Number.isFinite(h.outboxDepth)) parts.push(`outbox ${h.outboxDepth}`);
+    if (Number.isFinite(h.snapshotAgeMs)) parts.push(`snapshot ${topoMs(h.snapshotAgeMs)} old`);
+    parts.push(`restarts ${Number(st.restarts) || 0}`);
+    const fail = st.lastFailure && st.lastFailure.message ? String(st.lastFailure.message).slice(0, 200) : '';
+    if (fail) parts.push(`last failure: ${fail}`);
+    let title = `${parts.join(', ')}.`;
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+    if (stale) title += ` No health for ${topoDur(st.healthAgeMs)}.`;
+    if (st.versionMismatch) title += ` The gateway is v${st.gwVersion}, ZAAFPulse v${st.version}.`;
+    return {
+      text: `Gateway: Go (front) · ready${v}${stale ? ' · stale' : ''}${st.versionMismatch ? ' · version differs' : ''}`,
+      tone: stale || st.versionMismatch ? 'amber' : 'green',
+      title,
+    };
+  }
   return {
     text: 'Gateway: Go (front) · restarting',
     tone: 'amber',
