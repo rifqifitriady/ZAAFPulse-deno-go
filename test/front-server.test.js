@@ -93,6 +93,25 @@ test('front mode: dashboard and gateway through Go; /v1/traces sees a loopback c
   assert.equal(st.mode, 'front');
   assert.equal(st.state, 'ready');
   assert.ok(st.pid > 0);
+  // P6 Decision 5: the hello's version (the stub is built without -X main.version), ours, the binary and health age.
+  assert.equal(st.gwVersion, 'dev');
+  assert.equal(st.version, require('../package.json').version);
+  assert.equal(st.versionMismatch, false, 'dev never mismatches');
+  assert.deepEqual([st.binary.found, st.binary.allowed], [true, true], JSON.stringify(st.binary));
+  assert.equal(path.basename(st.binary.path).replace(/\.exe$/, ''), 'zaafpulse-gw');
+  // null until the first health (each second), then its age.
+  const aged = await until(
+    async () => {
+      const x = await status(s.base);
+      return x && x.healthAgeMs !== null ? x : null;
+    },
+    10000,
+    'a health',
+  );
+  assert.ok(
+    Number.isInteger(aged.healthAgeMs) && aged.healthAgeMs >= 0 && aged.healthAgeMs < 5000,
+    String(aged.healthAgeMs),
+  );
   const c = clientFor(s.base);
   const key = await c.newKey({ scopes: ['llm'] });
   assert.equal((await c.call('/v1/models', { method: 'GET', key: key.secret })).status, 200);
@@ -169,7 +188,10 @@ test('front mode: a missing gateway binary falls back to Deno at once', async (t
   assert.ok(s.startupMs < 15000, `the port answered after ${Math.round(s.startupMs)} ms`);
   const st = await status(s.base);
   assert.deepEqual([st.mode, st.state, st.restarts], ['fallback', 'failed', 0], JSON.stringify(st));
-  assert.match(st.reason, /could not be started/);
+  assert.deepEqual(st.binary, { path: path.join(__dirname, 'no-such-gateway'), found: false, allowed: false });
+  assert.equal(st.gwVersion, null);
+  // P6 Decision 4: the binary is checked before the first start, and the reason names the path it looked at.
+  assert.equal(st.reason, `zaafpulse-gw not found at ${path.join(__dirname, 'no-such-gateway')}`);
 });
 
 // A gateway holding the outbox of the server's data folder before the server starts; the server's own gateway exits 5.

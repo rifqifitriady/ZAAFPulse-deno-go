@@ -473,11 +473,11 @@ ZAAFPulse runs on **macOS, Linux (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, Fedora
 
 | | One command |
 |---|---|
-| **macOS / Linux** | `curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.sh \| sh` |
-| **Windows 11** (PowerShell) | `irm https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.ps1 \| iex` |
-| **Linux server** | `curl -fsSL https://raw.githubusercontent.com/rifqifitriady/ZAAFPulse/main/install.sh \| sudo sh -s -- --server` |
+| **macOS / Linux** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sh` |
+| **Windows 11** (PowerShell) | `irm https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.ps1 \| iex` |
+| **Linux server** | `curl -fsSL https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases/latest/download/install.sh \| sudo sh -s -- --server` |
 | **Docker** | `docker compose up -d` (see [compose.yaml](compose.yaml)); mainly a gateway and server deployment, see [Docker](#docker) |
-| **Single file** | download `zaafpulse-<version>-<os>-<cpu>` from [Releases](https://github.com/rifqifitriady/ZAAFPulse/releases) and run it |
+| **Release package** | download `zaafpulse-<version>-<os>-<cpu>` (`.tar.gz`, `.zip` on Windows) from [Releases](https://github.com/rifqifitriady/ZAAFPulse-deno-go/releases), unpack it and run it with its folder first on `PATH` ([how](docs/install.md#running-from-an-unpacked-archive)) |
 
 The installers use your Node.js 18+ or download the official Node.js LTS (checksum verified) into their own folder. They add the `zaafpulse` command and start it in the background (launchd, systemd or Task Scheduler). Then run **`zaafpulse open`**: it opens http://localhost:4777 in your browser, already signed in.
 

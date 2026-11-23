@@ -329,6 +329,34 @@ test(
   },
 );
 
+// P6 Decision 4: the compiled binary (the cli set) names zaafpulse-gw; Deno grants that name to the first one on PATH
+// at start, and so the absolute path the supervisor spawns only when its folder comes first.
+test(
+  'run: cli starts zaafpulse-gw by its path when its folder is first on PATH; not off PATH, not behind another, not server',
+  { skip: skip || (process.platform === 'win32' && 'POSIX programs') },
+  () => {
+    const t = rig();
+    const fake = (dir) => {
+      fs.mkdirSync(dir, { recursive: true });
+      const f = path.join(dir, 'zaafpulse-gw');
+      fs.writeFileSync(f, '#!/bin/sh\necho 0.0.0\n', { mode: 0o755 });
+      return f;
+    };
+    const gw = fake(path.join(t.home, 'bin'));
+    const other = fake(path.join(t.home, 'other'));
+    const first = { ...t, env: { PATH: `${path.dirname(gw)}:${process.env.PATH}` } };
+    assert.deepEqual(probe('cli', 'run', gw, first), { ok: true });
+    assert.match(
+      probe('cli', 'run', gw, t).error,
+      /Requires run access to ".*zaafpulse-gw/,
+      'its folder is not on PATH',
+    );
+    const behind = { ...t, env: { PATH: `${path.dirname(other)}:${path.dirname(gw)}:${process.env.PATH}` } };
+    assert.match(probe('cli', 'run', gw, behind).error, /Requires run access/, 'another zaafpulse-gw comes first');
+    assert.match(probe('server', 'run', gw, first).error, /Requires run access/, 'server does not name it');
+  },
+);
+
 test(
   'signals: process.kill is refused under a run allow-list; the kill program carries them',
   { skip: skip || (process.platform === 'win32' && 'POSIX signals') },

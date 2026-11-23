@@ -236,6 +236,23 @@ const commands = {
     } catch (err) {
       add('Gateway IPC', `the ipc/v1 schemas cannot be read: ${err.message}`, false);
     }
+    // The gateway this build would start (P6 Decision 4): the same check the front makes before its first start.
+    // Information only: it does not change doctor's exit code.
+    {
+      const { gwStatus } = require('../lib/front/bin');
+      const gw = gwStatus();
+      let line = `${gw.path} — ${gw.found ? 'found' : 'missing'}`;
+      if (gw.found) line += `, ${gw.allowed ? 'allowed' : 'not allowed'}`;
+      if (gw.found && gw.allowed) {
+        const r = require('child_process').spawnSync(gw.path, ['-version'], {
+          encoding: 'utf8',
+          timeout: 5000,
+          windowsHide: true,
+        });
+        line += `, ${r.status === 0 && r.stdout.trim() ? r.stdout.trim() : 'version unknown'}`;
+      }
+      add('Gateway (zaafpulse-gw)', line, gw.found && gw.allowed);
+    }
     let store;
     try {
       store = defaultStore();
