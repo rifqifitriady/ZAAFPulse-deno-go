@@ -94,13 +94,19 @@ test('release.yml builds, install-tests and publishes the four release targets',
 test('build.yml: skip-darwin-x64 and skip-darwin-arm64 each drop their entry; ci.yml skips only darwin-x64', () => {
   const plan = fs.readFileSync(path.join(WF, 'build.yml'), 'utf8');
   for (const t of ['x64', 'arm64']) {
-    assert.match(plan, new RegExp(`\\n      skip-darwin-${t}:\\n\\s+description: .+\\n\\s+type: boolean\\n\\s+default: false\\n`));
+    assert.match(
+      plan,
+      new RegExp(`\\n      skip-darwin-${t}:\\n\\s+description: .+\\n\\s+type: boolean\\n\\s+default: false\\n`),
+    );
     assert.ok(plan.includes(`SKIP_DARWIN_${t.toUpperCase()}: \${{ inputs.skip-darwin-${t} }}`), t);
     assert.ok(plan.includes(`map(select(.name != "darwin-${t}"))`), t);
   }
   // The plan keeps all six (with their M6 references); the two skips leave the release targets.
   const names = [...plan.matchAll(/\{"name":"([a-z0-9-]+)","runner"/g)].map((m) => m[1]);
-  assert.deepEqual(names.filter((n) => !n.startsWith('darwin-')), build.RELEASE_TARGETS);
+  assert.deepEqual(
+    names.filter((n) => !n.startsWith('darwin-')),
+    build.RELEASE_TARGETS,
+  );
   assert.equal(names.length, 6);
   const ci = jobOf(fs.readFileSync(path.join(WF, 'ci.yml'), 'utf8'))('build-deno');
   assert.match(ci, /\n\s+skip-darwin-x64: true\b/);
