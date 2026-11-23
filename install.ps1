@@ -413,3 +413,6 @@ Write-Host '    Commands:   zaafpulse status | doctor | open | service restart |
 $self = "https://github.com/$Repo/releases/latest/download/install.ps1"
 if (Test-Path -LiteralPath (Join-Path $RollbackDir 'VERSION')) { Write-Host "    Roll back:  & ([scriptblock]::Create((irm $self))) -Rollback" }
 Write-Host "    Uninstall:  & ([scriptblock]::Create((irm $self))) -Uninstall"
+if ($oldKind -and $NoService) {
+  Warn '-NoService: the service of the earlier install (if any) was left running, on the old version. Switch it with: zaafpulse service install'
+}
