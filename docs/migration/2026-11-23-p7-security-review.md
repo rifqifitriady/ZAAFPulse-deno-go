@@ -5,6 +5,10 @@ through P4 plus the P5 egress work). Reviewer: the independent security-expert a
 review of the IPC, the permission matrix and the egress proxy, plus `govulncheck`"). This document reports; it changes
 no product code.
 
+**Status (2026-11-23):** every finding below (M1, L1 to L4) was fixed in PR #17 with a test each; the
+fixes and their tests are in `docs/migration/2026-11-23-p7-security-fixes.md`. The Info items are accepted and stay as
+written. The report is kept as it was written at `c41a1a1`; line numbers refer to that tree.
+
 ## Summary
 
 | Severity | Count |
