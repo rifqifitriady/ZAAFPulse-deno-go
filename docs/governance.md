@@ -236,9 +236,10 @@ and `runtimes` (model servers on another machine). Calls to `localhost`, `127.0.
 `.data/egress.jsonl` (`checked` agrees, `would-refuse` disagrees) and the checks the client could not ask, which also
 count as a disagreement. Once met, the class stays on `go` across restarts (`.data/egress-gate.json`) until a check of
 its own disagrees or you set it to `direct` or `check`. `GET /api/gateway/status` (owner) shows each class's engine
-under `egress.engines` and why one asked for `go` is still on `check` under `egress.notes`. The endpoint exists only
-in front mode (`gateway.engine: "front"`): in js mode every class goes direct, and while the gateway restarts a class on
-`go` goes direct too, unless the lock-down holds.
+under `egress.engines` and why one asked for `go` is still on `check` under `egress.notes`; that is the switch after its
+gate, not where a call goes right now: with no ready gateway (`egress.port` `null`) every class goes direct whatever it
+says. The endpoint exists only in front mode (`gateway.engine: "front"`): in js mode every class goes direct, and while
+the gateway restarts a class on `go` goes direct too, unless the lock-down holds.
 
 **The allow-list** is built from `config.json` and pushed to the gateway on every change: the providers' base and token
 URLs, the integrations, the brain sources, remote agents (`agents.json`), the monitor webhook, the OTLP endpoint, the
@@ -330,9 +331,11 @@ stays on js), and three switches that are not paths:
 
 **The switch rule.** A class asked for `go` moves only when the shadow has, since its last diff, compared at least
 `shadowMinCompares` of its calls and seen no diff for `shadowDays` days; until then it stays on js and
-`GET /api/gateway/status` says why under `notes` (`"12 of 20 chat calls compared without a diff since the last
-one"`). A class on `go` is no longer compared. While OpenTelemetry export captures content (`otel.captureContent`),
-every class stays on js. The routing is looked at once a minute, so a class whose rule is met moves within a minute.
+`GET /api/gateway/status` says why under `notes` (`"12 of 20 chat calls compared without a diff since the last one"`);
+once the note is gone, `engines.<class>` there turns `"go"` at the next minute tick. A class on `go` is no longer
+compared, except its calls that `token-saver`, `provider-auth` or `routes` still keep on js. While OpenTelemetry export
+captures content (`otel.captureContent`), every class stays on js. The routing is looked at once a minute, so a class
+whose rule is met moves within a minute.
 
 **The shadow log**, `.data/gateway-shadow.jsonl`, holds one line per shadowed call: the class, the outcome (`same`,
 `diff`, `handoff` or `skipped`) and, for a diff, the field, the lengths and a hash prefix, never prompt or answer
