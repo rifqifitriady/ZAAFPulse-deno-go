@@ -162,6 +162,18 @@ test('runPreflight: a quiet machine passes; the gateway is built when missing; t
   assert.equal(r.checks.find((c) => c.id === 'untouched').status, 'note');
 });
 
+test('runPreflight: the chain that started the runner is not "another" process', async () => {
+  const list = [
+    { pid: 1, ppid: 0, cpuSeconds: 0, args: '/sbin/launchd', name: 'launchd' },
+    { pid: 50, ppid: 1, cpuSeconds: 0, args: '/bin/zsh -c deno task bench:final', name: 'zsh' },
+    { pid: 60, ppid: 50, cpuSeconds: 0, args: '/opt/homebrew/bin/deno task bench:final', name: 'deno' },
+    { pid: 70, ppid: 60, cpuSeconds: 0, args: '/opt/homebrew/bin/deno run scripts/final-bench.js', name: 'deno' },
+  ];
+  const { deps } = quiet({ snapshot: () => list, selfPid: 70 });
+  const r = await pf.runPreflight(deps);
+  assert.equal(r.checks.find((c) => c.id === 'others').status, 'pass');
+});
+
 test('runPreflight: a busy machine fails, and says why', async () => {
   const { deps } = quiet({
     loadavg: () => [3.5, 2.5, 2],

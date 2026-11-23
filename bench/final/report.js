@@ -299,8 +299,9 @@ function buildReport(ctx) {
     '',
   );
   out.push('## Preflight', '');
-  if (!ctx.preflight.ran) out.push('Skipped (`--skip-preflight`).', '');
-  else out.push(table(['Check', 'Status', 'Detail'], (ctx.preflight.checks || []).map((c) => [c.label, c.status, c.detail])), '');
+  if (!ctx.preflight.ran) out.push('Skipped (`--skip-preflight`): the checks did not stop the run. As they read at the start:', '');
+  if (ctx.preflight.checks && ctx.preflight.checks.length)
+    out.push(table(['Check', 'Status', 'Detail'], ctx.preflight.checks.map((c) => [c.label, c.status, c.detail])), '');
   out.push('## Not covered by the runner', '');
   out.push(table(['Metric', 'What', 'Target', 'Where it is proven, and why not here'], NOT_COVERED), '');
   out.push(

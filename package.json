@@ -21,7 +21,9 @@
     "gw:build": "go -C gw build -o bin/ ./cmd/zaafpulse-gw",
     "typecheck": "deno check --sloppy-imports lib/front lib/gateway lib/cost lib/governance lib/money.js lib/types.js",
     "build": "deno run -q --no-prompt --allow-read --allow-write=dist --allow-run=git,tar,deno,go,codesign --allow-env=PATH,HOME,GOCACHE,GOPATH,GOROOT,GOTOOLCHAIN,GOFLAGS,GOMODCACHE,LOCALAPPDATA,USERPROFILE,TMPDIR,TEMP,TMP,SystemRoot,APPDATA,HTTPS_PROXY,HTTP_PROXY,NO_PROXY,GOPROXY,GOPRIVATE,GONOSUMDB,GOSUMDB,XDG_CACHE_HOME --ignore-env scripts/build-deno.js",
-    "media": "node scripts/capture-media.js"
+    "media": "node scripts/capture-media.js",
+    "bench:final": "deno run -q --no-prompt --allow-read --allow-write --allow-net=127.0.0.1,localhost --allow-env --allow-run --allow-sys=loadavg,cpus,systemMemoryInfo,osRelease,hostname,osUptime,homedir,uid,gid,userInfo scripts/final-bench.js",
+    "bench:final:node": "node scripts/final-bench.js"
   },
   "engines": {
     "node": ">=18"

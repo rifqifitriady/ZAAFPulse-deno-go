@@ -187,5 +187,5 @@ test('the report: sections, the not-covered list, the machine; smoke and skipped
   assert.match(smoke, /none is a measurement/);
   const skipped = rep.buildReport(ctxOf(results, { preflight: { ran: false, ok: false } }));
   assert.match(skipped, /Preflight skipped: no result here is quiet-confirmed/);
-  assert.match(skipped, /Skipped \(`--skip-preflight`\)/);
+  assert.match(skipped, /Skipped \(`--skip-preflight`\): the checks did not stop the run/);
 });
