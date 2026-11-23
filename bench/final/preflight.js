@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const procs = require('./procs');
+const { checkedCommand, noShell, findExecutable } = require('./spawnsafe');
 
 const ROOT = path.join(__dirname, '..', '..');
 const GW_DIR = path.join(ROOT, 'gw');
@@ -182,13 +183,13 @@ function checkDisk(free) {
   return { id: 'disk', label, status: gb < 2 ? 'fail' : gb < 5 ? 'warn' : 'pass', detail };
 }
 
-/** @param {number|null} hard `ulimit -Hn` (Infinity for unlimited) @param {string} platform */
-function checkFiles(hard, platform) {
+/** @param {boolean|null} reach whether this process opened MIN_FILES files @param {string} platform */
+function checkFiles(reach, platform) {
   const label = `Open files: the limit can reach ${MIN_FILES} (500 streams)`;
   if (platform === 'win32') return { id: 'files', label, status: 'pass', detail: 'not limited this way on Windows' };
-  if (hard === null) return { id: 'files', label, status: 'warn', detail: 'could not read ulimit -Hn' };
-  const detail = `hard limit ${hard === Infinity ? 'unlimited' : hard}; each scenario raises the soft limit to ${MIN_FILES}`;
-  return { id: 'files', label, status: hard >= MIN_FILES ? 'pass' : 'fail', detail };
+  if (reach === null) return { id: 'files', label, status: 'warn', detail: 'could not test the limit' };
+  if (reach) return { id: 'files', label, status: 'pass', detail: `${MIN_FILES} files opened in this process (Node, Deno and Go raise their soft limit to the hard one)` };
+  return { id: 'files', label, status: 'fail', detail: `this process could not open ${MIN_FILES} files: raise the hard limit (ulimit -Hn) first` };
 }
 
 /** @param {{ go: string|null, deno: string|null, node: string|null }} v */
@@ -223,7 +224,7 @@ const NOTE = {
 
 /**
  * Every check, in order. deps: { platform, loadavg, power() -> { state, how }, snapshot(), sleep(ms), selfPid,
- * listeners(port) -> pids, freeBytes(dir), dirs, heavy, hardFiles(), versions(), gateway: { state(), build() },
+ * listeners(port) -> pids, freeBytes(dir), dirs, heavy, filesReach(), versions(), gateway: { state(), build() },
  * keepAwakeTool() }.
  */
 async function runPreflight(deps) {
@@ -252,7 +253,7 @@ async function runPreflight(deps) {
   checks.push(checkOthers(after, own, liveTree));
   checks.push(checkLive(live));
   checks.push(checkDisk((deps.dirs || []).map((dir) => ({ dir, bytes: deps.freeBytes(dir) }))));
-  checks.push(checkFiles(deps.hardFiles(), deps.platform));
+  checks.push(checkFiles(deps.filesReach(), deps.platform));
   const versions = deps.versions();
   checks.push(checkTools(versions));
   const state = deps.gateway.state();
@@ -264,9 +265,10 @@ async function runPreflight(deps) {
 
 // ---- this machine ----
 
+// Every reading of this machine: an allow-listed program (bench/final/spawnsafe.js), no shell, arguments as elements.
 const run = (cmd, args, opts = {}) => {
   try {
-    return spawnSync(cmd, args, { encoding: 'utf8', timeout: 20000, ...opts });
+    return spawnSync(checkedCommand(cmd), [...args], noShell({ encoding: 'utf8', timeout: 20000, ...opts }));
   } catch (e) {
     return { status: null, stdout: '', error: e };
   }
@@ -322,6 +324,12 @@ function listeners(platform, port) {
   return [...String(s.stdout || '').matchAll(/pid=(\d+)/g)].map((m) => Number(m[1]));
 }
 
+/** The drive letter of a Windows path (C:\\…), upper case, or null: the only thing passed to Get-PSDrive. @param {string} dir */
+function psDriveName(dir) {
+  const m = /^([A-Za-z]):[\\/]/.exec(String(dir || ''));
+  return m ? m[1].toUpperCase() : null;
+}
+
 function freeBytes(platform, dir) {
   try {
     if (typeof fs.statfsSync === 'function') {
@@ -332,7 +340,9 @@ function freeBytes(platform, dir) {
     /* fall through */
   }
   if (platform === 'win32') {
-    const drive = path.parse(path.resolve(dir)).root.replace(/[:\\/]+$/, '');
+    // Only a drive letter is ever placed in the PowerShell command; a UNC or odd path gets no reading.
+    const drive = psDriveName(dir);
+    if (!drive) return null;
     const r = run('powershell', ['-NoProfile', '-NonInteractive', '-Command', `(Get-PSDrive ${drive}).Free`]);
     const n = Number(firstLine(r));
     return Number.isFinite(n) ? n : null;
@@ -343,12 +353,21 @@ function freeBytes(platform, dir) {
   return Number.isFinite(n) ? n : null;
 }
 
-function hardFiles(platform) {
-  if (platform === 'win32') return null;
-  const v = firstLine(run('sh', ['-c', 'ulimit -Hn']));
-  if (v === 'unlimited') return Infinity;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+/**
+ * Whether this process can hold n open files: opens this file n times and closes them all. This runtime raised its soft
+ * limit to the hard one at start, as the bench children will, so this proves the limit they get, without a shell.
+ * @param {number} n
+ */
+function openFilesReach(n) {
+  const fds = [];
+  try {
+    for (let i = 0; i < n; i++) fds.push(fs.openSync(__filename, 'r'));
+    return true;
+  } catch (e) {
+    return e && (e.code === 'EMFILE' || e.code === 'ENFILE') ? false : null;
+  } finally {
+    for (const fd of fds) fs.closeSync(fd);
+  }
 }
 
 const GW_BIN = path.join(GW_DIR, 'bin', `zaafpulse-gw${process.platform === 'win32' ? '.exe' : ''}`);
@@ -397,7 +416,7 @@ function versions() {
 
 function keepAwakeTool(platform) {
   if (platform === 'win32') return 'SetThreadExecutionState (PowerShell)';
-  const has = (cmd) => run('sh', ['-c', `command -v ${cmd}`]).status === 0;
+  const has = (cmd) => findExecutable(cmd) !== null;
   if (platform === 'darwin' && has('caffeinate')) return 'caffeinate -dims';
   if (platform === 'linux' && has('systemd-inhibit') && has('tail')) return 'systemd-inhibit';
   return null;
@@ -417,7 +436,7 @@ function realDeps({ selfPid, dirs, heavy }) {
     freeBytes: (dir) => freeBytes(platform, dir),
     dirs,
     heavy,
-    hardFiles: () => hardFiles(platform),
+    filesReach: () => (platform === 'win32' ? null : openFilesReach(MIN_FILES)),
     versions,
     gateway: { state: gatewayState, build: buildGateway },
     keepAwakeTool: () => keepAwakeTool(platform),
@@ -441,6 +460,9 @@ module.exports = {
   checkLive,
   checkDisk,
   checkFiles,
+  openFilesReach,
+  psDriveName,
+  run,
   checkTools,
   checkGateway,
   checkKeepAwake,

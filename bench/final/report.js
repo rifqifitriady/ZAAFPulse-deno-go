@@ -214,7 +214,13 @@ function representative(res) {
   return sorted[Math.floor((sorted.length - 1) / 2)];
 }
 
-const cell = (s) => String(s === null || s === undefined ? '—' : s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+// A GFM table cell: backslashes first (so an input backslash cannot escape the pipe escape after it), then pipes; a
+// line break would end the row.
+const cell = (s) =>
+  String(s === null || s === undefined ? '—' : s)
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, ' ');
 const table = (head, rows) =>
   [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`)].join('\n');
 
@@ -327,4 +333,4 @@ function buildReport(ctx) {
   return out.join('\n');
 }
 
-module.exports = { SMOKE_STAMP, NOT_COVERED, V1_DOWNLOAD_MB, median, spread, extract, evaluate, representative, buildReport };
+module.exports = { cell, table, SMOKE_STAMP, NOT_COVERED, V1_DOWNLOAD_MB, median, spread, extract, evaluate, representative, buildReport };
