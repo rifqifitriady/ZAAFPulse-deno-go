@@ -138,12 +138,20 @@ test('package: every target has a Go target', () => {
   assert.deepEqual(build.GO_TARGETS['aarch64-unknown-linux-gnu'], { goos: 'linux', goarch: 'arm64' });
 });
 
+test('the version: package-lock.json records the version package.json sets (release.yml checks the tag against it)', () => {
+  const pkg = require('../package.json');
+  const lock = require('../package-lock.json');
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[''].version, pkg.version);
+});
+
 test('package: the gateway build is trimmed, stripped and versioned, never -race (P6 Decision 2)', () => {
-  const a = build.gwBuildArgs({ version: '1.1.0', out: '/o/zaafpulse-gw' });
+  const a = build.gwBuildArgs({ version: '2.0.0', out: '/o/zaafpulse-gw' });
   assert.equal(a[0], 'build');
   assert.ok(a.includes('-trimpath'));
   assert.ok(a.includes('-buildvcs=false'));
-  assert.ok(a.includes('-ldflags=-s -w -X main.version=1.1.0'), 'the ldflags are one argument');
+  assert.ok(a.includes('-ldflags=-s -w -X main.version=2.0.0'), 'the ldflags are one argument');
   assert.ok(!a.includes('-race'));
   assert.deepEqual(a.slice(-3), ['-o', '/o/zaafpulse-gw', './cmd/zaafpulse-gw']);
 });

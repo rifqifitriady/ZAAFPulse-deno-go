@@ -82,7 +82,7 @@ larger than v1.1.0's download for the platform.
 ```bash
 deno task bench:final --only external-go
 deno task bench:final --only external-go,translated-go --repeats 5
-deno task bench:final --only binary --binary ./zaafpulse-1.1.0-darwin-arm64/zaafpulse
+deno task bench:final --only binary --binary ./zaafpulse-2.0.0-darwin-arm64/zaafpulse
 ```
 
 A second session on the same day writes `<date>-final-2/`, so nothing is overwritten.
