@@ -121,20 +121,47 @@ function command(runtime, data, env = {}) {
   throw new Error(`ZP_RUNTIME must be node, deno or binary, not "${runtime}"`);
 }
 
-// startServer({ runtime, config, env, before }) -> { base, data, pid, startupMs, stderr(), stop() }. Ready means the
-// first 200 on /login.html (the benchmark's startup measure). A port taken in between is retried on another one.
-// before(data), when given, runs once the data folder is made and before the server starts.
+// GET /api/gateway/status, or null when it does not answer 200.
+async function gatewayStatus(base) {
+  const r = await fetch(`${base}/api/gateway/status`, { signal: AbortSignal.timeout(2000) });
+  const text = await r.text();
+  return r.status === 200 ? JSON.parse(text) : null;
+}
+
+// Whether a front-mode server whose main port answers is ready for the cases (gateway status st):
+//   'ready'  the gateway in front is ready; or the server fell back for a reason a test may have made on purpose (an
+//            outbox held, a missing binary), which is handed out as it is;
+//   'taken'  it fell back because the gateway found the main port taken: the port freePort() released was taken again
+//            in between, most often by the server's own internal listener (it binds 127.0.0.1:0 just before the
+//            gateway opens the main port, and the OS may hand it that very port). Such a server serves the port itself
+//            until its first gateway save hands the port to a new gateway, which closes every connection a client
+//            holds (the "other side closed" of the v2.0.0 release run): it is stopped and another port tried;
+//   'wait'   the gateway answers but its ready has not reached the server yet.
+function frontReadiness(st, port) {
+  if (!st) return 'wait';
+  if (st.mode === 'front' && st.state === 'ready') return 'ready';
+  if (st.mode !== 'fallback') return 'wait';
+  return st.reason === `port ${port} on 127.0.0.1 is in use` ? 'taken' : 'ready';
+}
+
+// startServer({ runtime, config, env, before, pickPort }) -> { base, data, pid, startupMs, stderr(), stop() }. Ready
+// means the first 200 on /login.html (startupMs: the benchmark's startup measure) and, in front mode, the gateway in
+// front ready (frontReadiness). A port taken in between is retried on another one. before(data), when given, runs once
+// the data folder is made and before the server starts; pickPort() gives the port of each attempt (default: one the OS
+// has free now).
 async function startServer({
   runtime = process.env.ZP_RUNTIME || 'node',
   config = SEED_CONFIG,
   env = {},
   before = async () => {},
+  pickPort = freePort,
 } = {}) {
+  const front = !!(config && config.gateway && config.gateway.engine === 'front');
   for (let attempt = 0; attempt < 5; attempt++) {
     const data = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-contract-'));
     fs.writeFileSync(path.join(data, 'config.json'), JSON.stringify(config, null, 2));
     await before(data);
-    const port = await freePort();
+    const port = await pickPort();
     const gwEnv = gatewayEnv(config);
     const { bin, args } = command(runtime, data, { ...env, ...gwEnv });
     const started = performance.now();
@@ -199,19 +226,35 @@ async function startServer({
       fs.rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
       if (diffs.length) throw new Error(`the shadow compare found ${diffs.length} diff(s):\n${diffs.join('\n')}`);
     };
+    let startupMs = null;
+    let taken = false;
     while (!exited && performance.now() - started < 30000) {
       try {
-        const r = await fetch(`${base}/login.html`, { signal: AbortSignal.timeout(2000) });
-        await r.arrayBuffer();
-        if (r.status === 200)
-          return { base, data, pid: child.pid, startupMs: performance.now() - started, stderr: () => stderr, stop };
+        if (startupMs === null) {
+          const r = await fetch(`${base}/login.html`, { signal: AbortSignal.timeout(2000) });
+          await r.arrayBuffer();
+          if (r.status === 200) startupMs = performance.now() - started;
+        }
+        if (startupMs !== null) {
+          const ready = front ? frontReadiness(await gatewayStatus(base), port) : 'ready';
+          if (ready === 'ready') return { base, data, pid: child.pid, startupMs, stderr: () => stderr, stop };
+          if (ready === 'taken') {
+            taken = true;
+            break;
+          }
+        }
       } catch {
         /* not listening yet */
       }
       await sleep(25);
     }
     await stop();
-    if (attempt === 4) throw new Error(`server.js did not start under ${runtime}:\n${stderr}`);
+    if (attempt === 4)
+      throw new Error(
+        taken
+          ? `the gateway found the main port taken on every attempt under ${runtime}:\n${stderr}`
+          : `server.js did not start under ${runtime}:\n${stderr}`,
+      );
   }
   throw new Error('unreachable');
 }

@@ -4,6 +4,7 @@
 // port. Under node --test the server runs on Node, under deno test on Deno.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const net = require('net');
 const path = require('path');
 const { spawn } = require('child_process');
 const { startServer, clientFor, SEED_CONFIG } = require('./contract/harness');
@@ -123,6 +124,41 @@ test('front mode: dashboard and gateway through Go; /v1/traces sees a loopback c
   // The loopback client reaches the trace channel (415: not JSON); a forwarding header refuses it (403).
   assert.equal((await c.call('/v1/traces', { raw: 'x', headers: { 'content-type': 'text/plain' } })).status, 415);
   assert.equal((await c.call('/v1/traces', { raw: '{}', headers: { 'x-forwarded-for': '203.0.113.9' } })).status, 403);
+});
+
+// The port the harness picked can be taken again before the gateway opens it: the OS may hand it to the server's own
+// internal listener (127.0.0.1:0), bound just before. The gateway then exits 4 and the server serves the port itself
+// (the fallback), and its first gateway save hands the port back to a new gateway, cutting the client's pooled
+// connections (the "other side closed" of the v2.0.0 release run). startServer must not hand out such a server: in
+// front mode it waits for the gateway in front, and a fallback because the port was taken is retried on another port.
+test('startServer in front mode: a main port taken while the gateway opens it is retried on another port', async (t) => {
+  if (!stubBin(t)) return;
+  const holder = net.createServer((sock) => sock.destroy());
+  t.after(() => new Promise((r) => (holder.listening ? holder.close(() => r()) : r())));
+  // The first port is held for 3 s from the spawn: long enough for the gateway to find it taken, short enough for the
+  // server's fallback listen (it tries for 5 s) to get it. A later attempt gets a port the OS has free.
+  let held = null;
+  const pickPort = async () => {
+    if (held === null) {
+      await new Promise((r) => holder.listen(0, '127.0.0.1', r));
+      held = holder.address().port;
+      setTimeout(() => holder.close(), 3000).unref();
+      return held;
+    }
+    const s = net.createServer();
+    await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    const { port } = s.address();
+    await new Promise((r) => s.close(r));
+    return port;
+  };
+  const s = await startServer({ runtime: RUNTIME, config: FRONT, pickPort });
+  t.after(() => s.stop());
+  const st = await status(s.base);
+  const port = Number(new URL(s.base).port);
+  if (port === held && st.mode === 'front')
+    return t.skip('the gateway opened the port only after it was free again: no collision on this machine');
+  assert.deepEqual([st.mode, st.state], ['front', 'ready'], JSON.stringify(st));
+  assert.notEqual(port, held, 'a server that fell back on the taken port was handed out');
 });
 
 test('front mode: a killed gateway is restarted and the port comes back', async (t) => {
