@@ -79,6 +79,22 @@ function Get-Sha256([string]$file) {
   try { return ([BitConverter]::ToString($sha.ComputeHash($fs)) -replace '-', '').ToLowerInvariant() }
   finally { $fs.Dispose(); $sha.Dispose() }
 }
+# Runs a native program: returns its stdout lines, shows its stderr lines (none with -Quiet), and leaves its exit code
+# in $LASTEXITCODE; never a terminating error. In Windows PowerShell 5.1 a stderr line that is redirected (2>$null,
+# 2>&1, or every line when this host's own stderr is redirected, as in a CI step) becomes an error record, and
+# $ErrorActionPreference = 'Stop' makes the first one fatal: `schtasks /Query` for a task that does not exist ended
+# -Uninstall with exit 1 in the third v2.0.0 dry run. Every native call of this installer goes through here, except
+# the service commands (Invoke-Service, no redirection at all). -InputText is piped to the program's stdin. A program
+# that cannot start at all still throws (the caller's catch sees it), as `& $file` did.
+function Invoke-Native([string]$file, [string[]]$argv = @(), $InputText = $null, [switch]$Quiet) {
+  $ErrorActionPreference = 'Continue'
+  try { $out = if ($null -ne $InputText) { $InputText | & $file @argv 2>&1 } else { & $file @argv 2>&1 } }
+  catch { throw }
+  foreach ($o in @($out)) {
+    if ($o -is [System.Management.Automation.ErrorRecord]) { if (-not $Quiet) { Write-Host "$o" } }
+    else { $o }
+  }
+}
 # The Start menu's Programs folder. GetFolderPath gives '' when the folder does not exist (a new or redirected profile;
 # the install test's temp APPDATA); then its usual place under APPDATA, or '' when there is no APPDATA either.
 function Get-ProgramsDir {
@@ -164,7 +180,7 @@ function Register-Again([string]$launcher) {
   }
   Say 'Registering the AI clients that had ZAAFPulse again'
   try {
-    & $launcher register-mcp registered | Out-Host
+    Invoke-Native $launcher @('register-mcp', 'registered') | Out-Host
     if ($LASTEXITCODE -ne 0) { Warn 'Could not register the AI clients again; run: zaafpulse register-mcp registered' }
   } catch { Warn "Could not register the AI clients again ($($_.Exception.Message)); run: zaafpulse register-mcp registered" }
 }
@@ -247,7 +263,7 @@ if ($Uninstall) {
   Say 'ZAAFPulse removed.'
   # Without -System only the Startup entry is removed; the boot task of a -System install stays behind.
   if (-not $System) {
-    $null = & schtasks.exe /Query /TN ZAAFPulse 2>$null
+    $null = Invoke-Native 'schtasks.exe' @('/Query', '/TN', 'ZAAFPulse') -Quiet
     if ($LASTEXITCODE -eq 0) {
       Warn 'The scheduled task ZAAFPulse (a -System install) remains. Remove it from an elevated prompt with: schtasks /Delete /TN ZAAFPulse /F'
     }
@@ -327,7 +343,7 @@ try {
   if ($VerifyAttestation) {
     $gh = Get-Command gh -ErrorAction SilentlyContinue
     if (-not $gh) { throw '-VerifyAttestation needs the GitHub CLI (gh); nothing was installed' }
-    & $gh.Source attestation verify $pkg --repo $Repo | Out-Host
+    Invoke-Native $gh.Source @('attestation', 'verify', $pkg, '--repo', $Repo) | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "The attestation check failed for $name; nothing was installed" }
     Say "Attestation verified ($name)"
   }
@@ -357,7 +373,7 @@ try {
   # Before anything is changed, the new binary must run on this system.
   $runs = $false
   try {
-    $newOut = & (Join-Path $staged 'zaafpulse.exe') version
+    $newOut = Invoke-Native (Join-Path $staged 'zaafpulse.exe') @('version')
     $runs = ($LASTEXITCODE -eq 0)
   } catch { $runs = $false }
   if (-not $runs) {
@@ -394,7 +410,7 @@ if (Test-Path -LiteralPath (Join-Path $Root 'app\bin\zaafpulse.js')) {
 } elseif (Test-Path -LiteralPath $Exe) {
   $oldKind = 'v2'
   try {
-    $out = & $Exe version
+    $out = Invoke-Native $Exe @('version')
     if ($LASTEXITCODE -eq 0) { $oldVersion = (@($out) | Select-Object -First 1) }
   } catch { $oldVersion = $null }
 }
@@ -449,12 +465,12 @@ if ($HostAddress) { $env:ZAAFPULSE_HOST = $HostAddress }
 if ($Port) { $env:ZAAFPULSE_PORT = "$Port" }
 $serverMode = $HostAddress -and $HostAddress -notin @('127.0.0.1', 'localhost')
 if ($serverMode) {
-  if ($env:ZAAFPULSE_ADMIN_PASSWORD) { $env:ZAAFPULSE_ADMIN_PASSWORD | & $Exe set-password | Out-Host }
+  if ($env:ZAAFPULSE_ADMIN_PASSWORD) { Invoke-Native $Exe @('set-password') -InputText $env:ZAAFPULSE_ADMIN_PASSWORD | Out-Host }
   else {
     Say 'Server mode: choose the dashboard admin password (10+ characters)'
     $s = Read-Host -AsSecureString 'Admin password'
     $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
-    $plain | & $Exe set-password | Out-Host
+    Invoke-Native $Exe @('set-password') -InputText $plain | Out-Host
     $plain = $null
   }
   if ($LASTEXITCODE -ne 0) { Warn 'The admin password was not set: run `zaafpulse set-password`, then `zaafpulse service restart`.' }
@@ -483,7 +499,7 @@ if ($programs) {
   $lnk.Save()
 } else { Warn 'No Start menu folder was found (no APPDATA): the Start menu shortcut was skipped; open the dashboard with: zaafpulse open' }
 
-$newVersion = & $Exe version
+$newVersion = Invoke-Native $Exe @('version')
 if ($LASTEXITCODE -ne 0) { throw "$Exe does not run (exit $LASTEXITCODE)" }
 # A rollback's leftover: this install replaces it.
 if (Test-Path -LiteralPath $RollforwardDir) { Remove-Item -LiteralPath $RollforwardDir -Recurse -Force }

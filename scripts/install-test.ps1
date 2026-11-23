@@ -12,7 +12,7 @@
 # it against the binary's own path, case-sensitively), and is always stopped, on failure too.
 # The installers run in their own process of -InstallerHost: Windows PowerShell 5.1 (powershell.exe) by default, the
 # host of an `irm | iex` install, so the 5.1 path of install.ps1 is the one exercised; started from this pwsh with
-# 5.1's own module path. Only v1.1.0's installer runs in PowerShell 7 (see Test-Upgrade).
+# 5.1's own module path. v1.1.0's installer too, without node on its PATH (see Test-Upgrade).
 #   1. Clean install: install.ps1 -Archive -Sums with its background service (the Startup launcher; -NoServiceTest:
 #      -NoService and a background start); `zaafpulse version` is the package version and `zaafpulse doctor` passes;
 #      /login.html answers and /api/gateway/status is front and ready with the package version (gateway.engine "front"
@@ -69,8 +69,6 @@ if (-not $InstallerHost) {
   $wp = Get-Command powershell.exe -ErrorAction SilentlyContinue
   $InstallerHost = if ($wp) { $wp.Source } else { (Get-Process -Id $PID).Path }
 }
-# v1.1.0's installer runs in PowerShell 7 (Test-Upgrade says why): this pwsh, else the pwsh on PATH.
-$V1Host = if ($PSVersionTable.PSEdition -eq 'Core') { (Get-Process -Id $PID).Path } else { "$((Get-Command pwsh -ErrorAction SilentlyContinue).Source)" }
 $Url = "http://127.0.0.1:$Port"
 
 # The port must be free: never fight another server.
@@ -181,7 +179,8 @@ function Invoke-Bounded([string]$label, [int]$seconds, [string]$file, [string[]]
     if ($now -ge $start.AddSeconds($seconds)) {
       Write-Host ''
       Write-Host "x $label timed out after $seconds s; killing process $($p.Id) and what it started" -ForegroundColor Red
-      & taskkill.exe /PID $p.Id /T /F 2>&1 | Out-Host
+      # Its stderr must not end this script (Windows PowerShell 5.1 under Stop makes redirected stderr fatal).
+      & { $ErrorActionPreference = 'Continue'; & taskkill.exe /PID $p.Id /T /F 2>&1 | ForEach-Object { "$_" } | Out-Host }
       $script:TimedOut = $true
       throw "$label timed out after $seconds s"
     }
@@ -229,10 +228,11 @@ function Set-Front([string]$dir) {
 # output to its end, and the end never comes while a process the installer started in the background (the service's
 # launcher and server) holds the pipe (the v2.0.0 dry run hung there for 29 minutes). Invoke-Bounded waits for the
 # installer's process alone, at most $seconds. A Windows PowerShell host gets 5.1's module path (Get-WinPSModulePath),
-# as pwsh's own `&` would give it.
-function Invoke-Installer([string]$file, [string[]]$installerArgs, [int]$seconds = 300, [string]$hostExe = $InstallerHost) {
+# as pwsh's own `&` would give it. $setEnv: more environment for the installer (Test-Upgrade: its PATH).
+function Invoke-Installer([string]$file, [string[]]$installerArgs, [int]$seconds = 300, [string]$hostExe = $InstallerHost,
+  [hashtable]$setEnv = @{}) {
   $what = "$(Split-Path -Leaf $file) $($installerArgs -join ' ')"
-  $set = @{}
+  $set = @{} + $setEnv
   if ((Split-Path -Leaf $hostExe) -ieq 'powershell.exe') { $set.PSModulePath = Get-WinPSModulePath $env:PSModulePath }
   $r = Invoke-Bounded $what $seconds $hostExe (@('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $file) + $installerArgs) $set
   if ($r.Code -ne 0) { throw "$what failed (exit $($r.Code))" }
@@ -372,18 +372,30 @@ function Test-CleanInstall {
 # ---- 2. upgrade from v1.1.0 and roll back ----
 function Test-Upgrade {
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'upgrade: the v1.1.0 installer needs Node 18+ on PATH' }
-  if (-not $V1Host) { throw 'upgrade: the v1.1.0 installer needs PowerShell 7 (pwsh)' }
   $d = Join-Path $T 'data-upgrade'; Write-Config $d $false; $env:ZAAFPULSE_DATA = $d
   $v1 = Join-Path $T 'install-v1.ps1'
   Say "upgrade: downloading $V1Installer (at most 120 s)"
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $V1Installer -OutFile $v1
-  # v1.1.0's installer runs in PowerShell 7, as a pwsh user with Node on PATH runs it: in Windows PowerShell 5.1 it
-  # fails whenever Node 18+ is on PATH. Its line 54, `& node -p 'process.versions.node.split(".")[0]' 2>$null`, puts
-  # double quotes inside a native argument, which 5.1 (legacy argument passing, its only mode) passes unescaped, so
-  # node gets `process.versions.node.split(.)[0]` and fails; under $ErrorActionPreference = 'Stop' the redirected
-  # stderr ends the installer (the second v2.0.0 dry run: "node.exe : [eval]:1"). pwsh 7.3+ passes it intact.
-  # v1's installer downloads its app package: more time than v2's local archive.
-  Invoke-Installer $v1 @('-NoService', '-Version', $V1Tag) 600 $V1Host
+  # v1.1.0's installer (which cannot change) works in one setup only, the one a Windows user has to roll back with:
+  # Windows PowerShell 5.1 and no node on PATH (it then downloads Node.js LTS into $Root\node).
+  # - 5.1 with any node on PATH: its line 54, `& node -p 'process.versions.node.split(".")[0]' 2>$null`, has double
+  #   quotes inside a native argument, which 5.1's legacy argument passing (its only mode) drops: node gets
+  #   `split(.)`, a SyntaxError, and under $ErrorActionPreference = 'Stop' the redirected stderr ends the installer
+  #   ("node.exe : [eval]:1", the second v2.0.0 dry run).
+  # - PowerShell 7: Invoke-WebRequest's .Content is a byte array for SHA256SUMS.txt (GitHub serves release assets as
+  #   application/octet-stream), so `.Content -split "`n"` finds no checksum line and line 103 throws "Could not get a
+  #   verified package" (the third v2.0.0 dry run).
+  # So it runs in -InstallerHost (5.1) with every folder that holds a node command (node.exe, or a .cmd, .bat or .ps1
+  # shim) taken off its PATH; this script keeps its own PATH (Set-Front and M12 need node). Downloading and unpacking
+  # Node.js takes a while in 5.1: 900 s.
+  $noNode = (@($env:Path -split ';') | Where-Object {
+      $dir = $_
+      if (-not $dir) { return $false }
+      try { -not @('node.exe', 'node.cmd', 'node.bat', 'node.ps1' | Where-Object { [IO.File]::Exists([IO.Path]::Combine($dir, $_)) }).Count }
+      catch { $true }
+    }) -join ';'
+  Say "upgrade: v1.1.0's installer runs without node on its PATH ($(@($env:Path -split ';').Count - @($noNode -split ';').Count) folders taken off)"
+  Invoke-Installer $v1 @('-NoService', '-Version', $V1Tag) 900 $InstallerHost @{ Path = $noNode }
   if ((Get-Launcher) -ne $V1Cmd) { throw 'upgrade: the zaafpulse command is not v1''s zaafpulse.cmd' }
   Start-Server 'v1-before'
   Write-Marker 'v1'
@@ -453,7 +465,7 @@ function Invoke-Part([string]$label, [scriptblock]$body) {
 }
 
 try {
-  Say "install test of $Base (version $Version) on Windows, port $Port, temp $T, installers in $InstallerHost (v1.1.0's in $V1Host)"
+  Say "install test of $Base (version $Version) on Windows, port $Port, temp $T, installers in $InstallerHost"
   Invoke-Part 'clean install' { Test-CleanInstall }
   if (-not $NoUpgrade) { Invoke-Part 'upgrade' { Test-Upgrade } } else { $summary.Add('upgrade: skipped (-NoUpgrade)') }
   if ($M12 -eq 'on') { Invoke-Part 'M12' { Test-M12 } } else { $summary.Add('M12: skipped (runs on linux-x64 and win-x64)') }
