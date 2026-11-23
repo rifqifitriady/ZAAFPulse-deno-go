@@ -141,7 +141,7 @@ function estimateSeconds(def, { smoke = false } = {}) {
     const levels = env.ZP_BENCH_LEVELS.split(',').length;
     // Start-ups, the mock, seeding 25 keys and the 5 s idle wait; warm-up and paired calls at about 26 ms each; each
     // stream level twice (gateway, then direct) plus its drain.
-    return Math.round(starts * 2 + 15 + (100 + 2 * requests) * 0.026 + levels * (2 * seconds + 4));
+    return Math.round(starts * 2 + 8 + (100 + 2 * requests) * 0.026 + levels * (2 * seconds + 4));
   }
   if (def.kind === 'egress') return smoke ? 5 : 15;
   if (def.kind === 'binary') return smoke ? 15 : 20;
