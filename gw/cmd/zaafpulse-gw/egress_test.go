@@ -27,8 +27,11 @@ func egressGateway(t *testing.T, extra string) (map[string]any, chan string) {
 	outR, outW := io.Pipe()
 	stderr := &syncBuffer{}
 	code := make(chan int, 1)
+	// The outbox folder is made before the cleanup below is registered, so its removal runs after the gateway has
+	// exited: cleanups run last first, and on Windows the outbox's open .lock cannot be removed.
+	dir := t.TempDir()
 	go func() {
-		code <- run([]string{"--outbox", t.TempDir(), "--health-ms", "50"}, inR, outW, stderr)
+		code <- run([]string{"--outbox", dir, "--health-ms", "50"}, inR, outW, stderr)
 		_ = outW.Close()
 		_ = inR.Close()
 	}()

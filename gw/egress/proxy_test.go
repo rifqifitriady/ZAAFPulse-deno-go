@@ -142,7 +142,8 @@ func TestForwardHeadersBodyAndRecord(t *testing.T) {
 	if r != want {
 		t.Fatalf("record %+v\nwant   %+v", r, want)
 	}
-	if r.TS < time.Now().Add(-time.Minute).UnixMilli() || r.MS <= 0 {
+	// MS may be 0 on Windows, whose clock is coarse; never negative.
+	if r.TS < time.Now().Add(-time.Minute).UnixMilli() || r.MS < 0 {
 		t.Errorf("ts %d ms %v", r.TS, r.MS)
 	}
 	j, _ := json.Marshal(r)
@@ -493,7 +494,9 @@ func TestConnectTimeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer ts.Close()
 	s, base, rec := startEgress(t, allowAll)
-	s.connectTimeout = time.Nanosecond // the limit is over before the connect starts
+	// A limit already in the past: context.WithTimeout expires it at once, on every OS. (1 ns was not enough on
+	// Windows, whose coarse clock let the loopback connect finish before the limit was seen as over.)
+	s.connectTimeout = -time.Second
 	expectError(t, send(t, base, "GET", ts.URL+"/", nil, nil), 502, "ETIMEDOUT")
 	if r := rec.wait(t, 1)[0]; r.Error != "ETIMEDOUT" {
 		t.Fatalf("record %+v", r)
