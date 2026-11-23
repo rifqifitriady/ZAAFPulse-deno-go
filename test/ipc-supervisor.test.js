@@ -49,9 +49,11 @@ test('start, ready, snapshots every interval, reload, stop: exit 0', async (t) =
   const bin = stubBin(t);
   if (!bin) return;
   const { sup } = supervise(t, bin);
+  assert.equal(sup.status().gwVersion, null, 'no hello yet');
   sup.start();
   await waitFor(() => sup.status().state === 'ready', 5000, 'ready');
   assert.equal(sup.status().gen, 1);
+  assert.equal(sup.status().gwVersion, 'dev', "the hello's version (a build without -X main.version)");
   await waitFor(() => sup.status().lastHealth && sup.status().lastHealth.gen === 1, 5000, 'health');
   // Past the first snapshot's age (400 ms), a health received now still reports a young snapshot: they keep coming.
   await new Promise((r) => setTimeout(r, 400));
