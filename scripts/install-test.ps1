@@ -165,10 +165,13 @@ function Wait-PortFree {
 function Stop-Server { Stop-OwnServer; Wait-PortFree }
 function Write-Marker([string]$what) {
   $body = ConvertTo-Json @{ userName = $Marker }
-  Invoke-RestMethod -Method Post -TimeoutSec 10 -Uri "$Url/api/config" -ContentType 'application/json' -Body $body | Out-Null
+  # A server just started can be busy for a while (its first scans run on the event loop): 60 s, tried twice.
+  try { Invoke-RestMethod -Method Post -TimeoutSec 60 -Uri "$Url/api/config" -ContentType 'application/json' -Body $body | Out-Null }
+  catch { Invoke-RestMethod -Method Post -TimeoutSec 60 -Uri "$Url/api/config" -ContentType 'application/json' -Body $body | Out-Null }
 }
 function Assert-Marker([string]$what) {
-  $got = (Invoke-RestMethod -TimeoutSec 10 -Uri "$Url/api/config").userName
+  $cfg = try { Invoke-RestMethod -TimeoutSec 60 -Uri "$Url/api/config" } catch { Invoke-RestMethod -TimeoutSec 60 -Uri "$Url/api/config" }
+  $got = $cfg.userName
   if ($got -ne $Marker) { throw "${what}: userName is '$got', not the marker '$Marker'" }
 }
 function Assert-Front([string]$what) {

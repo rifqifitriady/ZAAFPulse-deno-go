@@ -154,14 +154,16 @@ stop_bg() {
   fi
   wait_for 20 port_free || die "port $PORT still in use 20 s after the stop"
 }
-# The marker setting: userName, which v1 and v2 both keep in config.json.
+# The marker setting: userName, which v1 and v2 both keep in config.json. A server just started can be busy for a
+# while (its first process and log scans run on the event loop; seen locally once as a 10 s stall of v1.1.0), so each
+# call waits up to 60 s and is tried twice.
 MARKER="install-test-$$-$(date +%s)"
 write_marker() {
-  curl -fsS --max-time 10 -H 'content-type: application/json' -d "{\"userName\":\"$MARKER\"}" "$URL/api/config" > /dev/null \
-    || die "$1: POST /api/config failed"
+  curl -fsS --max-time 60 --retry 1 --retry-all-errors -H 'content-type: application/json' \
+    -d "{\"userName\":\"$MARKER\"}" "$URL/api/config" > /dev/null || die "$1: POST /api/config failed"
 }
 check_marker() {
-  got="$(curl -fsS --max-time 10 "$URL/api/config" | json_field userName)" || die "$1: GET /api/config failed"
+  got="$(curl -fsS --max-time 60 --retry 1 --retry-all-errors "$URL/api/config" | json_field userName)" || die "$1: GET /api/config failed"
   [ "$got" = "$MARKER" ] || die "$1: userName is '$got', not the marker '$MARKER'"
 }
 check_front() {
