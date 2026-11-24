@@ -1,6 +1,6 @@
 package engine
 
-// The token saver (lib/gateway/rtk.js) on the go engine (spec the rtk-go design): long
+// The token saver (lib/gateway/rtk.js) on the go engine (the rtk-go design): long
 // tool results are shortened by a filter picked from the tool call or from the output's shape, byte for byte as the
 // JS does. Text is UTF-16 code units throughout (D3); the patterns are rtk.js's own sources run on jsre (D4). A nil
 // *jsre.Budget means no limit; with one, a run past it panics with a jsre limit error that Budget.Run returns.

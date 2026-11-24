@@ -1,8 +1,8 @@
 # Token saver results: `lib/gateway/rtk.js` on the go engine (G3 prerequisite)
 
 Date: 2026-11-21. Branch `migrate/p4-rtk-go`, cut from `migrate/deno-go` at `636944a` (P4f merged), with P4d merged in
-at `1cef2ae` (from `61ec0aa`, PR #13). Spec the rtk-go design (Decisions 1–20, owner
-answers 21–22, Decision 23 from Task 5), plan the rtk-go plan ("Plan deviations" lists
+at `1cef2ae` (from `61ec0aa`, PR #13). The rtk-go design (Decisions 1–20, owner
+answers 21–22, Decision 23 from Task 5), the rtk-go plan ("Plan deviations" lists
 every change from the plan, with evidence).
 
 ## What ships

@@ -389,8 +389,8 @@ Every gate leaves a shippable product. Upstream `main` (public) keeps releasing 
   - each phase or slice works on `migrate/<phase>-<topic>` and merges into `migrate/deno-go` by PR, with CI green
     and the owner's OK;
   - upstream ZAAFPulse `main` is untouched.
-- **Workflow:** each phase gets its own spec (design notes), plan (design notes) and SDD
-  run with per-task review, a final review and a progress ledger.
+- **Workflow:** each phase gets its own design and plan, and is built with a review per task, a final review and a
+  progress record.
 - **Weekly sync:** `git fetch upstream && git merge upstream/main` into `migrate/deno-go`.
 - **Reporting:** a progress table after every task (Task | Status | Progress | Next step), and the metric table
   (§4) updated at every gate.

@@ -262,7 +262,7 @@ const CASES = [
   ],
 ];
 
-// Token saver (spec the rtk-go design R9, D9, D12): a long tool result shortened on
+// Token saver (the rtk-go design R9, D9, D12): a long tool result shortened on
 // the chat path, before the guardrails, with savedTokens on the lines JS writes it on.
 const DIFF = Array.from({ length: 3 }, (_, f) =>
   [`diff --git a/f${f}.js b/f${f}.js`, '@@ -1,90 +1,90 @@', ...Array.from({ length: 90 }, (_, i) => `+ line ${i}`)].join(

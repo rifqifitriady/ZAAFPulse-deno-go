@@ -1,4 +1,4 @@
-// Package egress is the gateway's egress endpoint (P5, spec the p5-egress design):
+// Package egress is the gateway's egress endpoint (P5, the p5-egress design):
 // the control plane sends each outbound request to a loopback listener with the target in a header, and Go makes the
 // real request with the engine's client settings (proxy environment, trusted roots, 10 s connect), checks it against
 // the pushed allow-list, refuses private addresses at connect time for untrusted URLs (public mode) and records every

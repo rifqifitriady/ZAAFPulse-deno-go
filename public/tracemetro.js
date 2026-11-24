@@ -1,5 +1,5 @@
 'use strict';
-/* The Trace Explorer's session map as a 3D metro line (spec 2026-11-07-trace-metro-map-design.md): the turn is one
+/* The Trace Explorer's session map as a 3D metro line: the turn is one
    track running away from the viewer, every map node a station on it, and a camera that rides the line on its own.
    The pure geometry comes first (tested in node); the canvas renderer, trMetro, follows. */
 

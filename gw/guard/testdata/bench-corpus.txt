@@ -90,60 +90,314 @@ lib/topology.js
 lib/trust.js
 lib/types.js
 lib/vault.js
-the mcp-integrations design
-the ai-observability-overview design
-the datasets-replay design
-the local-evals-feedback design
-the monitors-agent-control design
-the trace-session-explorer design
-the agent-tracing design
-the cost-ledger design
-the local-runtimes design
-the provider-topology design
-the runtime-model-reload design
-the topology-hub design
-the desktop-app-control design
-the cost-budgets design
-the cost-control-ui design
-the cost-forecast-anomalies design
-the cost-recommendations design
-the cost-settings-ui design
-the cost-reports design
-the gateway-guardrails design
-the governance-audit-log design
-the governance-inventory-compliance design
-the dashboard-users-roles design
-the trace-metro-map design
-the p0-foundations design
-the p2-control-plane-deno design
-the p3-ipc-contract design
-the p4-stage1 design
-the p4a-go-front design
-the mcp-integrations plan
-the trace-session-explorer plan
-the local-evals-feedback plan
-the agent-tracing plan
-the datasets-replay plan
-the monitors-agent-control plan
-the cost-ledger plan
-the local-runtimes plan
-the monitors-datasets-followups plan
-the provider-topology plan
-the runtime-model-reload plan
-the topology-hub plan
-the desktop-app-control plan
-the cost-budgets plan
-the cost-control-ui plan
-the cost-forecast-anomalies plan
-the cost-recommendations plan
-the cost-settings-ui plan
-the cost-followups plan
-the cost-reports plan
-the gateway-guardrails plan
-the governance-audit-log plan
-the governance-inventory-compliance plan
-the dashboard-users-roles plan
-the trace-metro-map plan
-the p0-foundations plan
-the p2-control-plane-deno plan
-the p3-ipc-contract plan
+.github/pull_request_template.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+README.md
+SECURITY.md
+bench/README.md
+bench/results/2026-11-10-MBA-ZAAF-notes.md
+bench/results/2026-11-13-p4c-notes.md
+bench/results/2026-11-17-p4f-notes.md
+docs/cost.md
+docs/datasets.md
+docs/evals.md
+docs/explorer.md
+docs/governance.md
+docs/guardrails.md
+docs/install.md
+docs/integrations.md
+docs/local-models.md
+docs/migration/2026-11-10-deno-go-migration-plan.md
+docs/migration/2026-11-10-p0-contract-deno.md
+docs/migration/2026-11-10-p1-deno-spike-results.md
+docs/migration/2026-11-10-p2-results.md
+docs/migration/2026-11-11-p3-results.md
+docs/migration/2026-11-12-p4a-results.md
+docs/migration/2026-11-12-p4b-results.md
+docs/migration/2026-11-12-p4f-mark-durability.md
+docs/migration/2026-11-13-p4c-results.md
+docs/migration/2026-11-16-p4e-results.md
+docs/migration/2026-11-17-p4d-results.md
+docs/migration/2026-11-17-p4f-results.md
+docs/migration/2026-11-21-p4g-results.md
+docs/migration/2026-11-21-p4h-results.md
+docs/migration/2026-11-21-rtk-go-results.md
+docs/migration/2026-11-22-p5-results.md
+docs/migration/2026-11-23-migration-note.md
+docs/migration/2026-11-23-p6-results.md
+docs/migration/2026-11-23-p7-remove-node-results.md
+docs/migration/2026-11-23-p7-security-fixes.md
+docs/migration/2026-11-23-p7-security-review.md
+docs/migration/2026-11-23-switch-runbook.md
+docs/migration/final-benchmarks.md
+docs/monitors.md
+docs/otel.md
+docs/performance.md
+docs/quality-metrics.md
+docs/release-checklist-v2.0.0.md
+docs/release-hardening.md
+docs/release-notes/v2.0.0.md
+docs/topology.md
+docs/users.md
+ipc/v1/README.md
+skills/README.md
+skills/zaafpulse-a2a/SKILL.md
+skills/zaafpulse-agents/SKILL.md
+skills/zaafpulse-brain/SKILL.md
+skills/zaafpulse-chat/SKILL.md
+skills/zaafpulse-collaborate/SKILL.md
+test/agents-control.test.js
+test/arize.test.js
+gw/cmd/zaafpulse-gw/egress.go
+gw/cmd/zaafpulse-gw/exit.go
+gw/cmd/zaafpulse-gw/front.go
+gw/cmd/zaafpulse-gw/main.go
+gw/cmd/zaafpulse-gw/sender.go
+gw/egress/allow.go
+gw/egress/egress.go
+gw/egress/hello.go
+gw/egress/metadata.go
+gw/egress/private.go
+gw/egress/proxy.go
+gw/egress/record.go
+gw/egress/tunnel.go
+gw/engine/anthropic.go
+gw/engine/auth.go
+gw/engine/budget.go
+gw/engine/chat.go
+gw/engine/count.go
+gw/engine/deliver.go
+gw/engine/embeddings.go
+gw/engine/formats.go
+gw/engine/guard.go
+gw/engine/jsjson.go
+gw/engine/jsstr.go
+gw/engine/keys.go
+gw/engine/mapmodel.go
+gw/engine/mcp.go
+gw/engine/observer.go
+gw/engine/passthrough.go
+gw/engine/plan.go
+gw/engine/pricing.go
+gw/engine/providers.go
+gw/engine/routes.go
+gw/engine/rtk.go
+gw/engine/rtk_body.go
+gw/engine/rtk_json.go
+gw/engine/serve.go
+gw/engine/serve_mcp.go
+gw/engine/serve_route.go
+gw/engine/serve_xlate.go
+gw/engine/shadow.go
+gw/engine/shadow_mcp.go
+gw/engine/shadow_route.go
+gw/engine/shadow_xlate.go
+gw/engine/spans.go
+gw/engine/stream.go
+gw/engine/traceparent.go
+gw/engine/upstream.go
+gw/engine/xlate.go
+gw/engine/xlate_answer.go
+gw/engine/xlate_stream.go
+gw/front/addrinuse_other.go
+gw/front/addrinuse_windows.go
+gw/front/client.go
+gw/front/front.go
+gw/front/quiet.go
+gw/front/route.go
+gw/guard/guard.go
+gw/guard/injection.go
+gw/guard/jsre/compile.go
+gw/guard/jsre/first.go
+gw/guard/jsre/literal.go
+gw/guard/jsre/match.go
+gw/guard/jsre/multi.go
+gw/guard/jsre/pairs.go
+gw/guard/jsre/parse.go
+gw/guard/jsre/vm.go
+gw/guard/jsre/within.go
+gw/guard/patterns.go
+gw/guard/pii.go
+gw/guard/secrets.go
+gw/ipc/budget.go
+gw/ipc/channel.go
+gw/ipc/envelope.go
+gw/ipc/exit.go
+gw/ipc/framing.go
+gw/ipc/journal.go
+gw/ipc/lock_other.go
+gw/ipc/lock_unix.go
+gw/ipc/lock_windows.go
+gw/ipc/messages.go
+gw/ipc/nullable.go
+gw/ipc/outbox.go
+gw/ipc/shape.go
+gw/ipc/synthetic.go
+gw/provauth/google.go
+gw/provauth/js.go
+gw/provauth/oauth2.go
+gw/provauth/provauth.go
+gw/translate/env.go
+gw/translate/helpers.go
+gw/translate/jsv/convert.go
+gw/translate/jsv/fixture.go
+gw/translate/jsv/json.go
+gw/translate/jsv/value.go
+gw/translate/request.go
+gw/translate/stream.go
+lib/agents/control.js
+lib/brain/apps.js
+lib/brain/index.js
+lib/brain/markdown.js
+lib/brain/pg.js
+lib/brain/vectors.js
+lib/connectors/acc.js
+lib/connectors/arize.js
+lib/connectors/base.js
+lib/connectors/dynatrace.js
+lib/connectors/http.js
+lib/connectors/mcp-proxy.js
+lib/connectors/n8n.js
+lib/connectors/openrouter.js
+lib/connectors/router.js
+lib/cost/anomaly.js
+lib/cost/api.js
+lib/cost/billing-view.js
+lib/cost/billing.js
+lib/cost/budget-service.js
+lib/cost/budgets.js
+lib/cost/collect.js
+lib/cost/days.js
+lib/cost/digest.js
+lib/cost/export.js
+lib/cost/files.js
+lib/cost/forecast.js
+lib/cost/guard.js
+lib/cost/index.js
+lib/cost/ledger.js
+lib/cost/preview.js
+lib/cost/prices.js
+lib/cost/reader.js
+lib/cost/recommend.js
+lib/cost/report.js
+lib/cost/rules.js
+lib/cost/views.js
+lib/datasets/api.js
+lib/datasets/auto.js
+lib/datasets/cli.js
+lib/datasets/experiments.js
+lib/datasets/replay.js
+lib/datasets/score.js
+lib/datasets/shape.js
+lib/datasets/store.js
+lib/egress-allow.js
+lib/egress-discovery.js
+lib/egress-log.js
+lib/egress-status.js
+lib/egress-switch.js
+lib/egress.js
+lib/evals/api.js
+lib/evals/claude-cli.js
+lib/evals/cli.js
+lib/evals/code.js
+lib/evals/engine.js
+lib/evals/judge.js
+lib/evals/models.js
+lib/evals/overview.js
+lib/evals/pii.js
+lib/evals/registry.js
+lib/evals/store.js
+lib/front/bin.js
+lib/front/client.js
+lib/front/index.js
+lib/front/internal.js
+lib/front/push.js
+lib/front/shadow-log.js
+lib/front/tools.js
+lib/gateway/shadow.js
+lib/governance/api.js
+lib/governance/audit.js
+lib/governance/chain.js
+lib/governance/context.js
+lib/governance/controls.js
+lib/governance/diff.js
+lib/governance/events.js
+lib/governance/evidence.js
+lib/governance/inventory.js
+lib/governance/mcp-scan.js
+lib/governance/seen.js
+lib/governance/sources.js
+lib/ipc/acker.js
+lib/ipc/budget.js
+lib/ipc/channel.js
+lib/ipc/env.js
+lib/ipc/framing.js
+lib/ipc/ingest.js
+lib/ipc/local.js
+lib/ipc/markfile.js
+lib/ipc/marks.js
+lib/ipc/schema.js
+lib/ipc/server-sinks.js
+lib/ipc/session.js
+lib/ipc/supervisor.js
+lib/mcp-registrations.js
+lib/mcp/client.js
+lib/mcp/protocol.js
+lib/monitors/api.js
+lib/monitors/channels.js
+lib/monitors/index.js
+lib/monitors/rules.js
+lib/monitors/state.js
+lib/runtimes/api.js
+lib/runtimes/control.js
+lib/runtimes/models.js
+lib/runtimes/registry.js
+lib/runtimes/state.js
+lib/trace/adjust.js
+lib/trace/analyze.js
+lib/trace/antigravity.js
+lib/trace/claude.js
+lib/trace/codex.js
+lib/trace/content.js
+lib/trace/deps.js
+lib/trace/gateway.js
+lib/trace/gemini.js
+lib/trace/index.js
+lib/trace/kiro.js
+lib/trace/light.js
+lib/trace/lines.js
+lib/trace/model.js
+lib/trace/otlp.js
+lib/trace/recorder.js
+lib/trace/store.js
+lib/trace/summary.js
+lib/trace/views.js
+lib/trace/worker.js
+lib/users/api.js
+lib/users/policy.js
+lib/users/refusals.js
+lib/users/store.js
+public/app.js
+public/brain.js
+public/brainview.js
+public/costcharts.js
+public/costreports.js
+public/costsettings.js
+public/costview.js
+public/datasetview.js
+public/deckpages.js
+public/evalsview.js
+public/gatewayview.js
+public/governanceview.js
+public/integrations.js
+public/iso.js
+public/liveview.js
+public/login.js
+public/monitorsview.js
+public/officeview.js
+public/openrouterview.js
+public/overviewview.js
+public/pricesview.js
+public/quality.js
+public/qualitypages.js

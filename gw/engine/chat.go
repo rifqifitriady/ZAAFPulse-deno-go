@@ -144,7 +144,7 @@ type Plan struct {
 	// auth is the token source of an oauth2 or google-sa target (nil: a key or none); Upstream.Start gets the token.
 	auth *provauth.Cached
 
-	// The token saver (spec the rtk-go design D8, D12): the texts Save shortens in
+	// The token saver (the rtk-go design D8, D12): the texts Save shortens in
 	// pending, whether it ran, how many it shortened, and whether every line keeps savedTokens (the Anthropic
 	// passthrough spreads base into its guard lines too; proxyChat's guard lines carry none).
 	saver     *saverJob
